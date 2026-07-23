@@ -85,11 +85,12 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
       authored `FootLock` curves over the sibling's measured-gait heuristic once present
 - [ ] **Real `SKM_Als` geometry**: extend `Dump.cs` to parse the editor native-bulk mesh
       (FSkeletalMeshModel / import data) and replace the M0 proxy body in `assemble-glb.mjs`
-- [ ] **Scripted retarget UE5 → SK_Als layout** (see M0 discovery): map spine_04/05→spine_03,
-      neck_02→neck_01 rolls at build time, or decide to re-rig the project UE5-native instead —
-      decide before the TSO pack lands
-- [ ] **TacticalStealthOperation pack** (64 clips, already owned, UE5-native): WallHug set,
-      OnLedge set, PipeHang (incl. inverted), Land/Land_Light/LandRoll, rolls, Headlock/CarryBody
+- [ ] **DEFERRED TO END (user 2026-07-23): anything that touches the skeleton.** The project
+      builds UE4-mannequin-native (SK_Als) — no destructive skeleton moves mid-project. The
+      UE5→SK_Als retarget (spine_04/05→spine_03, neck_02→neck_01) OR re-rig-UE5-native decision,
+      and the **TacticalStealthOperation pack** that depends on it (64 clips, owned, UE5-native:
+      WallHug/OnLedge/PipeHang sets, Land/LandRoll, rolls, Headlock/CarryBody), all move to the
+      stealth-content step in M5 — decided once, at the end, with the template already stable
 - [ ] `scripts/build-player-anims.mjs` equivalent: curated merge → single animation-only GLB,
       dedup/resample, root-motion preserved for gait measurement
 - [ ] Clip audit doc-comment in the build script: what each curated clip is FOR
@@ -151,7 +152,9 @@ Port the stealth layer from `../exposure-r3f` (all skeleton-agnostic):
 - [ ] Exposure model (light + sound) + HUD meters
 - [ ] One guard: perception cone / LOS / graded awareness on patrol
 - [ ] Stealth-specific animation content: sneak overlays, wall-hug + peeks (TSO clips), takedown/
-      interrogate as arbiter action records (Headlock/CarryBody clips are already in hand)
+      interrogate as arbiter action records (Headlock/CarryBody clips are already in hand) —
+      **this is where the deferred UE5-retarget-or-re-rig decision from M2 gets made**, with the
+      whole template stable behind it
 
 ---
 
