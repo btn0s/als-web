@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# playwright
+test-results/
+playwright-report/
+
+# extract-als toolchain artifacts
+scripts/extract-als/bin/
+scripts/extract-als/obj/
+scripts/extract-als/node_modules/

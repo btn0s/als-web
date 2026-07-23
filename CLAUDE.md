@@ -12,8 +12,10 @@ built UE5-Manny-skeleton-native as a reference repo / template, with stealth lay
 - **Fix quality bar:** land fixes at the existing architectural seam, in the codebase's idiom.
   No reward hacks (no test special-casing, no symptom suppression). Deliberately scoped tactical
   patches are fine when the real fix is scheduled — say so and name the trade.
-- **Licensing guardrail:** never ship Epic-content meshes/animations (Manny/Quinn are UE-only).
-  Fab Standard License or original assets only. Verify per-listing before anything enters the pack.
+- **Licensing guardrail:** never ship Epic-published content (Manny/Quinn packs, MetaHumans —
+  Epic-designated UE-only). ALS Refactored's assets are cleared under its MIT (settled 2026-07-23,
+  see ROADMAP guardrails; ship the upstream notice). Purchased Fab content is gitignored, never
+  committed. Verify per-listing before any new asset enters the pack.
 - **Playtesting:** the user playtests feel LIVE in the browser — no headless feel-comparison
   smokes beyond the sanctioned Playwright gate.
 

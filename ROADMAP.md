@@ -19,15 +19,23 @@ touches it.
 
 ---
 
-## M0 — Scaffold + character  *(scaffold done 2026-07-23)*
+## M0 — Scaffold + character  *(closed 2026-07-23)*
 
 - [x] Vite `react-ts` scaffold; three / R3F / drei / rapier / zustand / leva; vitest + playwright
-- [ ] **UE5-skinned character lands** (user-supplied, Fab Standard License — see guardrails).
-      GLB preferred; FBX + Blender pass acceptable
-- [ ] Character renders in a Canvas playing an idle; orbit cam; vitest + one Playwright smoke wired
-      (vitest `include: src/**` from day one — the e2e/vitest spec-pattern collision is a known trap)
+- [x] **Character lands: `SKM_Als` from ALS Refactored** (MIT, licensing settled 2026-07-23 — see
+      guardrails), via `scripts/extract-als/run.sh` (CUE4Parse dump → GLB assembly, editor-free).
+      **Named trade:** body is a bone-proxy (box-per-segment) — real `SKM_Als` geometry is editor
+      native-bulk CUE4Parse can't read; parser scheduled in M2. Skeleton + idle are the real data.
+- [x] Character renders in a Canvas playing the idle; orbit cam; vitest (5) + one Playwright smoke
+      green (vitest `include: src/**` — the e2e/vitest spec-pattern collision trap is handled)
 
-**Exit:** the character idles on screen at 60fps; test gates green.
+**Exit met:** extracted character idles on screen (`__characterStatus === 'glb'`); test gates green.
+60fps is a live-playtest check, per ground rules.
+
+**Discovery that bends the premise:** `SK_Als` is UE4-mannequin layout (68 bones, spine_01–03,
+neck_01) even at tag 4.17/UE 5.7 — ALS Refactored never adopted the UE5 Manny skeleton. The
+"UE5-skeleton-native, Fab drops in with no retargeting" bet does not hold for ALS content itself;
+UE5-native packs (TSO) will need the scripted retarget now listed in M2.
 
 ---
 
@@ -52,10 +60,19 @@ rule active as proof.
 
 ## M2 — Content pipeline (the point of the UE5 bet)
 
-- [ ] Extraction path decided and scripted: UE 5.4+ installed → headless Python batch FBX export,
-      OR CUE4Parse (dotnet) for editor-free `.uasset` → interchange. One command per pack.
-- [ ] **ALS Refactored's animation set** extracted (verify its asset licensing first — the repo's
-      code license and its content provenance are separate questions; do not assume)
+- [ ] Extraction path: **editor-free, no UE install** (decided 2026-07-23). CUE4Parse (.NET,
+      cross-platform incl. macOS arm64) reads the repo's loose `.uasset`s directly; export mesh +
+      anims (glTF or psk/psa/ueformat → Blender batch import → GLB). One command per pack.
+      If CUE4Parse lags the plugin's engine target (4.17 → UE 5.7), pin an older plugin release
+      (e.g. 4.15 → UE 5.5) — the content is identical for our purposes.
+- [ ] **ALS Refactored's animation set** extracted (licensing settled 2026-07-23: the repo's
+      blanket MIT names the full author lineage — Sixze, Longmire, Yanıkoğlu — and covers its
+      assets; preserve the upstream notice as `LICENSE-ALS-Refactored.md` beside ported assets)
+- [ ] **Real `SKM_Als` geometry**: extend `Dump.cs` to parse the editor native-bulk mesh
+      (FSkeletalMeshModel / import data) and replace the M0 proxy body in `assemble-glb.mjs`
+- [ ] **Scripted retarget UE5 → SK_Als layout** (see M0 discovery): map spine_04/05→spine_03,
+      neck_02→neck_01 rolls at build time, or decide to re-rig the project UE5-native instead —
+      decide before the TSO pack lands
 - [ ] **TacticalStealthOperation pack** (64 clips, already owned, UE5-native): WallHug set,
       OnLedge set, PipeHang (incl. inverted), Land/Land_Light/LandRoll, rolls, Headlock/CarryBody
 - [ ] `scripts/build-player-anims.mjs` equivalent: curated merge → single animation-only GLB,
@@ -112,10 +129,15 @@ Port the stealth layer from `../exposure-r3f` (all skeleton-agnostic):
 
 ## Guardrails
 
-- **Never ship Epic-content meshes** (Manny/Quinn and other Epic-published assets are UE-only
-  licensed). The character must be Fab Standard License or original. Local experiments with Epic
-  content stay local.
-- Verify per-listing licenses on Fab before an asset enters the curated pack.
+- **Never ship Epic-published content** (Manny/Quinn mannequin packs, MetaHumans, and other
+  Epic-designated UE-only assets). Local experiments with Epic content stay local.
+- **ALS Refactored content is cleared** (settled 2026-07-23): its blanket MIT — copyright Sixze,
+  Longmire, Yanıkoğlu, and contributors — covers the repo's assets, meshes included. Usable and
+  redistributable here; ship the upstream notice alongside.
+- **Purchased Fab content stays out of the public repo** (anti-redistribution terms): TSO pack and
+  any bought character are gitignored, acquisition documented as a setup step; deployed web
+  bundles may include them ("inseparable part of a Project").
+- Verify per-listing licenses on Fab before any new asset enters the curated pack.
 - ALS Refactored is the design north star, not a code-port target: its C++/AnimGraph stays in UE;
   we replicate behavior on the pure-module substrate.
 - `../exposure-r3f` is read-only reference from here — improvements flow forward into this repo,
