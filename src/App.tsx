@@ -1,8 +1,10 @@
-import { Canvas, useThree } from '@react-three/fiber'
-import { Grid, OrbitControls } from '@react-three/drei'
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { Canvas } from '@react-three/fiber'
+import { Grid } from '@react-three/drei'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Character } from './scene/Character'
+import { PoseOrbitCamera } from './scene/PoseOrbitCamera'
+import { createCharacterPoseSample } from './scene/poseCameraState'
 import './App.css'
 
 const PLACEHOLDER_SIZE = new THREE.Vector3(0.7, 1.9, 0.7)
@@ -15,42 +17,9 @@ function SceneReady() {
   return null
 }
 
-function CameraRig({ characterSize }: { characterSize: THREE.Vector3 }) {
-  const { camera, size: viewportSize } = useThree()
-
-  useLayoutEffect(() => {
-    if (!(camera instanceof THREE.PerspectiveCamera)) {
-      return
-    }
-
-    const verticalFov = THREE.MathUtils.degToRad(camera.fov)
-    const horizontalFov =
-      2 * Math.atan(Math.tan(verticalFov / 2) * viewportSize.width / viewportSize.height)
-    const limitingFov = Math.min(verticalFov, horizontalFov)
-    const boundingRadius = characterSize.length() / 2
-    const distance = boundingRadius / Math.sin(limitingFov / 2) * 1.15
-    const target = new THREE.Vector3(0, characterSize.y / 2, 0)
-    const viewDirection = new THREE.Vector3(0.75, 0.35, 1).normalize()
-
-    camera.position.copy(target).addScaledVector(viewDirection, distance)
-    camera.near = Math.max(distance / 1000, 0.001)
-    camera.far = Math.max(distance * 100, 100)
-    camera.updateProjectionMatrix()
-    camera.lookAt(target)
-  }, [camera, characterSize, viewportSize.height, viewportSize.width])
-
-  return (
-    <OrbitControls
-      makeDefault
-      target={[0, characterSize.y / 2, 0]}
-      minDistance={Math.max(characterSize.length() * 0.2, 0.1)}
-      maxDistance={Math.max(characterSize.length() * 8, 10)}
-    />
-  )
-}
-
 function Scene() {
   const [characterSize, setCharacterSize] = useState(() => PLACEHOLDER_SIZE.clone())
+  const poseSample = useRef(createCharacterPoseSample())
   const gridSize = Math.max(20, characterSize.length() * 3)
 
   return (
@@ -64,7 +33,7 @@ function Scene() {
         shadow-mapSize={[1024, 1024]}
       />
 
-      <Character onSizeChange={setCharacterSize} />
+      <Character onSizeChange={setCharacterSize} poseSample={poseSample} />
 
       <Grid
         args={[gridSize, gridSize]}
@@ -75,7 +44,7 @@ function Scene() {
         sectionColor="#68809d"
         sectionSize={gridSize / 8}
       />
-      <CameraRig characterSize={characterSize} />
+      <PoseOrbitCamera characterSize={characterSize} poseSample={poseSample} />
       <SceneReady />
     </>
   )

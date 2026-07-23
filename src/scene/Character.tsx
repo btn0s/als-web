@@ -1,8 +1,10 @@
 import { useFrame } from '@react-three/fiber'
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { pickClip } from '../anim/pickClip'
+import type { CharacterPoseSample } from './poseCameraState'
 import { useLocomotionRig } from './useLocomotionRig'
 
 const CHARACTER_URL = '/assets/skm-als.glb'
@@ -10,6 +12,7 @@ const GLB_MAGIC = [0x67, 0x6c, 0x54, 0x46]
 
 interface CharacterProps {
   onSizeChange: (size: THREE.Vector3) => void
+  poseSample: MutableRefObject<CharacterPoseSample>
 }
 
 function isGlb(buffer: ArrayBuffer) {
@@ -72,11 +75,21 @@ function Placeholder() {
 function LoadedCharacter({
   gltf,
   onSizeChange,
+  poseSample,
 }: {
   gltf: GLTF
   onSizeChange: CharacterProps['onSizeChange']
+  poseSample: CharacterProps['poseSample']
 }) {
   const mixer = useMemo(() => new THREE.AnimationMixer(gltf.scene), [gltf.scene])
+  const characterGroup = useRef<THREE.Group>(null)
+  const poseBones = useMemo(
+    () => ({
+      head: gltf.scene.getObjectByName('head') ?? gltf.scene.getObjectByName('Head'),
+      pelvis: gltf.scene.getObjectByName('pelvis'),
+    }),
+    [gltf.scene],
+  )
   const bounds = useMemo(() => {
     gltf.scene.updateWorldMatrix(true, true)
     const box = new THREE.Box3().setFromObject(gltf.scene, true)
@@ -112,7 +125,7 @@ function LoadedCharacter({
     }
 
     const action = mixer.clipAction(clip)
-    action.reset().setLoop(THREE.LoopRepeat, Infinity).play()
+    action.reset().setLoop(THREE.LoopRepeat, Infinity).setEffectiveWeight(1).play()
 
     return () => {
       action.stop()
@@ -120,16 +133,33 @@ function LoadedCharacter({
     }
   }, [gltf.animations, gltf.scene, mixer, rigComplete])
 
-  useFrame((_, delta) => mixer.update(delta))
+  useFrame((_, delta) => {
+    mixer.update(delta)
+
+    const group = characterGroup.current
+    if (!group || !poseBones.head || !poseBones.pelvis) {
+      poseSample.current.ready = false
+      return
+    }
+
+    // Publish after the mixer has written this frame's skeleton. `getWorldPosition` refreshes the
+    // ancestor chains, so ground, pelvis, and head all come from the same composed pose.
+    group.getWorldPosition(poseSample.current.ground)
+    poseBones.pelvis.getWorldPosition(poseSample.current.pelvis)
+    poseBones.head.getWorldPosition(poseSample.current.head)
+    poseSample.current.poseHeight = poseSample.current.head.y - poseSample.current.ground.y
+    poseSample.current.ready =
+      Number.isFinite(poseSample.current.poseHeight) && poseSample.current.poseHeight > 0
+  })
 
   return (
-    <group position={bounds.position}>
+    <group ref={characterGroup} position={bounds.position}>
       <primitive object={gltf.scene} />
     </group>
   )
 }
 
-export function Character({ onSizeChange }: CharacterProps) {
+export function Character({ onSizeChange, poseSample }: CharacterProps) {
   const gltf = useCharacterGltf()
 
   useEffect(() => {
@@ -137,7 +167,7 @@ export function Character({ onSizeChange }: CharacterProps) {
   }, [gltf])
 
   return gltf ? (
-    <LoadedCharacter gltf={gltf} onSizeChange={onSizeChange} />
+    <LoadedCharacter gltf={gltf} onSizeChange={onSizeChange} poseSample={poseSample} />
   ) : (
     <Placeholder />
   )

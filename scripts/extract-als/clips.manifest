@@ -1,0 +1,69 @@
+# Curated ALS Refactored animation payload. Format: clip|what it is for|M3 checklist item.
+# Keep this deliberately smaller than the upstream animation tree: every row must serve M3.
+A_Als_Stand_Pose|Standing reference/fallback pose for complete base-layer bone coverage|M3 Stances: standing
+A_Als_Crouch_Pose|Crouched reference/fallback pose for complete base-layer bone coverage|M3 Stances: crouching
+A_Als_Idle|Standing locomotion center sample|M3 Gaits: idle origin for walk/run/sprint
+A_Als_Walk_Forward|Authored forward walk sample|M3 Gaits and Rotation modes: directional locomotion
+A_Als_Walk_Backward|Authored backward walk sample|M3 Gaits and Rotation modes: directional locomotion
+A_Als_Walk_Left_Forward|Authored forward-left walk sample|M3 Rotation modes: real authored directional blendspace
+A_Als_Walk_Right_Forward|Authored forward-right walk sample|M3 Rotation modes: real authored directional blendspace
+A_Als_Walk_Left_Backward|Authored backward-left walk sample|M3 Rotation modes: real authored directional blendspace
+A_Als_Walk_Right_Backward|Authored backward-right walk sample|M3 Rotation modes: real authored directional blendspace
+A_Als_Run_Forward|Authored forward run sample|M3 Gaits and Rotation modes: directional locomotion
+A_Als_Run_Backward|Authored backward run sample|M3 Gaits and Rotation modes: directional locomotion
+A_Als_Run_Left_Forward|Authored forward-left run sample|M3 Rotation modes: real authored directional blendspace
+A_Als_Run_Right_Forward|Authored forward-right run sample|M3 Rotation modes: real authored directional blendspace
+A_Als_Run_Left_Backward|Authored backward-left run sample|M3 Rotation modes: real authored directional blendspace
+A_Als_Run_Right_Backward|Authored backward-right run sample|M3 Rotation modes: real authored directional blendspace
+A_Als_Sprint|Authored forward sprint cycle|M3 Gaits: sprint
+A_Als_Crouch_Walk_Forward|Authored crouched forward walk sample|M3 Stances and Rotation modes: crouched directional locomotion
+A_Als_Crouch_Walk_Backward|Authored crouched backward walk sample|M3 Stances and Rotation modes: crouched directional locomotion
+A_Als_Crouch_Walk_Left_Forward|Authored crouched forward-left walk sample|M3 Rotation modes: real crouched directional blendspace
+A_Als_Crouch_Walk_Right_Forward|Authored crouched forward-right walk sample|M3 Rotation modes: real crouched directional blendspace
+A_Als_Crouch_Walk_Left_Backward|Authored crouched backward-left walk sample|M3 Rotation modes: real crouched directional blendspace
+A_Als_Crouch_Walk_Right_Backward|Authored crouched backward-right walk sample|M3 Rotation modes: real crouched directional blendspace
+A_Als_StandToCrouch|Authored standing-to-crouched stance change|M3 Stances: stance ladder and staged transitions
+A_Als_CrouchToStand|Authored crouched-to-standing stance change|M3 Stances: stance ladder and staged transitions
+A_Als_Acceleration_Forward|Forward start/acceleration source pose|M3 Turn-in-place plus start/stop/pivot transitions
+A_Als_Acceleration_Backward|Backward start/acceleration source pose|M3 Turn-in-place plus start/stop/pivot transitions
+A_Als_Acceleration_Left|Left start/pivot source pose|M3 Turn-in-place plus start/stop/pivot transitions
+A_Als_Acceleration_Right|Right start/pivot source pose|M3 Turn-in-place plus start/stop/pivot transitions
+A_Als_Sprint_Acceleration|Authored transition into sprint|M3 Gaits and start/stop/pivot transitions
+A_Als_Stop_Left|Left-foot authored stopping source pose|M3 Turn-in-place plus start/stop/pivot transitions
+A_Als_Stop_Right|Right-foot authored stopping source pose|M3 Turn-in-place plus start/stop/pivot transitions
+A_Als_Turn_90_Left|Standing 90-degree left turn-in-place|M3 Turn-in-place: authored turns
+A_Als_Turn_90_Right|Standing 90-degree right turn-in-place|M3 Turn-in-place: authored turns
+A_Als_Turn_180_Left|Standing 180-degree left turn-in-place|M3 Turn-in-place: authored turns
+A_Als_Turn_180_Right|Standing 180-degree right turn-in-place|M3 Turn-in-place: authored turns
+A_Als_Rotate_90_Left|Standing left rotate-in-place cycle|M3 Rotation modes: authored rotate clips
+A_Als_Rotate_90_Right|Standing right rotate-in-place cycle|M3 Rotation modes: authored rotate clips
+A_Als_Crouch_Turn_90_Left|Crouched 90-degree left turn-in-place|M3 Turn-in-place across stances
+A_Als_Crouch_Turn_90_Right|Crouched 90-degree right turn-in-place|M3 Turn-in-place across stances
+A_Als_Crouch_Turn_180_Left|Crouched 180-degree left turn-in-place|M3 Turn-in-place across stances
+A_Als_Crouch_Turn_180_Right|Crouched 180-degree right turn-in-place|M3 Turn-in-place across stances
+A_Als_Crouch_Rotate_90_Left|Crouched left rotate-in-place cycle|M3 Rotation modes across stances
+A_Als_Crouch_Rotate_90_Right|Crouched right rotate-in-place cycle|M3 Rotation modes across stances
+A_Als_Jump_Loop|Neutral airborne jump loop|M3 In-air: jump/fall state
+A_Als_Jump_Run_Left|Running jump launched from the left foot|M3 In-air: moving jump variant
+A_Als_Jump_Run_Right|Running jump launched from the right foot|M3 In-air: moving jump variant
+A_Als_Jump_Walk_Left|Low-speed/standing jump launch from the left foot; closest authored standing variant|M3 In-air: standing/low-speed jump variant
+A_Als_Jump_Walk_Right|Low-speed/standing jump launch from the right foot; closest authored standing variant|M3 In-air: standing/low-speed jump variant
+A_Als_Fall|Normal-speed fall loop|M3 In-air: fall state
+A_Als_Fall_Fast|Fast fall loop used to select heavier recovery|M3 In-air: fall-speed-dependent recovery
+A_Als_Land_Light|Light authored landing recovery|M3 In-air: Land_Light recovery
+A_Als_Land_Heavy|Heavy authored landing recovery|M3 In-air: heavy landing recovery
+A_Als_GetUp_Back|Get-up action from a supine pose|M3 action arbiter coverage; retained despite ragdoll being cut
+A_Als_GetUp_Front|Get-up action from a prone pose|M3 action arbiter coverage; retained despite ragdoll being cut
+A_Als_Roll|Authored roll used as the available LandRoll-equivalent action|M3 In-air: fall-speed LandRoll recovery
+A_Als_Mantle_High|High mantle action with preserved root translation|M3 Mantle/vault through the arbiter
+A_Als_Mantle_Low_Left|Low mantle action led from the left side with preserved root translation|M3 Mantle/vault through the arbiter
+A_Als_Mantle_Low_Right|Low mantle action led from the right side with preserved root translation|M3 Mantle/vault through the arbiter
+A_Als_Default_Poses|Neutral multi-frame overlay pose bank|M3 Overlay states: ALS-style pose overlays
+A_Als_Rifle_Poses|Rifle multi-frame overlay pose bank|M3 Overlay states: item/pose overlays
+A_Als_Rifle_Aim|Standing rifle aim additive source|M3 Rotation modes and Overlay states: aiming
+A_Als_Rifle_Aim_Crouch|Crouched rifle aim additive source|M3 Rotation modes and Overlay states across stances
+A_Als_Rifle_Run_Arms|Upper-body rifle run source for region masking|M3 Overlay states: masked per-bone moving overlay
+A_Als_Rifle_Sprint_Arms|Upper-body rifle sprint source for region masking|M3 Overlay states: masked per-bone sprint overlay
+A_Als_Look_Down|Downward view/aim additive source|M3 Rotation modes: aiming pitch
+A_Als_Look_Forward|Forward view/aim additive reference source|M3 Rotation modes: aiming pitch
+A_Als_Look_Up|Upward view/aim additive source|M3 Rotation modes: aiming pitch

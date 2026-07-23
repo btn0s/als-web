@@ -70,17 +70,28 @@ const convertScale = ([x, y, z]) => [x, z, y];
 const { bones } = dump.skeleton;
 const key = (arr, i) => arr.length === 0 ? null : arr[Math.min(i, arr.length - 1)];
 const refByName = Object.fromEntries(bones.map((b) => [b.name, b]));
+const canonicalBoneByLower = new Map(bones.map((b) => [b.name.toLowerCase(), b.name]));
+const canonicalBoneName = (clipName, sourceName) => {
+  const canonical = canonicalBoneByLower.get(sourceName.toLowerCase());
+  if (!canonical) throw new Error(`${clipName} track targets unknown bone: ${sourceName}`);
+  return canonical;
+};
 // AnimDataModel tracks are full-pose source keys — playable directly, one glTF
-// clip per dumped sequence (pose sequences like A_Als_Stand_Pose included).
+// clip per dumped sequence (pose sequences like A_Als_Stand_Pose included). A few
+// upstream arms-only clips retain import-time bone-name capitalization; canonicalize
+// those names against SK_Als so every channel binds instead of becoming targetless.
 const clips = dump.anims.map((a) => ({
   name: a.name,
   fps: a.fps,
   numKeys: a.numberOfKeys,
-  tracks: a.tracks.map((t) => ({
-    bone: t.bone,
-    pos: Array.from({ length: a.numberOfKeys }, (_, i) => key(t.pos, i) ?? refByName[t.bone].t),
-    rot: Array.from({ length: a.numberOfKeys }, (_, i) => qNorm(key(t.rot, i) ?? refByName[t.bone].r)),
-  })),
+  tracks: a.tracks.map((t) => {
+    const bone = canonicalBoneName(a.name, t.bone);
+    return {
+      bone,
+      pos: Array.from({ length: a.numberOfKeys }, (_, i) => key(t.pos, i) ?? refByName[bone].t),
+      rot: Array.from({ length: a.numberOfKeys }, (_, i) => qNorm(key(t.rot, i) ?? refByName[bone].r)),
+    };
+  }),
 }));
 
 // ---------- build document ----------

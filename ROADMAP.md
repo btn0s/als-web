@@ -49,8 +49,11 @@ Copy from `../exposure-r3f/src/player/`, tests included, adapting names only:
 - [x] `blendspace` · `actionSequence` · `actionArbiter` · `slotMontage` · `scrubbedPose` ·
       `proceduralPose` · `footIk` + `ikChain` — transplanted verbatim, 107 tests green; wired so
       far: blendspace + weightTable + one region rule (rest wire up through M3) *(2026-07-23)*
-- [ ] `locomotionProfile` — re-point at the new pack; verify root-motion stride measurement against
-      UE5-exported root translation conventions
+- [ ] `locomotionProfile` — re-point at the ALS pack **as constants, not measurement** (verified
+      2026-07-23 against plugin source: clips are fully in-place, root track constant zero; speeds
+      live in `AlsMovementSettings.h` / `MS_Als_Normal` — walk 1.75, run 3.75, sprint 6.5 m/s,
+      crouch 1.5/2.0). Stride = speed × clip duration. The sibling's root-motion measurement was
+      built for a root-motion pack and reads zero here — wrong source, not a bug to patch
 - [ ] Pose-based camera (poseHeight publish + self-calibrating pivot) and the reticle-true zoom
 - [ ] Dev tooling: test hooks (`__triggerJump`, `__playClip`; `__setSpeed` + `__weightTable`
       landed with the M1 proof), capture scripts, Leva root taxonomy
@@ -73,6 +76,13 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
 - [ ] **ALS Refactored's animation set** extracted (licensing settled 2026-07-23: the repo's
       blanket MIT names the full author lineage — Sixze, Longmire, Yanıkoğlu — and covers its
       assets; preserve the upstream notice as `LICENSE-ALS-Refactored.md` beside ported assets)
+- [ ] **Animation float curves extracted** (architecture review 2026-07-23): ALS's runtime is
+      curve-driven — `AlsConstants.h` names them all: `FootLeft/RightLock`/`Ik`, `RotationYawSpeed`
+      (turn-in-place timing), `AllowTransitions`, `SprintBlock`, `Pose*`, per-region `Layer*`
+      alphas (incl. `Additive`/`LocalSpace` variants). They live in the same AnimDataModel Dump.cs
+      already parses — extend the dump + carry per-clip curves into the GLB (extras or sidecar
+      JSON). M3 turn-in-place, foot locking, and transitions are blocked without these; prefer
+      authored `FootLock` curves over the sibling's measured-gait heuristic once present
 - [ ] **Real `SKM_Als` geometry**: extend `Dump.cs` to parse the editor native-bulk mesh
       (FSkeletalMeshModel / import data) and replace the M0 proxy body in `assemble-glb.mjs`
 - [ ] **Scripted retarget UE5 → SK_Als layout** (see M0 discovery): map spine_04/05→spine_03,
@@ -98,7 +108,11 @@ data on the M1 substrate (weight-table entries, region rules, arbiter records), 
 - [ ] Rotation modes: velocity direction / looking direction / aiming — real 8-way blendspaces
       from authored directional clips (not cardinal-blend approximation)
 - [ ] Turn-in-place (authored Turn clips, scrubbed/arbitered) + start/stop/pivot transitions
-- [ ] Overlay states: ALS-style item/pose overlays via region rules (masked, per-bone)
+- [ ] Overlay states: ALS-style item/pose overlays via region rules (masked, per-bone) — SEED
+      rule alphas from the overlay assets' authored `Layer*` curves (dumped in M2), don't hand-tune
+      from scratch. Known deviation: ALS blends arm layers in MESH space; three.js PropertyMixer is
+      local-space only — additive variants port (makeClipAdditive + post-mixer procedural), the
+      mesh-space arm carry under spine lean does not. Accepted approximation, record in README
 - [ ] In-air: jump/fall with land recovery (`Land_Light`/`LandRoll` by fall speed)
 - [ ] Mantle/vault through the arbiter (one clock: warp + montage share normalized progress)
 - [ ] Foot IK with pelvis adaptation (the part exposure-r3f deliberately benched)

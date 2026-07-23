@@ -4,14 +4,18 @@
 # Chain: git clone (pinned tag) → Dump.cs (CUE4Parse: skeleton ref pose + AnimDataModel
 # raw tracks → JSON) → assemble-glb.mjs (axis/unit conversion, proxy body, GLB) →
 # validate-glb.mjs (structure + physical sanity) → copy into public/assets with the
-# upstream MIT notice. Extend the anim list here + ANIM extraction in M2.
+# upstream MIT notice. clips.manifest is the audited M3 animation allowlist.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 TAG="${ALS_TAG:-4.15}"
 WORK="${ALS_WORK:-$HOME/.cache/als-extract}"
 REPO_ROOT="$(cd ../.. && pwd)"
-ANIMS=(A_Als_Stand_Pose A_Als_Idle A_Als_Walk_Forward A_Als_Run_Forward A_Als_Sprint)
+ANIMS=()
+while IFS='|' read -r clip purpose checklist; do
+  [[ -z "$clip" || "$clip" == \#* ]] && continue
+  ANIMS+=("$clip")
+done < clips.manifest
 
 mkdir -p "$WORK/stage"
 if [ ! -d "$WORK/ALS-Refactored-$TAG" ]; then

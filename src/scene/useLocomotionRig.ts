@@ -9,6 +9,7 @@ import { REGION_PREDICATES } from '../player/trackMask'
 import { filterClipToBones } from '../player/trackMask'
 import { computeWeightTable, createWeightTable } from '../player/weightTable'
 import type { WeightTableInput } from '../player/weightTable'
+import { LEVA_ROOTS } from './levaRoots'
 
 /**
  * M1 applier: the pure weight table drives the mixer (the frame loop is an APPLIER, not a graph —
@@ -36,13 +37,20 @@ declare global {
     /** Dev/test hook: override the Leva speed input (m/s) — the M1 slice of `__triggerJump`-style
      * hooks (playtests stay live in the browser; hooks exist so gates can drive the rig). */
     __setSpeed?: (speed: number) => void
+    /** Dev/test hook: play a named source clip solo, or pass null to resume the weight table. */
+    __playClip?: (name: string | null) => boolean
+    /** `__triggerJump` is intentionally deferred until the jump system lands in M3. */
   }
 }
 
 export function useLocomotionRig(gltf: { animations: THREE.AnimationClip[]; scene: THREE.Object3D }, mixer: THREE.AnimationMixer) {
-  const [{ speed }, setControls] = useControls('Movement', () => ({
-    speed: { value: 0, min: 0, max: 4.5, step: 0.05, label: 'speed (m/s)' },
-  }))
+  const [{ speed }, setControls] = useControls(
+    LEVA_ROOTS.movement,
+    () => ({
+      speed: { value: 0, min: 0, max: 4.5, step: 0.05, label: 'speed (m/s)' },
+    }),
+    { order: 1 },
+  )
   const speedRef = useRef(speed)
   speedRef.current = speed
 
@@ -53,6 +61,9 @@ export function useLocomotionRig(gltf: { animations: THREE.AnimationClip[]; scen
 
   const rig = useMemo(() => {
     const byName = new Map(gltf.animations.map((c) => [c.name, c]))
+    const actionsByName = new Map(
+      gltf.animations.map((clip) => [clip.name, mixer.clipAction(clip)]),
+    )
     const roles: Partial<Record<keyof typeof CLIP_ROLES, THREE.AnimationAction>> = {}
     for (const [role, clipName] of Object.entries(CLIP_ROLES) as [keyof typeof CLIP_ROLES, string][]) {
       const clip = byName.get(clipName)
@@ -63,17 +74,84 @@ export function useLocomotionRig(gltf: { animations: THREE.AnimationClip[]; scen
       if (!clip) return []
       return [{ rule, action: mixer.clipAction(filterClipToBones(clip, REGION_PREDICATES[rule.region])) }]
     })
-    return { roles, overlays, complete: Boolean(roles.idle && roles.walkFwd && roles.jogFwd) }
+    const baseActions = new Set([
+      ...Object.values(roles),
+      ...overlays.map((overlay) => overlay.action),
+    ])
+    return {
+      actionsByName,
+      baseActions,
+      roles,
+      overlays,
+      complete: Boolean(roles.idle && roles.walkFwd && roles.jogFwd),
+    }
   }, [gltf.animations, mixer])
 
   useEffect(() => {
-    const actions = [...Object.values(rig.roles), ...rig.overlays.map((o) => o.action)]
-    for (const action of actions) {
+    for (const action of rig.baseActions) {
       action.setLoop(THREE.LoopRepeat, Infinity)
       action.setEffectiveWeight(0)
       action.play()
     }
-    return () => actions.forEach((a) => a.stop())
+    return () => rig.baseActions.forEach((action) => action.stop())
+  }, [rig])
+
+  const soloClip = useRef<string | null>(null)
+  const soloAction = useRef<THREE.AnimationAction | null>(null)
+  const preSoloWeights = useRef<Map<THREE.AnimationAction, number> | null>(null)
+
+  useEffect(() => {
+    window.__playClip = (name: string | null) => {
+      if (name === null) {
+        soloClip.current = null
+        if (soloAction.current && !rig.baseActions.has(soloAction.current)) {
+          soloAction.current.stop()
+        }
+        soloAction.current = null
+        if (preSoloWeights.current) {
+          for (const [action, weight] of preSoloWeights.current) {
+            action.setEffectiveWeight(weight)
+          }
+          preSoloWeights.current = null
+        }
+        return true
+      }
+
+      const nextSoloAction = rig.actionsByName.get(name)
+      if (!nextSoloAction) {
+        console.warn(`[Animation] Unknown clip "${name}"`)
+        return false
+      }
+
+      if (!preSoloWeights.current) {
+        preSoloWeights.current = new Map(
+          [...rig.actionsByName.values()].map((action) => [
+            action,
+            action.getEffectiveWeight(),
+          ]),
+        )
+      }
+      if (soloAction.current && !rig.baseActions.has(soloAction.current)) {
+        soloAction.current.stop()
+      }
+      soloClip.current = name
+      soloAction.current = nextSoloAction
+      nextSoloAction.reset()
+        .setLoop(THREE.LoopRepeat, Infinity)
+        .setEffectiveWeight(1)
+        .play()
+      return true
+    }
+
+    return () => {
+      delete window.__playClip
+      soloClip.current = null
+      if (soloAction.current && !rig.baseActions.has(soloAction.current)) {
+        soloAction.current.stop()
+      }
+      soloAction.current = null
+      preSoloWeights.current = null
+    }
   }, [rig])
 
   const standTargets = useRef([1, 0, 0])
@@ -87,6 +165,18 @@ export function useLocomotionRig(gltf: { animations: THREE.AnimationClip[]; scen
   })
 
   useFrame((_, delta) => {
+    const soloName = soloClip.current
+    if (soloName) {
+      for (const action of rig.actionsByName.values()) {
+        action.setEffectiveWeight(action === rig.actionsByName.get(soloName) ? 1 : 0)
+      }
+      for (const overlay of rig.overlays) {
+        overlay.action.setEffectiveWeight(0)
+      }
+      window.__weightTable = { [soloName]: 1 }
+      return
+    }
+
     if (!rig.complete) return
     updateLocomotionTargets(speedRef.current, standTargets.current, GAIT_SPEEDS, 0)
     const k = 1 - Math.exp(-DAMP_RATE * delta)
