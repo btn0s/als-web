@@ -2,7 +2,8 @@
 # ALS Refactored → public/assets/skm-als.glb, fully editor-free (no Unreal install).
 #
 # Chain: git clone (pinned tag) → Dump.cs (CUE4Parse: skeleton ref pose + AnimDataModel
-# raw tracks → JSON) → assemble-glb.mjs (axis/unit conversion, proxy body, GLB) →
+# raw tracks + SKM_Als editor LOD0 → JSON) → assemble-glb.mjs (axis/unit
+# conversion, skinned primitives, GLB) →
 # validate-glb.mjs (structure + physical sanity) → copy into public/assets with the
 # upstream MIT notice. clips.manifest is the audited M3 animation allowlist.
 set -euo pipefail

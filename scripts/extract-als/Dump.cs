@@ -1,22 +1,20 @@
 // Stage 1 of the ALS extraction chain: CUE4Parse → JSON.
 //
 // Uncooked (editor-saved) .uassets carry no cooked render/compressed data, so the
-// stock CUE4Parse-Conversion exporters can't run. What uncooked assets DO carry,
-// as plain tagged properties, is the full editor source: the skeleton's reference
-// pose (USkeleton.ReferenceSkeleton) and every animation's AnimDataModel with raw
-// per-bone key tracks. This stage dumps exactly that to JSON; assemble-glb.mjs
-// (stage 2) does additive composition, axis/unit conversion, and GLB writing.
-//
-// Mesh geometry is NOT here: SKM_Als's editor geometry lives in native bulk data
-// (SkeletalMeshEditorData) that CUE4Parse doesn't deserialize — parsing it is the
-// scheduled M2 follow-up; until then stage 2 builds a bone-proxy body.
+// stock CUE4Parse-Conversion exporters can't run. What uncooked assets DO carry
+// is the full editor source: the skeleton reference pose, SKM_Als editor LOD0,
+// and every animation's AnimDataModel with raw per-bone key tracks. This stage
+// dumps that source to JSON; assemble-glb.mjs (stage 2) handles basis/unit
+// conversion and GLB writing.
 //
 // Usage: dotnet run -- dump <stage-dir> <out.json> <AnimName> [AnimName...]
 
 using System.Text.Json;
 using CUE4Parse.FileProvider;
+using CUE4Parse.UE4.Assets;
 using CUE4Parse.UE4.Assets.Exports;
 using CUE4Parse.UE4.Assets.Exports.Animation;
+using CUE4Parse.UE4.Assets.Exports.SkeletalMesh;
 using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.Assets.Objects.Properties;
 using CUE4Parse.UE4.Versions;
@@ -25,6 +23,7 @@ public static class Dump
 {
     public static int Run(string srcDir, string outJson, string[] animNames)
     {
+        ObjectTypeRegistry.RegisterClass("SkeletalMesh", typeof(UAlsSkeletalMesh));
         var provider = new DefaultFileProvider(srcDir, SearchOption.AllDirectories, new VersionContainer(EGame.GAME_UE5_5));
         provider.Initialize();
         provider.Mount();
@@ -32,6 +31,9 @@ public static class Dump
         var skelFile = provider.Files.Values.First(f => f.NameWithoutExtension == "SK_Als" && f.Extension == "uasset");
         var skel = provider.LoadPackage(skelFile).GetExports().OfType<USkeleton>().First();
         var refSkel = skel.ReferenceSkeleton;
+        var meshFile = provider.Files.Values.First(f => f.NameWithoutExtension == "SKM_Als" && f.Extension == "uasset");
+        var meshPackage = provider.LoadPackage(meshFile);
+        var skeletalMesh = meshPackage.GetExports().OfType<UAlsSkeletalMesh>().First();
         var bones = refSkel.FinalRefBoneInfo.Select((b, i) => new
         {
             name = b.Name.Text,
@@ -41,6 +43,57 @@ public static class Dump
             r = Q(refSkel.FinalRefBonePose[i].Rotation),
             s = V(refSkel.FinalRefBonePose[i].Scale3D),
         }).ToArray();
+
+        var lod0 = skeletalMesh.LODModels[0];
+        var materialNames = skeletalMesh.SkeletalMaterials
+            .Select((material, index) =>
+                string.IsNullOrWhiteSpace(material.MaterialSlotName.Text)
+                    ? $"Material_{index}"
+                    : material.MaterialSlotName.Text)
+            .ToArray();
+        var meshSections = lod0.Sections.Select((section, sectionIndex) =>
+        {
+            if (section.MaterialIndex < 0 || section.MaterialIndex >= materialNames.Length)
+                throw new Exception(
+                    $"section {sectionIndex} references material {section.MaterialIndex}, " +
+                    $"but the mesh has {materialNames.Length} slots");
+            var sectionIndices = lod0.Indices
+                .Skip(section.BaseIndex)
+                .Take(section.NumTriangles * 3)
+                .Select(index => checked((int)((long)index - section.BaseVertexIndex)))
+                .ToArray();
+            if (sectionIndices.Any(index => index < 0 || index >= section.SoftVertices.Length))
+                throw new Exception(
+                    $"section {sectionIndex} has indices outside its {section.SoftVertices.Length} local vertices");
+
+            return new
+            {
+                materialIndex = (int)section.MaterialIndex,
+                materialName = materialNames[section.MaterialIndex],
+                maxBoneInfluences = section.MaxBoneInfluences,
+                boneMap = section.BoneMap.Select(index => (int)index).ToArray(),
+                positions = section.SoftVertices.Select(vertex => V(vertex.Position)).ToArray(),
+                normals = section.SoftVertices
+                    .Select(vertex => new[] { vertex.Normal.X, vertex.Normal.Y, vertex.Normal.Z })
+                    .ToArray(),
+                uv0 = section.SoftVertices.Select(vertex => new[] { vertex.UV0.U, vertex.UV0.V }).ToArray(),
+                joints = section.SoftVertices
+                    .Select(vertex => vertex.BoneIndices.Select(index => (int)index).ToArray())
+                    .ToArray(),
+                weights = section.SoftVertices
+                    .Select(vertex => vertex.BoneWeights.Select(weight => (int)weight).ToArray())
+                    .ToArray(),
+                indices = sectionIndices,
+            };
+        }).ToArray();
+        var allMeshVertices = lod0.Sections.SelectMany(section => section.SoftVertices).ToArray();
+        var weightSums = allMeshVertices.Select(vertex => vertex.BoneWeights.Sum(weight => (int)weight)).ToArray();
+        var influenceCounts = allMeshVertices
+            .Select(vertex => vertex.BoneWeights.Count(weight => weight > 0))
+            .ToArray();
+        if (weightSums.Any(sum => sum != byte.MaxValue))
+            throw new Exception(
+                $"skin weights are not normalized bytes: min={weightSums.Min()}, max={weightSums.Max()}");
 
         var anims = new List<object>();
         foreach (var animName in animNames)
@@ -79,8 +132,26 @@ public static class Dump
             });
         }
 
-        var payload = new { skeleton = new { bones }, anims };
+        var payload = new
+        {
+            skeleton = new { bones },
+            mesh = new
+            {
+                lod = 0,
+                numVertices = lod0.NumVertices,
+                numTriangles = lod0.Sections.Sum(section => section.NumTriangles),
+                materialNames,
+                maxInfluences = influenceCounts.Max(),
+                verticesOverFourInfluences = influenceCounts.Count(count => count > 4),
+                sections = meshSections,
+            },
+            anims,
+        };
         File.WriteAllText(outJson, JsonSerializer.Serialize(payload));
+        Console.WriteLine(
+            $"mesh LOD0: {lod0.NumVertices} vertices, {lod0.Sections.Sum(section => section.NumTriangles)} triangles, " +
+            $"{lod0.Sections.Length} sections, max {influenceCounts.Max()} influences, " +
+            $"{influenceCounts.Count(count => count > 4)} vertices over four");
         Console.WriteLine($"dumped {bones.Length} bones, {anims.Count} anims -> {outJson}");
         return 0;
     }

@@ -69,14 +69,15 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
 
 ## M2 — Content pipeline (the point of the UE5 bet)
 
-- [ ] Extraction path: **editor-free, no UE install** (decided 2026-07-23). CUE4Parse (.NET,
+- [x] Extraction path: **editor-free, no UE install** (decided + proven 2026-07-23). CUE4Parse (.NET,
       cross-platform incl. macOS arm64) reads the repo's loose `.uasset`s directly; export mesh +
       anims (glTF or psk/psa/ueformat → Blender batch import → GLB). One command per pack.
       If CUE4Parse lags the plugin's engine target (4.17 → UE 5.7), pin an older plugin release
       (e.g. 4.15 → UE 5.5) — the content is identical for our purposes.
-- [ ] **ALS Refactored's animation set** extracted (licensing settled 2026-07-23: the repo's
+- [x] **ALS Refactored's animation set** extracted — 67 curated clips via clips.manifest
+      *(2026-07-23; licensing settled: the repo's
       blanket MIT names the full author lineage — Sixze, Longmire, Yanıkoğlu — and covers its
-      assets; preserve the upstream notice as `LICENSE-ALS-Refactored.md` beside ported assets)
+      assets; upstream notice ships as `LICENSE-ALS-Refactored.md` beside ported assets)*
 - [ ] **Animation float curves extracted** (architecture review 2026-07-23): ALS's runtime is
       curve-driven — `AlsConstants.h` names them all: `FootLeft/RightLock`/`Ik`, `RotationYawSpeed`
       (turn-in-place timing), `AllowTransitions`, `SprintBlock`, `Pose*`, per-region `Layer*`
@@ -84,8 +85,13 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
       already parses — extend the dump + carry per-clip curves into the GLB (extras or sidecar
       JSON). M3 turn-in-place, foot locking, and transitions are blocked without these; prefer
       authored `FootLock` curves over the sibling's measured-gait heuristic once present
-- [ ] **Real `SKM_Als` geometry**: extend `Dump.cs` to parse the editor native-bulk mesh
-      (FSkeletalMeshModel / import data) and replace the M0 proxy body in `assemble-glb.mjs`
+- [x] **Real `SKM_Als` geometry** *(2026-07-23)*: geometry turned out to live INLINE in the
+      USkeletalMesh export (behind an extra strip-flags field CUE4Parse skips), not in
+      SkeletalMeshEditorData (that holds Oodle-compressed import data). 10,273 verts / 16,544
+      tris / 15 sections / 1.834m; rigid per-section skinning (max 1 influence — segmented
+      mannequin). Named trade: authored tangents don't decode yet (constant bytes); assembler
+      computes smooth area-weighted normals from geometry instead — revisit only if authored
+      hard edges matter
 - [x] **OUT OF SCOPE (scope sharpened 2026-07-23): anything that touches the skeleton.** The
       standalone port builds UE4-mannequin-native (SK_Als), period. The UE5 retarget/re-rig
       decision and the TacticalStealthOperation pack (stealth content) leave this repo with the

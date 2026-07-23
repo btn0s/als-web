@@ -13,6 +13,8 @@ const joints = root.listSkins()[0]?.listJoints() ?? [];
 const names = joints.map((j) => j.getName());
 const anims = root.listAnimations();
 const errs = [];
+const meshNodes = root.listNodes().filter((node) => node.getMesh());
+const meshPrimitives = meshNodes.flatMap((node) => node.getMesh().listPrimitives());
 const expectedBones = [
   'root', 'pelvis', 'spine_01', 'spine_02', 'spine_03',
   'clavicle_l', 'upperarm_l', 'lowerarm_l', 'hand_l',
@@ -53,6 +55,33 @@ for (const name of names)
   if (!expectedBoneSet.has(name)) errs.push(`unexpected bone: ${name}`);
 if (new Set(names).size !== names.length) errs.push('duplicate bone names in skin');
 
+if (meshNodes.length !== 1) errs.push(`expected one mesh node, found ${meshNodes.length}`);
+if (!meshNodes[0]?.getSkin()) errs.push('mesh node is not skinned');
+if (/proxy/i.test(meshNodes[0]?.getMesh()?.getName() ?? '')) errs.push('proxy mesh shipped instead of SKM_Als geometry');
+let vertexCount = 0;
+let triangleCount = 0;
+let boundsMinY = Infinity;
+let boundsMaxY = -Infinity;
+for (const [index, primitive] of meshPrimitives.entries()) {
+  const position = primitive.getAttribute('POSITION');
+  const normal = primitive.getAttribute('NORMAL');
+  const joints0 = primitive.getAttribute('JOINTS_0');
+  const weights0 = primitive.getAttribute('WEIGHTS_0');
+  const indices = primitive.getIndices();
+  if (!position) errs.push(`mesh primitive ${index} has no POSITION`);
+  if (!normal) errs.push(`mesh primitive ${index} has no NORMAL`);
+  if (!joints0 || !weights0) errs.push(`mesh primitive ${index} is missing skin attributes`);
+  if (!indices) errs.push(`mesh primitive ${index} is not indexed`);
+  vertexCount += position?.getCount() ?? 0;
+  triangleCount += (indices?.getCount() ?? 0) / 3;
+  boundsMinY = Math.min(boundsMinY, position?.getMin([])[1] ?? Infinity);
+  boundsMaxY = Math.max(boundsMaxY, position?.getMax([])[1] ?? -Infinity);
+}
+const meshHeight = boundsMaxY - boundsMinY;
+if (vertexCount <= 5000) errs.push(`mesh has only ${vertexCount} vertices (proxy or incomplete geometry)`);
+if (meshHeight < 1.6 || meshHeight > 2.1)
+  errs.push(`mesh bounding-box height ${meshHeight.toFixed(3)}m out of range`);
+
 if (anims.length < 1) errs.push('no animations');
 if (manifestSet.size !== manifest.length) errs.push('duplicate clip names in clips.manifest');
 for (const clip of manifest)
@@ -90,6 +119,9 @@ const pelvisHeight = t0[1]; // parent is root at origin, Y-up
 if (pelvisHeight < 0.7 || pelvisHeight > 1.2) errs.push(`pelvis height ${pelvisHeight.toFixed(3)}m out of range (axis/unit conversion suspect)`);
 
 console.log(`joints: ${joints.length}/${expectedBones.length} expected`);
+console.log(
+  `mesh: ${vertexCount} vertices, ${triangleCount} triangles, ${meshPrimitives.length} skinned sections, ` +
+  `${meshHeight.toFixed(3)}m bounding-box height`);
 console.log(`curated clips: ${anims.length}/${manifest.length} present`);
 console.log(`bindings: ${channelCount} channels target only expected SK_Als bones`);
 console.log(`root tracks: translation + rotation present in ${rootTrackCount}/${anims.length} clips`);

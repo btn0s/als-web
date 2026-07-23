@@ -11,8 +11,8 @@
 //      its own inverse; det(C)=-1 but conjugating a proper rotation stays proper,
 //      so no hand-tuned sign flips. Positions: C·p·0.01.
 //   3. GLB writing — bone nodes, skin with IBMs from the converted bind pose, and
-//      a rigid-skinned proxy body (box per bone segment). The proxy stands in for
-//      SKM_Als's real geometry until the M2 editor-bulk mesh parser lands.
+//      SKM_Als LOD0 primitives. A rigid bone proxy remains available only when an
+//      older dump does not contain mesh geometry.
 //
 // Usage: node assemble-glb.mjs <dump.json> <out.glb>
 
@@ -143,48 +143,200 @@ bones.forEach((b, i) => {
   world[i] = b.parent >= 0 ? mul4(world[b.parent], local) : local;
 });
 
-// ---------- proxy body: one box per bone segment ----------
-const positions = [], joints = [], weights = [], indices = [];
-const jointOf = [], childrenOf = bones.map(() => []);
-bones.forEach((b, i) => { if (b.parent >= 0) childrenOf[b.parent].push(i); });
-const visual = (n) => !/^(ik_|root$|VB )/.test(n);
-const boxTo = (ji, from, to, thick) => {
-  const dir = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
-  const len = Math.hypot(...dir);
-  if (len < 1e-4) return;
-  const d = dir.map((v) => v / len);
-  let up = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-  const sX = [d[1] * up[2] - d[2] * up[1], d[2] * up[0] - d[0] * up[2], d[0] * up[1] - d[1] * up[0]];
-  const nX = Math.hypot(...sX); const x = sX.map((v) => (v / nX) * thick);
-  const y = [d[1] * x[2] - d[2] * x[1], d[2] * x[0] - d[0] * x[2], d[0] * x[1] - d[1] * x[0]].map((v) => v * 1);
-  const vbase = positions.length / 3;
-  const corners = [];
-  for (const e of [from, to]) for (const a of [-1, 1]) for (const b2 of [-1, 1])
-    corners.push([e[0] + a * x[0] + b2 * y[0], e[1] + a * x[1] + b2 * y[1], e[2] + a * x[2] + b2 * y[2]]);
-  corners.forEach((c) => { positions.push(...c); joints.push(ji, 0, 0, 0); weights.push(1, 0, 0, 0); });
-  const f = [[0,1,3,2],[4,6,7,5],[0,4,5,1],[2,3,7,6],[0,2,6,4],[1,5,7,3]];
-  f.forEach(([a2,b3,c2,d2]) => indices.push(vbase+a2, vbase+b3, vbase+c2, vbase+a2, vbase+c2, vbase+d2));
+// ---------- real LOD0 mesh, with the M0 proxy retained as a dump fallback ----------
+const convertNormal = ([x, y, z]) => {
+  const converted = [x, z, y];
+  const length = Math.hypot(...converted);
+  if (length < 1e-8) throw new Error('mesh contains a zero-length normal');
+  return converted.map((value) => value / length);
 };
-bones.forEach((b, i) => {
-  if (!visual(b.name)) return;
-  const from = [world[i][12], world[i][13], world[i][14]];
-  const kids = childrenOf[i].filter((c) => visual(bones[c].name));
-  if (kids.length === 0) {
-    boxTo(i, from, [from[0], from[1] + 0.04, from[2]], 0.02); // leaf nub
-  } else {
-    kids.forEach((c) => boxTo(i, from, [world[c][12], world[c][13], world[c][14]], 0.018));
-  }
-});
 
-const posAcc = doc.createAccessor().setType('VEC3').setArray(new Float32Array(positions)).setBuffer(buffer);
-const jointAcc = doc.createAccessor().setType('VEC4').setArray(new Uint16Array(joints)).setBuffer(buffer);
-const weightAcc = doc.createAccessor().setType('VEC4').setArray(new Float32Array(weights)).setBuffer(buffer);
-const idxAcc = doc.createAccessor().setType('SCALAR').setArray(new Uint32Array(indices)).setBuffer(buffer);
-const mat = doc.createMaterial('proxy').setBaseColorFactor([0.55, 0.57, 0.6, 1]).setMetallicFactor(0).setRoughnessFactor(0.8);
-const prim = doc.createPrimitive()
-  .setAttribute('POSITION', posAcc).setAttribute('JOINTS_0', jointAcc).setAttribute('WEIGHTS_0', weightAcc)
-  .setIndices(idxAcc).setMaterial(mat);
-const mesh = doc.createMesh('SKM_Als_Proxy').addPrimitive(prim);
+// Named trade: the editor asset's AUTHORED tangents don't decode yet (the C# reader lands the
+// TangentZ slot on constant bytes — every dumped normal is [-1,-1,-1]). Until that decode is
+// fixed, compute smooth area-weighted vertex normals from the geometry itself, per section,
+// welding duplicate positions so seams within a section stay smooth. Untextured gray body ⇒
+// visually equivalent; revisit only if authored hard edges start to matter.
+const dumpedNormalsAreDegenerate = (sections) => {
+  const first = sections[0]?.normals?.[0];
+  return !first || sections.every((s) => s.normals.every(
+    (n) => n[0] === first[0] && n[1] === first[1] && n[2] === first[2]));
+};
+const computeSectionNormals = (positions, indices) => {
+  const weldKey = (p) => `${p[0].toFixed(4)},${p[1].toFixed(4)},${p[2].toFixed(4)}`;
+  const weldAccum = new Map();
+  const accumFor = (p) => {
+    const k = weldKey(p);
+    let a = weldAccum.get(k);
+    if (!a) { a = [0, 0, 0]; weldAccum.set(k, a); }
+    return a;
+  };
+  for (let t = 0; t < indices.length; t += 3) {
+    const a = positions[indices[t]], b = positions[indices[t + 1]], c = positions[indices[t + 2]];
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    // cross product magnitude is 2x triangle area — leave unnormalized for area weighting
+    const n = [
+      ab[1] * ac[2] - ab[2] * ac[1],
+      ab[2] * ac[0] - ab[0] * ac[2],
+      ab[0] * ac[1] - ab[1] * ac[0],
+    ];
+    for (const p of [a, b, c]) {
+      const acc = accumFor(p);
+      acc[0] += n[0]; acc[1] += n[1]; acc[2] += n[2];
+    }
+  }
+  return positions.map((p) => {
+    const a = accumFor(p);
+    const len = Math.hypot(...a) || 1;
+    return [a[0] / len, a[1] / len, a[2] / len];
+  });
+};
+let mesh;
+let meshStats;
+if (dump.mesh?.sections?.length) {
+  mesh = doc.createMesh('SKM_Als');
+  const materials = new Map();
+  let vertexCount = 0;
+  let triangleCount = 0;
+  let verticesOverFourInfluences = 0;
+
+  const useComputedNormals = dumpedNormalsAreDegenerate(dump.mesh.sections);
+  if (useComputedNormals) console.warn('dumped normals are degenerate — computing smooth normals from geometry');
+
+  for (const [sectionIndex, section] of dump.mesh.sections.entries()) {
+    const sectionPositions = section.positions.flatMap(convertPos);
+    const sourceNormals = useComputedNormals
+      ? computeSectionNormals(section.positions, section.indices)
+      : section.normals;
+    const sectionNormals = sourceNormals.flatMap(convertNormal);
+    const sectionUVs = section.uv0.flat();
+    const sectionJoints = [];
+    const sectionWeights = [];
+
+    for (let vertexIndex = 0; vertexIndex < section.positions.length; vertexIndex++) {
+      const influences = section.weights[vertexIndex]
+        .map((weight, influenceIndex) => ({
+          weight,
+          localJoint: section.joints[vertexIndex][influenceIndex],
+        }))
+        .filter(({ weight }) => weight > 0)
+        .map(({ weight, localJoint }) => {
+          const skinJoint = section.boneMap[localJoint];
+          if (!Number.isInteger(skinJoint) || skinJoint < 0 || skinJoint >= bones.length) {
+            throw new Error(
+              `section ${sectionIndex} vertex ${vertexIndex} maps local joint ${localJoint} outside BoneMap`);
+          }
+          return { weight, skinJoint };
+        })
+        .sort((a, b) => b.weight - a.weight);
+
+      if (influences.length > 4) verticesOverFourInfluences++;
+      const selected = influences.slice(0, 4);
+      const totalWeight = selected.reduce((sum, influence) => sum + influence.weight, 0);
+      if (totalWeight <= 0) throw new Error(`section ${sectionIndex} vertex ${vertexIndex} has no skin weight`);
+      for (let i = 0; i < 4; i++) {
+        sectionJoints.push(selected[i]?.skinJoint ?? 0);
+        sectionWeights.push((selected[i]?.weight ?? 0) / totalWeight);
+      }
+    }
+
+    // C swaps Y/Z and changes handedness, so reverse each triangle to retain
+    // the UE front face after conversion.
+    const sectionIndices = [];
+    for (let i = 0; i < section.indices.length; i += 3)
+      sectionIndices.push(section.indices[i], section.indices[i + 2], section.indices[i + 1]);
+
+    const material = materials.get(section.materialName) ?? doc.createMaterial(section.materialName)
+      .setBaseColorFactor([0.55, 0.57, 0.6, 1])
+      .setMetallicFactor(0)
+      .setRoughnessFactor(0.8);
+    materials.set(section.materialName, material);
+
+    const primitive = doc.createPrimitive()
+      .setAttribute('POSITION', doc.createAccessor()
+        .setType('VEC3').setArray(new Float32Array(sectionPositions)).setBuffer(buffer))
+      .setAttribute('NORMAL', doc.createAccessor()
+        .setType('VEC3').setArray(new Float32Array(sectionNormals)).setBuffer(buffer))
+      .setAttribute('TEXCOORD_0', doc.createAccessor()
+        .setType('VEC2').setArray(new Float32Array(sectionUVs)).setBuffer(buffer))
+      .setAttribute('JOINTS_0', doc.createAccessor()
+        .setType('VEC4').setArray(new Uint16Array(sectionJoints)).setBuffer(buffer))
+      .setAttribute('WEIGHTS_0', doc.createAccessor()
+        .setType('VEC4').setArray(new Float32Array(sectionWeights)).setBuffer(buffer))
+      .setIndices(doc.createAccessor()
+        .setType('SCALAR').setArray(new Uint32Array(sectionIndices)).setBuffer(buffer))
+      .setMaterial(material);
+    mesh.addPrimitive(primitive);
+    vertexCount += section.positions.length;
+    triangleCount += section.indices.length / 3;
+  }
+
+  if (vertexCount !== dump.mesh.numVertices || triangleCount !== dump.mesh.numTriangles)
+    throw new Error(
+      `assembled mesh totals ${vertexCount}/${triangleCount}, dump reports ` +
+      `${dump.mesh.numVertices}/${dump.mesh.numTriangles}`);
+  if (verticesOverFourInfluences !== dump.mesh.verticesOverFourInfluences)
+    throw new Error(
+      `influence reduction count ${verticesOverFourInfluences}, dump reports ` +
+      `${dump.mesh.verticesOverFourInfluences}`);
+  meshStats = {
+    kind: 'real',
+    vertexCount,
+    triangleCount,
+    sectionCount: dump.mesh.sections.length,
+    verticesOverFourInfluences,
+  };
+} else {
+  const positions = [], joints = [], weights = [], indices = [];
+  const childrenOf = bones.map(() => []);
+  bones.forEach((b, i) => { if (b.parent >= 0) childrenOf[b.parent].push(i); });
+  const visual = (n) => !/^(ik_|root$|VB )/.test(n);
+  const boxTo = (ji, from, to, thick) => {
+    const dir = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+    const len = Math.hypot(...dir);
+    if (len < 1e-4) return;
+    const d = dir.map((v) => v / len);
+    const up = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const sX = [d[1] * up[2] - d[2] * up[1], d[2] * up[0] - d[0] * up[2], d[0] * up[1] - d[1] * up[0]];
+    const nX = Math.hypot(...sX); const x = sX.map((v) => (v / nX) * thick);
+    const y = [d[1] * x[2] - d[2] * x[1], d[2] * x[0] - d[0] * x[2], d[0] * x[1] - d[1] * x[0]];
+    const vbase = positions.length / 3;
+    const corners = [];
+    for (const e of [from, to]) for (const a of [-1, 1]) for (const b2 of [-1, 1])
+      corners.push([e[0] + a * x[0] + b2 * y[0], e[1] + a * x[1] + b2 * y[1], e[2] + a * x[2] + b2 * y[2]]);
+    corners.forEach((c) => { positions.push(...c); joints.push(ji, 0, 0, 0); weights.push(1, 0, 0, 0); });
+    const f = [[0,1,3,2],[4,6,7,5],[0,4,5,1],[2,3,7,6],[0,2,6,4],[1,5,7,3]];
+    f.forEach(([a,b,c,d2]) => indices.push(vbase+a, vbase+b, vbase+c, vbase+a, vbase+c, vbase+d2));
+  };
+  bones.forEach((b, i) => {
+    if (!visual(b.name)) return;
+    const from = [world[i][12], world[i][13], world[i][14]];
+    const kids = childrenOf[i].filter((c) => visual(bones[c].name));
+    if (kids.length === 0) boxTo(i, from, [from[0], from[1] + 0.04, from[2]], 0.02);
+    else kids.forEach((c) => boxTo(i, from, [world[c][12], world[c][13], world[c][14]], 0.018));
+  });
+
+  const material = doc.createMaterial('proxy')
+    .setBaseColorFactor([0.55, 0.57, 0.6, 1]).setMetallicFactor(0).setRoughnessFactor(0.8);
+  const primitive = doc.createPrimitive()
+    .setAttribute('POSITION', doc.createAccessor()
+      .setType('VEC3').setArray(new Float32Array(positions)).setBuffer(buffer))
+    .setAttribute('JOINTS_0', doc.createAccessor()
+      .setType('VEC4').setArray(new Uint16Array(joints)).setBuffer(buffer))
+    .setAttribute('WEIGHTS_0', doc.createAccessor()
+      .setType('VEC4').setArray(new Float32Array(weights)).setBuffer(buffer))
+    .setIndices(doc.createAccessor()
+      .setType('SCALAR').setArray(new Uint32Array(indices)).setBuffer(buffer))
+    .setMaterial(material);
+  mesh = doc.createMesh('SKM_Als_Proxy').addPrimitive(primitive);
+  meshStats = {
+    kind: 'proxy',
+    vertexCount: positions.length / 3,
+    triangleCount: indices.length / 3,
+    sectionCount: 1,
+    verticesOverFourInfluences: 0,
+  };
+}
 
 const ibms = new Float32Array(bones.length * 16);
 bones.forEach((b, i) => ibms.set(inv4Rigid(world[i]), i * 16));
@@ -215,4 +367,7 @@ for (const clip of clips) {
 
 await new NodeIO().write(outPath, doc);
 const clipDesc = clips.map((c) => `${c.name} ${(c.numKeys / c.fps).toFixed(2)}s`).join(', ');
-console.log(`wrote ${outPath}: ${bones.length} joints, ${positions.length / 3} proxy verts, clips: ${clipDesc}`);
+console.log(
+  `wrote ${outPath}: ${bones.length} joints, ${meshStats.vertexCount} ${meshStats.kind} verts, ` +
+  `${meshStats.triangleCount} triangles, ${meshStats.sectionCount} sections, ` +
+  `${meshStats.verticesOverFourInfluences} vertices reduced to four influences, clips: ${clipDesc}`);
