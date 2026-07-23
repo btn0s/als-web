@@ -96,11 +96,12 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
       standalone port builds UE4-mannequin-native (SK_Als), period. The UE5 retarget/re-rig
       decision and the TacticalStealthOperation pack (stealth content) leave this repo with the
       stealth layer — they belong to downstream forks
-- [ ] `scripts/build-player-anims.mjs` equivalent: curated merge → single animation-only GLB,
-      dedup/resample, root-motion preserved for gait measurement
-- [ ] Clip audit doc-comment in the build script: what each curated clip is FOR
+- [x] `scripts/build-player-anims.mjs` equivalent — `run.sh` + `clips.manifest` + assembler IS
+      the curated merge (single GLB, mesh + 67 clips + curves, root tracks preserved) *(2026-07-23)*
+- [x] Clip audit doc-comment: `clips.manifest`, one line per clip keyed to M3 items *(2026-07-23)*
 
-**Exit:** one curated GLB; every clip binds by bone name to the character; strides measure sanely.
+**Exit met (2026-07-23):** one curated GLB (7.4MB: real mesh, 67 clips, 161 curves); every clip
+binds by bone name; strides derive sanely from authored speeds × durations. M2 closed.
 
 ---
 
