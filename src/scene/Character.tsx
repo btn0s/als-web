@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
+import { applyCharacterMaterialOverrides } from './characterMaterials'
 import type { CharacterPoseSample } from './poseCameraState'
 import { useLocomotionRig } from './useLocomotionRig'
 
@@ -46,6 +47,7 @@ function useCharacterGltf() {
         const resourcePath = new URL('.', response.url).href
         const loadedGltf = await new GLTFLoader().parseAsync(buffer, resourcePath)
         if (!controller.signal.aborted) {
+          applyCharacterMaterialOverrides(loadedGltf.scene)
           setGltf(loadedGltf)
         }
       } catch (error) {

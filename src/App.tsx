@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Character } from './scene/Character'
 import { PoseOrbitCamera } from './scene/PoseOrbitCamera'
+import { PostProcessing } from './scene/PostProcessing'
 import { createCharacterPoseSample } from './scene/poseCameraState'
 import './App.css'
 
@@ -24,14 +25,19 @@ function Scene() {
 
   return (
     <>
-      <color attach="background" args={['#10141b']} />
-      <ambientLight intensity={0.7} />
+      <color attach="background" args={['#18202b']} />
+      <hemisphereLight args={['#c8ddff', '#202633', 1.1]} />
       <directionalLight
         castShadow
-        intensity={2.5}
-        position={[4, 8, 5]}
-        shadow-mapSize={[1024, 1024]}
+        color="#fff1db"
+        intensity={3.2}
+        position={[4.5, 7.5, 5]}
+        shadow-bias={-0.0001}
+        shadow-normalBias={0.025}
+        shadow-radius={4}
+        shadow-mapSize={[2048, 2048]}
       />
+      <directionalLight color="#9abfff" intensity={1.15} position={[-4, 3.5, 2]} />
 
       <Character onSizeChange={setCharacterSize} poseSample={poseSample} />
 
@@ -45,6 +51,7 @@ function Scene() {
         sectionSize={gridSize / 8}
       />
       <PoseOrbitCamera characterSize={characterSize} poseSample={poseSample} />
+      <PostProcessing />
       <SceneReady />
     </>
   )
@@ -53,7 +60,15 @@ function Scene() {
 function App() {
   return (
     <main className="app-shell">
-      <Canvas camera={{ fov: 42 }} shadows>
+      <Canvas
+        camera={{ fov: 42 }}
+        gl={{
+          antialias: false,
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 1.05,
+        }}
+        shadows="soft"
+      >
         <Scene />
       </Canvas>
     </main>
