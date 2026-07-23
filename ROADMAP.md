@@ -147,7 +147,12 @@ in under an hour.
 
 ## M5 — Stealth on top
 
-Port the stealth layer from `../exposure-r3f` (all skeleton-agnostic):
+Port the stealth layer from **`../exposure-demo`** (survey 2026-07-23: exposure-r3f never started
+its exposure/guard port — the working code is the vanilla-three prototype in exposure-demo; only
+the HUD-stub/store *pattern* comes from exposure-r3f). Pure halves (exposure math, navGrid,
+perception/awareness/takedown, wallCover) are skeleton-agnostic and port early; guard
+presentation + TSO-clip content stay gated on the pose runtime and the deferred skeleton
+decision below.
 
 - [ ] Exposure model (light + sound) + HUD meters
 - [ ] One guard: perception cone / LOS / graded awareness on patrol
