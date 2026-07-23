@@ -1,9 +1,10 @@
 # ROADMAP.md — als-ue5-r3f
 
 A web port of **ALS Refactored** ([Sixze/ALS-Refactored](https://github.com/Sixze/ALS-Refactored),
-the UE5-native rework of Advanced Locomotion System) on React Three Fiber, built as a
-**reference repo / template**: UE5-Manny-skeleton-native so the modern Fab animation ecosystem
-drops in with no retargeting. Stealth gameplay layers on top once the locomotion template stands.
+the C++ rework of Advanced Locomotion System) on React Three Fiber: **the standalone web port of
+ALS** (scope sharpened 2026-07-23) — a reference repo / template whose deliverable is ALS-grade
+locomotion on the web, full stop. Gameplay layers (stealth etc.) are downstream projects that
+fork this, not milestones here.
 
 **Lineage:** sibling of `../exposure-r3f`, which pioneered the architecture on a UE4-style rig
 (Quaternius UAL) — pure weight table, region-overlay rules, track-mask regions, action arbiter,
@@ -85,12 +86,10 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
       authored `FootLock` curves over the sibling's measured-gait heuristic once present
 - [ ] **Real `SKM_Als` geometry**: extend `Dump.cs` to parse the editor native-bulk mesh
       (FSkeletalMeshModel / import data) and replace the M0 proxy body in `assemble-glb.mjs`
-- [ ] **DEFERRED TO END (user 2026-07-23): anything that touches the skeleton.** The project
-      builds UE4-mannequin-native (SK_Als) — no destructive skeleton moves mid-project. The
-      UE5→SK_Als retarget (spine_04/05→spine_03, neck_02→neck_01) OR re-rig-UE5-native decision,
-      and the **TacticalStealthOperation pack** that depends on it (64 clips, owned, UE5-native:
-      WallHug/OnLedge/PipeHang sets, Land/LandRoll, rolls, Headlock/CarryBody), all move to the
-      stealth-content step in M5 — decided once, at the end, with the template already stable
+- [x] **OUT OF SCOPE (scope sharpened 2026-07-23): anything that touches the skeleton.** The
+      standalone port builds UE4-mannequin-native (SK_Als), period. The UE5 retarget/re-rig
+      decision and the TacticalStealthOperation pack (stealth content) leave this repo with the
+      stealth layer — they belong to downstream forks
 - [ ] `scripts/build-player-anims.mjs` equivalent: curated merge → single animation-only GLB,
       dedup/resample, root-motion preserved for gait measurement
 - [ ] Clip audit doc-comment in the build script: what each curated clip is FOR
@@ -145,21 +144,12 @@ in under an hour.
 
 ---
 
-## M5 — Stealth on top
+## Out of scope — downstream forks
 
-Port the stealth layer from **`../exposure-demo`** (survey 2026-07-23: exposure-r3f never started
-its exposure/guard port — the working code is the vanilla-three prototype in exposure-demo; only
-the HUD-stub/store *pattern* comes from exposure-r3f). Pure halves (exposure math, navGrid,
-perception/awareness/takedown, wallCover) are skeleton-agnostic and port early; guard
-presentation + TSO-clip content stay gated on the pose runtime and the deferred skeleton
-decision below.
-
-- [ ] Exposure model (light + sound) + HUD meters
-- [ ] One guard: perception cone / LOS / graded awareness on patrol
-- [ ] Stealth-specific animation content: sneak overlays, wall-hug + peeks (TSO clips), takedown/
-      interrogate as arbiter action records (Headlock/CarryBody clips are already in hand) —
-      **this is where the deferred UE5-retarget-or-re-rig decision from M2 gets made**, with the
-      whole template stable behind it
+Stealth (exposure model, guards, TSO content) is DEFERRED OUT of this repo entirely (user
+2026-07-23): this repo is the standalone web port of ALS, and M4 is its final milestone. A
+completed transplant survey of `../exposure-demo`'s stealth layer (module inventory, port order,
+gates) is preserved in session memory for whichever downstream fork picks it up.
 
 ---
 

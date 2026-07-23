@@ -1,9 +1,10 @@
 # AGENTS.md
 
-Web port of **ALS Refactored** (the C++ rework of Advanced Locomotion System) on React Three
-Fiber — UE4-mannequin-skeleton-native (SK_Als; skeleton decisions deferred to M5), built as a
-reference repo / template, with stealth layered on later. `ROADMAP.md` is the authoritative
-plan — read it before feature work.
+**The standalone web port of ALS Refactored** (the C++ rework of Advanced Locomotion System) on
+React Three Fiber — UE4-mannequin-skeleton-native (SK_Als), built as a reference repo / template.
+ALS-grade locomotion on the web IS the deliverable; gameplay layers (stealth etc.) happen in
+downstream forks, in later sessions — not here. `ROADMAP.md` is the authoritative plan — read it
+before feature work.
 
 ## Ground rules
 
