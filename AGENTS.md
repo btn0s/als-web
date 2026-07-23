@@ -1,1 +1,51 @@
-CLAUDE.md
+# AGENTS.md
+
+Web port of **ALS Refactored** (the C++ rework of Advanced Locomotion System) on React Three
+Fiber — UE4-mannequin-skeleton-native (SK_Als; skeleton decisions deferred to M5), built as a
+reference repo / template, with stealth layered on later. `ROADMAP.md` is the authoritative
+plan — read it before feature work.
+
+## Ground rules
+
+- **ALS fidelity over convenience:** the point is to stay as true as possible to ALS — even when
+  that means inventing systems and tooling that don't exist for three.js yet (editor-free .uasset
+  extraction, curve-driven layering, an owned pose-buffer runtime). Inventing the missing tooling
+  IS the project; it's a net good for web gamedev and animation tooling. When a shortcut and a
+  faithful mechanism compete, port the mechanism.
+- **Docs philosophy:** code speaks for itself. ROADMAP.md (plan) + this file (orientation) are
+  the only standing docs; design rationale lives in code comments at the relevant site. No
+  spec/history markdown files.
+- **Fix quality bar:** land fixes at the existing architectural seam, in the codebase's idiom.
+  No reward hacks (no test special-casing, no symptom suppression). Deliberately scoped tactical
+  patches are fine when the real fix is scheduled — say so and name the trade.
+- **Licensing guardrail:** never ship Epic-published content (Manny/Quinn packs, MetaHumans —
+  Epic-designated UE-only). ALS Refactored's assets are cleared under its MIT (settled 2026-07-23,
+  see ROADMAP guardrails; ship the upstream notice). Purchased Fab content is gitignored, never
+  committed. Verify per-listing before any new asset enters the pack.
+- **Playtesting:** the user playtests feel LIVE in the browser — no headless feel-comparison
+  smokes beyond the sanctioned Playwright gate.
+
+## Sibling reference — `../exposure-r3f`
+
+The architecture was pioneered there on a UE4-style rig and is transplanted here (see ROADMAP M1):
+pure weight table (anti-T-pose coverage invariant), declarative region-overlay rules with
+ride-alphas, track-mask regions (prefix-based), action arbiter with exactly-once exit cleanup,
+pose-based camera. Treat that repo as read-only reference; improvements flow forward into this
+one. Where the sibling worked around missing authored data (measured-gait foot locking,
+root-motion stride measurement), this repo uses ALS's authored data instead (FootLock curves,
+AlsMovementSettings speeds) — see the ROADMAP architecture-review notes.
+
+**Animation applier (decision 2026-07-23):** an OWNED pose-buffer runtime — sample clips into
+typed-array local-pose buffers, blend in pose space (per-bone masks, additive, mesh-space
+capable), write the skeleton once per frame — replaces `THREE.AnimationMixer` from M3 on
+(`vibe-stack/ggez` anim-core is the pattern reference, not a dependency). The pure modules above
+are the graph description and drive it unchanged. The mixer-era constraints the sibling designed
+around (no per-bone blend API; PropertyMixer blending weight shortfalls toward BIND POSE, forcing
+the ~1 coverage invariant; the single complementary montage gate) are RETIRED with the mixer —
+coverage survives as a debug assertion, not a survival rule. Until the runtime lands, the M1
+mixer applier (`useLocomotionRig` + track-filter masking) is what runs.
+
+## Stack
+
+Vite react-ts · React 19 · @react-three/fiber · drei · @react-three/rapier · zustand · leva ·
+vitest (pure logic, `include: src/**` only) + one Playwright smoke. Package manager: pnpm.
