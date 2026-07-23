@@ -3,6 +3,7 @@ import { useControls } from 'leva'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { updateLocomotionTargets, STAND } from '../player/blendspace'
+import { ALS_AUTHORED_GAIT_SPEEDS } from '../player/locomotionProfile'
 import { evaluateRegionOverlays, REGION_OVERLAY_RULES } from '../player/regionOverlays'
 import type { OverlayContext } from '../player/regionOverlays'
 import { REGION_PREDICATES } from '../player/trackMask'
@@ -17,11 +18,15 @@ import { LEVA_ROOTS } from './levaRoots'
  * under `computeWeightTable`, plus the shipped region rule as a masked overlay. Crouch/crawl/
  * jump/montage inputs are wired but held at rest until their systems land (M3).
  *
- * Gait speeds are PLACEHOLDERS until locomotionProfile re-measures them from this pack (M2) —
- * they only shape the Leva slider's crossfade points, not movement (nothing translates yet).
- * Phase-locking (shared footfall phase; updateLocomotionPhase) also waits for measured strides.
+ * Authored ALS gait speeds shape the Leva slider's crossfade points; they do not drive movement
+ * yet (nothing translates in this proof). Sprint remains overlay-only rather than a selectable
+ * gait until ROADMAP M3 adds it. Phase-locking (shared footfall phase; updateLocomotionPhase)
+ * also waits for locomotion strides to be wired.
  */
-const GAIT_SPEEDS = { walk: 1.75, jog: 3.5 }
+const GAIT_SPEEDS = {
+  walk: ALS_AUTHORED_GAIT_SPEEDS.standing.walk,
+  jog: ALS_AUTHORED_GAIT_SPEEDS.standing.run,
+}
 const CLIP_ROLES = {
   idle: 'A_Als_Idle',
   walkFwd: 'A_Als_Walk_Forward',
@@ -47,7 +52,13 @@ export function useLocomotionRig(gltf: { animations: THREE.AnimationClip[]; scen
   const [{ speed }, setControls] = useControls(
     LEVA_ROOTS.movement,
     () => ({
-      speed: { value: 0, min: 0, max: 4.5, step: 0.05, label: 'speed (m/s)' },
+      speed: {
+        value: 0,
+        min: 0,
+        max: ALS_AUTHORED_GAIT_SPEEDS.standing.sprint,
+        step: 0.05,
+        label: 'speed (m/s)',
+      },
     }),
     { order: 1 },
   )

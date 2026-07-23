@@ -27,11 +27,15 @@ ride-alphas, track-mask regions (prefix-based — already UE5-bone-correct), act
 exactly-once exit cleanup, pose-based camera, measured-gait foot-locking. Treat that repo as
 read-only reference; improvements flow forward into this one.
 
-Key three.js constraints (verified against source, documented in that repo's trackMask.ts /
-slotMontage.ts / proceduralPose.ts headers): no per-bone blend API — masking = track filtering;
-PropertyMixer blends weight shortfalls toward BIND POSE, so the base layer must cover every bone
-at total weight ~1; a single complementary gate for montages; additive/procedural layers apply
-post-mixer in one ordered frame callback.
+**Animation applier (decision 2026-07-23):** an OWNED pose-buffer runtime — sample clips into
+typed-array local-pose buffers, blend in pose space (per-bone masks, additive, mesh-space
+capable), write the skeleton once per frame — replaces `THREE.AnimationMixer` from M3 on
+(`vibe-stack/ggez` anim-core is the pattern reference, not a dependency). The pure modules above
+are the graph description and drive it unchanged. The mixer-era constraints the sibling designed
+around (no per-bone blend API; PropertyMixer blending weight shortfalls toward BIND POSE, forcing
+the ~1 coverage invariant; the single complementary montage gate) are RETIRED with the mixer —
+coverage survives as a debug assertion, not a survival rule. Until the runtime lands, the M1
+mixer applier (`useLocomotionRig` + track-filter masking) is what runs.
 
 ## Stack
 

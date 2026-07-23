@@ -103,6 +103,16 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
 ALS Refactored's taxonomy as the checklist, replicated as closely as the web stack allows —
 data on the M1 substrate (weight-table entries, region rules, arbiter records), not new systems:
 
+- [ ] **Owned pose-buffer animation runtime FIRST** (decision 2026-07-23 — no building M3 on the
+      mixer): sample clips into typed-array local-pose buffers → blend in pose space (lerp/slerp
+      with quaternion neighborhood, per-bone masked, additive local-space, mesh-space capable) →
+      write skeleton once + root-motion delta. ggez (`vibe-stack/ggez` anim-core/anim-runtime,
+      MIT) is the pattern REFERENCE, not a dependency — the math is small and we own it. The pure
+      modules (weightTable, regionOverlays, blendspace, arbiter) are the graph description and
+      drive the new applier unchanged; `useLocomotionRig` re-points; mixer-era machinery
+      (`filterClipToBones` as applier, bind-pose coverage as a hard invariant) retires — coverage
+      stays as a debug assertion, not a survival constraint. This LIFTS the mesh-space arm-layering
+      approximation recorded below.
 - [ ] Gaits: walk / run / sprint with authored speeds; stride warping if the clips demand it
 - [ ] Stances: standing / crouching (+ our prone extension); stance ladder + staged transitions
 - [ ] Rotation modes: velocity direction / looking direction / aiming — real 8-way blendspaces
@@ -110,9 +120,8 @@ data on the M1 substrate (weight-table entries, region rules, arbiter records), 
 - [ ] Turn-in-place (authored Turn clips, scrubbed/arbitered) + start/stop/pivot transitions
 - [ ] Overlay states: ALS-style item/pose overlays via region rules (masked, per-bone) — SEED
       rule alphas from the overlay assets' authored `Layer*` curves (dumped in M2), don't hand-tune
-      from scratch. Known deviation: ALS blends arm layers in MESH space; three.js PropertyMixer is
-      local-space only — additive variants port (makeClipAdditive + post-mixer procedural), the
-      mesh-space arm carry under spine lean does not. Accepted approximation, record in README
+      from scratch. (Mesh-space arm layering: previously an accepted mixer limitation — the
+      pose-buffer runtime above makes it implementable; do it if parity footage demands it)
 - [ ] In-air: jump/fall with land recovery (`Land_Light`/`LandRoll` by fall speed)
 - [ ] Mantle/vault through the arbiter (one clock: warp + montage share normalized progress)
 - [ ] Foot IK with pelvis adaptation (the part exposure-r3f deliberately benched)

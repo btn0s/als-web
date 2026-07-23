@@ -1,64 +1,65 @@
-import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
-import { measureGait } from './locomotionProfile';
+import * as THREE from 'three'
+import { describe, expect, it } from 'vitest'
+import {
+  ALS_AUTHORED_GAIT_SPEEDS,
+  buildLocomotionProfile,
+  resolveGaitSpeeds,
+} from './locomotionProfile'
 
-function rootMotionClip(name: string, times: number[], positions: number[]) {
-  return new THREE.AnimationClip(
-    name,
-    times[times.length - 1],
-    [new THREE.VectorKeyframeTrack('root.position', times, positions)],
-  );
+function clip(name: string, duration: number) {
+  return new THREE.AnimationClip(name, duration, [
+    new THREE.VectorKeyframeTrack(
+      'root.position',
+      [0, duration],
+      [0, 0, 0, 0, 0, 0],
+    ),
+  ])
 }
 
-function rootPositions(clip: THREE.AnimationClip) {
-  return Array.from(clip.tracks[0].values);
-}
+describe('ALS locomotion profile', () => {
+  it('exposes the exact ALS authored gait speeds', () => {
+    expect(ALS_AUTHORED_GAIT_SPEEDS).toEqual({
+      standing: { walk: 1.75, run: 3.75, sprint: 6.5 },
+      crouching: { walk: 1.5, run: 2.0 },
+    })
+  })
 
-describe('measureGait root-motion cleanup', () => {
-  it('measures XZ stride and removes a traversal root-Y rise without erasing its local bob', () => {
-    const clip = rootMotionClip(
-      'ClimbUp_1m',
-      [0, 0.25, 1],
-      [
-        2, 0.25, 3,
-        2.5, 0.875, 3.5,
-        3, 1.25, 3,
-      ],
-    );
+  it('derives each loaded gait stride from its authored speed and clip duration', () => {
+    const profile = buildLocomotionProfile([
+      clip('A_Als_Idle', 2),
+      clip('A_Als_Walk_Forward', 1.133),
+      clip('A_Als_Run_Forward', 0.8),
+      clip('A_Als_Sprint', 0.6),
+      clip('A_Als_Crouch_Idle', 2),
+      clip('A_Als_Crouch_Walk_Forward', 1.133),
+    ])
 
-    const gait = measureGait(clip);
+    expect(profile).toEqual({
+      idle: { duration: 2, stride: 0, speed: 0 },
+      walk: { duration: 1.133, stride: 1.98275, speed: 1.75 },
+      jog: { duration: 0.8, stride: 3, speed: 3.75 },
+      sprint: { duration: 0.6, stride: 3.9, speed: 6.5 },
+      crouchIdle: { duration: 2, stride: 0, speed: 0 },
+      crouchWalk: { duration: 1.133, stride: 1.6995, speed: 1.5 },
+    })
+  })
 
-    expect(gait).toEqual({ duration: 1, stride: 1, speed: 1 });
-    expect(rootPositions(clip)).toEqual([
-      2, 0.25, 3,
-      2, 0.625, 3,
-      2, 0.25, 3,
-    ]);
-    // A second consumer must get the cached pre-strip stride without normalizing the track again.
-    expect(measureGait(clip)).toEqual(gait);
-    expect(rootPositions(clip)).toEqual([
-      2, 0.25, 3,
-      2, 0.625, 3,
-      2, 0.25, 3,
-    ]);
-  });
+  it('keeps pace tuning and the walk-before-jog ordering contract', () => {
+    const profile = buildLocomotionProfile([
+      clip('A_Als_Walk_Forward', 1.133),
+      clip('A_Als_Run_Forward', 0.8),
+      clip('A_Als_Crouch_Walk_Forward', 1.133),
+    ])
 
-  it('keeps the root-Y bob and small closing drift of a locomotion loop', () => {
-    const clip = rootMotionClip(
-      'Walk_Loop',
-      [0, 0.5, 1],
-      [
-        0, 0.125, 0,
-        0, 0.25, 1,
-        0, 0.15625, 2,
-      ],
-    );
-
-    expect(measureGait(clip).stride).toBe(2);
-    expect(rootPositions(clip)).toEqual([
-      0, 0.125, 0,
-      0, 0.25, 0,
-      0, 0.15625, 0,
-    ]);
-  });
-});
+    expect(resolveGaitSpeeds(profile, { normal: 1, slow: 0.5, jog: 1 }, false)).toEqual({
+      walk: 1.75,
+      jog: 3.75,
+      crouchWalk: 1.5,
+    })
+    expect(resolveGaitSpeeds(profile, { normal: 3, slow: 0.5, jog: 0.1 }, false)).toEqual({
+      walk: 5.25,
+      jog: 5.5125,
+      crouchWalk: 4.5,
+    })
+  })
+})
