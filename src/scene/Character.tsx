@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { pickClip } from '../anim/pickClip'
+import { useLocomotionRig } from './useLocomotionRig'
 
 const CHARACTER_URL = '/assets/skm-als.glb'
 const GLB_MAGIC = [0x67, 0x6c, 0x54, 0x46]
@@ -97,7 +98,14 @@ function LoadedCharacter({
     onSizeChange(bounds.size.clone())
   }, [bounds, onSizeChange])
 
+  // Weight-table applier owns playback when the locomotion set is present (M1);
+  // single-idle fallback keeps older single-clip GLBs (and the smoke) working.
+  const rigComplete = useLocomotionRig(gltf, mixer)
+
   useEffect(() => {
+    if (rigComplete) {
+      return
+    }
     const clip = pickClip(gltf.animations)
     if (!clip) {
       return
@@ -110,7 +118,7 @@ function LoadedCharacter({
       action.stop()
       mixer.uncacheAction(clip, gltf.scene)
     }
-  }, [gltf.animations, gltf.scene, mixer])
+  }, [gltf.animations, gltf.scene, mixer, rigComplete])
 
   useFrame((_, delta) => mixer.update(delta))
 

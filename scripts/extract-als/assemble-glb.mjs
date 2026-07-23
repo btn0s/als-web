@@ -66,20 +66,21 @@ const convertQuat = (q) => {
 const convertPos = ([x, y, z]) => [x * 0.01, z * 0.01, y * 0.01];
 const convertScale = ([x, y, z]) => [x, z, y];
 
-// ---------- compose playable clip in UE space ----------
+// ---------- prepare clips (UE space) ----------
 const { bones } = dump.skeleton;
-const anims = Object.fromEntries(dump.anims.map((a) => [a.name, a]));
-const idle = dump.anims.find((a) => a.additiveType !== 'AAT_None');
-const base = anims[idle.refPoseSeq.Text ?? idle.refPoseSeq];
-if (!base) throw new Error(`ref pose seq not dumped: ${JSON.stringify(idle.refPoseSeq)}`);
-
 const key = (arr, i) => arr.length === 0 ? null : arr[Math.min(i, arr.length - 1)];
-const numKeys = idle.numberOfKeys;
-// AnimDataModel tracks are full-pose source keys — playable directly.
-const composed = idle.tracks.map((t) => ({
-  bone: t.bone,
-  pos: Array.from({ length: numKeys }, (_, i) => key(t.pos, i) ?? bones.find((x) => x.name === t.bone).t),
-  rot: Array.from({ length: numKeys }, (_, i) => qNorm(key(t.rot, i) ?? bones.find((x) => x.name === t.bone).r)),
+const refByName = Object.fromEntries(bones.map((b) => [b.name, b]));
+// AnimDataModel tracks are full-pose source keys — playable directly, one glTF
+// clip per dumped sequence (pose sequences like A_Als_Stand_Pose included).
+const clips = dump.anims.map((a) => ({
+  name: a.name,
+  fps: a.fps,
+  numKeys: a.numberOfKeys,
+  tracks: a.tracks.map((t) => ({
+    bone: t.bone,
+    pos: Array.from({ length: a.numberOfKeys }, (_, i) => key(t.pos, i) ?? refByName[t.bone].t),
+    rot: Array.from({ length: a.numberOfKeys }, (_, i) => qNorm(key(t.rot, i) ?? refByName[t.bone].r)),
+  })),
 }));
 
 // ---------- build document ----------
@@ -183,24 +184,24 @@ skin.setSkeleton(nodes[0]);
 const meshNode = doc.createNode('SKM_Als').setMesh(mesh).setSkin(skin);
 scene.addChild(meshNode);
 
-// ---------- animation ----------
-const anim = doc.createAnimation('A_Als_Idle');
-const fps = idle.fps;
-const times = Float32Array.from({ length: numKeys }, (_, i) => i / fps);
-const timeAcc = doc.createAccessor().setType('SCALAR').setArray(times).setBuffer(buffer);
+// ---------- animations ----------
 const boneIndex = Object.fromEntries(bones.map((b, i) => [b.name, i]));
-for (const t of composed) {
-  const node = nodes[boneIndex[t.bone]];
-  const rotOut = new Float32Array(t.rot.flatMap(convertQuat));
-  const posOut = new Float32Array(t.pos.flatMap(convertPos));
-  const addChannel = (path, acc) => {
-    const sampler = doc.createAnimationSampler().setInput(timeAcc).setOutput(acc).setInterpolation('LINEAR');
-    const channel = doc.createAnimationChannel().setTargetNode(node).setTargetPath(path).setSampler(sampler);
-    anim.addSampler(sampler).addChannel(channel);
-  };
-  addChannel('rotation', doc.createAccessor().setType('VEC4').setArray(rotOut).setBuffer(buffer));
-  addChannel('translation', doc.createAccessor().setType('VEC3').setArray(posOut).setBuffer(buffer));
+for (const clip of clips) {
+  const anim = doc.createAnimation(clip.name);
+  const times = Float32Array.from({ length: clip.numKeys }, (_, i) => i / clip.fps);
+  const timeAcc = doc.createAccessor().setType('SCALAR').setArray(times).setBuffer(buffer);
+  for (const t of clip.tracks) {
+    const node = nodes[boneIndex[t.bone]];
+    const addChannel = (path, acc) => {
+      const sampler = doc.createAnimationSampler().setInput(timeAcc).setOutput(acc).setInterpolation('LINEAR');
+      const channel = doc.createAnimationChannel().setTargetNode(node).setTargetPath(path).setSampler(sampler);
+      anim.addSampler(sampler).addChannel(channel);
+    };
+    addChannel('rotation', doc.createAccessor().setType('VEC4').setArray(new Float32Array(t.rot.flatMap(convertQuat))).setBuffer(buffer));
+    addChannel('translation', doc.createAccessor().setType('VEC3').setArray(new Float32Array(t.pos.flatMap(convertPos))).setBuffer(buffer));
+  }
 }
 
 await new NodeIO().write(outPath, doc);
-console.log(`wrote ${outPath}: ${bones.length} joints, ${positions.length / 3} proxy verts, clip A_Als_Idle ${(numKeys / fps).toFixed(2)}s`);
+const clipDesc = clips.map((c) => `${c.name} ${(c.numKeys / c.fps).toFixed(2)}s`).join(', ');
+console.log(`wrote ${outPath}: ${bones.length} joints, ${positions.length / 3} proxy verts, clips: ${clipDesc}`);

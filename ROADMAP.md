@@ -43,18 +43,23 @@ UE5-native packs (TSO) will need the scripted retarget now listed in M2.
 
 Copy from `../exposure-r3f/src/player/`, tests included, adapting names only:
 
-- [ ] `weightTable` (+ invariant grid tests) · `regionOverlays` (+ ride-alphas, holdAt, Leva
-      auto-panel) · `trackMask` (verify prefix sets against the actual UE5 skeleton dump)
-- [ ] `blendspace` (crawl-aware cadence) · `actionSequence` · `actionArbiter` · `slotMontage` ·
-      `scrubbedPose` · `proceduralPose` · `footIk` + `ikChain`
+- [x] `weightTable` (invariant grid tests green) · `regionOverlays` (rules re-pointed to ALS
+      clips; Leva auto-panel pending) · `trackMask` (prefixes verified against the SK_Als dump —
+      one adaptation: lowercase `head`; twist/ik bones classify correctly) *(2026-07-23)*
+- [x] `blendspace` · `actionSequence` · `actionArbiter` · `slotMontage` · `scrubbedPose` ·
+      `proceduralPose` · `footIk` + `ikChain` — transplanted verbatim, 107 tests green; wired so
+      far: blendspace + weightTable + one region rule (rest wire up through M3) *(2026-07-23)*
 - [ ] `locomotionProfile` — re-point at the new pack; verify root-motion stride measurement against
       UE5-exported root translation conventions
 - [ ] Pose-based camera (poseHeight publish + self-calibrating pivot) and the reticle-true zoom
-- [ ] Dev tooling: test hooks (`__triggerJump`, `__playClip`), capture scripts, Leva root taxonomy
+- [ ] Dev tooling: test hooks (`__triggerJump`, `__playClip`; `__setSpeed` + `__weightTable`
+      landed with the M1 proof), capture scripts, Leva root taxonomy
       (Camera / Movement / Animation / Sandbox / Debug)
 
 **Exit:** transplanted test suite green; character walks under the weight table with one region
-rule active as proof.
+rule active as proof. *(Proof landed 2026-07-23: Leva-driven speed crossfades idle/walk/jog per
+the blendspace, sprint-arms region rule rides the jog — verified via `__weightTable` in-browser.
+Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of dev tooling.)*
 
 ---
 

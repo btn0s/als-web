@@ -11,7 +11,7 @@ cd "$(dirname "$0")"
 TAG="${ALS_TAG:-4.15}"
 WORK="${ALS_WORK:-$HOME/.cache/als-extract}"
 REPO_ROOT="$(cd ../.. && pwd)"
-ANIMS=(A_Als_Stand_Pose A_Als_Idle)
+ANIMS=(A_Als_Stand_Pose A_Als_Idle A_Als_Walk_Forward A_Als_Run_Forward A_Als_Sprint)
 
 mkdir -p "$WORK/stage"
 if [ ! -d "$WORK/ALS-Refactored-$TAG" ]; then
