@@ -3,7 +3,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
-import { pickClip } from '../anim/pickClip'
 import type { CharacterPoseSample } from './poseCameraState'
 import { useLocomotionRig } from './useLocomotionRig'
 
@@ -81,7 +80,6 @@ function LoadedCharacter({
   onSizeChange: CharacterProps['onSizeChange']
   poseSample: CharacterProps['poseSample']
 }) {
-  const mixer = useMemo(() => new THREE.AnimationMixer(gltf.scene), [gltf.scene])
   const characterGroup = useRef<THREE.Group>(null)
   const poseBones = useMemo(
     () => ({
@@ -111,38 +109,18 @@ function LoadedCharacter({
     onSizeChange(bounds.size.clone())
   }, [bounds, onSizeChange])
 
-  // Weight-table applier owns playback when the locomotion set is present (M1);
-  // single-idle fallback keeps older single-clip GLBs (and the smoke) working.
-  const rigComplete = useLocomotionRig(gltf, mixer)
+  // The hook owns clip sampling, pose-space composition, and the one skeleton write per frame.
+  // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
+  useLocomotionRig(gltf)
 
-  useEffect(() => {
-    if (rigComplete) {
-      return
-    }
-    const clip = pickClip(gltf.animations)
-    if (!clip) {
-      return
-    }
-
-    const action = mixer.clipAction(clip)
-    action.reset().setLoop(THREE.LoopRepeat, Infinity).setEffectiveWeight(1).play()
-
-    return () => {
-      action.stop()
-      mixer.uncacheAction(clip, gltf.scene)
-    }
-  }, [gltf.animations, gltf.scene, mixer, rigComplete])
-
-  useFrame((_, delta) => {
-    mixer.update(delta)
-
+  useFrame(() => {
     const group = characterGroup.current
     if (!group || !poseBones.head || !poseBones.pelvis) {
       poseSample.current.ready = false
       return
     }
 
-    // Publish after the mixer has written this frame's skeleton. `getWorldPosition` refreshes the
+    // Publish after the evaluator has written this frame's skeleton. `getWorldPosition` refreshes the
     // ancestor chains, so ground, pelvis, and head all come from the same composed pose.
     group.getWorldPosition(poseSample.current.ground)
     poseBones.pelvis.getWorldPosition(poseSample.current.pelvis)
