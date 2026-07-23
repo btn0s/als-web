@@ -92,6 +92,9 @@ if (animNameSet.size !== animNames.length) errs.push('duplicate animation names 
 
 let channelCount = 0;
 let rootTrackCount = 0;
+let curveCount = 0;
+const curveNamePattern = /^[A-Za-z][A-Za-z0-9_]*$/;
+const curvesByClip = new Map();
 for (const anim of anims) {
   const rootPaths = new Set();
   for (const channel of anim.listChannels()) {
@@ -104,7 +107,52 @@ for (const anim of anims) {
   for (const path of ['translation', 'rotation'])
     if (!rootPaths.has(path)) errs.push(`${anim.getName()} missing root ${path} track`);
   if (rootPaths.has('translation') && rootPaths.has('rotation')) rootTrackCount++;
+
+  const curves = anim.getExtras()?.alsCurves ?? [];
+  curvesByClip.set(anim.getName(), curves);
+  if (!Array.isArray(curves)) {
+    errs.push(`${anim.getName()} animation.extras.alsCurves is not an array`);
+    continue;
+  }
+  curveCount += curves.length;
+  for (const curve of curves) {
+    if (!curveNamePattern.test(curve?.name ?? ''))
+      errs.push(`${anim.getName()} has invalid curve name: ${JSON.stringify(curve?.name)}`);
+    if (!Array.isArray(curve?.keys)) {
+      errs.push(`${anim.getName()}/${curve?.name ?? '<unnamed>'} keys is not an array`);
+      continue;
+    }
+    for (let i = 0; i < curve.keys.length; i++) {
+      const time = curve.keys[i]?.[0];
+      if (!Number.isFinite(time))
+        errs.push(`${anim.getName()}/${curve.name} key ${i} has invalid time: ${time}`);
+      if (i > 0 && time < curve.keys[i - 1]?.[0])
+        errs.push(`${anim.getName()}/${curve.name} key times decrease at key ${i}`);
+    }
+  }
 }
+
+const requireCurves = (clipName, requiredNames, minimumCount = requiredNames.length) => {
+  const curves = curvesByClip.get(clipName);
+  if (!curves) {
+    errs.push(`curve sentinel clip missing: ${clipName}`);
+    return;
+  }
+  if (curves.length < minimumCount)
+    errs.push(`${clipName} has ${curves.length} curves, expected at least ${minimumCount}`);
+  const names = new Set(curves.map((curve) => curve.name));
+  for (const name of requiredNames)
+    if (!names.has(name)) errs.push(`${clipName} missing curve: ${name}`);
+};
+requireCurves('A_Als_Walk_Forward', ['FootPlanted', 'PoseGait']);
+requireCurves(
+  'A_Als_Turn_90_Left',
+  ['FootLeftLock', 'FootRightLock', 'RotationYawSpeed']);
+requireCurves('A_Als_Rifle_Poses', ['LayerArmLeftAdditive'], 11);
+const idleCurves = curvesByClip.get('A_Als_Idle');
+if (!idleCurves) errs.push('curve-free sentinel clip missing: A_Als_Idle');
+else if (idleCurves.length !== 0)
+  errs.push(`A_Als_Idle should have no curves, found ${idleCurves.length}`);
 
 const idle = anims.find((a) => /idle/i.test(a.getName()));
 if (!idle) errs.push('no /idle/i clip');
@@ -125,6 +173,7 @@ console.log(
 console.log(`curated clips: ${anims.length}/${manifest.length} present`);
 console.log(`bindings: ${channelCount} channels target only expected SK_Als bones`);
 console.log(`root tracks: translation + rotation present in ${rootTrackCount}/${anims.length} clips`);
+console.log(`curves: ${curveCount} across ${[...curvesByClip.values()].filter((curves) => curves.length > 0).length}/${anims.length} clips; sentinel clips passed`);
 console.log(`idle duration: ${dur.toFixed(2)}s, pelvis@0: ${pelvisHeight?.toFixed(3)}m`);
 if (errs.length) { console.error('FAIL:\n  ' + errs.join('\n  ')); process.exit(1); }
 console.log('GLB validation passed');

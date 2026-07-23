@@ -76,6 +76,7 @@ const canonicalBoneName = (clipName, sourceName) => {
   if (!canonical) throw new Error(`${clipName} track targets unknown bone: ${sourceName}`);
   return canonical;
 };
+const compactFloat = (value) => Number(Number(value).toPrecision(6));
 // AnimDataModel tracks are full-pose source keys — playable directly, one glTF
 // clip per dumped sequence (pose sequences like A_Als_Stand_Pose included). A few
 // upstream arms-only clips retain import-time bone-name capitalization; canonicalize
@@ -92,6 +93,11 @@ const clips = dump.anims.map((a) => ({
       rot: Array.from({ length: a.numberOfKeys }, (_, i) => qNorm(key(t.rot, i) ?? refByName[bone].r)),
     };
   }),
+  curves: (a.curves ?? []).map((curve) => ({
+    name: curve.name,
+    flags: curve.flags,
+    keys: curve.keys.map(([t, v, interp]) => [compactFloat(t), compactFloat(v), interp]),
+  })),
 }));
 
 // ---------- build document ----------
@@ -204,11 +210,14 @@ if (dump.mesh?.sections?.length) {
   if (useComputedNormals) console.warn('dumped normals are degenerate — computing smooth normals from geometry');
 
   for (const [sectionIndex, section] of dump.mesh.sections.entries()) {
-    const sectionPositions = section.positions.flatMap(convertPos);
-    const sourceNormals = useComputedNormals
-      ? computeSectionNormals(section.positions, section.indices)
-      : section.normals;
-    const sectionNormals = sourceNormals.flatMap(convertNormal);
+    const convertedPositions = section.positions.map(convertPos);
+    const sectionPositions = convertedPositions.flat();
+    // Computed normals come from CONVERTED positions + EMITTED winding, so no
+    // pseudovector sign juggling is possible; authored normals (once the decode
+    // works) go through convertNormal instead.
+    const sectionNormals = useComputedNormals
+      ? computeSectionNormals(convertedPositions, section.indices).flat()
+      : section.normals.flatMap(convertNormal);
     const sectionUVs = section.uv0.flat();
     const sectionJoints = [];
     const sectionWeights = [];
@@ -240,11 +249,10 @@ if (dump.mesh?.sections?.length) {
       }
     }
 
-    // C swaps Y/Z and changes handedness, so reverse each triangle to retain
-    // the UE front face after conversion.
-    const sectionIndices = [];
-    for (let i = 0; i < section.indices.length; i += 3)
-      sectionIndices.push(section.indices[i], section.indices[i + 2], section.indices[i + 1]);
+    // Winding: verified empirically (signed-volume test, 2026-07-23) — UE's stored index
+    // order is ALREADY front-facing after the C basis swap; reversing it turned the model
+    // inside-out (the "see-through" playtest report). Emit source order unchanged.
+    const sectionIndices = section.indices.slice();
 
     const material = materials.get(section.materialName) ?? doc.createMaterial(section.materialName)
       .setBaseColorFactor([0.55, 0.57, 0.6, 1])
@@ -350,7 +358,11 @@ scene.addChild(meshNode);
 // ---------- animations ----------
 const boneIndex = Object.fromEntries(bones.map((b, i) => [b.name, i]));
 for (const clip of clips) {
-  const anim = doc.createAnimation(clip.name);
+  // Runtime contract: animation.extras.alsCurves is
+  // [{ name, flags, keys: [[timeSeconds, value, ueInterpMode], ...] }].
+  // UE auto-cubic keys store zero tangents because the editor computes them; preserve the
+  // authored interpolation enum, but consumers intentionally sample t/v linearly for now.
+  const anim = doc.createAnimation(clip.name).setExtras({ alsCurves: clip.curves });
   const times = Float32Array.from({ length: clip.numKeys }, (_, i) => i / clip.fps);
   const timeAcc = doc.createAccessor().setType('SCALAR').setArray(times).setBuffer(buffer);
   for (const t of clip.tracks) {

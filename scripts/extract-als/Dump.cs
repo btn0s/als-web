@@ -120,6 +120,24 @@ public static class Dump
                 });
             }
 
+            var curves = new List<object>();
+            var curveData = model.GetOrDefault<FStructFallback?>("CurveData");
+            if (curveData is not null)
+            {
+                var rawCurves = new FRawCurveTracks(curveData);
+                foreach (var curve in rawCurves.FloatCurves ?? [])
+                {
+                    curves.Add(new
+                    {
+                        name = curve.CurveName.Text,
+                        flags = curve.CurveTypeFlags,
+                        keys = curve.FloatCurve.Keys
+                            .Select(key => new object[] { key.Time, key.Value, (int)key.InterpMode })
+                            .ToArray(),
+                    });
+                }
+            }
+
             anims.Add(new
             {
                 name = animName,
@@ -129,6 +147,7 @@ public static class Dump
                 fps = (double)frameRate.GetOrDefault("Numerator", 30) / Math.Max(1, frameRate.GetOrDefault("Denominator", 1)),
                 numberOfKeys = model.Get<int>("NumberOfKeys"),
                 tracks,
+                curves,
             });
         }
 

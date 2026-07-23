@@ -78,13 +78,13 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
       *(2026-07-23; licensing settled: the repo's
       blanket MIT names the full author lineage — Sixze, Longmire, Yanıkoğlu — and covers its
       assets; upstream notice ships as `LICENSE-ALS-Refactored.md` beside ported assets)*
-- [ ] **Animation float curves extracted** (architecture review 2026-07-23): ALS's runtime is
+- [x] **Animation float curves extracted** — 161 curves across 53/67 clips as glTF animation
+      extras, +25KB *(2026-07-23)*. (Architecture review: ALS's runtime is
       curve-driven — `AlsConstants.h` names them all: `FootLeft/RightLock`/`Ik`, `RotationYawSpeed`
       (turn-in-place timing), `AllowTransitions`, `SprintBlock`, `Pose*`, per-region `Layer*`
       alphas (incl. `Additive`/`LocalSpace` variants). They live in the same AnimDataModel Dump.cs
-      already parses — extend the dump + carry per-clip curves into the GLB (extras or sidecar
-      JSON). M3 turn-in-place, foot locking, and transitions are blocked without these; prefer
-      authored `FootLock` curves over the sibling's measured-gait heuristic once present
+      already parses.) M3 turn-in-place, foot locking, and transitions now have their authored
+      data; prefer `FootLock` curves over the sibling's measured-gait heuristic
 - [x] **Real `SKM_Als` geometry** *(2026-07-23)*: geometry turned out to live INLINE in the
       USkeletalMesh export (behind an extra strip-flags field CUE4Parse skips), not in
       SkeletalMeshEditorData (that holds Oodle-compressed import data). 10,273 verts / 16,544
