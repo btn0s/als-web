@@ -8,18 +8,14 @@ before feature work.
 
 ## Ground rules
 
-- **ALS fidelity over convenience:** the point is to stay as true as possible to ALS — even when
-  that means inventing systems and tooling that don't exist for three.js yet (editor-free .uasset
-  extraction, curve-driven layering, an owned pose-buffer runtime). Inventing the missing tooling
-  IS the project; it's a net good for web gamedev and animation tooling. When a shortcut and a
-  faithful mechanism compete, port the mechanism.
-- **Single source of truth (user 2026-07-23):** every system derives from ALS Refactored's own
-  source and content — the plugin C++ (clone at `~/.cache/als-extract/ALS-Refactored-4.15`), its
-  authored clips/curves/data assets, and the extracted math spec. When the C++ has no constant,
-  the answer is almost always in CONTENT (authored transition clips, Pose*/Layer* curves, data
-  assets) — look there FIRST. Referencing any other local project's implementation is
-  prohibited. If ALS genuinely has no answer, design from first principles and flag the decision
-  loudly as original.
+- **ALS is the single source of truth:** every system derives from ALS Refactored's own source
+  and content — the plugin C++ (clone at `~/.cache/als-extract/ALS-Refactored-4.15`), its authored
+  clips/curves/data assets, and the extracted math spec in session memory. When the C++ has no
+  constant, the answer is almost always in CONTENT (transition clips, Pose*/Layer* curves, data
+  assets) — look there first. Referencing any other local project's implementation is prohibited.
+  If ALS genuinely has no answer, design from first principles and flag it as original. When a
+  shortcut and the faithful mechanism compete, port the mechanism — inventing missing three.js
+  tooling IS the project.
 - **Naming parity (user 2026-07-23):** anything with an ALS analog uses ALS Refactored's exact
   name, so an ALS-fluent reader has zero onboarding: Gait Walking/Running/Sprinting (never
   "jog"), Stance Standing/Crouching, RotationMode VelocityDirection/ViewDirection/Aiming,
@@ -34,28 +30,17 @@ before feature work.
   mirror the `Public/` tree shape. The two honest deviations are labeled: `AnimGraph/` (UE keeps
   this in Blueprint content; ours must be code) and `src/engine/` (UE's animation runtime itself,
   which the plugin doesn't own either). New systems land at their mirrored path or not at all.
-- **Discovery once, determinism forever:** agent reasoning is for uncertainty — cracking a
-  format, probing an asset, root-causing a bug. And before burning discovery on a problem at
-  all, check whether it's ALREADY solved: search for existing libraries, tools, and prior art
-  first (this repo exists because CUE4Parse had already solved uasset parsing, gltf-transform
-  had solved GLB authoring, and ggez had proven the pose-buffer pattern — verify license and
-  quality, prefer proven code as a dependency or a pattern reference over reinvention). The moment a behavior is understood and
-  repeatable, capture it where no one pays for it again: a script (`run.sh`, one command per
-  pack), a validator that asserts the invariant (`validate-glb.mjs`, the test suites), a data
-  file (`clips.manifest`), a persisted research doc consumed as fact by later work, or a rule in
-  this file. Never re-derive what a previous session already verified — cite it. If you catch
-  yourself re-solving a solved problem, the correct output is the tool/check that makes the
-  re-solving impossible, not the solution itself.
-- **Conclusions must be falsifiable by something they didn't author:** a single discovery loop
-  can overcorrect on something it thinks it saw. Every conclusion therefore ships with an
-  independent, cheap, decisive check derived from ground truth (a physical invariant, the
-  authoritative artifact, a known constant) — never from the discovery's own reasoning chain —
-  and lands in a validator/test so it stays checked. Research reports separate VERIFIED (cite
-  the evidence) from HYPOTHESIS (state how to test it); downstream work treats hypotheses as
-  tests to run, not facts to build on. Corrections to working state require reproducing the
-  actual defect first — pattern-matching a known problem is not evidence. (Precedents: winding
-  "fix" reversed by a signed-volume test; mesh location hypothesis corrected by human-scale
-  vertex bounds; stale-dump curve conclusion overturned by reading the shipped GLB.)
+- **Don't re-solve solved problems:** before any discovery, check for prior art (libraries,
+  tools, earlier session findings — cite, don't re-derive). Once a behavior is understood and
+  repeatable, freeze it into a script, validator, data file, or rule so nobody pays for the
+  reasoning again.
+- **Discovery claims and corrections need independent verification:** a single discovery loop
+  can overcorrect on something it thinks it saw. Verify conclusions with a cheap check derived
+  from ground truth, not from the discovery's own reasoning (precedent: a theory-driven winding
+  "fix" was reversed by a signed-volume test). Research reports separate VERIFIED (evidence
+  cited) from HYPOTHESIS (how to test it); corrections to working state require reproducing the
+  actual defect first. Ordinary code changes are covered by the test gates — this rule is for
+  discovery and fixes, not ceremony.
 - **Docs philosophy:** code speaks for itself. ROADMAP.md (plan) + this file (orientation) are
   the only standing docs; design rationale lives in code comments at the relevant site. No
   spec/history markdown files.
