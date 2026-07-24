@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { AlphaBlendOption } from '../engine/alphaBlend'
 import { pickClip } from '../engine/pickClip'
 import { applyPose, createPoseApplicator } from '../engine/applyPose'
 import { compileAuthoredAdditive } from '../engine/authoredAdditive'
@@ -60,7 +61,6 @@ import {
   advanceSlotMontageClock,
   calculateSlotMontageWeight,
   createSlotMontageClock,
-  getSlotMontageSample,
   getSlotMontageSamples,
   getSlotMontageEvaluationWeight,
   montageSetPosition as setSlotMontagePosition,
@@ -587,11 +587,19 @@ export interface AlsMantlingMontageBridge {
     startTime: number,
   ) => AlsMantlingMontagePlayResult | null
   readonly montageSetPosition: (
-    instanceId: number,
+    settings: AlsMantlingSettings,
     position: number,
   ) => boolean
-  /** Identity-safe Montage_Stop(): an interrupted instance cannot stop its replacement. */
-  readonly stop: (
+  /** Asset-addressed UAnimInstance::Montage_Stop(). */
+  readonly montageStop: (
+    settings: AlsMantlingSettings,
+    blendOutDuration: number,
+  ) => boolean
+  /**
+   * Identity-addressed FAnimMontageInstance::Stop(), used by
+   * UAlsAnimNotifyState_EarlyBlendOut's MontageInstanceID payload.
+   */
+  readonly stopMontageInstance: (
     instanceId: number,
     blendOutDuration: number,
   ) => boolean
@@ -2456,37 +2464,42 @@ export function createAlsAnimationInstance(gltf: {
     }
   }
 
+  function getActiveMantlingMontageInstance() {
+    const active = slotMontageClock.activeByGroup.get(
+      LOCOMOTION_SLOT_GROUP_NAME,
+    )?.sample
+    if (
+      !active
+      || active.slotName !== POST_LOCOMOTION_SLOT_NAME
+    ) {
+      return undefined
+    }
+    return mantlingMontageInstances.get(active.instanceId)
+  }
+
   function setMantlingMontagePosition(
-    instanceId: number,
+    settings: AlsMantlingSettings,
     position: number,
   ) {
-    if (!mantlingMontageInstances.has(instanceId)) return false
+    const active = getActiveMantlingMontageInstance()
+    if (active?.settings.Montage !== settings.Montage) return false
     return setSlotMontagePosition(
       slotMontageClock,
-      instanceId,
+      active.sample.instanceId,
       position,
     ) !== undefined
   }
 
-  function stopMantlingMontage(
+  function stopActiveMantlingMontage(
     instanceId: number,
     blendOutDuration: number,
+    blendOutOption: AlphaBlendOption = 'Linear',
   ) {
-    const active = getSlotMontageSample(
-      slotMontageClock,
-      LOCOMOTION_SLOT_GROUP_NAME,
-    )
-    if (
-      !mantlingMontageInstances.has(instanceId)
-      || active?.instanceId !== instanceId
-      || active.slotName !== POST_LOCOMOTION_SLOT_NAME
-    ) {
-      return false
-    }
     const stopped = stopSlotAnimation(
       slotMontageClock,
       blendOutDuration,
       POST_LOCOMOTION_SLOT_NAME,
+      blendOutOption,
     ).some((sample) => sample.instanceId === instanceId)
     if (stopped) {
       // UAnimInstance::Montage_Stop calls FAnimMontageInstance::Stop(..., true). Keep active
@@ -2495,6 +2508,31 @@ export function createAlsAnimationInstance(gltf: {
       if (instance) instance.interrupted = true
     }
     return stopped
+  }
+
+  function stopMantlingMontage(
+    settings: AlsMantlingSettings,
+    blendOutDuration: number,
+  ) {
+    const active = getActiveMantlingMontageInstance()
+    if (active?.settings.Montage !== settings.Montage) return false
+    return stopActiveMantlingMontage(
+      active.sample.instanceId,
+      blendOutDuration,
+    )
+  }
+
+  function stopMantlingMontageInstance(
+    instanceId: number,
+    blendOutDuration: number,
+  ) {
+    const active = getActiveMantlingMontageInstance()
+    if (active?.sample.instanceId !== instanceId) return false
+    return stopActiveMantlingMontage(
+      instanceId,
+      blendOutDuration,
+      active.settings.Montage.BlendOut.BlendOption,
+    )
   }
 
   function takeMantlingNotifyEvents() {
@@ -5273,7 +5311,8 @@ export function createAlsAnimationInstance(gltf: {
     mantlingMontage: Object.freeze({
       play: playMantlingMontage,
       montageSetPosition: setMantlingMontagePosition,
-      stop: stopMantlingMontage,
+      montageStop: stopMantlingMontage,
+      stopMontageInstance: stopMantlingMontageInstance,
       takeNotifyEvents: takeMantlingNotifyEvents,
     }),
     state,

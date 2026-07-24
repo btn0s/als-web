@@ -5,21 +5,29 @@ import {
 import type {
   CompiledAuthoredRootMotion,
 } from '../engine/rootMotion'
-import {
-  createAlsMantlingMontageState,
-  refreshAlsMantlingMontage,
-  stopAlsMantlingMontage,
-} from './AnimGraph/mantling'
 import type {
-  AlsMantlingMontageState,
-} from './AnimGraph/mantling'
+  AlsMantlingMontageBridge,
+  AlsMantlingMontageNotifyEvent,
+} from './AlsAnimationInstance'
 import {
   setLocomotionAction,
   setLocomotionMode,
 } from './AlsCharacter'
 import type {
   AlsCharacter,
+  AlsLocomotionAction,
+  AlsLocomotionMode,
 } from './AlsCharacter'
+import {
+  tickAlsAnimNotifyStateEarlyBlendOut,
+} from './Notifies/AlsAnimNotifyState_EarlyBlendOut'
+import type {
+  AlsAnimNotifyStateEarlyBlendOutPayload,
+} from './Notifies/AlsAnimNotifyState_EarlyBlendOut'
+import {
+  notifyAlsAnimNotifyStateSetLocomotionActionBegin,
+  notifyAlsAnimNotifyStateSetLocomotionActionEnd,
+} from './Notifies/AlsAnimNotifyState_SetLocomotionAction'
 import {
   createAlsRootMotionSource_Mantling,
   prepareAlsRootMotionSource_Mantling,
@@ -37,9 +45,14 @@ import {
 } from './Settings/AlsMantlingSettings'
 import type {
   AlsGeneralMantlingSettings,
+  AlsMantlingMontageNotify,
   AlsMantlingTraceSettings,
   AlsMantlingType,
 } from './Settings/AlsMantlingSettings'
+import type {
+  AlsRotationMode,
+  AlsStance,
+} from './Settings/AlsMovementSettings'
 import type {
   AlsQuaternion,
 } from './State/AlsFeetState'
@@ -597,11 +610,11 @@ export interface AlsMantlingLifecycleAdapter {
     RootMotionSourceId: number,
   ): AlsRootMotionSource_Mantling | null
   /**
-   * FAnimMontageInstance identity comes from the animation runtime. It is
-   * intentionally unrelated to FRootMotionSource::LocalID.
+   * UAnimInstance owns every retained FAnimMontageInstance and its identity.
+   * FAnimMontageInstance::InstanceID is intentionally unrelated to
+   * FRootMotionSource::LocalID.
    */
-  AllocateMontageInstanceId(): number
-  Montage_Play(MontageState: AlsMantlingMontageState): number
+  readonly MantlingMontage: AlsMantlingMontageBridge
   IsTargetPrimitiveValid(TargetPrimitive: unknown): boolean
   OnMantlingStarted(Parameters: Readonly<AlsMantlingParameters>): void
   OnMantlingEnded(): void
@@ -624,11 +637,6 @@ export interface StartAlsMantlingImplementationInput {
 
 export interface StartAlsMantlingImplementationResult {
   readonly RootMotionSource: AlsRootMotionSource_Mantling
-  /**
-   * Null only when Montage_Play() failed. ALS still retains the applied root
-   * source in that case; the following RefreshMantling() performs cleanup.
-   */
-  readonly MontageState: AlsMantlingMontageState | null
 }
 
 /**
@@ -672,31 +680,27 @@ export function startMantlingImplementation(
   character.mantlingState.RootMotionSourceId =
     input.Lifecycle.ApplyRootMotionSource(RootMotionSource)
 
-  const candidateMontageState = createAlsMantlingMontageState(
-    input.Lifecycle.AllocateMontageInstanceId(),
+  // Montage_Play(Montage) starts at its default position zero. The root
+  // source synchronizes the active montage to M - DeltaTime before animation
+  // evaluation; starting Montage_Play at MontageStartTime would skip that
+  // exact first-frame ownership handoff.
+  const MontagePlayResult = input.Lifecycle.MantlingMontage.play(
     settings,
-    RootMotionSource.MontageStartTime,
+    0,
   )
-  const MontageState = (
-    input.Lifecycle.Montage_Play(candidateMontageState) > 0
-      ? candidateMontageState
-      : null
-  )
-  if (MontageState !== null) {
+  if (MontagePlayResult !== null) {
     setLocomotionAction(character, 'Mantling')
   }
 
   input.Lifecycle.OnMantlingStarted(input.Parameters)
   return {
     RootMotionSource,
-    MontageState,
   }
 }
 
 export interface StopAlsMantlingInput {
   readonly Character: AlsCharacter
   readonly Lifecycle: AlsMantlingLifecycleAdapter
-  readonly MontageState: AlsMantlingMontageState | null
   readonly MantlingSettings?: Readonly<AlsGeneralMantlingSettings>
   readonly bStopMontage?: boolean
 }
@@ -706,10 +710,8 @@ export interface StopAlsMantlingInput {
  *
  * The function intentionally does not clear LocomotionAction. If the montage
  * is stopped while its movement-action notify is active, that notify owns the
- * eventual action exit exactly as it does in ALS. `StopMantling(false)` also
- * leaves the montage state alive: after its root source is removed, the
- * animation owner continues `refreshAlsMantlingMontage()` without an
- * authoritative position until the retained montage finishes blending.
+ * eventual action exit exactly as it does in ALS. The animation instance
+ * retains stopped montage evaluation and dispatches NotifyEnd on termination.
  */
 export function stopMantling(
   input: Readonly<StopAlsMantlingInput>,
@@ -730,12 +732,12 @@ export function stopMantling(
   if (
     input.bStopMontage === true
     && RootMotionSource !== null
-    && input.MontageState !== null
-    && input.MontageState.MantlingSettings.Montage
-      === RootMotionSource.MantlingSettings.Montage
   ) {
-    stopAlsMantlingMontage(
-      input.MontageState,
+    // UAnimInstance::Montage_Stop() resolves the currently active instance
+    // by montage asset. A same-asset replacement is stopped; a different
+    // montage that replaced it in the Slot Group is not.
+    input.Lifecycle.MantlingMontage.montageStop(
+      RootMotionSource.MantlingSettings,
       (
         input.MantlingSettings
         ?? ALS_GENERAL_MANTLING_SETTINGS
@@ -754,7 +756,6 @@ export function stopMantling(
 export interface RefreshAlsMantlingInput {
   readonly Character: AlsCharacter
   readonly Lifecycle: AlsMantlingLifecycleAdapter
-  readonly MontageState: AlsMantlingMontageState | null
   readonly MantlingSettings?: Readonly<AlsGeneralMantlingSettings>
 }
 
@@ -814,17 +815,19 @@ export interface PrepareAlsCharacterMantlingInput
   readonly Character: AlsCharacter
   readonly Lifecycle: AlsMantlingLifecycleAdapter
   readonly RootMotionSource: AlsRootMotionSource_Mantling
-  readonly MontageState: AlsMantlingMontageState | null
   readonly RootMotionResult?: AlsMantlingRootMotionResult
 }
 
 /**
- * CharacterMovement's mantling root-source preparation followed by the
- * PostLocomotion montage update.
+ * CharacterMovement's exact mantling root-source preparation followed by
+ * FAnimMontageInstance::SetPosition().
  *
- * The root source is the sole playhead owner. `MontagePosition` is always the
- * exact Montage_SetPosition() value from PrepareRootMotion; the montage never
- * advances its optional fallback clock through this path.
+ * ALS Refactored 4.15
+ * `FAlsRootMotionSource_Mantling::PrepareRootMotion()` writes
+ * `Max(0, MontageTime - DeltaTime)` before UAnimInstance advances the retained
+ * montage. The animation runtime remains the sole montage clock; the montage
+ * asset resolves whichever same-asset instance is currently active, exactly
+ * like UAnimInstance::Montage_SetPosition().
  */
 export function prepareCharacterMantling(
   input: Readonly<PrepareAlsCharacterMantlingInput>,
@@ -848,35 +851,298 @@ export function prepareCharacterMantling(
     input.RootMotionResult,
   )
 
-  const MontageState = input.MontageState
-  if (MontageState === null) return RootMotionResult
-
-  refreshAlsMantlingMontage(MontageState, {
-    DeltaTime: input.DeltaTime,
-    AuthoritativeMontagePosition:
+  if (RootMotionResult.valid) {
+    input.Lifecycle.MantlingMontage.montageSetPosition(
+      input.RootMotionSource.MantlingSettings,
       RootMotionResult.Clock.MontagePosition,
-    bHasInput: input.Character.locomotionState.hasInput,
-    LocomotionMode: input.Character.locomotionMode,
-    RotationMode: input.Character.rotationMode,
-    Stance: input.Character.stance,
-  })
-
-  // UAlsAnimNotifyState_SetLocomotionAction::NotifyEnd() only clears the
-  // action it owns. Montage termination also ends an active notify state.
-  if (
-    (
-      MontageState.bMovementActionEndedThisFrame
-      || (
-        MontageState.bCompletedThisFrame
-        && MontageState.bMovementActionActive
-      )
     )
-    && input.Character.locomotionAction === 'Mantling'
-  ) {
-    MontageState.bMovementActionActive = false
-    MontageState.bMovementActionEndedThisFrame = true
-    setLocomotionAction(input.Character, null)
   }
 
   return RootMotionResult
+}
+
+export interface AlsActiveMantlingEarlyBlendOutState {
+  readonly MontageInstanceId: number
+  readonly NotifyIndex: number
+  readonly Notify: Readonly<AlsAnimNotifyStateEarlyBlendOutPayload>
+}
+
+/**
+ * Character-side branching-point state retained across animation frames.
+ *
+ * UAnimInstance owns marker traversal and montage lifetime. This runtime only
+ * mirrors native notify-state ownership so BranchingPointNotifyTick() runs on
+ * every frame between its authored Begin and End events.
+ */
+export interface AlsMantlingNotifyRuntime {
+  readonly ActiveEarlyBlendOutStates: Map<
+    number,
+    Map<number, AlsActiveMantlingEarlyBlendOutState>
+  >
+}
+
+export function createAlsMantlingNotifyRuntime(
+): AlsMantlingNotifyRuntime {
+  return {
+    ActiveEarlyBlendOutStates: new Map(),
+  }
+}
+
+function locomotionActionFromAuthoredTag(
+  tag: string | undefined,
+): Exclude<AlsLocomotionAction, null> {
+  switch (tag) {
+    case 'Als.LocomotionAction.Mantling':
+      return 'Mantling'
+    case 'Als.LocomotionAction.Ragdolling':
+      return 'Ragdolling'
+    case 'Als.LocomotionAction.GettingUp':
+      return 'GettingUp'
+    case 'Als.LocomotionAction.Rolling':
+      return 'Rolling'
+    default:
+      throw new Error(
+        `Unsupported ALS mantling LocomotionAction tag "${String(tag)}"`,
+      )
+  }
+}
+
+function locomotionModeFromAuthoredTag(
+  tag: string | undefined,
+): Exclude<AlsLocomotionMode, null> {
+  switch (tag) {
+    case 'Als.LocomotionMode.Grounded':
+      return 'Grounded'
+    case 'Als.LocomotionMode.InAir':
+      return 'InAir'
+    default:
+      throw new Error(
+        `Unsupported ALS mantling LocomotionMode tag "${String(tag)}"`,
+      )
+  }
+}
+
+function rotationModeFromAuthoredTag(
+  tag: string | undefined,
+): AlsRotationMode {
+  switch (tag) {
+    case 'Als.RotationMode.VelocityDirection':
+      return 'VelocityDirection'
+    case 'Als.RotationMode.ViewDirection':
+      return 'ViewDirection'
+    case 'Als.RotationMode.Aiming':
+      return 'Aiming'
+    default:
+      throw new Error(
+        `Unsupported ALS mantling RotationMode tag "${String(tag)}"`,
+      )
+  }
+}
+
+function stanceFromAuthoredTag(
+  tag: string | undefined,
+): AlsStance {
+  switch (tag) {
+    case 'Als.Stance.Standing':
+      return 'Standing'
+    case 'Als.Stance.Crouching':
+      return 'Crouching'
+    default:
+      throw new Error(
+        `Unsupported ALS mantling Stance tag "${String(tag)}"`,
+      )
+  }
+}
+
+export function compileAlsMantlingEarlyBlendOutNotify(
+  Notify: Readonly<AlsMantlingMontageNotify>,
+): AlsAnimNotifyStateEarlyBlendOutPayload {
+  return {
+    BlendOutDuration: Notify.BlendOutDuration ?? 0.25,
+    bCheckInput: Notify.bCheckInput ?? true,
+    bCheckLocomotionMode:
+      Notify.bCheckLocomotionMode ?? true,
+    bCheckRotationMode:
+      Notify.bCheckRotationMode ?? true,
+    bCheckStance: Notify.bCheckStance ?? true,
+    LocomotionModeEquals: locomotionModeFromAuthoredTag(
+      Notify.LocomotionModeEquals
+        ?? 'Als.LocomotionMode.InAir',
+    ),
+    RotationModeEquals: rotationModeFromAuthoredTag(
+      Notify.RotationModeEquals
+        ?? 'Als.RotationMode.Aiming',
+    ),
+    StanceEquals: stanceFromAuthoredTag(
+      Notify.StanceEquals
+        ?? 'Als.Stance.Crouching',
+    ),
+  }
+}
+
+export function compileAlsMantlingLocomotionActionNotify(
+  Notify: Readonly<AlsMantlingMontageNotify>,
+): { readonly LocomotionAction: Exclude<AlsLocomotionAction, null> } {
+  return {
+    LocomotionAction: locomotionActionFromAuthoredTag(
+      Notify.LocomotionAction,
+    ),
+  }
+}
+
+function activeEarlyBlendOutStatesForInstance(
+  Runtime: AlsMantlingNotifyRuntime,
+  MontageInstanceId: number,
+) {
+  let active = Runtime.ActiveEarlyBlendOutStates.get(
+    MontageInstanceId,
+  )
+  if (!active) {
+    active = new Map()
+    Runtime.ActiveEarlyBlendOutStates.set(
+      MontageInstanceId,
+      active,
+    )
+  }
+  return active
+}
+
+/**
+ * Dispatches the native branching-point Begin/End callbacks in animation
+ * traversal order. Unknown state classes or gameplay tags are content errors,
+ * never suffix-matched web aliases.
+ */
+export function consumeAlsMantlingNotifyEvents(
+  Runtime: AlsMantlingNotifyRuntime,
+  Character: AlsCharacter,
+  Events: readonly AlsMantlingMontageNotifyEvent[],
+): void {
+  for (const event of Events) {
+    const notify = event.notify
+    const notifyIndex =
+      event.mantlingSettings.Montage.Notifies.indexOf(notify)
+    if (notifyIndex < 0) {
+      throw new Error(
+        `${event.mantlingSettings.Montage.Name} received a foreign `
+        + 'mantling notify',
+      )
+    }
+    switch (notify.StateClassType) {
+      case 'AlsAnimNotifyState_SetLocomotionAction': {
+        const payload =
+          compileAlsMantlingLocomotionActionNotify(notify)
+        if (event.notifyEventType === 'Begin') {
+          notifyAlsAnimNotifyStateSetLocomotionActionBegin(
+            Character,
+            payload,
+          )
+        } else {
+          notifyAlsAnimNotifyStateSetLocomotionActionEnd(
+            Character,
+            payload,
+          )
+        }
+        break
+      }
+      case 'AlsAnimNotifyState_EarlyBlendOut': {
+        const payload =
+          compileAlsMantlingEarlyBlendOutNotify(notify)
+        const activeStates =
+          Runtime.ActiveEarlyBlendOutStates.get(event.instanceId)
+        if (event.notifyEventType === 'End') {
+          activeStates?.delete(notifyIndex)
+          if (activeStates?.size === 0) {
+            Runtime.ActiveEarlyBlendOutStates.delete(
+              event.instanceId,
+            )
+          }
+        } else {
+          activeEarlyBlendOutStatesForInstance(
+            Runtime,
+            event.instanceId,
+          ).set(notifyIndex, {
+            MontageInstanceId: event.instanceId,
+            NotifyIndex: notifyIndex,
+            Notify: payload,
+          })
+        }
+        break
+      }
+      default:
+        throw new Error(
+          `Unsupported ALS mantling notify state `
+          + `"${notify.StateClassType}"`,
+        )
+    }
+  }
+}
+
+/**
+ * Exact UAlsAnimNotifyState_EarlyBlendOut::BranchingPointNotifyTick() for
+ * every currently active authored state.
+ */
+export function tickAlsMantlingEarlyBlendOutStates(
+  Runtime: AlsMantlingNotifyRuntime,
+  Character: AlsCharacter,
+  MantlingMontage: AlsMantlingMontageBridge,
+): boolean {
+  let stopped = false
+  const montage = {
+    StopMontageInstance(
+      MontageInstanceID: number,
+      BlendOutDuration: number,
+    ) {
+      return MantlingMontage.stopMontageInstance(
+        MontageInstanceID,
+        BlendOutDuration,
+      )
+    },
+  }
+  const character = {
+    bHasInput: Character.locomotionState.hasInput,
+    LocomotionMode: Character.locomotionMode,
+    RotationMode: Character.rotationMode,
+    Stance: Character.stance,
+  }
+  for (
+    const activeStates
+    of Runtime.ActiveEarlyBlendOutStates.values()
+  ) {
+    for (const state of activeStates.values()) {
+      stopped = tickAlsAnimNotifyStateEarlyBlendOut(
+        montage,
+        state.MontageInstanceId,
+        character,
+        state.Notify,
+      ) || stopped
+    }
+  }
+  return stopped
+}
+
+export interface RefreshAlsMantlingNotifyRuntimeInput {
+  readonly Character: AlsCharacter
+  readonly MantlingMontage: AlsMantlingMontageBridge
+  readonly NotifyEvents:
+    readonly AlsMantlingMontageNotifyEvent[]
+}
+
+/**
+ * Called after UAnimInstance advancement: first apply its ordered
+ * branching-point transitions, then tick the states that remain active.
+ */
+export function refreshAlsMantlingNotifyRuntime(
+  Runtime: AlsMantlingNotifyRuntime,
+  input: Readonly<RefreshAlsMantlingNotifyRuntimeInput>,
+): boolean {
+  consumeAlsMantlingNotifyEvents(
+    Runtime,
+    input.Character,
+    input.NotifyEvents,
+  )
+  return tickAlsMantlingEarlyBlendOutStates(
+    Runtime,
+    input.Character,
+    input.MantlingMontage,
+  )
 }

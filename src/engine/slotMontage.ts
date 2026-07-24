@@ -998,6 +998,7 @@ export function stopSlotAnimation(
   clock: SlotMontageClock,
   blendOutDuration: number,
   slotName?: string,
+  blendOutOption: AlphaBlendOption = 'Linear',
 ): SlotMontageSample[] {
   if (!Number.isFinite(blendOutDuration) || blendOutDuration < 0) {
     throw new Error('StopSlotAnimation blend-out duration must be finite and non-negative')
@@ -1011,7 +1012,7 @@ export function stopSlotAnimation(
       instance,
       blendOutDuration,
       'stopped',
-      'Linear',
+      blendOutOption,
     )
     stopped.push(sample)
     clock.activeByGroup.delete(groupName)

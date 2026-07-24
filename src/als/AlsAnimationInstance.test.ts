@@ -424,7 +424,7 @@ describe('AlsAnimationInstance playback regression', () => {
 
     // FAlsRootMotionSource_Mantling writes M - DeltaTime. This rate-one montage advances to M.
     expect(instance.mantlingMontage.montageSetPosition(
-      played.instanceId,
+      settings,
       0.75,
     )).toBe(true)
     instance.refresh(0.05, {
@@ -441,7 +441,7 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.PostLocomotionRootMotionEnabled).toBe(0)
 
     expect(instance.mantlingMontage.montageSetPosition(
-      played.instanceId,
+      settings,
       0.65,
     )).toBe(true)
     instance.refresh(0.15, {
@@ -513,7 +513,7 @@ describe('AlsAnimationInstance playback regression', () => {
     // PrepareRootMotion writes M - DeltaTime, then FMontageSubStepper advances by
     // Instance.PlayRate (one) * the serialized UAnimMontage::RateScale.
     expect(instance.mantlingMontage.montageSetPosition(
-      played.instanceId,
+      settings,
       1.15,
     )).toBe(true)
     instance.refresh(0.1, controls)
@@ -651,7 +651,7 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(instance.mantlingMontage.takeNotifyEvents()).toEqual([])
 
     expect(instance.mantlingMontage.montageSetPosition(
-      played.instanceId,
+      settings,
       0.99,
     )).toBe(true)
     instance.refresh(0.02, controls)
@@ -664,7 +664,78 @@ describe('AlsAnimationInstance playback regression', () => {
     }])
   })
 
-  it('retains interrupted mantle fades and makes Stop instance-identity safe', async () => {
+  it('resolves SetPosition and Stop through the active montage asset', async () => {
+    const gltf = await loadAlsGltf()
+    const sameAsset = ALS_MANTLING_SETTINGS.MS_Als_Low_Right
+    const differentAsset = ALS_MANTLING_SETTINGS.MS_Als_High
+    const instance = createAlsAnimationInstance(gltf)
+
+    const first = instance.mantlingMontage.play(sameAsset, 0.2)
+    const replacement =
+      instance.mantlingMontage.play(sameAsset, 0.4)
+    if (!first || !replacement) {
+      throw new Error('Same-asset mantle replacement was rejected')
+    }
+    expect(replacement.instanceId).not.toBe(first.instanceId)
+
+    // UAnimInstance::ActiveMontagesMap.Add() replaces the asset's pointer
+    // with the newest FAnimMontageInstance.
+    expect(instance.mantlingMontage.montageSetPosition(
+      sameAsset,
+      0.8,
+    )).toBe(true)
+    // A zero-weight montage is not yet relevant to the Slot pose. Advance a
+    // real frame so the debug observation cannot accidentally reuse the
+    // preceding test's published table.
+    instance.refresh(0.05, controls)
+    expect(window.__weightTable?.PostLocomotionNewestInstanceId)
+      .toBe(replacement.instanceId)
+    expect(window.__weightTable?.PostLocomotionMontageTime)
+      .toBeCloseTo(0.85, 12)
+    expect(instance.mantlingMontage.montageStop(
+      sameAsset,
+      0.35,
+    )).toBe(true)
+    expect(instance.mantlingMontage.montageStop(
+      sameAsset,
+      0.35,
+    )).toBe(false)
+
+    const oldAsset =
+      instance.mantlingMontage.play(sameAsset, 0.1)
+    const newAsset =
+      instance.mantlingMontage.play(differentAsset, 0.2)
+    if (!oldAsset || !newAsset) {
+      throw new Error('Different-asset mantle replacement was rejected')
+    }
+    expect(instance.mantlingMontage.montageSetPosition(
+      sameAsset,
+      0.9,
+    )).toBe(false)
+    expect(instance.mantlingMontage.montageStop(
+      sameAsset,
+      0.35,
+    )).toBe(false)
+
+    expect(instance.mantlingMontage.montageSetPosition(
+      differentAsset,
+      0.7,
+    )).toBe(true)
+    instance.refresh(0.05, controls)
+    expect(window.__weightTable?.PostLocomotionNewestInstanceId)
+      .toBe(newAsset.instanceId)
+    expect(window.__weightTable?.PostLocomotionMontageTime)
+      .toBeCloseTo(
+        0.7 + 0.05 * differentAsset.Montage.RateScale,
+        12,
+      )
+    expect(instance.mantlingMontage.montageStop(
+      differentAsset,
+      0.4,
+    )).toBe(true)
+  })
+
+  it('retains fades and keeps EarlyBlendOut Stop instance-identity safe', async () => {
     const gltf = await loadAlsGltf()
     const settings = ALS_MANTLING_SETTINGS.MS_Als_Low_Right
     const instance = createAlsAnimationInstance(gltf)
@@ -699,11 +770,20 @@ describe('AlsAnimationInstance playback regression', () => {
       triggerTime: expect.closeTo(0.5, 12),
     }])
 
-    expect(instance.mantlingMontage.stop(first.instanceId, 0.35))
+    expect(instance.mantlingMontage.stopMontageInstance(
+      first.instanceId,
+      0.35,
+    ))
       .toBe(false)
-    expect(instance.mantlingMontage.stop(second.instanceId, 0.35))
+    expect(instance.mantlingMontage.stopMontageInstance(
+      second.instanceId,
+      0.35,
+    ))
       .toBe(true)
-    expect(instance.mantlingMontage.stop(second.instanceId, 0.35))
+    expect(instance.mantlingMontage.stopMontageInstance(
+      second.instanceId,
+      0.35,
+    ))
       .toBe(false)
 
     // FAnimMontageInstance retains native branching-point states through an
@@ -726,6 +806,31 @@ describe('AlsAnimationInstance playback regression', () => {
       notifyEventType: 'End',
       triggerTime: expect.closeTo(0.85, 12),
     }])
+  })
+
+  it('uses the authored montage blend curve for EarlyBlendOut', async () => {
+    const gltf = await loadAlsGltf()
+    const settings = ALS_MANTLING_SETTINGS.MS_Als_Low_Right
+    const instance = createAlsAnimationInstance(gltf)
+    const played = instance.mantlingMontage.play(settings, 0.2)
+    if (!played) throw new Error('Mantle montage was rejected')
+
+    instance.refresh(settings.Montage.BlendIn.BlendTime, controls)
+    expect(window.__weightTable?.PostLocomotionMontageWeight)
+      .toBeCloseTo(1, 12)
+    expect(settings.Montage.BlendOut.BlendOption)
+      .toBe('HermiteCubic')
+
+    expect(instance.mantlingMontage.stopMontageInstance(
+      played.instanceId,
+      0.35,
+    )).toBe(true)
+    instance.refresh(0.35 * 0.25, controls)
+
+    // HermiteCubic(.25) = .15625, so the retained weight is .84375.
+    // A linear UAnimInstance::Montage_Stop(float) fade would be .75.
+    expect(window.__weightTable?.PostLocomotionMontageWeight)
+      .toBeCloseTo(0.84375, 7)
   })
 
   it('does not end an unentered notify state when replaced before its first Advance()', async () => {
