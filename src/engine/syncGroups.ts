@@ -3,14 +3,17 @@ export interface SyncMarker {
   readonly normalizedTime: number
 }
 
-/** Injection seam for authored Animation Sync Markers once extraction includes them. */
+/** Authored per-clip marker table, with times normalized by the GLB adapter. */
 export type SyncMarkerTable = Readonly<Record<string, readonly SyncMarker[]>>
 
 export interface SyncGroupMember {
   readonly id: string
   readonly duration: number
   readonly markers: readonly SyncMarker[]
-  /** UE's Never Leader role. Followers still participate in marker matching. */
+  /**
+   * UE's Always Follower role. If every active member is Always Follower, the first member still
+   * becomes leader so that the group has a playback authority.
+   */
   readonly canLead?: boolean
   time: number
   weight: number
@@ -26,6 +29,7 @@ export interface SyncGroup {
 
 export interface SyncGroupResult {
   readonly leader: SyncGroupMember | null
+  /** Whether the group leader had at least one marker name valid across marked active members. */
   readonly usedMarkerSync: boolean
 }
 
@@ -55,8 +59,11 @@ export function electSyncGroupLeader(
   preferredLeaderId: string | null = null,
 ): SyncGroupMember | null {
   let leader: SyncGroupMember | null = null
+  let followerFallback: SyncGroupMember | null = null
   for (const member of members) {
-    if (member.canLead === false || member.weight <= 0) continue
+    if (member.weight <= 0) continue
+    followerFallback ??= member
+    if (member.canLead === false) continue
     if (
       !leader
       || member.weight > leader.weight
@@ -68,15 +75,22 @@ export function electSyncGroupLeader(
       leader = member
     }
   }
-  return leader
+  return leader ?? followerFallback
 }
 
-function commonMarkerNames(members: readonly SyncGroupMember[]) {
-  const active = members.filter((member) => member.weight > 0)
-  if (active.length < 2) return new Set<string>()
-  const common = new Set(active[0].markers.map((marker) => marker.name))
-  for (let i = 1; i < active.length; i++) {
-    const names = new Set(active[i].markers.map((marker) => marker.name))
+/**
+ * UE starts with the elected leader's names and filters them only against active players that
+ * actually have markers. A markerless follower length-syncs by itself; it does not disable marker
+ * sync for the rest of the group.
+ */
+function commonMarkerNames(
+  leader: SyncGroupMember,
+  members: readonly SyncGroupMember[],
+) {
+  const common = new Set(leader.markers.map((marker) => marker.name))
+  for (const member of members) {
+    if (member === leader || member.weight <= 0 || member.markers.length === 0) continue
+    const names = new Set(member.markers.map((marker) => marker.name))
     for (const name of common) {
       if (!names.has(name)) common.delete(name)
     }
@@ -102,7 +116,7 @@ function leaderMarkerPhase(
   commonNames: ReadonlySet<string>,
 ) {
   const markers = sortedCommonMarkers(leader, commonNames)
-  if (markers.length < 2) return null
+  if (markers.length === 0) return null
   const phase = normalizedTime(leader)
   let previousIndex = markers.length - 1
   for (let i = 0; i < markers.length; i++) {
@@ -152,9 +166,9 @@ function followerMarkerPair(
 
 /**
  * Maps a follower to the Leader's relative position between the same pair of common markers.
- * Without two common markers, normalized time is the documented derived fallback. It is exact for
- * same-length, same-boundary cycles; for the current markerless ALS GLB it is intentionally also
- * used as UE's scaled-length approximation until authored foot markers are extracted.
+ * Without a usable marker pair for this follower, normalized time is UE's scaled-length fallback.
+ * Markerless followers therefore length-sync individually while marked members remain marker
+ * synchronized.
  *
  * Epic semantics: only common markers participate, the Leader drives followers, and followers
  * preserve the Leader's relative position between its previous/next marker pair.
@@ -165,6 +179,7 @@ export function mapFollowerTime(
   follower: SyncGroupMember,
   commonNames: ReadonlySet<string>,
 ): { time: number; usedMarkerSync: boolean } {
+  if (follower.duration <= 0) return { time: 0, usedMarkerSync: false }
   const markerPhase = leaderMarkerPhase(leader, commonNames)
   if (markerPhase) {
     const pair = followerMarkerPair(
@@ -203,21 +218,20 @@ export function advanceSyncGroup(
   }
   group.leaderId = leader.id
   if (leader.duration > 0) {
-    leader.time = (
+    leader.time = wrapNormalized((
       leader.time
       + Math.max(0, deltaTime) * leader.playRate
-    ) % leader.duration
+    ) / leader.duration) * leader.duration
   } else {
     leader.time = 0
   }
 
-  const commonNames = commonMarkerNames(group.members)
-  let usedMarkerSync = commonNames.size >= 2
+  const commonNames = commonMarkerNames(leader, group.members)
+  const usedMarkerSync = commonNames.size > 0
   for (const follower of group.members) {
     if (follower === leader) continue
     const mapped = mapFollowerTime(leader, follower, commonNames)
     follower.time = mapped.time
-    usedMarkerSync &&= mapped.usedMarkerSync
   }
   return { leader, usedMarkerSync }
 }

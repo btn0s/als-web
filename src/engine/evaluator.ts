@@ -13,8 +13,19 @@ import {
 import type { MeshSpaceBlendScratch } from './blend'
 import type { CompiledClipSampler } from './clipSampler'
 import { resolveClipTime, sampleClip } from './clipSampler'
-import type { ClipCurveSamplers, CurveFrame } from './curves'
+import type { ClipCurveSamplers } from './curves'
 import { beginCurveFrame, createCurveFrame, sampleClipCurves } from './curves'
+import {
+  applyOutputInertialization,
+  createBlendedCurveFrame,
+  createOutputInertialization,
+  prepareOutputInertialization,
+} from './inertializationOutput'
+import type {
+  BlendedCurveFrame,
+  OutputInertialization,
+  ResolveBlendedCurves,
+} from './inertializationOutput'
 import type { LocalPoseBuffer } from './poseBuffer'
 import { copyPose, createPoseBuffer, resetPoseToReference } from './poseBuffer'
 import type { RigDefinition } from './rig'
@@ -47,6 +58,7 @@ export interface EvaluatePoseInput {
   readonly additives?: readonly EvaluatorLayerEntry[]
   readonly dynamicAdditives?: readonly EvaluatorDynamicAdditiveEntry[]
   readonly rootMotion?: RootMotionExtractor
+  readonly resolveBlendedCurves?: ResolveBlendedCurves
   deltaTime?: number
 }
 
@@ -65,7 +77,7 @@ export interface CoverageWarning {
 
 export interface PoseEvaluationResult {
   readonly pose: LocalPoseBuffer
-  readonly curves: CurveFrame
+  readonly curves: BlendedCurveFrame
   rootMotionDelta?: RootMotionDelta
 }
 
@@ -80,8 +92,9 @@ export interface PoseEvaluator {
   readonly accumulator: PoseAccumulator
   readonly overlayAccumulator: PoseAccumulator
   readonly meshSpaceScratch: MeshSpaceBlendScratch
-  readonly curves: CurveFrame
+  readonly curves: BlendedCurveFrame
   readonly inertialization: Inertialization
+  readonly outputInertialization: OutputInertialization
   readonly result: PoseEvaluationResult
   readonly development: boolean
   readonly coverageThreshold: number
@@ -101,7 +114,7 @@ export function createPoseEvaluator(
 ): PoseEvaluator {
   const referencePose = resetPoseToReference(createPoseBuffer(rig.boneCount), rig)
   const outputPose = resetPoseToReference(createPoseBuffer(rig.boneCount), rig)
-  const curves = createCurveFrame()
+  const curves = createBlendedCurveFrame(createCurveFrame())
   const result: PoseEvaluationResult = { pose: outputPose, curves }
   return {
     rig,
@@ -116,6 +129,7 @@ export function createPoseEvaluator(
     meshSpaceScratch: createMeshSpaceBlendScratch(rig.boneCount),
     curves,
     inertialization: createInertialization(rig.boneCount),
+    outputInertialization: createOutputInertialization(),
     result,
     development: options.development ?? false,
     coverageThreshold: options.coverageThreshold ?? 0.999,
@@ -195,6 +209,7 @@ export function evaluatePose(
 ): PoseEvaluationResult {
   clearPoseAccumulator(evaluator.accumulator)
   beginCurveFrame(evaluator.curves)
+  evaluator.curves.values.clear()
   sampleAndAccumulate(evaluator, input.base)
   sampleAndAccumulate(evaluator, input.montages)
   checkCoverage(evaluator)
@@ -284,15 +299,30 @@ export function evaluatePose(
     }
   }
 
+  input.resolveBlendedCurves?.(evaluator.curves, evaluator.curves.values)
+
   // UE's Inertialization node sits downstream of the graph: source selection hard-switches, then
-  // the captured outgoing correction is applied to the fully composed incoming pose.
-  applyInertialization(
+  // the captured outgoing correction is applied to the fully composed incoming pose, final curve
+  // container, and root-motion attribute.
+  const deltaTime = input.deltaTime ?? 0
+  prepareOutputInertialization(
+    evaluator.outputInertialization,
     evaluator.inertialization,
-    evaluator.outputPose,
-    input.deltaTime ?? 0,
   )
   evaluator.result.rootMotionDelta = input.rootMotion
     ? extractRootMotionDelta(input.rootMotion, evaluator.outputPose)
     : undefined
+  applyInertialization(
+    evaluator.inertialization,
+    evaluator.outputPose,
+    deltaTime,
+  )
+  applyOutputInertialization(
+    evaluator.outputInertialization,
+    evaluator.curves.values,
+    evaluator.result.rootMotionDelta,
+    deltaTime,
+    evaluator.inertialization,
+  )
   return evaluator.result
 }

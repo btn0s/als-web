@@ -44,8 +44,8 @@ describe('Locomotion sync integration', () => {
     const walkEntry = { sampler: walk, time: 0, weight: 1 }
     const runEntry = { sampler: run, time: 0, weight: 0 }
     const markers = [
-      { name: 'LeftFoot', normalizedTime: 0.1 },
-      { name: 'RightFoot', normalizedTime: 0.6 },
+      { name: 'Left', normalizedTime: 0.1 },
+      { name: 'Right', normalizedTime: 0.6 },
     ]
     const walkMember: SyncGroupMember = {
       id: 'walk',
@@ -59,8 +59,8 @@ describe('Locomotion sync integration', () => {
       id: 'run',
       duration: 0.8,
       markers: [
-        { name: 'LeftFoot', normalizedTime: 0.2 },
-        { name: 'RightFoot', normalizedTime: 0.8 },
+        { name: 'Left', normalizedTime: 0.2 },
+        { name: 'Right', normalizedTime: 0.8 },
       ],
       time: 0,
       weight: 0,

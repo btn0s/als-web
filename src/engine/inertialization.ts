@@ -2,6 +2,8 @@ import type { LocalPoseBuffer } from './poseBuffer'
 import { copyPose, createPoseBuffer } from './poseBuffer'
 
 const EPSILON = 1e-8
+const INERTIALIZATION_TIME_EPSILON = 1e-7
+const KINDA_SMALL_NUMBER = 1e-4
 
 interface InertialVector {
   readonly directions: Float32Array
@@ -20,6 +22,7 @@ export interface Inertialization {
   historyCount: number
   duration: number
   elapsed: number
+  deficit: number
   active: boolean
   pendingDuration: number | null
   requestCount: number
@@ -37,7 +40,8 @@ function createInertialVector(boneCount: number): InertialVector {
 /**
  * UE request behavior: requests are gathered before evaluation; multiple requests handled by the
  * same node in one update use the shortest requested blend. A request during an active transition
- * is captured again from the last output pose, preserving continuity while restarting the timer.
+ * captures again from the last output pose, while consecutive interruptions pay down UE's time
+ * deficit so an unstable target cannot hold the pose in a perpetual transition.
  *
  * Epic API: FAnimNode_Inertialization / FInertializationRequest
  * https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/FAnimNode_Inertialization
@@ -54,32 +58,26 @@ export function createInertialization(boneCount: number): Inertialization {
     historyCount: 0,
     duration: 0,
     elapsed: 0,
+    deficit: 0,
     active: false,
     pendingDuration: null,
     requestCount: 0,
     requestInertialization(duration: number) {
+      if (!Number.isFinite(duration) || duration < 0) return
       state.requestCount++
-      const safeDuration = Number.isFinite(duration) ? Math.max(0, duration) : 0
       state.pendingDuration = state.pendingDuration === null
-        ? safeDuration
-        : Math.min(state.pendingDuration, safeDuration)
+        ? duration
+        : Math.min(state.pendingDuration, duration)
     },
   }
   return state
 }
 
 /**
- * UE's CalcInertialFloat is a quintic that starts at the captured difference and velocity and
- * reaches zero value, velocity, and acceleration at the request duration. This is the equivalent
- * quintic Hermite form with zero initial acceleration:
- *
- *   x(s) = x0(1 - 10s³ + 15s⁴ - 6s⁵)
- *        + v0T(s - 6s³ + 8s⁴ - 3s⁵),  s = clamp(t / T, 0, 1)
- *
- * Positive velocity is discarded and negative velocity is bounded to -2.5x0/T. That bound follows
- * directly from the two basis functions and makes the critically damped-style decay monotone and
- * non-overshooting while retaining incoming momentum. At s=1 the correction and its first two
- * derivatives are exactly zero.
+ * Direct port of UE's `CalcInertialFloat`: a quintic that reaches zero value, velocity, and
+ * acceleration at the request duration. Initial acceleration is normally zero, but UE raises it
+ * when needed to preserve a large incoming velocity without overshoot. Extremely large negative
+ * velocity shortens the effective duration instead of clamping away that momentum.
  *
  * Epic describes the stored per-bone translation/rotation difference, speed, elapsed time, and
  * duration on FAnimNode_Inertialization:
@@ -91,17 +89,43 @@ export function evaluateInertialDecay(
   elapsed: number,
   duration: number,
 ): number {
-  const x0 = Math.max(0, initialDifference)
-  if (x0 <= EPSILON || duration <= 0 || elapsed >= duration) return 0
-  const s = Math.max(0, elapsed) / duration
-  const s2 = s * s
-  const s3 = s2 * s
-  const s4 = s3 * s
-  const s5 = s4 * s
-  const positionBasis = 1 - 10 * s3 + 15 * s4 - 6 * s5
-  const velocityBasis = s - 6 * s3 + 8 * s4 - 3 * s5
-  const speed = Math.max(-2.5 * x0 / duration, Math.min(0, initialSpeed))
-  return Math.max(0, x0 * positionBasis + speed * duration * velocityBasis)
+  if (
+    !Number.isFinite(initialDifference)
+    || !Number.isFinite(initialSpeed)
+    || !Number.isFinite(elapsed)
+    || !Number.isFinite(duration)
+  ) return 0
+
+  let x0 = initialDifference
+  let v0 = initialSpeed
+  const t = Math.max(0, elapsed)
+  let t1 = duration
+  if (t >= t1 - INERTIALIZATION_TIME_EPSILON) return 0
+
+  let sign = 1
+  if (x0 < 0) {
+    x0 = -x0
+    v0 = -v0
+    sign = -1
+  }
+  if (v0 > 0) v0 = 0
+  if (x0 < 0 || v0 > 0 || t1 < 0) return 0
+
+  // A quadruple velocity root at the shortened end time is the limiting non-overshooting curve.
+  if (v0 < -KINDA_SMALL_NUMBER) t1 = Math.min(t1, -5 * x0 / v0)
+  if (t >= t1 - INERTIALIZATION_TIME_EPSILON) return 0
+
+  const t1Squared = t1 * t1
+  const t1Cubed = t1 * t1Squared
+  const t1Fourth = t1 * t1Cubed
+  const t1Fifth = t1 * t1Fourth
+  const a0 = Math.max(0, (-8 * t1 * v0 - 20 * x0) / t1Squared)
+  const a = -0.5 * (a0 * t1Squared + 6 * t1 * v0 + 12 * x0) / t1Fifth
+  const b = 0.5 * (3 * a0 * t1Squared + 16 * t1 * v0 + 30 * x0) / t1Fourth
+  const c = -0.5 * (3 * a0 * t1Squared + 12 * t1 * v0 + 20 * x0) / t1Cubed
+  const d = 0.5 * a0
+  const x = ((((a * t + b) * t + c) * t + d) * t + v0) * t + x0
+  return x * sign
 }
 
 function captureVectorDifference(
@@ -118,7 +142,7 @@ function captureVectorDifference(
     const z = outgoing[offset + 2] - incoming[offset + 2]
     const magnitude = Math.hypot(x, y, z)
     target.magnitudes[bone] = magnitude
-    if (magnitude <= EPSILON) {
+    if (magnitude <= KINDA_SMALL_NUMBER) {
       target.directions[offset] = 0
       target.directions[offset + 1] = 0
       target.directions[offset + 2] = 0
@@ -133,7 +157,7 @@ function captureVectorDifference(
     target.directions[offset] = dx
     target.directions[offset + 1] = dy
     target.directions[offset + 2] = dz
-    target.speeds[bone] = older && deltaTime > EPSILON
+    target.speeds[bone] = older && deltaTime > KINDA_SMALL_NUMBER
       ? (
           (outgoing[offset] - older[offset]) * dx
           + (outgoing[offset + 1] - older[offset + 1]) * dy
@@ -203,17 +227,29 @@ function captureRotationDifference(
     target.directions[directionOffset + 2] = z
     target.magnitudes[bone] = angle
 
-    if (!older || deltaTime <= EPSILON) {
+    if (
+      angle <= KINDA_SMALL_NUMBER
+      || !older
+      || deltaTime <= KINDA_SMALL_NUMBER
+    ) {
       target.speeds[bone] = 0
       continue
     }
-    const [vx, vy, vz, velocityAngle] = quaternionToAxisAngle(
-      quaternionDifference(outgoing, q, older, q),
+    const previousDifference = quaternionDifference(older, q, incoming, q)
+    const previousTwistAngle = unwindRadians(
+      2 * Math.atan2(
+        previousDifference[0] * x
+          + previousDifference[1] * y
+          + previousDifference[2] * z,
+        previousDifference[3],
+      ),
     )
-    target.speeds[bone] = velocityAngle
-      * (vx * x + vy * y + vz * z)
-      / deltaTime
+    target.speeds[bone] = unwindRadians(angle - previousTwistAngle) / deltaTime
   }
+}
+
+function unwindRadians(angle: number) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle))
 }
 
 function capture(
@@ -246,6 +282,7 @@ function capture(
   state.duration = duration
   state.elapsed = 0
   state.active = duration > 0
+  if (!state.active) state.deficit = 0
 }
 
 function applyVectorCorrection(
@@ -299,12 +336,26 @@ function applyRotationCorrection(
     rotations[q + 1] = aw * by - ax * bz + ay * bw + az * bx
     rotations[q + 2] = aw * bz + ax * by - ay * bx + az * bw
     rotations[q + 3] = aw * bw - ax * bx - ay * by - az * bz
+    const inverseLength = 1 / Math.max(
+      EPSILON,
+      Math.hypot(
+        rotations[q],
+        rotations[q + 1],
+        rotations[q + 2],
+        rotations[q + 3],
+      ),
+    )
+    rotations[q] *= inverseLength
+    rotations[q + 1] *= inverseLength
+    rotations[q + 2] *= inverseLength
+    rotations[q + 3] *= inverseLength
   }
 }
 
 /**
  * Applies the captured difference after normal graph blending, then records the final output for
- * the next request. The request frame evaluates at t=0, so the outgoing pose is reproduced exactly.
+ * the next request. Like UE's evaluation pass, the current update delta is consumed before the
+ * correction is applied, including on the request frame.
  */
 export function applyInertialization(
   state: Inertialization,
@@ -317,16 +368,30 @@ export function applyInertialization(
 
   const pendingDuration = state.pendingDuration
   state.pendingDuration = null
+  const safeDeltaTime = Number.isFinite(deltaTime) ? Math.max(0, deltaTime) : 0
   const captured = pendingDuration !== null && state.historyCount > 0
   if (captured) {
-    capture(state, pose, pendingDuration)
-  } else if (pendingDuration !== null) {
-    state.active = false
-  } else if (state.active) {
-    state.elapsed = Math.min(
-      state.duration,
-      state.elapsed + Math.max(0, deltaTime),
-    )
+    let appliedDeficit = 0
+    if (state.active) {
+      const applyDeficit = state.deficit > 0
+      state.deficit = Math.max(0, state.duration - state.elapsed)
+      if (applyDeficit) appliedDeficit = state.deficit
+    } else {
+      state.deficit = 0
+    }
+    capture(state, pose, Math.max(0, pendingDuration - appliedDeficit))
+  }
+
+  if (state.active) {
+    state.elapsed = Math.min(state.duration, state.elapsed + safeDeltaTime)
+    if (state.elapsed >= state.duration) {
+      state.active = false
+      state.duration = 0
+      state.elapsed = 0
+      state.deficit = 0
+    } else {
+      state.deficit -= Math.min(state.deficit, safeDeltaTime)
+    }
   }
 
   if (state.active) {
@@ -348,12 +413,11 @@ export function applyInertialization(
       state.elapsed,
       state.duration,
     )
-    if (state.elapsed >= state.duration) state.active = false
   }
 
   copyPose(state.previousPose, state.olderPose)
   copyPose(pose, state.previousPose)
-  state.previousDeltaTime = Math.max(0, deltaTime)
+  state.previousDeltaTime = safeDeltaTime
   state.historyCount = Math.min(2, state.historyCount + 1)
   return pose
 }
