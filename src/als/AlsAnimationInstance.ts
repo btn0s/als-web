@@ -27,15 +27,18 @@ import { advanceLocomotionPhase, STAND, updateLocomotionTargets } from './AnimGr
 import {
   ALS_LAYER_REGIONS,
   blendOverlayCurve,
+  RIFLE_OVERLAY_REGION_POLICY,
   RIFLE_OVERLAY_CLIPS,
-  RIFLE_RELAXED_POSE_TIME,
   resolveArmAdditiveSpaceAmounts,
+  resolveRiflePoseBankTime,
   resolveRifleOverlaySourceWeights,
+  sampleRifleOverlayPolicyWeight,
 } from './AnimGraph/overlayMode'
 import type {
   AlsLayerRegion,
   AlsOverlayMode,
   OverlayCurveSource,
+  RifleOverlayRegionPolicy,
 } from './AnimGraph/overlayMode'
 import {
   computeWeightTable,
@@ -167,7 +170,7 @@ interface RuntimeClip {
 
 interface RuntimeOverlayEntry {
   readonly source: RuntimeOverlaySource
-  readonly layer: AlsLayerRegion
+  readonly policy: RifleOverlayRegionPolicy
   readonly entry: EvaluatorLayerEntry
 }
 
@@ -335,10 +338,10 @@ export function createAlsAnimationInstance(gltf: {
     return clip ? [{ key, clip, curves: clip.curves, time: 0, weight: 0 }] : []
   })
   const overlayEntries = overlaySources.flatMap((source) =>
-    ALS_LAYER_REGIONS.map((layer): RuntimeOverlayEntry => {
+    RIFLE_OVERLAY_REGION_POLICY.map((policy): RuntimeOverlayEntry => {
       const entry = createEntry(source.clip.sampler)
-      entry.mask = compileBoneMask(rig, REGION_PREDICATES[layer.region])
-      return { source, layer, entry }
+      entry.mask = compileBoneMask(rig, REGION_PREDICATES[policy.region])
+      return { source, policy, entry }
     }),
   )
 
@@ -354,8 +357,9 @@ export function createAlsAnimationInstance(gltf: {
   copyPose(standReference, layeringReference)
 
   const dynamicAdditives: RuntimeDynamicAdditive[] = []
-  for (const layer of ALS_LAYER_REGIONS) {
-    if (!layer.additiveCurve) continue
+  for (const policy of RIFLE_OVERLAY_REGION_POLICY) {
+    const layer = policy.layer
+    if (!layer?.additiveCurve) continue
     const mask = compileBoneMask(rig, REGION_PREDICATES[layer.region])
     if (layer.localSpaceCurve) {
       dynamicAdditives.push(
@@ -736,24 +740,14 @@ export function createAlsAnimationInstance(gltf: {
     for (const source of overlaySources) {
       source.weight = rifleActive ? rifleSourceWeights[source.key] : 0
       source.time = source.key === 'poses'
-        ? RIFLE_RELAXED_POSE_TIME
+        ? resolveRiflePoseBankTime(crouchingAmount)
         : source.clip.sampler.clip.duration * phase
     }
     const curveSources: readonly OverlayCurveSource[] = overlaySources
-    // AB_Als_Rifle's movement states replace the full pose-bank evaluator with arms-only sources.
-    // Walking has no authored arms cycle, so its held rifle upper body remains while the lower
-    // body LayerPelvis/LayerLegs ownership fades with the locomotion idle share.
-    const poseBankLowerBodyGate = standWeights[STAND.IDLE]
     for (const overlay of overlayEntries) {
-      const lowerBodyGate =
-        overlay.source.key === 'poses'
-        && (overlay.layer.region === 'pelvis' || overlay.layer.region === 'legs')
-          ? poseBankLowerBodyGate
-          : 1
       overlay.entry.time = overlay.source.time
       overlay.entry.weight = overlay.source.weight
-        * (overlay.source.curves?.[overlay.layer.baseCurve]?.(overlay.source.time) ?? 0)
-        * lowerBodyGate
+        * sampleRifleOverlayPolicyWeight(overlay.source, overlay.policy)
         * weights.groundedAmount
     }
 
