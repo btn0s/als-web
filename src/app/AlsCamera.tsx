@@ -16,9 +16,13 @@ import {
   setRightShoulder,
   tickAlsCameraComponent,
   type AlsCameraComponentInput,
+  type AlsCameraMovementBase,
   type AlsCameraRotation,
   type AlsCameraTrace,
 } from '../als/AlsCamera/AlsCameraComponent'
+import {
+  B_Als_CameraShake_Sprint,
+} from '../als/AlsCamera/Notifies/AlsAnimNotify_CameraShake'
 import { ALS_CAMERA_SETTINGS } from '../als/AlsCamera/AlsCameraSettings'
 import { refreshView, setViewMode } from '../als/AlsCharacter'
 import type {
@@ -42,6 +46,14 @@ import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 import {
   getCharacterMovementFloorOffset,
 } from '../engine/characterMovementFloor'
+import {
+  createAlsCameraShakeRequest,
+  createAlsCameraViewBridgeState,
+  drainAlsCameraShakeRequests,
+  getAlsLocomotionActionTag,
+  refreshAlsCameraViewBridge,
+} from '../engine/alsCameraBridge'
+import { PlayerCameraManager } from '../engine/PlayerCameraManager'
 import {
   threeToUnrealVector,
   unrealToThreeVector,
@@ -120,7 +132,7 @@ interface MutableCameraComponentInput {
   ownerLocation: { x: number; y: number; z: number }
   cameraTargetRotation: AlsCameraRotation
   meshRotation: AlsCameraRotation
-  movementBase: null
+  movementBase: AlsCameraMovementBase | null
   meshScale: number
   curves: Record<string, number>
   trace: AlsCameraTrace
@@ -207,7 +219,9 @@ function updateAnimationInput(
   ]
   input.Stance = STANCE_TAGS[character.stance]
   input.Gait = GAIT_TAGS[character.gait]
-  input.LocomotionAction = null
+  input.LocomotionAction = getAlsLocomotionActionTag(
+    character.locomotionAction,
+  )
   input.bRightShoulder = rightShoulder
 }
 
@@ -259,6 +273,20 @@ export function AlsCamera({
   const cameraComponentState = useRef(
     createAlsCameraComponentState(),
   ).current
+  const playerCameraManager = useMemo(
+    () => new PlayerCameraManager({
+      CameraShakeClasses: [B_Als_CameraShake_Sprint],
+    }),
+    [],
+  )
+  const cameraViewBridge = useMemo(
+    createAlsCameraViewBridgeState,
+    [],
+  )
+  const cameraShakeRequest = useMemo(
+    createAlsCameraShakeRequest,
+    [],
+  )
   const activated = useRef(false)
   const rootBone = useRef<THREE.Bone | null>(null)
   const headBone = useRef<THREE.Bone | null>(null)
@@ -334,6 +362,11 @@ export function AlsCamera({
     location: { x: 0, y: 0, z: 0 },
     rotation: { pitch: 0, yaw: 0, roll: 0 },
   }), [])
+
+  useEffect(() => {
+    const cameraShakeRequests = poseSample.current.cameraShakeRequests
+    return () => cameraShakeRequests.Reset()
+  }, [poseSample])
 
   useEffect(() => {
     const canvas = gl.domElement
@@ -585,6 +618,7 @@ export function AlsCamera({
     input.meshRotation.roll = 0
     input.deltaTime = deltaTime
     input.allowLag = true
+    input.movementBase = sample.movementBase
 
     updateAnimationInput(
       animationInput,
@@ -620,13 +654,25 @@ export function AlsCamera({
       )
     }
 
+    drainAlsCameraShakeRequests(
+      sample.cameraShakeRequests,
+      playerCameraManager,
+      cameraShakeRequest,
+    )
+    const renderView = refreshAlsCameraViewBridge(
+      cameraViewBridge,
+      playerCameraManager,
+      cameraComponentState,
+      deltaTime,
+    )
+
     unrealToThreeVector(
-      cameraComponentState.cameraLocation,
+      renderView.cameraLocation,
       scratch.cameraThree,
     )
     camera.position.copy(scratch.cameraThree)
     unrealRotatorToThreeCameraQuaternion(
-      cameraComponentState.cameraRotation,
+      renderView.cameraRotation,
       scratch.cameraQuaternion,
     )
     camera.quaternion.copy(scratch.cameraQuaternion)
@@ -635,14 +681,14 @@ export function AlsCamera({
     if (
       scratch.projectionAspect !== aspectRatio
       || scratch.projectionHorizontalFieldOfView
-        !== cameraComponentState.cameraFieldOfView
+        !== renderView.cameraFieldOfView
     ) {
       scratch.projectionAspect = aspectRatio
       scratch.projectionHorizontalFieldOfView =
-        cameraComponentState.cameraFieldOfView
+        renderView.cameraFieldOfView
       camera.fov =
         unrealHorizontalFovDegreesToThreeVerticalFovDegrees(
-          cameraComponentState.cameraFieldOfView,
+          renderView.cameraFieldOfView,
           aspectRatio,
         )
       camera.near = 0.1
@@ -659,13 +705,13 @@ export function AlsCamera({
     debugState.traceDistanceRatio =
       cameraComponentState.traceDistanceRatio
     debugState.horizontalFieldOfView =
-      cameraComponentState.cameraFieldOfView
-    debugState.location.x = cameraComponentState.cameraLocation.x
-    debugState.location.y = cameraComponentState.cameraLocation.y
-    debugState.location.z = cameraComponentState.cameraLocation.z
-    debugState.rotation.pitch = cameraComponentState.cameraRotation.pitch
-    debugState.rotation.yaw = cameraComponentState.cameraRotation.yaw
-    debugState.rotation.roll = cameraComponentState.cameraRotation.roll
+      renderView.cameraFieldOfView
+    debugState.location.x = renderView.cameraLocation.x
+    debugState.location.y = renderView.cameraLocation.y
+    debugState.location.z = renderView.cameraLocation.z
+    debugState.rotation.pitch = renderView.cameraRotation.pitch
+    debugState.rotation.yaw = renderView.cameraRotation.yaw
+    debugState.rotation.roll = renderView.cameraRotation.roll
   }, ALS_FRAME_PRIORITY.Camera)
 
   return null
