@@ -1,11 +1,13 @@
-import { alphaToBlendOption } from '../../engine/alphaBlend'
 import type { AlphaBlendOption } from '../../engine/alphaBlend'
 import { applyAdditivePose } from '../../engine/blend'
 import {
   compileBranchFilterMask,
 } from '../../engine/branchFilter'
 import type { BranchFilter } from '../../engine/branchFilter'
-import type { WeightBlendProfile } from '../../engine/blendProfile'
+import type {
+  CompiledWeightBlendProfile,
+  WeightBlendProfile,
+} from '../../engine/blendProfile'
 import {
   createInputScaleBiasClampState,
   refreshInputScaleBiasClampState,
@@ -23,6 +25,17 @@ import type {
 } from '../../engine/layeredBoneBlend'
 import { copyPose } from '../../engine/poseBuffer'
 import type { RigDefinition } from '../../engine/rig'
+import {
+  advanceStateMachineTransitionStack,
+  createStateMachineTransitionStack,
+  resetStateMachineTransitionStack,
+  startStateMachineStandardTransition,
+  writeStateMachineStateWeights,
+} from '../../engine/stateMachineTransitionStack'
+import type {
+  StateMachineStandardTransition,
+  StateMachineTransitionStack,
+} from '../../engine/stateMachineTransitionStack'
 import {
   blendTwoPoseNodesTogether,
 } from '../../engine/uePoseBlend'
@@ -502,12 +515,6 @@ export function createAlsCrouchingStateWeights(): AlsCrouchingStateWeights {
   }
 }
 
-function clearStateWeights(weights: AlsCrouchingStateWeights) {
-  for (const state of ALS_CROUCHING_GRAPH_STATE_ORDER) {
-    weights[state] = 0
-  }
-}
-
 export interface AlsCrouchingTransitionInput {
   readonly movingSmooth: boolean
   readonly rotatingLeft: boolean
@@ -590,27 +597,8 @@ export interface AlsCrouchingInertializationRequest {
   readonly duration: 0.2
 }
 
-export interface AlsCrouchingActiveStandardTransition {
-  readonly transition: AlsCrouchingStateTransition
-  elapsed: number
-  linearAlpha: number
-  blendAlpha: number
-}
-
-/**
- * A standard transition interruption is intentionally stopped at this seam.
- *
- * VERIFIED: UE retains the already-active transition source, and node33 allows three transitions
- * per frame. HYPOTHESIS still requiring a UE differential: exact FAnimNode_StateMachine stack
- * update/weight propagation when the destination state starts another standard transition.
- */
-export const ALS_CROUCHING_TRANSITION_STACK_STATUS = {
-  kind: 'hypothesis',
-  verified:
-    'The active transition remains a nested pose source and node33 permits three transitions per frame.',
-  unresolved:
-    'Exact interrupted standard-transition stack weights and update order.',
-} as const
+export type AlsCrouchingActiveStandardTransition =
+  StateMachineStandardTransition<AlsCrouchingGraphState>
 
 export const ALS_CROUCHING_AUTOMATIC_RULE_STATUS = {
   kind: 'hypothesis',
@@ -622,25 +610,48 @@ export const ALS_CROUCHING_AUTOMATIC_RULE_STATUS = {
 
 export interface AlsCrouchingStateRuntime {
   relevant: boolean
-  currentState: AlsCrouchingGraphState
+  readonly currentState: AlsCrouchingGraphState
+  readonly transitionStack:
+    StateMachineTransitionStack<AlsCrouchingGraphState>
   readonly stateWeights: AlsCrouchingStateWeights
+  readonly stateWeightBuffer: Float32Array
   readonly activeStandardTransitions:
-    AlsCrouchingActiveStandardTransition[]
-  unresolvedTransition: AlsCrouchingStateTransition | null
+    readonly AlsCrouchingActiveStandardTransition[]
+  readonly quickFeetBlendProfile: CompiledWeightBlendProfile | null
   readonly lifecycleEvents: AlsCrouchingLifecycleEvent[]
   readonly inertializationRequests: AlsCrouchingInertializationRequest[]
   transitionsTakenThisFrame: number
   transitionLimitReached: boolean
 }
 
-export function createAlsCrouchingStateRuntime():
-AlsCrouchingStateRuntime {
+/**
+ * Creates node33's exact UE standard-transition stack adapter.
+ *
+ * The no-argument form is only for scalar state-rule tests. Live pose evaluation must provide
+ * the rig's actual bone count and compiled SK_Als:QuickFeetBlend profile so Stop-to-Idle exposes
+ * correctly-sized per-bone masks.
+ */
+export function createAlsCrouchingStateRuntime(
+  boneCount = 1,
+  quickFeetBlendProfile: CompiledWeightBlendProfile | null = null,
+): AlsCrouchingStateRuntime {
+  const transitionStack = createStateMachineTransitionStack(
+    AB_ALS_CROUCHING_GRAPH.outerStateMachine.initialState,
+    boneCount,
+    AB_ALS_CROUCHING_GRAPH.outerStateMachine.maxTransitionsPerFrame + 1,
+  )
   return {
     relevant: false,
-    currentState: AB_ALS_CROUCHING_GRAPH.outerStateMachine.initialState,
+    get currentState() {
+      return transitionStack.currentState
+    },
+    transitionStack,
     stateWeights: createAlsCrouchingStateWeights(),
-    activeStandardTransitions: [],
-    unresolvedTransition: null,
+    stateWeightBuffer: new Float32Array(
+      ALS_CROUCHING_GRAPH_STATE_ORDER.length,
+    ),
+    activeStandardTransitions: transitionStack.activeTransitions,
+    quickFeetBlendProfile,
     lifecycleEvents: [],
     inertializationRequests: [],
     transitionsTakenThisFrame: 0,
@@ -649,12 +660,11 @@ AlsCrouchingStateRuntime {
 }
 
 function resetRuntimeState(runtime: AlsCrouchingStateRuntime) {
-  runtime.currentState =
-    AB_ALS_CROUCHING_GRAPH.outerStateMachine.initialState
-  clearStateWeights(runtime.stateWeights)
-  runtime.stateWeights.Idle = 1
-  runtime.activeStandardTransitions.length = 0
-  runtime.unresolvedTransition = null
+  resetStateMachineTransitionStack(
+    runtime.transitionStack,
+    AB_ALS_CROUCHING_GRAPH.outerStateMachine.initialState,
+  )
+  refreshStandardTransitionWeights(runtime)
   runtime.lifecycleEvents.length = 0
   runtime.inertializationRequests.length = 0
   runtime.transitionsTakenThisFrame = 0
@@ -734,38 +744,32 @@ function emitTransitionLifecycle(
 
 function refreshStandardTransitionWeights(
   runtime: AlsCrouchingStateRuntime,
-  active: AlsCrouchingActiveStandardTransition,
 ) {
-  clearStateWeights(runtime.stateWeights)
-  runtime.stateWeights[active.transition.from] = 1 - active.blendAlpha
-  runtime.stateWeights[active.transition.to] = active.blendAlpha
+  writeStateMachineStateWeights(
+    runtime.transitionStack,
+    ALS_CROUCHING_GRAPH_STATE_ORDER,
+    runtime.stateWeightBuffer,
+  )
+  for (
+    let index = 0;
+    index < ALS_CROUCHING_GRAPH_STATE_ORDER.length;
+    index++
+  ) {
+    runtime.stateWeights[
+      ALS_CROUCHING_GRAPH_STATE_ORDER[index]
+    ] = runtime.stateWeightBuffer[index]
+  }
 }
 
 function advanceStandardTransition(
   runtime: AlsCrouchingStateRuntime,
   deltaTime: number,
 ) {
-  const active = runtime.activeStandardTransitions[0]
-  if (!active) return
-
-  active.elapsed = Math.min(
-    active.transition.duration,
-    active.elapsed + deltaTime,
+  advanceStateMachineTransitionStack(
+    runtime.transitionStack,
+    deltaTime,
   )
-  active.linearAlpha = active.transition.duration <= 0
-    ? 1
-    : active.elapsed / active.transition.duration
-  active.blendAlpha = alphaToBlendOption(
-    active.linearAlpha,
-    active.transition.blendOption,
-  )
-  refreshStandardTransitionWeights(runtime, active)
-
-  if (active.linearAlpha >= 1) {
-    runtime.activeStandardTransitions.length = 0
-    clearStateWeights(runtime.stateWeights)
-    runtime.stateWeights[runtime.currentState] = 1
-  }
+  refreshStandardTransitionWeights(runtime)
 }
 
 function startTransition(
@@ -774,11 +778,15 @@ function startTransition(
 ) {
   runtime.transitionsTakenThisFrame++
   emitTransitionLifecycle(runtime, transition)
-  runtime.currentState = transition.to
 
   if (transition.logic === 'Inertialization') {
-    clearStateWeights(runtime.stateWeights)
-    runtime.stateWeights[transition.to] = 1
+    // UE's state-machine entry is effectively zero-duration here: node34 owns the visual blend.
+    // Hard-selecting the destination also retires every older standard transition pose source.
+    resetStateMachineTransitionStack(
+      runtime.transitionStack,
+      transition.to,
+    )
+    refreshStandardTransitionWeights(runtime)
     runtime.inertializationRequests.push({
       nodeIndex: 34,
       transitionIndex: transition.transitionIndex,
@@ -787,28 +795,27 @@ function startTransition(
     return
   }
 
+  startStateMachineStandardTransition(runtime.transitionStack, {
+    from: transition.from,
+    to: transition.to,
+    duration: transition.duration,
+    blendOption: transition.blendOption,
+    blendProfile: transition.blendProfile === 'QuickFeetBlend'
+      ? runtime.quickFeetBlendProfile
+      : null,
+  })
+  // Automatic remaining-time entries authored with duration zero complete at this update
+  // boundary, selecting their target and clearing all older entries before another rule scan.
   if (transition.duration <= 0) {
-    clearStateWeights(runtime.stateWeights)
-    runtime.stateWeights[transition.to] = 1
-    return
+    advanceStateMachineTransitionStack(runtime.transitionStack, 0)
   }
-
-  const active: AlsCrouchingActiveStandardTransition = {
-    transition,
-    elapsed: 0,
-    linearAlpha: 0,
-    blendAlpha: 0,
-  }
-  runtime.activeStandardTransitions.push(active)
-  refreshStandardTransitionWeights(runtime, active)
+  refreshStandardTransitionWeights(runtime)
 }
 
 /**
- * Updates node33 without inventing the two missing UE engine details.
- *
- * Stable and non-interrupted paths are executable. If an authored rule becomes true while a
- * standard transition is active, `unresolvedTransition` exposes that request and the retained
- * source transition remains untouched for a later engine-level stack resolver.
+ * Updates node33 through the shared UE transition-stack primitive. Standard transitions can
+ * interrupt and reverse each other while retaining ordered intermediate pose sources; automatic
+ * remaining-time stays an explicit caller-provided engine predicate.
  */
 export function refreshAlsCrouchingStateRuntime(
   runtime: AlsCrouchingStateRuntime,
@@ -822,7 +829,6 @@ export function refreshAlsCrouchingStateRuntime(
 
   runtime.lifecycleEvents.length = 0
   runtime.inertializationRequests.length = 0
-  runtime.unresolvedTransition = null
   runtime.transitionsTakenThisFrame = 0
   runtime.transitionLimitReached = false
 
@@ -860,11 +866,6 @@ export function refreshAlsCrouchingStateRuntime(
       transitionInput,
     )
     if (!transition) break
-
-    if (runtime.activeStandardTransitions.length > 0) {
-      runtime.unresolvedTransition = transition
-      break
-    }
 
     startTransition(runtime, transition)
   }

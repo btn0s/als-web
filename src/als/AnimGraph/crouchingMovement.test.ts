@@ -367,15 +367,13 @@ describe('crouching Movement States runtime', () => {
 
     const active = runtime.activeTransitions[0]
     expect(active).toMatchObject({
-      elapsed: 0,
+      previousState: 'Forward',
+      nextState: 'RightForward',
+      elapsedTime: 0,
       linearAlpha: 0,
-      blendAlpha: 0,
-      transition: {
-        from: 'Forward',
-        to: 'RightForward',
-        duration: 0.7,
-        blendOption: 'Cubic',
-      },
+      alpha: 0,
+      crossfadeDuration: 0.7,
+      blendOption: 'Cubic',
     })
 
     refreshAlsCrouchingMovementRuntime(runtime, {
@@ -383,7 +381,7 @@ describe('crouching Movement States runtime', () => {
       movementDirection: 'Right',
     }, 0.35)
     expect(active.linearAlpha).toBe(0.5)
-    expect(active.blendAlpha).toBe(0.5)
+    expect(active.alpha).toBe(0.5)
     expect(runtime.stateWeights.Forward).toBe(0.5)
     expect(runtime.stateWeights.RightForward).toBe(0.5)
 
@@ -397,7 +395,75 @@ describe('crouching Movement States runtime', () => {
     expect(runtime.stateWeights.RightForward).toBe(1)
   })
 
-  it('retains the interrupted source transition as a nested pose plan', () => {
+  it('uses the compiled MoveDirectionChange profile for exact pose masks', () => {
+    const profile = {
+      mode: 'WeightFactor',
+      blendScales: new Float32Array([1, 2, 0.5]),
+    } as const
+    const runtime = createAlsCrouchingMovementRuntime(3, profile)
+    refreshAlsCrouchingMovementRuntime(runtime, forward, 0)
+    refreshAlsCrouchingMovementRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Right',
+    }, 0)
+    refreshAlsCrouchingMovementRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Right',
+    }, 0.35)
+
+    const active = runtime.activeTransitions[0]
+    expect(active.blendProfile).toBe(profile)
+    expect([...active.previousPoseMask]).toEqual([
+      0.5,
+      expect.closeTo(0.2, 7),
+      expect.closeTo(0.8, 7),
+    ])
+    expect([...active.nextPoseMask]).toEqual([
+      0.5,
+      expect.closeTo(0.8, 7),
+      expect.closeTo(0.2, 7),
+    ])
+    expect(runtime.stateWeights).toMatchObject({
+      Forward: 0.5,
+      RightForward: 0.5,
+    })
+  })
+
+  it('rescales a reversal from the existing target weight without a scalar discontinuity', () => {
+    const runtime = createAlsCrouchingMovementRuntime()
+    refreshAlsCrouchingMovementRuntime(runtime, forward, 0)
+    refreshAlsCrouchingMovementRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Right',
+    }, 0)
+    refreshAlsCrouchingMovementRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Right',
+    }, 0.35)
+    refreshAlsCrouchingMovementRuntime(runtime, forward, 0)
+
+    expect(runtime.activeTransitions).toHaveLength(2)
+    expect(runtime.activeTransitions[1]).toMatchObject({
+      previousState: 'RightForward',
+      nextState: 'Forward',
+      crossfadeDuration: 0.35,
+      usesIntermediatePose: true,
+    })
+    expect(runtime.stateWeights.Forward).toBe(0.5)
+    expect(runtime.stateWeights.RightForward).toBe(0.5)
+
+    refreshAlsCrouchingMovementRuntime(runtime, forward, 0.175)
+    expect(runtime.activeTransitions[1].alpha).toBe(0.5)
+    expect(runtime.stateWeights.Forward).toBeCloseTo(0.578125, 7)
+    expect(runtime.stateWeights.RightForward).toBeCloseTo(0.421875, 7)
+
+    refreshAlsCrouchingMovementRuntime(runtime, forward, 0.175)
+    expect(runtime.activeTransitions).toHaveLength(0)
+    expect(runtime.stateWeights.Forward).toBe(1)
+    expect(runtime.stateWeights.RightForward).toBe(0)
+  })
+
+  it('retains an interruption and removes only completed older pose sources', () => {
     const runtime = createAlsCrouchingMovementRuntime()
     const entered: AlsHipsDirection[] = []
     refreshAlsCrouchingMovementRuntime(
@@ -417,12 +483,23 @@ describe('crouching Movement States runtime', () => {
 
     expect(runtime.currentState).toBe('LeftBackward')
     expect(runtime.activeTransitions.map((active) => ({
-      from: active.transition.from,
-      to: active.transition.to,
-      blendAlpha: active.blendAlpha,
+      from: active.previousState,
+      to: active.nextState,
+      alpha: active.alpha,
+      intermediate: active.usesIntermediatePose,
     }))).toEqual([
-      { from: 'Forward', to: 'RightForward', blendAlpha: 0.5 },
-      { from: 'RightForward', to: 'LeftBackward', blendAlpha: 0 },
+      {
+        from: 'Forward',
+        to: 'RightForward',
+        alpha: 0.5,
+        intermediate: false,
+      },
+      {
+        from: 'RightForward',
+        to: 'LeftBackward',
+        alpha: 0,
+        intermediate: true,
+      },
     ])
     expect(runtime.stateWeights).toMatchObject({
       Forward: 0.5,
@@ -436,6 +513,12 @@ describe('crouching Movement States runtime', () => {
       movementDirection: 'Left',
     }, 0.35)
     expect(runtime.activeTransitions).toHaveLength(1)
+    expect(runtime.activeTransitions[0]).toMatchObject({
+      previousState: 'RightForward',
+      nextState: 'LeftBackward',
+      alpha: 0.5,
+      usesIntermediatePose: false,
+    })
     expect(runtime.baseState).toBe('RightForward')
     expect(runtime.stateWeights.RightForward).toBe(0.5)
     expect(runtime.stateWeights.LeftBackward).toBe(0.5)
@@ -444,10 +527,14 @@ describe('crouching Movement States runtime', () => {
   it('takes at most the authored three transitions in one frame', () => {
     const runtime = createAlsCrouchingMovementRuntime()
     refreshAlsCrouchingMovementRuntime(runtime, forward, 0)
-    runtime.baseState = 'RightForward'
-    runtime.currentState = 'RightForward'
-    runtime.stateWeights.Forward = 0
-    runtime.stateWeights.RightForward = 1
+    refreshAlsCrouchingMovementRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Right',
+    }, 0)
+    refreshAlsCrouchingMovementRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Right',
+    }, 0.7)
 
     refreshAlsCrouchingMovementRuntime(runtime, {
       ...forward,

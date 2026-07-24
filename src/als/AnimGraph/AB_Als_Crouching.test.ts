@@ -16,7 +16,6 @@ import {
   ALS_CROUCHING_STATE_TRANSITIONS,
   ALS_CROUCHING_STOP_LEFT_BRANCH_FILTERS,
   ALS_CROUCHING_STOP_RIGHT_BRANCH_FILTERS,
-  ALS_CROUCHING_TRANSITION_STACK_STATUS,
   createAlsCrouchingPoseGraphRuntime,
   createAlsCrouchingStateRuntime,
   createAlsCrouchingStateWeights,
@@ -484,11 +483,7 @@ describe('VERIFIED Crouching States transition selection', () => {
     })
   })
 
-  it('keeps the two unknown UE engine details at explicit seams', () => {
-    expect(ALS_CROUCHING_TRANSITION_STACK_STATUS).toMatchObject({
-      kind: 'hypothesis',
-      unresolved: expect.stringContaining('stack weights'),
-    })
+  it('keeps automatic remaining-time at its explicit caller-owned engine seam', () => {
     expect(ALS_CROUCHING_AUTOMATIC_RULE_STATUS).toMatchObject({
       kind: 'hypothesis',
       unresolved: expect.stringContaining('comparison boundary'),
@@ -521,13 +516,11 @@ describe('Crouching States retained runtime', () => {
     }))
     expect(runtime.currentState).toBe('Move')
     expect(runtime.activeStandardTransitions[0]).toMatchObject({
-      transition: {
-        transitionIndex: 0,
-        from: 'Idle',
-        to: 'Move',
-      },
-      elapsed: 0,
-      blendAlpha: 0,
+      previousState: 'Idle',
+      nextState: 'Move',
+      elapsedTime: 0,
+      alpha: 0,
+      crossfadeDuration: 0.2,
     })
     expect(runtime.lifecycleEvents).toEqual([
       {
@@ -549,7 +542,7 @@ describe('Crouching States retained runtime', () => {
       movingSmooth: true,
     }))
     expect(runtime.activeStandardTransitions[0].linearAlpha).toBe(0.5)
-    expect(runtime.activeStandardTransitions[0].blendAlpha).toBe(0.5)
+    expect(runtime.activeStandardTransitions[0].alpha).toBe(0.5)
     expect(runtime.stateWeights).toMatchObject({ Idle: 0.5, Move: 0.5 })
   })
 
@@ -570,8 +563,11 @@ describe('Crouching States retained runtime', () => {
 
     refreshAlsCrouchingStateRuntime(runtime, runtimeInput())
     expect(runtime.currentState).toBe('Stop')
-    expect(runtime.activeStandardTransitions[0].transition)
-      .toMatchObject({ transitionIndex: 3, duration: 0.1 })
+    expect(runtime.activeStandardTransitions[0]).toMatchObject({
+      previousState: 'Move',
+      nextState: 'Stop',
+      crossfadeDuration: 0.1,
+    })
     expect(runtime.lifecycleEvents).toEqual([
       {
         kind: 'PlayTransitionRightAnimation',
@@ -590,16 +586,14 @@ describe('Crouching States retained runtime', () => {
       deltaTime: 0.1,
     }))
     expect(runtime.currentState).toBe('Idle')
-    expect(runtime.activeStandardTransitions[0].transition).toMatchObject({
-      transitionIndex: 11,
-      from: 'Stop',
-      to: 'Idle',
-      duration: 0.5,
-      blendProfile: 'QuickFeetBlend',
+    expect(runtime.activeStandardTransitions[0]).toMatchObject({
+      previousState: 'Stop',
+      nextState: 'Idle',
+      crossfadeDuration: 0.5,
     })
   })
 
-  it('exposes an interrupted standard transition instead of replacing its pose source', () => {
+  it('resolves the formerly blocked Move-to-Idle reversal with exact stack weights', () => {
     const runtime = createAlsCrouchingStateRuntime()
     refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
       movingSmooth: true,
@@ -608,20 +602,124 @@ describe('Crouching States retained runtime', () => {
       movingSmooth: true,
     }))
 
-    const active = runtime.activeStandardTransitions[0]
     refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
       movingSmooth: false,
       deltaTime: 0.05,
     }))
-    expect(runtime.activeStandardTransitions).toEqual([active])
-    expect(active.blendAlpha).toBeCloseTo(0.15625)
-    expect(runtime.unresolvedTransition).toMatchObject({
-      transitionIndex: 4,
-      from: 'Move',
-      to: 'Idle',
-      notify: 'StopQuick',
+    expect(runtime.activeStandardTransitions).toHaveLength(2)
+    expect(runtime.activeStandardTransitions[0]).toMatchObject({
+      previousState: 'Idle',
+      nextState: 'Move',
+      alpha: 0.15625,
+      usesIntermediatePose: false,
     })
-    expect(runtime.lifecycleEvents).toEqual([])
+    expect(runtime.activeStandardTransitions[1]).toMatchObject({
+      previousState: 'Move',
+      nextState: 'Idle',
+      crossfadeDuration: 0.0433349609375,
+      alpha: 0,
+      usesIntermediatePose: true,
+    })
+    expect(runtime.stateWeights.Idle).toBeCloseTo(0.84375, 7)
+    expect(runtime.stateWeights.Move).toBeCloseTo(0.15625, 7)
+    expect(runtime.lifecycleEvents).toEqual([
+      {
+        kind: 'CallFunction',
+        functionName: 'InitializeTurnInPlace',
+        callSite: 'OnBecomeRelevant',
+      },
+      {
+        kind: 'AnimNotify',
+        name: 'StopQuick',
+        callSite: 'TransitionStart',
+      },
+    ])
+
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      deltaTime: 0.0433349609375 / 2,
+    }))
+    expect(runtime.activeStandardTransitions[1].alpha).toBeCloseTo(0.5, 7)
+    expect(runtime.stateWeights.Idle).toBeCloseTo(
+      0.8534040219271901,
+      7,
+    )
+    expect(runtime.stateWeights.Move).toBeCloseTo(
+      0.14659597807280988,
+      7,
+    )
+
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      deltaTime: 0.0433349609375 / 2,
+    }))
+    expect(runtime.activeStandardTransitions).toHaveLength(0)
+    expect(runtime.stateWeights.Idle).toBe(1)
+    expect(runtime.stateWeights.Move).toBe(0)
+  })
+
+  it('publishes QuickFeetBlend masks without changing scalar relevance weights', () => {
+    const profile = {
+      mode: 'WeightFactor',
+      blendScales: new Float32Array([1, 5, 0.5]),
+    } as const
+    const runtime = createAlsCrouchingStateRuntime(3, profile)
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      movingSmooth: true,
+    }))
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      movingSmooth: true,
+    }))
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      movingSmooth: true,
+      deltaTime: 0.2,
+    }))
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput())
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      deltaTime: 0.1,
+    }))
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      deltaTime: 0.25,
+    }))
+
+    const active = runtime.activeStandardTransitions[0]
+    expect(active.blendProfile).toBe(profile)
+    expect(active.alpha).toBe(0.5)
+    expect([...active.previousPoseMask]).toEqual([
+      0.5,
+      expect.closeTo(1 / 26, 7),
+      expect.closeTo(0.8, 7),
+    ])
+    expect([...active.nextPoseMask]).toEqual([
+      0.5,
+      expect.closeTo(25 / 26, 7),
+      expect.closeTo(0.2, 7),
+    ])
+    expect(runtime.stateWeights.Stop).toBe(0.5)
+    expect(runtime.stateWeights.Idle).toBe(0.5)
+  })
+
+  it('hard-selects an inertialized target and retires older standard entries', () => {
+    const runtime = createAlsCrouchingStateRuntime()
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      movingSmooth: true,
+    }))
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      movingSmooth: true,
+    }))
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      movingSmooth: false,
+      deltaTime: 0.05,
+    }))
+    expect(runtime.activeStandardTransitions).toHaveLength(2)
+
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      rotatingRight: true,
+    }))
+    expect(runtime.currentState).toBe('Rotate Right')
+    expect(runtime.activeStandardTransitions).toHaveLength(0)
+    expect(runtime.stateWeights['Rotate Right']).toBe(1)
+    expect(runtime.inertializationRequests).toEqual([
+      { nodeIndex: 34, transitionIndex: 1, duration: 0.2 },
+    ])
   })
 
   it('forwards all inertial requests and stops at the authored maximum of three', () => {

@@ -1,4 +1,15 @@
-import { alphaToBlendOption } from '../../engine/alphaBlend'
+import type { CompiledWeightBlendProfile } from '../../engine/blendProfile'
+import {
+  advanceStateMachineTransitionStack,
+  createStateMachineTransitionStack,
+  resetStateMachineTransitionStack,
+  startStateMachineStandardTransition,
+  writeStateMachineStateWeights,
+} from '../../engine/stateMachineTransitionStack'
+import type {
+  StateMachineStandardTransition,
+  StateMachineTransitionStack,
+} from '../../engine/stateMachineTransitionStack'
 import type {
   AlsGroundedVelocityBlend,
   AlsHipsDirection,
@@ -15,10 +26,9 @@ import type {
  * - every state's normalized [Forward, Backward, Left, Right] MultiWayBlend cache order;
  * - SetHipsDirection() runs at OnBecomeRelevant for each state's matching EAlsHipsDirection.
  *
- * UE transition interruption retains the already-active source transition. The runtime preserves
- * that nested pose plan instead of flattening it into one replacement crossfade. The exact
- * FAnimNode_StateMachine transition-stack update order is engine behavior rather than ALS-authored
- * content; keep the status export below until a UE differential capture independently verifies it.
+ * UE transition interruption retains the already-active source transition. The runtime delegates
+ * that ordered nested pose plan, duration rescaling, cleanup, and scalar relevance recurrence to
+ * the independently verified FAnimNode_StateMachine transition-stack primitive.
  */
 
 export type {
@@ -402,19 +412,21 @@ export function selectAlsCrouchingMovementTransition(
   return null
 }
 
-export interface AlsCrouchingMovementActiveTransition {
-  readonly transition: AlsCrouchingMovementTransition
-  elapsed: number
-  linearAlpha: number
-  blendAlpha: number
-}
+export type AlsCrouchingMovementActiveTransition =
+  StateMachineStandardTransition<AlsHipsDirection>
 
 export interface AlsCrouchingMovementRuntime {
   relevant: boolean
-  baseState: AlsHipsDirection
-  currentState: AlsHipsDirection
-  readonly activeTransitions: AlsCrouchingMovementActiveTransition[]
+  /** Oldest retained pose source, kept as a compatibility view of the exact stack. */
+  readonly baseState: AlsHipsDirection
+  readonly currentState: AlsHipsDirection
+  readonly transitionStack: StateMachineTransitionStack<AlsHipsDirection>
+  readonly activeTransitions:
+    readonly AlsCrouchingMovementActiveTransition[]
   readonly stateWeights: AlsCrouchingMovementPoseWeights
+  readonly stateWeightBuffer: Float32Array
+  readonly moveDirectionChangeBlendProfile:
+    CompiledWeightBlendProfile | null
   transitionsTakenThisFrame: number
   lastSetHipsDirection: AlsHipsDirection | null
 }
@@ -428,35 +440,52 @@ export interface AlsCrouchingMovementRuntimeInput {
 
 export type AlsSetHipsDirection = (hipsDirection: AlsHipsDirection) => void
 
-export const ALS_CROUCHING_MOVEMENT_TRANSITION_STACK_STATUS = {
-  kind: 'hypothesis',
-  verified:
-    'ALS retains active transition sources and the authored machine allows three transitions per frame.',
-  needsVerification:
-    'Differentially capture UE state weights and per-bone poses during a second direction change before the first 0.7 second transition completes.',
-} as const
-
-export function createAlsCrouchingMovementRuntime():
-AlsCrouchingMovementRuntime {
+/**
+ * Creates the exact UE transition-stack adapter for Movement States.
+ *
+ * The no-argument form is only for scalar state-rule tests. Live pose evaluation must provide
+ * the rig's actual bone count and compiled SK_Als:MoveDirectionChange profile so every retained
+ * transition exposes correctly-sized `previousPoseMask` and `nextPoseMask` arrays.
+ */
+export function createAlsCrouchingMovementRuntime(
+  boneCount = 1,
+  moveDirectionChangeBlendProfile:
+    CompiledWeightBlendProfile | null = null,
+): AlsCrouchingMovementRuntime {
+  const transitionStack = createStateMachineTransitionStack(
+    ALS_CROUCHING_MOVEMENT_MACHINE.initialState,
+    boneCount,
+    ALS_CROUCHING_MOVEMENT_MACHINE.maxTransitionsPerFrame + 1,
+  )
   const stateWeights = createAlsCrouchingMovementPoseWeights()
   stateWeights.Forward = 1
   return {
     relevant: false,
-    baseState: ALS_CROUCHING_MOVEMENT_MACHINE.initialState,
-    currentState: ALS_CROUCHING_MOVEMENT_MACHINE.initialState,
-    activeTransitions: [],
+    get baseState() {
+      return transitionStack.activeTransitions[0]?.previousState
+        ?? transitionStack.currentState
+    },
+    get currentState() {
+      return transitionStack.currentState
+    },
+    transitionStack,
+    activeTransitions: transitionStack.activeTransitions,
     stateWeights,
+    stateWeightBuffer: new Float32Array(
+      ALS_CROUCHING_MOVEMENT_STATE_ORDER.length,
+    ),
+    moveDirectionChangeBlendProfile,
     transitionsTakenThisFrame: 0,
     lastSetHipsDirection: null,
   }
 }
 
 function resetRuntime(runtime: AlsCrouchingMovementRuntime) {
-  runtime.baseState = ALS_CROUCHING_MOVEMENT_MACHINE.initialState
-  runtime.currentState = ALS_CROUCHING_MOVEMENT_MACHINE.initialState
-  runtime.activeTransitions.length = 0
-  clearPoseWeights(runtime.stateWeights)
-  runtime.stateWeights.Forward = 1
+  resetStateMachineTransitionStack(
+    runtime.transitionStack,
+    ALS_CROUCHING_MOVEMENT_MACHINE.initialState,
+  )
+  refreshStateWeights(runtime)
   runtime.transitionsTakenThisFrame = 0
   runtime.lastSetHipsDirection = null
 }
@@ -479,15 +508,19 @@ function emitSetHipsDirection(
 }
 
 function refreshStateWeights(runtime: AlsCrouchingMovementRuntime) {
-  clearPoseWeights(runtime.stateWeights)
-  runtime.stateWeights[runtime.baseState] = 1
-
-  for (const active of runtime.activeTransitions) {
-    const sourceAmount = 1 - active.blendAlpha
-    for (const direction of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
-      runtime.stateWeights[direction] *= sourceAmount
-    }
-    runtime.stateWeights[active.transition.to] += active.blendAlpha
+  writeStateMachineStateWeights(
+    runtime.transitionStack,
+    ALS_CROUCHING_MOVEMENT_STATE_ORDER,
+    runtime.stateWeightBuffer,
+  )
+  for (
+    let index = 0;
+    index < ALS_CROUCHING_MOVEMENT_STATE_ORDER.length;
+    index++
+  ) {
+    runtime.stateWeights[
+      ALS_CROUCHING_MOVEMENT_STATE_ORDER[index]
+    ] = runtime.stateWeightBuffer[index]
   }
 }
 
@@ -495,26 +528,7 @@ function advanceTransitions(
   runtime: AlsCrouchingMovementRuntime,
   deltaTime: number,
 ) {
-  let lastCompletedIndex = -1
-  for (let index = 0; index < runtime.activeTransitions.length; index++) {
-    const active = runtime.activeTransitions[index]
-    active.elapsed = Math.min(
-      active.transition.duration,
-      active.elapsed + deltaTime,
-    )
-    active.linearAlpha = active.elapsed / active.transition.duration
-    active.blendAlpha = alphaToBlendOption(
-      active.linearAlpha,
-      active.transition.blendOption,
-    )
-    if (active.linearAlpha >= 1) lastCompletedIndex = index
-  }
-
-  if (lastCompletedIndex >= 0) {
-    runtime.baseState =
-      runtime.activeTransitions[lastCompletedIndex].transition.to
-    runtime.activeTransitions.splice(0, lastCompletedIndex + 1)
-  }
+  advanceStateMachineTransitionStack(runtime.transitionStack, deltaTime)
   refreshStateWeights(runtime)
 }
 
@@ -523,13 +537,13 @@ function startTransition(
   transition: AlsCrouchingMovementTransition,
   setHipsDirection: AlsSetHipsDirection | undefined,
 ) {
-  runtime.activeTransitions.push({
-    transition,
-    elapsed: 0,
-    linearAlpha: 0,
-    blendAlpha: 0,
+  startStateMachineStandardTransition(runtime.transitionStack, {
+    from: transition.from,
+    to: transition.to,
+    duration: transition.duration,
+    blendOption: transition.blendOption,
+    blendProfile: runtime.moveDirectionChangeBlendProfile,
   })
-  runtime.currentState = transition.to
   runtime.transitionsTakenThisFrame++
   refreshStateWeights(runtime)
   emitSetHipsDirection(runtime, transition.to, setHipsDirection)
@@ -539,9 +553,9 @@ function startTransition(
  * Updates the authored state machine. A rising relevance edge reinitializes to Forward, invokes
  * SetHipsDirection(Forward), and consumes that frame's bSkipFirstUpdateTransition behavior.
  *
- * `activeTransitions` is an oldest-to-newest nested pose plan. Pose evaluation should evaluate the
- * base state, then apply every transition's target state through MoveDirectionChange at
- * `blendAlpha`; flattening the plan into scalar clip weights would lose per-bone blend semantics.
+ * `activeTransitions` is the engine-owned oldest-to-newest nested pose plan. Pose evaluation
+ * evaluates each entry's previous/next state through its complementary MoveDirectionChange masks;
+ * scalar `stateWeights` are relevance weights from UE's generic recurrence, not pose masks.
  */
 export function refreshAlsCrouchingMovementRuntime(
   runtime: AlsCrouchingMovementRuntime,
