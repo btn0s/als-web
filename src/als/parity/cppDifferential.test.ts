@@ -17,9 +17,14 @@ import {
   RefreshVelocityBlend as RefreshVelocityBlendReference,
 } from '../reference/AlsAnimationInstance.reference'
 import type {
+  FAlsFootState,
   FAlsGeneralTurnInPlaceSettings,
+  FAlsMovementBaseState,
+  FQuat4f,
+  FTransform3f,
   FAlsTurnInPlaceClipSettings,
   FAlsVelocityBlendState,
+  FVector3f,
 } from '../reference/AlsAnimationInstance.reference'
 import {
   getRelativeAccelerationAmount,
@@ -63,6 +68,18 @@ import {
   refreshGroundPrediction,
 } from '../State/AlsInAirState'
 import {
+  createAlsFootState,
+  processFootLockBaseChange,
+  processFootLockTeleport,
+  refreshFootLock,
+} from '../State/AlsFeetState'
+import type {
+  AlsFootLockMovementBase,
+  AlsFootState,
+  AlsQuaternion,
+  AlsTransform,
+} from '../State/AlsFeetState'
+import {
   ALS_PARITY_DELTA_REPORT,
 } from './deltaReport'
 
@@ -90,6 +107,107 @@ function yawQuaternion(yawRadians: number) {
 
 function expectClose(actual: number, expected: number, epsilon = EPSILON) {
   expect(Math.abs(actual - expected)).toBeLessThanOrEqual(epsilon)
+}
+
+function footYawQuaternion(yawDegrees: number): AlsQuaternion {
+  const half = yawDegrees * Math.PI / 360
+  return { x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) }
+}
+
+function referenceFootVector(
+  value: { readonly x: number; readonly y: number; readonly z: number },
+  scale = 100,
+): FVector3f {
+  return { X: value.x * scale, Y: value.y * scale, Z: value.z * scale }
+}
+
+function referenceFootQuaternion(value: Readonly<AlsQuaternion>): FQuat4f {
+  return { X: value.x, Y: value.y, Z: value.z, W: value.w }
+}
+
+function referenceFootTransform(value: AlsTransform): FTransform3f {
+  return {
+    Location: referenceFootVector(value.location),
+    Rotation: referenceFootQuaternion(value.rotation),
+  }
+}
+
+function referenceFootMovementBase(
+  value: AlsFootLockMovementBase,
+): FAlsMovementBaseState {
+  return {
+    bHasRelativeLocation: value.hasRelativeLocation,
+    bHasRelativeRotation: false,
+    Location: referenceFootVector(value.location),
+    Rotation: referenceFootQuaternion(value.rotation),
+    DeltaRotationYaw: 0,
+  }
+}
+
+function referenceFootState(value: AlsFootState): FAlsFootState {
+  return {
+    ThighAxis: referenceFootVector(value.thighAxis, 1),
+    LockAmount: value.lockAmount,
+    TargetLocation: referenceFootVector(value.targetLocation),
+    TargetRotation: referenceFootQuaternion(value.targetRotation),
+    LockLocation: referenceFootVector(value.lockLocation),
+    LockRotation: referenceFootQuaternion(value.lockRotation),
+    LockComponentRelativeLocation:
+      referenceFootVector(value.lockComponentRelativeLocation),
+    LockComponentRelativeRotation:
+      referenceFootQuaternion(value.lockComponentRelativeRotation),
+    LockMovementBaseRelativeLocation:
+      referenceFootVector(value.lockMovementBaseRelativeLocation),
+    LockMovementBaseRelativeRotation:
+      referenceFootQuaternion(value.lockMovementBaseRelativeRotation),
+    FinalLocation: referenceFootVector(value.finalLocation),
+    FinalRotation: referenceFootQuaternion(value.finalRotation),
+  }
+}
+
+function expectFootStateToMatchReference(
+  actual: AlsFootState,
+  expected: FAlsFootState,
+): void {
+  expectClose(actual.lockAmount, expected.LockAmount)
+  for (const [runtime, reference, scale] of [
+    [actual.thighAxis, expected.ThighAxis, 1],
+    [actual.targetLocation, expected.TargetLocation, 100],
+    [actual.lockLocation, expected.LockLocation, 100],
+    [
+      actual.lockComponentRelativeLocation,
+      expected.LockComponentRelativeLocation,
+      100,
+    ],
+    [
+      actual.lockMovementBaseRelativeLocation,
+      expected.LockMovementBaseRelativeLocation,
+      100,
+    ],
+    [actual.finalLocation, expected.FinalLocation, 100],
+  ] as const) {
+    expectClose(runtime.x * scale, reference.X)
+    expectClose(runtime.y * scale, reference.Y)
+    expectClose(runtime.z * scale, reference.Z)
+  }
+  for (const [runtime, reference] of [
+    [actual.targetRotation, expected.TargetRotation],
+    [actual.lockRotation, expected.LockRotation],
+    [
+      actual.lockComponentRelativeRotation,
+      expected.LockComponentRelativeRotation,
+    ],
+    [
+      actual.lockMovementBaseRelativeRotation,
+      expected.LockMovementBaseRelativeRotation,
+    ],
+    [actual.finalRotation, expected.FinalRotation],
+  ] as const) {
+    expectClose(runtime.x, reference.X)
+    expectClose(runtime.y, reference.Y)
+    expectClose(runtime.z, reference.Z)
+    expectClose(runtime.w, reference.W)
+  }
 }
 
 function referenceVelocityState(
@@ -781,10 +899,121 @@ describe('ALS C++ differential oracle', () => {
     expect(runtimeState.activationDelay).toBe(referenceState.ActivationDelay)
   })
 
-  it.skip('UNPORTED SYSTEM cpp-foot-lock: teleport/base-change/latch/decrease/angle-limit state has no runtime seam', () => {
-    void ProcessFootLockTeleport
-    void ProcessFootLockBaseChange
-    void RefreshFootLock
+  it(`foot-lock state matches for ${PROPERTY_CASES} seeded metre-boundary cases`, () => {
+    const random = seededRandom(0xf0_07_10_cc)
+    const randomVector = (extent = 5) => ({
+      x: range(random, -extent, extent),
+      y: range(random, -extent, extent),
+      z: range(random, -extent, extent),
+    })
+    const randomRotation = () => footYawQuaternion(range(random, -180, 180))
+    const randomTransform = (): AlsTransform => ({
+      location: randomVector(),
+      rotation: randomRotation(),
+    })
+    const randomMovementBase = (): AlsFootLockMovementBase => ({
+      hasRelativeLocation: random() > 0.5,
+      location: randomVector(),
+      rotation: randomRotation(),
+    })
+    const randomState = (): AlsFootState => {
+      const thighAngle = range(random, -Math.PI, Math.PI)
+      const state = createAlsFootState({
+        x: Math.cos(thighAngle),
+        y: Math.sin(thighAngle),
+        z: 0,
+      })
+      state.lockAmount = random()
+      state.targetLocation = randomVector(2)
+      state.targetRotation = randomRotation()
+      state.lockLocation = randomVector(2)
+      state.lockRotation = randomRotation()
+      state.lockComponentRelativeLocation = randomVector(2)
+      state.lockComponentRelativeRotation = randomRotation()
+      state.lockMovementBaseRelativeLocation = randomVector(2)
+      state.lockMovementBaseRelativeRotation = randomRotation()
+      state.finalLocation = randomVector(2)
+      state.finalRotation = randomRotation()
+      return state
+    }
+
+    for (let index = 0; index < PROPERTY_CASES; index++) {
+      const componentTransform = randomTransform()
+      const movementBase = randomMovementBase()
+
+      const teleportState = randomState()
+      const teleportReference = referenceFootState(teleportState)
+      const teleportInput = {
+        ikAmount: random(),
+        pendingUpdate: random() > 0.8,
+        timeSinceTeleported: range(random, 0, 0.4),
+        componentTransform,
+        movementBase,
+      }
+      processFootLockTeleport(teleportState, teleportInput)
+      ProcessFootLockTeleport({
+        IkAmount: teleportInput.ikAmount,
+        FootState: teleportReference,
+        bPendingUpdate: teleportInput.pendingUpdate,
+        TimeSinceTeleported: teleportInput.timeSinceTeleported,
+        ComponentTransform: referenceFootTransform(componentTransform),
+        MovementBase: referenceFootMovementBase(movementBase),
+      })
+      expectFootStateToMatchReference(teleportState, teleportReference)
+
+      const baseChangeState = randomState()
+      const baseChangeReference = referenceFootState(baseChangeState)
+      const baseChangeInput = {
+        ikAmount: random(),
+        pendingUpdate: random() > 0.8,
+        baseChanged: random() > 0.5,
+        componentTransform,
+        movementBase,
+      }
+      processFootLockBaseChange(baseChangeState, baseChangeInput)
+      ProcessFootLockBaseChange({
+        IkAmount: baseChangeInput.ikAmount,
+        FootState: baseChangeReference,
+        bPendingUpdate: baseChangeInput.pendingUpdate,
+        bBaseChanged: baseChangeInput.baseChanged,
+        ComponentTransform: referenceFootTransform(componentTransform),
+        MovementBase: referenceFootMovementBase(movementBase),
+      })
+      expectFootStateToMatchReference(baseChangeState, baseChangeReference)
+
+      const refreshState = randomState()
+      const refreshReference = referenceFootState(refreshState)
+      const pelvisRotation = randomRotation()
+      const refreshInput = {
+        ikAmount: random(),
+        lockCurveAmount: range(random, -1, 2),
+        componentTransform,
+        deltaTime: range(random, 0, 0.1),
+        movingSmooth: random() > 0.5,
+        grounded: random() > 0.35,
+        pendingUpdate: random() > 0.85,
+        disableFootLock: random() > 0.9,
+        movementBase,
+        pelvisRotation,
+        footLockAngleLimit: range(random, 0, 180),
+      }
+      refreshFootLock(refreshState, refreshInput)
+      RefreshFootLock({
+        IkAmount: refreshInput.ikAmount,
+        NewLockCurveAmount: refreshInput.lockCurveAmount,
+        FootState: refreshReference,
+        ComponentTransform: referenceFootTransform(componentTransform),
+        DeltaTime: refreshInput.deltaTime,
+        bMovingSmooth: refreshInput.movingSmooth,
+        bGrounded: refreshInput.grounded,
+        bPendingUpdate: refreshInput.pendingUpdate,
+        bDisableFootLock: refreshInput.disableFootLock,
+        MovementBase: referenceFootMovementBase(movementBase),
+        PelvisRotation: referenceFootQuaternion(pelvisRotation),
+        FootLockAngleLimit: refreshInput.footLockAngleLimit,
+      })
+      expectFootStateToMatchReference(refreshState, refreshReference)
+    }
   })
 
   it(`PlayQuickStopAnimation matches for ${PROPERTY_CASES} seeded and angle-edge cases`, () => {
@@ -888,8 +1117,6 @@ describe('ALS C++ differential oracle', () => {
       .filter((entry) => entry.oracle === 'C++ differential')
       .map((entry) => entry.id)
       .sort()
-    expect(cppDeltaIds).toEqual([
-      'cpp-foot-lock',
-    ])
+    expect(cppDeltaIds).toEqual([])
   })
 })

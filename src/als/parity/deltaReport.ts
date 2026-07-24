@@ -20,16 +20,6 @@ export interface AlsParityDelta {
 }
 
 export const ALS_PARITY_DELTA_REPORT: readonly AlsParityDelta[] = [
-  {
-    id: 'cpp-foot-lock',
-    category: 'unported system',
-    oracle: 'C++ differential',
-    source: 'AlsAnimationInstance.cpp:1179-1376',
-    observed:
-      'Runtime curve debug values exist, but no teleport/base-change/lock transform state can be compared.',
-    reason:
-      'Runtime samples FootLock curves for debug state but has no ALS latch/decrease/capture/angle-limit state machine.',
-  },
 ] as const
 
 export function getAlsParityDelta(id: string): AlsParityDelta {
