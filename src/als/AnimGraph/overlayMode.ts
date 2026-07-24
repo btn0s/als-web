@@ -7,6 +7,8 @@ export type { AlsLayerRegion }
 export const ALS_OVERLAY_MODES = ['Default', 'Rifle'] as const
 export type AlsOverlayMode = (typeof ALS_OVERLAY_MODES)[number]
 
+export const DEFAULT_OVERLAY_CLIP = 'A_Als_Default_Poses'
+
 export const RIFLE_OVERLAY_CLIPS = {
   poses: 'A_Als_Rifle_Poses',
   runArms: 'A_Als_Rifle_Run_Arms',
