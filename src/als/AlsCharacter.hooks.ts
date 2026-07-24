@@ -23,6 +23,7 @@ import type { AlsCharacter } from './AlsCharacter'
 import {
   stepGroundedVelocity,
 } from './AlsCharacterMovementComponent'
+import { getRelativeAccelerationAmount } from './AlsAnimationInstance'
 import type { AlsAnimationInstanceControls } from './AlsAnimationInstance'
 import type { CharacterPoseSample } from './AlsCamera/poseCameraState'
 import {
@@ -327,6 +328,7 @@ export function useAlsCharacter(
     overlayMode: 'Default',
     speed: 0,
     direction: 0,
+    relativeAccelerationAmount: { x: 0, y: 0 },
     rotateInPlace: false,
     viewYawAngle: 0,
     viewYawSpeed: 0,
@@ -379,6 +381,7 @@ export function useAlsCharacter(
   const inputAxes = useRef<InputAxes>({ right: 0, forward: 0 })
   const inputDirection = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const actualVelocity = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const acceleration = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const desiredVelocity = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const renderedVelocity = useRef({ x: 0, y: 0, z: 0 })
   const debugViewYawWorld = useRef(0)
@@ -586,12 +589,25 @@ export function useAlsCharacter(
     desiredVelocity.current.z = current.movement.velocity.z
     const linearVelocity = body.linvel()
     threeToUnrealVector(linearVelocity, actualVelocity.current)
+    const previousVelocityX = current.locomotionState.velocity.x
+    const previousVelocityY = current.locomotionState.velocity.y
+    const previousVelocityZ = current.locomotionState.velocity.z
+    const locomotionActorYaw = current.actorYawAngle * Math.PI / 180
     refreshAlsCharacter(
       current,
       inputDirection.current,
       actualVelocity.current,
       desiredVelocity.current,
     )
+    acceleration.current.x =
+      (current.locomotionState.velocity.x - previousVelocityX)
+      / ALS_PHYSICS_TIMESTEP
+    acceleration.current.y =
+      (current.locomotionState.velocity.y - previousVelocityY)
+      / ALS_PHYSICS_TIMESTEP
+    acceleration.current.z =
+      (current.locomotionState.velocity.z - previousVelocityZ)
+      / ALS_PHYSICS_TIMESTEP
     stepGroundedVelocity(
       current.movement,
       inputDirection.current,
@@ -639,6 +655,20 @@ export function useAlsCharacter(
     frame.direction = controls.movementOverride
       ? controls.direction
       : unwindDegrees(state.velocityYawAngle - current.actorYawAngle)
+    const relativeAccelerationAmount = getRelativeAccelerationAmount({
+      actorYaw: locomotionActorYaw,
+      acceleration: acceleration.current,
+      velocity: state.velocity,
+      maxAcceleration: current.movement.maxAccelerationWalking,
+      maxBrakingDeceleration:
+        current.movement.brakingDecelerationWalking,
+    })
+    frame.relativeAccelerationAmount.x = controls.movementOverride
+      ? 0
+      : relativeAccelerationAmount.x
+    frame.relativeAccelerationAmount.y = controls.movementOverride
+      ? 0
+      : relativeAccelerationAmount.y
     frame.rotateInPlace = controls.rotateInPlace
     frame.viewYawAngle = relativeViewYaw
     frame.viewYawSpeed = current.viewYawSpeed

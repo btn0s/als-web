@@ -27,6 +27,7 @@ const controls: AlsAnimationInstanceControls = {
   overlayMode: 'Default',
   speed: 3.75,
   direction: 0,
+  relativeAccelerationAmount: { x: 0, y: 0 },
   rotateInPlace: false,
   viewYawAngle: 0,
   viewYawSpeed: 0,
@@ -302,6 +303,74 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.runLeftFwd).toBe(0)
     expect(instance.state.pose.amount).toBe(3)
     expect(instance.state.standingMovement.playRate).toBeCloseTo(650 / 600, 12)
+  })
+
+  it('evaluates the authored sprint tag, acceleration, and exit blends without inertialization', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    refreshFrames(instance, 60, controls)
+    const sprint = {
+      ...controls,
+      gait: 'Sprinting' as const,
+      speed: 6.5,
+      relativeAccelerationAmount: { x: 0.25, y: 0 },
+    }
+    const before = requestCount()
+
+    instance.refresh(0.1, sprint)
+    expect(instance.state.standingSprint.sprintTime).toBeCloseTo(0.1)
+    expect(instance.state.standingSprint.sprintAccelerationAmount).toBe(0.25)
+    expect(window.__weightTable?.SprintBlendAmount).toBeCloseTo(0.125)
+    expect(window.__weightTable?.runFwd).toBeCloseTo(0.875)
+    expect(window.__weightTable?.sprint).toBe(0)
+    expect(window.__weightTable?.sprintAcceleration).toBeCloseTo(0.125)
+    expect(requestCount()).toBe(before)
+
+    instance.refresh(0.1, sprint)
+    expect(window.__weightTable?.SprintBlendAmount).toBe(1)
+    expect(window.__weightTable?.runFwd).toBe(0)
+    expect(window.__weightTable?.sprint).toBe(0)
+    expect(window.__weightTable?.sprintAcceleration).toBe(1)
+
+    instance.refresh(0.3, sprint)
+    expect(instance.state.standingSprint.sprintTime).toBeCloseTo(0.5)
+    expect(instance.state.standingSprint.sprintAccelerationAmount).toBe(0)
+    expect(window.__weightTable?.sprint).toBe(1)
+    expect(window.__weightTable?.sprintAcceleration).toBe(0)
+
+    const running = {
+      ...controls,
+      relativeAccelerationAmount: { x: 0, y: 0 },
+    }
+    instance.refresh(0.15, running)
+    expect(window.__weightTable?.SprintBlendAmount).toBeCloseTo(0.875)
+    expect(window.__weightTable?.sprint).toBeCloseTo(0.875)
+    expect(window.__weightTable?.runFwd).toBeCloseTo(0.125)
+    instance.refresh(0.15, running)
+    expect(window.__weightTable?.SprintBlendAmount).toBe(0)
+    expect(window.__weightTable?.sprint).toBe(0)
+    expect(window.__weightTable?.runFwd).toBe(1)
+    expect(requestCount()).toBe(before)
+  })
+
+  it('applies the prior resolved SprintBlock curve through the outer MoveForward blend', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const sprint = {
+      ...controls,
+      gait: 'Sprinting' as const,
+      speed: 6.5,
+      relativeAccelerationAmount: { x: 0, y: 0 },
+    }
+    refreshFrames(instance, 60, sprint)
+    expect(window.__weightTable?.sprint).toBe(1)
+
+    // RefreshStandingMovement reads the previous graph evaluation's named curve container.
+    instance.state.standingSprint.sprintBlockAmount = 1
+    instance.refresh(0, sprint)
+    expect(window.__weightTable?.runFwd).toBe(1)
+    expect(window.__weightTable?.sprint).toBe(0)
+    expect(window.__weightTable?.sprintAcceleration).toBe(0)
   })
 
   it('runs RefreshMovementDirection and the recovered state predicates automatically', async () => {

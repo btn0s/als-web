@@ -52,6 +52,14 @@ import type {
   AlsStandingMovementState,
 } from './AnimGraph/groundedLocomotion'
 import {
+  ALS_STANDING_SPRINT_GRAPH,
+  createAlsStandingSprintState,
+  refreshStandingSprint,
+} from './AnimGraph/standingSprint'
+import type {
+  AlsStandingSprintState,
+} from './AnimGraph/standingSprint'
+import {
   ALS_LAYER_REGIONS,
   blendOverlayCurve,
   RIFLE_OVERLAY_REGION_POLICY,
@@ -119,6 +127,7 @@ import {
   POSE_STANDING_CURVE_NAME,
   REGION_PREDICATES,
   ROTATION_YAW_SPEED_CURVE_NAME,
+  SPRINT_BLOCK_CURVE_NAME,
 } from './Utility/AlsConstants'
 
 interface ExtractedBlendSpaces {
@@ -186,7 +195,6 @@ const ROLE_GAIT_AMOUNT: Record<ClipRole, number> = {
 const OVERLAY_MODE_INERTIALIZATION_DURATION = 0.2
 const SOLO_INERTIALIZATION_DURATION = 0.2
 const STANDING_MOVE_BLEND_DURATION = 0.2
-const STANDING_GAIT_BRANCH_INERTIALIZATION_DURATION = 0.2
 
 const STANCE_TRANSITION_CLIPS = {
   Crouching: 'A_Als_StandToCrouch',
@@ -256,6 +264,8 @@ export interface AlsAnimationInstanceControls {
   /** LocomotionState.Scale; defaults to the live character's unit scale. */
   scale?: number
   direction: number
+  /** GetRelativeAccelerationAmount(), supplied by the character/physics bridge. */
+  relativeAccelerationAmount: { x: number; y: number }
   rotateInPlace: boolean
   viewYawAngle: number
   viewYawSpeed: number
@@ -279,6 +289,7 @@ export interface AlsAnimationInstanceState {
     & { readonly moveDirectionChangeProfileApplied: false }
   ) | null
   standingMovement: AlsStandingMovementState
+  readonly standingSprint: AlsStandingSprintState
   readonly pose: AlsPoseState
 }
 
@@ -412,10 +423,14 @@ export function createAlsAnimationInstance(gltf: {
       if (clip) groundedLocomotionClips.set(sample.animation.name, clip)
     }
   }
+  const sprintAccelerationClip = clipsByName.get(
+    ALS_STANDING_SPRINT_GRAPH.sprintAcceleration.clip,
+  )
   const baseClips = new Set([
     ...Object.values(roles),
     ...groundedLocomotionClips.values(),
   ])
+  if (sprintAccelerationClip) baseClips.add(sprintAccelerationClip)
   const baseEntries = [...baseClips].map((clip) => clip.entry)
   const stanceTransitionClips = {
     Crouching: clipsByName.get(STANCE_TRANSITION_CLIPS.Crouching),
@@ -533,6 +548,7 @@ export function createAlsAnimationInstance(gltf: {
   for (const clipName of groundedLocomotionClipNames) {
     normalDebugWeights[clipName] = 0
   }
+  normalDebugWeights.sprintAcceleration = 0
   for (const hipsDirection of Object.keys(groundedLocomotionGraph.evaluators)) {
     normalDebugWeights[`HipsDirection.${hipsDirection}`] = 0
   }
@@ -547,12 +563,15 @@ export function createAlsAnimationInstance(gltf: {
   const complete = rig.boneCount > 0
     && (Object.keys(CLIP_ROLES) as ClipRole[]).every((role) => roles[role])
     && groundedLocomotionClips.size === groundedLocomotionClipNames.size
+    && sprintAccelerationClip !== undefined
   const gaitSources = [...baseClips].map((clip): RuntimeGaitSource => {
     const role = roleByClip.get(clip)
     return {
       clipKey: clip.sampler.clip.name,
       weight: 0,
-      fallback: role ? ROLE_GAIT_AMOUNT[role] : 0,
+      fallback: role
+        ? ROLE_GAIT_AMOUNT[role]
+        : clip === sprintAccelerationClip ? 3 : 0,
       entry: clip.entry,
     }
   })
@@ -564,6 +583,7 @@ export function createAlsAnimationInstance(gltf: {
   const locomotionMembers: SyncGroupMember[] = []
   const syncClips = new Set<RuntimeClip>()
   const locomotionClips = new Set<RuntimeClip>(groundedLocomotionClips.values())
+  if (sprintAccelerationClip) locomotionClips.add(sprintAccelerationClip)
   for (const role of locomotionRoles) {
     const clip = roles[role]
     if (clip) locomotionClips.add(clip)
@@ -572,7 +592,12 @@ export function createAlsAnimationInstance(gltf: {
     const clipName = clip.sampler.clip.name
     const startPosition = groundedLocomotionClipNames.has(clipName)
       ? ALS_GROUNDED_DIRECTION_PLAYER.startPosition
-      : clipName === CLIP_ROLES.sprint ? 0.166667 : 0
+      : (
+          clipName === ALS_STANDING_SPRINT_GRAPH.sprint.clip
+          || clipName === ALS_STANDING_SPRINT_GRAPH.sprintAcceleration.clip
+        )
+          ? ALS_STANDING_SPRINT_GRAPH.sprint.startPosition
+          : 0
     const member: SyncGroupMember = {
       id: clipName,
       duration: clip.sampler.clip.duration,
@@ -690,7 +715,6 @@ export function createAlsAnimationInstance(gltf: {
   const standWeights = [1, 0, 0, 0]
   let crouchMoveWeight = 0
   let moveBlendProgress = 0
-  let previousStandingBranch: 'WalkRun' | 'Sprint' | null = null
   const stanceTransitionState = createAlsStanceTransitionCurveState()
   const turnInPlaceState = createAlsTurnInPlaceState()
   const rotateInPlaceState = createAlsRotateInPlaceState()
@@ -720,6 +744,7 @@ export function createAlsAnimationInstance(gltf: {
       poseGaitCurveValue: 0,
       poseGroundedCurveValue: 1,
     }),
+    standingSprint: createAlsStandingSprintState(),
     pose: gaitAmounts,
   }
   const velocityBlend = createVelocityBlend()
@@ -1110,35 +1135,20 @@ export function createAlsAnimationInstance(gltf: {
     })
     state.standingMovement = standingMovement
 
-    const standingBranch = controls.gait === 'Sprinting'
-      ? 'Sprint'
-      : 'WalkRun'
-    // The enclosing Sprint-vs-MoveForward alpha and SprintAcceleration input have not been
-    // recovered. Keep steady-state selection content-exact; transition policy remains an explicit
-    // inertialization seam instead of recreating the removed gameplay-speed gait crossfade.
-    const standingBranchChanged = previousStandingBranch !== null
-      && previousStandingBranch !== standingBranch
-    previousStandingBranch = standingBranch
-    normalDebugWeights.StandingBranchTransitionUnresolved =
-      Number(standingBranchChanged)
-    if (standingBranchChanged) {
-      // The extracted enclosing node carries a 0.2s blend clock, but its Sprint-vs-MoveForward
-      // alpha expression is not decompiled. Inertialization is the explicit temporary transition
-      // seam; the two steady-state branches on either side remain authored.
-      evaluator.inertialization.requestInertialization(
-        STANDING_GAIT_BRANCH_INERTIALIZATION_DURATION,
-      )
-    }
+    const standingSprint = refreshStandingSprint(state.standingSprint, {
+      gait: controls.gait,
+      deltaTime: delta,
+      sprintBlockCurveValue: state.standingSprint.sprintBlockAmount,
+      relativeAccelerationAmountX: controls.relativeAccelerationAmount.x,
+      standingPlayRate: standingMovement.playRate,
+      relevant: movingAmount > 0 && standingAmount > 0,
+    })
+    const standingGraphWeight = movingAmount * standingAmount
 
-    if (movingAmount > 0 && standingBranch === 'Sprint') {
-      const sprint = roles.sprint
-      const member = sprint ? locomotionMembersByClip.get(sprint) : undefined
-      if (sprint) sprint.entry.weight = movingAmount * standingAmount
-      if (member && sprint) {
-        member.weight = sprint.entry.weight
-        member.playRate = standingMovement.playRate
-      }
-    } else if (movingAmount > 0) {
+    if (
+      standingGraphWeight > 0
+      && standingSprint.moveForwardBaseWeight > 0
+    ) {
       const samples = evaluateGroundedLocomotionGraph(
         groundedLocomotionGraph,
         state.hipsDirection,
@@ -1148,13 +1158,36 @@ export function createAlsAnimationInstance(gltf: {
       for (const sample of samples) {
         const clip = groundedLocomotionClips.get(sample.clip)
         if (!clip) continue
-        const sampleWeight = sample.weight * movingAmount * standingAmount
+        const sampleWeight =
+          sample.weight
+          * standingSprint.moveForwardBaseWeight
+          * standingGraphWeight
         clip.entry.weight += sampleWeight
         const member = locomotionMembersByClip.get(clip)
         if (member) {
           member.weight += sampleWeight
           member.playRate = sample.playRate
         }
+      }
+    }
+
+    const sprint = roles.sprint
+    if (sprint) {
+      sprint.entry.weight =
+        standingSprint.sprintWeight * standingGraphWeight
+      const member = locomotionMembersByClip.get(sprint)
+      if (member) {
+        member.weight = sprint.entry.weight
+        member.playRate = standingSprint.sprintPlayRate
+      }
+    }
+    if (sprintAccelerationClip) {
+      sprintAccelerationClip.entry.weight =
+        standingSprint.sprintAccelerationWeight * standingGraphWeight
+      const member = locomotionMembersByClip.get(sprintAccelerationClip)
+      if (member) {
+        member.weight = sprintAccelerationClip.entry.weight
+        member.playRate = standingSprint.sprintAccelerationPlayRate
       }
     }
 
@@ -1204,7 +1237,9 @@ export function createAlsAnimationInstance(gltf: {
         member.weight <= 0
         || (
           !groundedLocomotionClipNames.has(member.id)
-          && member.id !== CLIP_ROLES.sprint
+          && member.id !== ALS_STANDING_SPRINT_GRAPH.sprint.clip
+          && member.id
+            !== ALS_STANDING_SPRINT_GRAPH.sprintAcceleration.clip
         )
       ) {
         member.playRate = standingMovement.playRate
@@ -1325,6 +1360,9 @@ export function createAlsAnimationInstance(gltf: {
     state.feetCrossingAmount = clamp01(
       finalCurves.get(FEET_CROSSING_CURVE_NAME) ?? 0,
     )
+    state.standingSprint.sprintBlockAmount = clamp01(
+      finalCurves.get(SPRINT_BLOCK_CURVE_NAME) ?? 0,
+    )
     state.rotationYawSpeed =
       finalCurves.get(ROTATION_YAW_SPEED_CURVE_NAME)
       ?? graphRotationYawSpeed
@@ -1347,6 +1385,19 @@ export function createAlsAnimationInstance(gltf: {
     for (const [clipName, clip] of groundedLocomotionClips) {
       normalDebugWeights[clipName] = clip.entry.weight
     }
+    if (sprintAccelerationClip) {
+      normalDebugWeights.sprintAcceleration =
+        sprintAccelerationClip.entry.weight
+      normalDebugWeights['clipTime.sprintAcceleration'] =
+        sprintAccelerationClip.entry.time
+      normalDebugWeights['clipPhase.sprintAcceleration'] =
+        sprintAccelerationClip.sampler.clip.duration > 0
+          ? (
+              sprintAccelerationClip.entry.time
+              / sprintAccelerationClip.sampler.clip.duration
+            )
+          : 0
+    }
     for (const hipsDirection of Object.keys(groundedLocomotionGraph.evaluators)) {
       normalDebugWeights[`HipsDirection.${hipsDirection}`] =
         Number(hipsDirection === state.hipsDirection)
@@ -1356,6 +1407,16 @@ export function createAlsAnimationInstance(gltf: {
     normalDebugWeights.WalkRunBlendAmount =
       state.standingMovement.walkRunBlendAmount
     normalDebugWeights.StandingPlayRate = state.standingMovement.playRate
+    normalDebugWeights.SprintBlockAmount =
+      state.standingSprint.sprintBlockAmount
+    normalDebugWeights.SprintTime = state.standingSprint.sprintTime
+    normalDebugWeights.SprintAccelerationAmount =
+      state.standingSprint.sprintAccelerationAmount
+    normalDebugWeights.SprintBlendAmount =
+      state.standingSprint.sprintBlendAmount
+    normalDebugWeights.SprintAccelerationBlendAmount = clamp01(
+      state.standingSprint.sprintAccelerationBlendAmount,
+    )
     normalDebugWeights.groundedAmount = gaitAmounts.groundedAmount
     normalDebugWeights.inAirAmount = gaitAmounts.inAirAmount
     normalDebugWeights.standingAmount = gaitAmounts.standingAmount

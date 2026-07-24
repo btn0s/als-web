@@ -13,6 +13,7 @@ export const FOOT_RIGHT_LOCK_CURVE_NAME = 'FootRightLock'
 export const HIPS_DIRECTION_LOCK_CURVE_NAME = 'HipsDirectionLock'
 export const FEET_CROSSING_CURVE_NAME = 'FeetCrossing'
 export const ROTATION_YAW_SPEED_CURVE_NAME = 'RotationYawSpeed'
+export const SPRINT_BLOCK_CURVE_NAME = 'SprintBlock'
 
 /**
  * Returns a NEW `THREE.AnimationClip` containing only the tracks of `clip` whose target bone
