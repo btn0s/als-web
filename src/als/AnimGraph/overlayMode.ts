@@ -16,8 +16,6 @@ export const RIFLE_OVERLAY_CLIPS = {
   sprintImpulseArms: 'A_Als_Rifle_Sprint_Impulse_Arms',
 } as const
 
-export const DEFAULT_OVERLAY_CLIP = 'A_Als_Default_Poses'
-
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value))
 }
