@@ -67,8 +67,10 @@ interface AbpState {
   readonly StateName: string
   readonly bAlwaysResetOnEntry: boolean
   readonly Transitions: readonly {
-    readonly CanTakeDelegateIndex: number
     readonly TransitionIndex: number
+    readonly rule: {
+      readonly compiledDelegateIndex: number
+    }
   }[]
 }
 
@@ -564,7 +566,7 @@ describe('VERIFIED ALS content-oracle graph', () => {
     const delegateByTransition = new Map(machine.States.flatMap(
       (state) => state.Transitions.map((transition) => [
         transition.TransitionIndex,
-        transition.CanTakeDelegateIndex,
+        transition.rule.compiledDelegateIndex,
       ] as const),
     ))
     const extracted = machine.Transitions.map((transition, transitionIndex) => ({
@@ -626,8 +628,8 @@ describe('VERIFIED ALS content-oracle graph', () => {
       ['SetHipsLeft', 2],
     ])
     expect(ALS_MOVE_DIRECTION_CHANGE_PROFILE_STATUS).toMatchObject({
-      kind: 'measured-gap',
-      implemented: false,
+      kind: 'verified',
+      implemented: true,
       blendScale: 2,
     })
     expect(ALS_MOVE_DIRECTION_CHANGE_PROFILE_STATUS.bones).toHaveLength(18)

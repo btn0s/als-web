@@ -2,6 +2,10 @@ import * as THREE from 'three'
 import { pickClip } from '../engine/pickClip'
 import { applyPose, createPoseApplicator } from '../engine/applyPose'
 import { blendPoseInPlace, compileBoneMask } from '../engine/blend'
+import {
+  compileWeightBlendProfile,
+} from '../engine/blendProfile'
+import type { WeightBlendProfile } from '../engine/blendProfile'
 import { compileClipSampler, sampleClip } from '../engine/clipSampler'
 import type { CompiledClipSampler } from '../engine/clipSampler'
 import {
@@ -25,6 +29,12 @@ import { createRigDefinition } from '../engine/rig'
 import { createRootMotionExtractor, resetRootMotionExtractor } from '../engine/rootMotion'
 import type { RootMotionExtractor } from '../engine/rootMotion'
 import {
+  advanceStateTransition,
+  createStateTransitionClock,
+  resetStateTransitionClock,
+  startStateTransition,
+} from '../engine/stateTransition'
+import {
   advanceSyncGroup,
   createSyncGroup,
 } from '../engine/syncGroups'
@@ -35,6 +45,7 @@ import type {
 } from '../engine/syncGroups'
 import type { AuthoredBlendSpace } from '../engine/blendSpace'
 import authoredBlendSpacesSource from '../../scripts/extract-als/blend-spaces.json?raw'
+import skeletonProfilesSource from '../../scripts/extract-als/skeleton-profiles.json?raw'
 import { createActionArbiter } from './AnimGraph/actionArbiter'
 import { calculateLocomotionCadence, STAND } from './AnimGraph/blendspace'
 import {
@@ -134,9 +145,19 @@ interface ExtractedBlendSpaces {
   readonly blendSpaces: Readonly<Record<string, AuthoredBlendSpace>>
 }
 
+interface ExtractedSkeletonProfiles {
+  readonly profiles: {
+    readonly MoveDirectionChange: WeightBlendProfile
+  }
+}
+
 const AUTHORED_BLEND_SPACES = (
   JSON.parse(authoredBlendSpacesSource) as ExtractedBlendSpaces
 ).blendSpaces
+
+const MOVE_DIRECTION_CHANGE_PROFILE = (
+  JSON.parse(skeletonProfilesSource) as ExtractedSkeletonProfiles
+).profiles.MoveDirectionChange
 
 /**
  * The ALS pack's locomotion topology: stand walk/run and crouch walk each have forward,
@@ -242,6 +263,11 @@ interface RuntimeGaitSource extends WeightedCurveSource {
   readonly entry: EvaluatorLayerEntry
 }
 
+interface RuntimeDirectionTransitionEntries {
+  readonly from: EvaluatorLayerEntry
+  readonly to: EvaluatorLayerEntry
+}
+
 type AlsMontageKind = 'stance-transition' | 'turn-in-place'
 
 interface RuntimeMontage {
@@ -281,12 +307,12 @@ export interface AlsAnimationInstanceState {
   rotationYawSpeed: number
   hipsDirection: AlsHipsDirection
   /**
-   * The exact authored state-machine request. Timing/pivot data is usable now; the evaluator
-   * deliberately reports that SK_Als's per-bone MoveDirectionChange profile is not yet applied.
+   * The exact authored state-machine request. Pose evaluation applies SK_Als's WeightFactor
+   * MoveDirectionChange profile while this request is active.
    */
   directionTransitionRequest: (
     AlsGroundedDirectionTransition
-    & { readonly moveDirectionChangeProfileApplied: false }
+    & { readonly moveDirectionChangeProfileApplied: true }
   ) | null
   standingMovement: AlsStandingMovementState
   readonly standingSprint: AlsStandingSprintState
@@ -310,6 +336,26 @@ function createEntry(
   curves?: ClipCurveSamplers,
 ): EvaluatorLayerEntry {
   return { sampler, time: 0, weight: 0, loop: true, curves }
+}
+
+/**
+ * The state machine's logical weight must remain on the entry so named curves blend like UE.
+ * Pose masks carry the faster per-bone WeightFactor alpha, so divide by that logical weight before
+ * the evaluator multiplies `entry.weight * entry.mask`.
+ */
+function normalizeTransitionPoseMask(
+  poseMask: Float32Array,
+  stateWeight: number,
+  out: Float32Array,
+) {
+  if (stateWeight <= Number.EPSILON) {
+    out.fill(0)
+    return
+  }
+  const inverseWeight = 1 / stateWeight
+  for (let bone = 0; bone < poseMask.length; bone++) {
+    out[bone] = poseMask[bone] * inverseWeight
+  }
 }
 
 function advanceClip(clip: RuntimeClip, delta: number) {
@@ -391,6 +437,37 @@ export function createAlsAnimationInstance(gltf: {
   const rig = createRigDefinition(gltf.scene)
   const applicator = createPoseApplicator(gltf.scene, rig)
   const evaluator = createPoseEvaluator(rig, { development: import.meta.env.DEV })
+  const rigBoneNames = new Set(rig.boneNames)
+  const missingMoveDirectionBones = MOVE_DIRECTION_CHANGE_PROFILE.entries.filter(
+    (entry) => !rigBoneNames.has(entry.bone),
+  )
+  const missingNonVirtualMoveDirectionBone = missingMoveDirectionBones.find(
+    (entry) => !entry.bone.startsWith('VB '),
+  )
+  if (rig.boneCount > 0 && missingNonVirtualMoveDirectionBone) {
+    throw new Error(
+      `MoveDirectionChange profile references missing runtime bone `
+      + `"${missingNonVirtualMoveDirectionBone.bone}"`,
+    )
+  }
+  // UE virtual bones are generated skeleton data and are not skin joints in the curated GLB.
+  // Every physical/IK profile entry remains mandatory; only absent `VB *` entries are omitted.
+  const runtimeMoveDirectionChangeProfile: WeightBlendProfile = {
+    mode: MOVE_DIRECTION_CHANGE_PROFILE.mode,
+    entries: MOVE_DIRECTION_CHANGE_PROFILE.entries.filter(
+      (entry) => rigBoneNames.has(entry.bone),
+    ),
+  }
+  const moveDirectionChangeProfile = rig.boneCount > 0
+    ? compileWeightBlendProfile(rig, runtimeMoveDirectionChangeProfile)
+    : null
+  const directionTransitionClock = rig.boneCount > 0
+    ? createStateTransitionClock<AlsHipsDirection>('Forward', rig.boneCount)
+    : null
+  const directionTransitionFromMask = new Float32Array(rig.boneCount)
+  const directionTransitionToMask = new Float32Array(rig.boneCount)
+  const directionTransitionRootIndex = rig.boneNames.indexOf('root')
+  const directionTransitionFootLeftIndex = rig.boneNames.indexOf('foot_l')
   const profile = buildLocomotionProfile(gltf.animations)
   const rootMotion: RootMotionExtractor | undefined =
     rig.boneCount > 0 ? createRootMotionExtractor(rig) : undefined
@@ -423,6 +500,17 @@ export function createAlsAnimationInstance(gltf: {
       if (clip) groundedLocomotionClips.set(sample.animation.name, clip)
     }
   }
+  const directionTransitionEntriesByClip = new Map<
+    RuntimeClip,
+    RuntimeDirectionTransitionEntries
+  >()
+  for (const clip of groundedLocomotionClips.values()) {
+    const from = createEntry(clip.sampler, clip.curves)
+    const to = createEntry(clip.sampler, clip.curves)
+    from.mask = directionTransitionFromMask
+    to.mask = directionTransitionToMask
+    directionTransitionEntriesByClip.set(clip, { from, to })
+  }
   const sprintAccelerationClip = clipsByName.get(
     ALS_STANDING_SPRINT_GRAPH.sprintAcceleration.clip,
   )
@@ -431,7 +519,12 @@ export function createAlsAnimationInstance(gltf: {
     ...groundedLocomotionClips.values(),
   ])
   if (sprintAccelerationClip) baseClips.add(sprintAccelerationClip)
-  const baseEntries = [...baseClips].map((clip) => clip.entry)
+  const baseEntries = [
+    ...[...baseClips].map((clip) => clip.entry),
+    ...[...directionTransitionEntriesByClip.values()].flatMap(
+      (entries) => [entries.from, entries.to],
+    ),
+  ]
   const stanceTransitionClips = {
     Crouching: clipsByName.get(STANCE_TRANSITION_CLIPS.Crouching),
     Standing: clipsByName.get(STANCE_TRANSITION_CLIPS.Standing),
@@ -564,17 +657,34 @@ export function createAlsAnimationInstance(gltf: {
     && (Object.keys(CLIP_ROLES) as ClipRole[]).every((role) => roles[role])
     && groundedLocomotionClips.size === groundedLocomotionClipNames.size
     && sprintAccelerationClip !== undefined
-  const gaitSources = [...baseClips].map((clip): RuntimeGaitSource => {
+  const gaitFallback = (clip: RuntimeClip) => {
     const role = roleByClip.get(clip)
-    return {
-      clipKey: clip.sampler.clip.name,
-      weight: 0,
-      fallback: role
-        ? ROLE_GAIT_AMOUNT[role]
-        : clip === sprintAccelerationClip ? 3 : 0,
-      entry: clip.entry,
-    }
-  })
+    return role
+      ? ROLE_GAIT_AMOUNT[role]
+      : clip === sprintAccelerationClip ? 3 : 0
+  }
+  const gaitSources = [...baseClips].map((clip): RuntimeGaitSource => ({
+    clipKey: clip.sampler.clip.name,
+    weight: 0,
+    fallback: gaitFallback(clip),
+    entry: clip.entry,
+  }))
+  for (const [clip, entries] of directionTransitionEntriesByClip) {
+    gaitSources.push(
+      {
+        clipKey: clip.sampler.clip.name,
+        weight: 0,
+        fallback: gaitFallback(clip),
+        entry: entries.from,
+      },
+      {
+        clipKey: clip.sampler.clip.name,
+        weight: 0,
+        fallback: gaitFallback(clip),
+        entry: entries.to,
+      },
+    )
+  }
   const locomotionRoles = (Object.keys(CLIP_ROLES) as ClipRole[]).filter(
     (role) => role !== 'idle' && role !== 'crouchIdle',
   )
@@ -796,6 +906,37 @@ export function createAlsAnimationInstance(gltf: {
 
   function setHipsDirection(hipsDirection: AlsHipsDirection) {
     state.hipsDirection = hipsDirection
+  }
+
+  function accumulateStandingDirectionState(
+    hipsDirection: AlsHipsDirection,
+    stateWeight: number,
+    transitionSide: 'from' | 'to' | null,
+    standingMovement: AlsStandingMovementState,
+    graphWeight: number,
+  ) {
+    if (stateWeight <= 0 || graphWeight <= 0) return
+    const samples = evaluateGroundedLocomotionGraph(
+      groundedLocomotionGraph,
+      hipsDirection,
+      velocityBlend,
+      standingMovement,
+    )
+    for (const sample of samples) {
+      const clip = groundedLocomotionClips.get(sample.clip)
+      if (!clip) continue
+      const sampleWeight = sample.weight * stateWeight * graphWeight
+      const transitionEntries = directionTransitionEntriesByClip.get(clip)
+      const entry = transitionSide && transitionEntries
+        ? transitionEntries[transitionSide]
+        : clip.entry
+      entry.weight += sampleWeight
+      const member = locomotionMembersByClip.get(clip)
+      if (member) {
+        member.weight += sampleWeight
+        member.playRate = sample.playRate
+      }
+    }
   }
 
   function requestMontage(montage: RuntimeMontage) {
@@ -1069,28 +1210,53 @@ export function createAlsAnimationInstance(gltf: {
     const movementStatesShouldBeRelevant =
       controls.moving && controls.stance === 'Standing'
     if (movementStatesShouldBeRelevant) {
+      const transitionClock = directionTransitionClock!
       if (!movementStatesRelevant) {
         // Movement States has bReinitializeOnBecomingRelevant and
         // bSkipFirstUpdateTransition. Its initial state's OnBecomeRelevant calls
         // SetHipsDirection(Forward).
         movementStatesRelevant = true
+        resetStateTransitionClock(transitionClock, 'Forward')
         setHipsDirection('Forward')
       } else {
-        const transition = selectGroundedDirectionTransition({
-          hipsDirection: state.hipsDirection,
-          movementDirection: state.movementDirection,
-          hipsDirectionLockAmount: state.hipsDirectionLockAmount,
-          feetCrossingAmount: state.feetCrossingAmount,
-          // The transition profile/crossfade is not implemented yet, so the selected state is
-          // immediately full weight. Keeping that limitation explicit makes the neutral guards
-          // honest and leaves the exact transition request available to the future engine node.
-          stateWeight: 1,
-        })
-        if (transition) {
-          setHipsDirection(transition.to)
-          state.directionTransitionRequest = {
-            ...transition,
-            moveDirectionChangeProfileApplied: false,
+        // Public SetHipsDirection() is also used by parity tests. In normal graph execution it
+        // already agrees with the state clock; a direct external call reinitializes the machine
+        // before its next transition query, matching bReinitializeOnBecomingRelevant semantics.
+        if (
+          !transitionClock.active
+          && transitionClock.currentState !== state.hipsDirection
+        ) {
+          resetStateTransitionClock(transitionClock, state.hipsDirection)
+        }
+        advanceStateTransition(transitionClock, Math.max(0, delta))
+        setHipsDirection(transitionClock.currentState)
+
+        // UE can retain more than one interrupted transition. That exact propagation remains an
+        // engine work item, so this verified two-state node accepts another request only after the
+        // authored blend reaches its target instead of replacing it with an approximation.
+        if (!transitionClock.active) {
+          const transition = selectGroundedDirectionTransition({
+            hipsDirection: transitionClock.currentState,
+            movementDirection: state.movementDirection,
+            hipsDirectionLockAmount: state.hipsDirectionLockAmount,
+            feetCrossingAmount: state.feetCrossingAmount,
+            stateWeight: 1,
+          })
+          if (transition) {
+            const startResult = startStateTransition(transitionClock, {
+              from: transition.from,
+              to: transition.to,
+              duration: transition.duration,
+              blendOption: transition.blendOption,
+              blendProfile: moveDirectionChangeProfile!,
+            })
+            if (startResult === 'started' || startResult === 'completed') {
+              setHipsDirection(transition.to)
+              state.directionTransitionRequest = {
+                ...transition,
+                moveDirectionChangeProfileApplied: true,
+              }
+            }
           }
         }
       }
@@ -1107,6 +1273,10 @@ export function createAlsAnimationInstance(gltf: {
     )
 
     for (const clip of baseClips) clip.entry.weight = 0
+    for (const entries of directionTransitionEntriesByClip.values()) {
+      entries.from.weight = 0
+      entries.to.weight = 0
+    }
     for (const member of locomotionSyncGroup.members) {
       member.weight = 0
     }
@@ -1149,25 +1319,42 @@ export function createAlsAnimationInstance(gltf: {
       standingGraphWeight > 0
       && standingSprint.moveForwardBaseWeight > 0
     ) {
-      const samples = evaluateGroundedLocomotionGraph(
-        groundedLocomotionGraph,
-        state.hipsDirection,
-        velocityBlend,
-        standingMovement,
-      )
-      for (const sample of samples) {
-        const clip = groundedLocomotionClips.get(sample.clip)
-        if (!clip) continue
-        const sampleWeight =
-          sample.weight
-          * standingSprint.moveForwardBaseWeight
-          * standingGraphWeight
-        clip.entry.weight += sampleWeight
-        const member = locomotionMembersByClip.get(clip)
-        if (member) {
-          member.weight += sampleWeight
-          member.playRate = sample.playRate
-        }
+      const directionGraphWeight =
+        standingSprint.moveForwardBaseWeight * standingGraphWeight
+      const transitionClock = directionTransitionClock!
+      if (transitionClock.active) {
+        normalizeTransitionPoseMask(
+          transitionClock.fromPoseMask,
+          transitionClock.fromStateWeight,
+          directionTransitionFromMask,
+        )
+        normalizeTransitionPoseMask(
+          transitionClock.toPoseMask,
+          transitionClock.toStateWeight,
+          directionTransitionToMask,
+        )
+        accumulateStandingDirectionState(
+          transitionClock.fromState,
+          transitionClock.fromStateWeight,
+          'from',
+          standingMovement,
+          directionGraphWeight,
+        )
+        accumulateStandingDirectionState(
+          transitionClock.toState,
+          transitionClock.toStateWeight,
+          'to',
+          standingMovement,
+          directionGraphWeight,
+        )
+      } else {
+        accumulateStandingDirectionState(
+          transitionClock.currentState,
+          1,
+          null,
+          standingMovement,
+          directionGraphWeight,
+        )
       }
     }
 
@@ -1257,6 +1444,11 @@ export function createAlsAnimationInstance(gltf: {
       : 0
     for (const [clip, member] of locomotionMembersByClip) {
       clip.entry.time = member.time
+      const transitionEntries = directionTransitionEntriesByClip.get(clip)
+      if (transitionEntries) {
+        transitionEntries.from.time = member.time
+        transitionEntries.to.time = member.time
+      }
     }
     for (const source of overlaySources) {
       source.time = source.key === 'poses'
@@ -1374,7 +1566,11 @@ export function createAlsAnimationInstance(gltf: {
     for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) {
       const clip = roles[role]
       if (clip) {
-        normalDebugWeights[role] = clip.entry.weight
+        const transitionEntries = directionTransitionEntriesByClip.get(clip)
+        normalDebugWeights[role] =
+          clip.entry.weight
+          + (transitionEntries?.from.weight ?? 0)
+          + (transitionEntries?.to.weight ?? 0)
         normalDebugWeights[`clipTime.${role}`] = clip.entry.time
         normalDebugWeights[`clipPhase.${role}`] =
           clip.sampler.clip.duration > 0
@@ -1383,7 +1579,11 @@ export function createAlsAnimationInstance(gltf: {
       }
     }
     for (const [clipName, clip] of groundedLocomotionClips) {
-      normalDebugWeights[clipName] = clip.entry.weight
+      const transitionEntries = directionTransitionEntriesByClip.get(clip)
+      normalDebugWeights[clipName] =
+        clip.entry.weight
+        + (transitionEntries?.from.weight ?? 0)
+        + (transitionEntries?.to.weight ?? 0)
     }
     if (sprintAccelerationClip) {
       normalDebugWeights.sprintAcceleration =
@@ -1398,9 +1598,17 @@ export function createAlsAnimationInstance(gltf: {
             )
           : 0
     }
+    const transitionClock = directionTransitionClock!
     for (const hipsDirection of Object.keys(groundedLocomotionGraph.evaluators)) {
       normalDebugWeights[`HipsDirection.${hipsDirection}`] =
-        Number(hipsDirection === state.hipsDirection)
+        transitionClock.active
+          ? (
+              Number(hipsDirection === transitionClock.fromState)
+                * transitionClock.fromStateWeight
+              + Number(hipsDirection === transitionClock.toState)
+                * transitionClock.toStateWeight
+            )
+          : Number(hipsDirection === transitionClock.currentState)
     }
     normalDebugWeights.StrideBlendAmount =
       state.standingMovement.strideBlendAmount
@@ -1458,7 +1666,25 @@ export function createAlsAnimationInstance(gltf: {
       Number(state.directionTransitionRequest?.activatePivot ?? false)
     normalDebugWeights.GroundedDirectionTransitionPriority =
       state.directionTransitionRequest?.priorityOrder ?? 0
-    normalDebugWeights.MoveDirectionChangeProfileApplied = 0
+    normalDebugWeights.MoveDirectionChangeProfileApplied = 1
+    normalDebugWeights.GroundedDirectionTransitionActive =
+      Number(transitionClock.active)
+    normalDebugWeights.GroundedDirectionTransitionLinearAlpha =
+      transitionClock.linearAlpha
+    normalDebugWeights.GroundedDirectionTransitionBlendAlpha =
+      transitionClock.blendAlpha
+    normalDebugWeights.GroundedDirectionTransitionFromWeight =
+      transitionClock.fromStateWeight
+    normalDebugWeights.GroundedDirectionTransitionToWeight =
+      transitionClock.toStateWeight
+    normalDebugWeights.GroundedDirectionTransitionRootIncomingWeight =
+      directionTransitionRootIndex >= 0
+        ? transitionClock.toPoseMask[directionTransitionRootIndex]
+        : transitionClock.toStateWeight
+    normalDebugWeights.GroundedDirectionTransitionFootLeftIncomingWeight =
+      directionTransitionFootLeftIndex >= 0
+        ? transitionClock.toPoseMask[directionTransitionFootLeftIndex]
+        : transitionClock.toStateWeight
     normalDebugWeights.overlayModeRifle = rifleActive ? 1 : 0
     normalDebugWeights.inertializationCorrectionMagnitude =
       measureInertializationCorrectionMagnitude(evaluator.inertialization)

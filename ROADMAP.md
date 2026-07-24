@@ -135,8 +135,9 @@ second (flagged) — never from another project's implementation:
       under-coverage warns in development. Authored root-motion delta consumption remains tracked
       with action montage semantics, not as a mixer-era limitation.
 - [ ] Gaits: Walking / Running / Sprinting through the exact six-state grounded graph. Authored
-      movement speeds and all nine BlendSpace topologies evaluate today; graph state selection,
-      transition profiles, pivots, and sprint state wiring remain open
+      movement speeds, all nine BlendSpace topologies, graph state selection, per-bone
+      MoveDirectionChange transition profiles, and sprint state wiring evaluate today;
+      start/stop/pivot states remain open
 - [x] Stances: Standing / Crouching with authored StandToCrouch/CrouchToStand transitions
       following their own PoseCrouching curves *(2026-07-23; non-ALS stance additions stay in
       downstream forks)*

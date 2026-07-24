@@ -394,7 +394,7 @@ describe('AlsAnimationInstance playback regression', () => {
       duration: 0.7,
       blendOption: 'Cubic',
       activatePivot: false,
-      moveDirectionChangeProfileApplied: false,
+      moveDirectionChangeProfileApplied: true,
     })
     expect(window.__weightTable?.['MovementDirection.Left']).toBe(1)
     expect(window.__weightTable?.GroundedDirectionTransitionIndex).toBe(1)
@@ -414,7 +414,7 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.runRightBwd).toBe(0)
   })
 
-  it('exposes pivot timing and the unapplied MoveDirectionChange profile gap', async () => {
+  it('applies authored pivot timing and the MoveDirectionChange profile', async () => {
     const gltf = await loadAlsGltf()
     const instance = createAlsAnimationInstance(gltf)
     instance.refresh(0, controls)
@@ -428,11 +428,22 @@ describe('AlsAnimationInstance playback regression', () => {
       duration: 0.5,
       blendOption: 'Cubic',
       activatePivot: true,
-      moveDirectionChangeProfileApplied: false,
+      moveDirectionChangeProfileApplied: true,
     })
     expect(window.__weightTable?.GroundedDirectionTransitionDuration).toBe(0.5)
     expect(window.__weightTable?.GroundedDirectionTransitionActivatePivot).toBe(1)
-    expect(window.__weightTable?.MoveDirectionChangeProfileApplied).toBe(0)
+    expect(window.__weightTable?.MoveDirectionChangeProfileApplied).toBe(1)
+
+    instance.refresh(0.25, { ...controls, direction: 180 })
+    expect(window.__weightTable?.GroundedDirectionTransitionActive).toBe(1)
+    expect(window.__weightTable?.GroundedDirectionTransitionLinearAlpha).toBe(0.5)
+    expect(window.__weightTable?.GroundedDirectionTransitionBlendAlpha).toBe(0.125)
+    expect(window.__weightTable?.GroundedDirectionTransitionRootIncomingWeight)
+      .toBeCloseTo(0.125, 7)
+    expect(window.__weightTable?.GroundedDirectionTransitionFootLeftIncomingWeight)
+      .toBeCloseTo(0.25, 7)
+    expect(window.__weightTable?.['HipsDirection.Forward']).toBeCloseTo(0.875, 7)
+    expect(window.__weightTable?.['HipsDirection.Backward']).toBeCloseTo(0.125, 7)
   })
 
   it('consumes previous resolved HipsDirectionLock and FeetCrossing values', async () => {

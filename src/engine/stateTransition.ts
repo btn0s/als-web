@@ -52,6 +52,28 @@ export interface StateTransitionClock<State> {
   blendProfile: CompiledWeightBlendProfile | null
 }
 
+/** Restores a state-machine node's bReinitializeOnBecomingRelevant state. */
+export function resetStateTransitionClock<State>(
+  clock: StateTransitionClock<State>,
+  state: State,
+): StateTransitionClock<State> {
+  clock.currentState = state
+  clock.fromState = state
+  clock.toState = state
+  clock.active = false
+  clock.duration = 0
+  clock.elapsed = 0
+  clock.linearAlpha = 1
+  clock.blendAlpha = 1
+  clock.fromStateWeight = 0
+  clock.toStateWeight = 1
+  clock.fromPoseMask.fill(0)
+  clock.toPoseMask.fill(1)
+  clock.blendOption = 'Linear'
+  clock.blendProfile = null
+  return clock
+}
+
 function validateBlendOption(option: AlphaBlendOption) {
   switch (option) {
     case 'Linear':
@@ -119,7 +141,7 @@ export function createStateTransitionClock<State>(
   const toPoseMask = new Float32Array(boneCount)
   toPoseMask.fill(1)
 
-  return {
+  const clock: StateTransitionClock<State> = {
     boneCount,
     currentState: initialState,
     fromState: initialState,
@@ -136,6 +158,7 @@ export function createStateTransitionClock<State>(
     blendOption: 'Linear',
     blendProfile: null,
   }
+  return resetStateTransitionClock(clock, initialState)
 }
 
 /**

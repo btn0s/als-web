@@ -23,9 +23,9 @@ import type {
  * - Every cached player evaluates the authored topology from blend-spaces.json.
  *
  * HYPOTHESIS:
- * - None is encoded in the steady-state graph. The owned evaluator does not yet apply SK_Als's
- *   per-bone MoveDirectionChange transition profile; transition requests expose that measured
- *   gap instead of silently substituting a different profile.
+ * - UE can keep multiple interrupted transitions alive. The owned two-state clock deliberately
+ *   waits for the active authored blend to complete until that multi-transition propagation is
+ *   independently recovered.
  */
 
 export const ALS_GAITS = ['Walking', 'Running', 'Sprinting'] as const
@@ -478,18 +478,18 @@ type DirectionTransitionRow = readonly [
 ]
 
 const DIRECTION_TRANSITION_ROWS: readonly DirectionTransitionRow[] = [
-  ['Forward', 'RightForward', 'MoveRight', 1, 0.7, 'Cubic', false, 51],
-  ['Forward', 'LeftForward', 'MoveLeft', 1, 0.7, 'Cubic', false, 52],
-  ['Forward', 'Backward', 'MoveBackward', 1, 0.5, 'Cubic', true, 53],
-  ['Backward', 'RightBackward', 'MoveRight', 1, 0.7, 'Cubic', false, 51],
-  ['Backward', 'LeftBackward', 'MoveLeft', 1, 0.7, 'Cubic', false, 52],
-  ['Backward', 'Forward', 'MoveForward', 1, 0.5, 'Cubic', true, 54],
-  ['RightForward', 'LeftBackward', 'MoveLeft', 1, 0.5, 'Cubic', true, 52],
-  ['RightForward', 'RightBackward', 'MoveBackward', 1, 0.7, 'Cubic', false, 53],
-  ['RightForward', 'Forward', 'MoveForward', 1, 0.7, 'Cubic', false, 54],
-  ['RightForward', 'RightBackward', 'SetHipsLeft', 2, 0.75, 'QuadraticInOut', false, 55],
-  ['RightBackward', 'LeftForward', 'MoveLeft', 1, 0.5, 'Cubic', true, 52],
-  ['RightBackward', 'RightForward', 'MoveForward', 1, 0.75, 'QuadraticInOut', false, 54],
+  ['Forward', 'RightForward', 'MoveRight', 1, 0.7, 'Cubic', false, 152],
+  ['Forward', 'LeftForward', 'MoveLeft', 1, 0.7, 'Cubic', false, 151],
+  ['Forward', 'Backward', 'MoveBackward', 1, 0.5, 'Cubic', true, 150],
+  ['Backward', 'RightBackward', 'MoveRight', 1, 0.7, 'Cubic', false, 152],
+  ['Backward', 'LeftBackward', 'MoveLeft', 1, 0.7, 'Cubic', false, 151],
+  ['Backward', 'Forward', 'MoveForward', 1, 0.5, 'Cubic', true, 149],
+  ['RightForward', 'LeftBackward', 'MoveLeft', 1, 0.5, 'Cubic', true, 151],
+  ['RightForward', 'RightBackward', 'MoveBackward', 1, 0.7, 'Cubic', false, 150],
+  ['RightForward', 'Forward', 'MoveForward', 1, 0.7, 'Cubic', false, 149],
+  ['RightForward', 'RightBackward', 'SetHipsLeft', 2, 0.75, 'QuadraticInOut', false, 148],
+  ['RightBackward', 'LeftForward', 'MoveLeft', 1, 0.5, 'Cubic', true, 151],
+  ['RightBackward', 'RightForward', 'MoveForward', 1, 0.75, 'QuadraticInOut', false, 149],
   [
     'RightBackward',
     'RightForward',
@@ -498,16 +498,16 @@ const DIRECTION_TRANSITION_ROWS: readonly DirectionTransitionRow[] = [
     0.75,
     'QuadraticInOut',
     false,
-    56,
+    147,
   ],
-  ['RightBackward', 'Backward', 'MoveBackward', 1, 0.7, 'Cubic', false, 53],
-  ['RightBackward', 'RightForward', 'SetHipsRight', 2, 0.75, 'QuadraticInOut', false, 57],
-  ['LeftForward', 'RightBackward', 'MoveRight', 1, 0.5, 'Cubic', true, 51],
-  ['LeftForward', 'LeftBackward', 'MoveBackward', 1, 0.7, 'Cubic', false, 53],
-  ['LeftForward', 'Forward', 'MoveForward', 1, 0.7, 'Cubic', false, 54],
-  ['LeftForward', 'LeftBackward', 'SetHipsRight', 2, 0.75, 'QuadraticInOut', false, 57],
-  ['LeftBackward', 'RightForward', 'MoveRight', 1, 0.5, 'Cubic', true, 51],
-  ['LeftBackward', 'LeftForward', 'MoveForward', 1, 0.7, 'Cubic', false, 54],
+  ['RightBackward', 'Backward', 'MoveBackward', 1, 0.7, 'Cubic', false, 150],
+  ['RightBackward', 'RightForward', 'SetHipsRight', 2, 0.75, 'QuadraticInOut', false, 146],
+  ['LeftForward', 'RightBackward', 'MoveRight', 1, 0.5, 'Cubic', true, 152],
+  ['LeftForward', 'LeftBackward', 'MoveBackward', 1, 0.7, 'Cubic', false, 150],
+  ['LeftForward', 'Forward', 'MoveForward', 1, 0.7, 'Cubic', false, 149],
+  ['LeftForward', 'LeftBackward', 'SetHipsRight', 2, 0.75, 'QuadraticInOut', false, 146],
+  ['LeftBackward', 'RightForward', 'MoveRight', 1, 0.5, 'Cubic', true, 152],
+  ['LeftBackward', 'LeftForward', 'MoveForward', 1, 0.7, 'Cubic', false, 149],
   [
     'LeftBackward',
     'LeftForward',
@@ -516,10 +516,10 @@ const DIRECTION_TRANSITION_ROWS: readonly DirectionTransitionRow[] = [
     0.75,
     'QuadraticInOut',
     false,
-    58,
+    145,
   ],
-  ['LeftBackward', 'Backward', 'MoveBackward', 1, 0.7, 'Cubic', false, 53],
-  ['LeftBackward', 'LeftForward', 'SetHipsLeft', 2, 0.75, 'QuadraticInOut', false, 55],
+  ['LeftBackward', 'Backward', 'MoveBackward', 1, 0.7, 'Cubic', false, 150],
+  ['LeftBackward', 'LeftForward', 'SetHipsLeft', 2, 0.75, 'QuadraticInOut', false, 148],
 ]
 
 export const ALS_GROUNDED_DIRECTION_TRANSITIONS:
@@ -554,8 +554,8 @@ export const ALS_GROUNDED_DIRECTION_SELECTION_RULE_STATUS = {
 } as const
 
 export const ALS_MOVE_DIRECTION_CHANGE_PROFILE_STATUS = {
-  kind: 'measured-gap',
-  implemented: false,
+  kind: 'verified',
+  implemented: true,
   blendScale: 2,
   bones: [
     'thigh_l',

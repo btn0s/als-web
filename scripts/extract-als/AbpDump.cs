@@ -187,8 +187,9 @@ public static class AbpDump
         var exactIndexMap = nodes
             .Where(node => node.CompiledIndex is not null)
             .ToDictionary(node => node.CompiledIndex!.Value);
+        var bakedIndexMap = BuildBakedNodeIndexMap(nodes);
         var wiring = ReadWiring(nodes, exactIndexMap);
-        var stateMachines = ReadStateMachines(generatedClass, exactIndexMap);
+        var stateMachines = ReadStateMachines(generatedClass, bakedIndexMap);
         var unresolvedIndices = Enumerable.Range(0, compiledNodeCount)
             .Where(index => !exactIndexMap.ContainsKey(index))
             .ToArray();
@@ -221,6 +222,7 @@ public static class AbpDump
             ["generatedClass"] = generatedClass?.Name,
             ["serializedNodeCount"] = nodes.Count,
             ["compiledNodeCount"] = compiledNodeCount,
+            ["bakedNodeCount"] = bakedIndexMap.Count,
             ["nodes"] = nodeJson,
             ["wiring"] = wiring,
             ["stateMachines"] = stateMachines,
@@ -375,6 +377,18 @@ public static class AbpDump
         }
     }
 
+    static Dictionary<int, NodeRecord> BuildBakedNodeIndexMap(List<NodeRecord> nodes)
+    {
+        // Baked state-machine indices address UAnimBlueprintGeneratedClass::AnimNodeProperties.
+        // Unreal builds that array in reverse generated-property order. Resolve through the
+        // serialized property identity and its independently recovered compiled index instead
+        // of assuming that either baked indices or CDO ordinals are compiled node indices.
+        return nodes
+            .OrderByDescending(node => node.SerializedOrder)
+            .Select((node, bakedIndex) => (bakedIndex, node))
+            .ToDictionary(entry => entry.bakedIndex, entry => entry.node);
+    }
+
     static JObject NodeToJson(NodeRecord node)
     {
         return new JObject
@@ -438,7 +452,7 @@ public static class AbpDump
 
     static JArray ReadStateMachines(
         UObject? generatedClass,
-        Dictionary<int, NodeRecord> exactIndexMap)
+        Dictionary<int, NodeRecord> bakedIndexMap)
     {
         var stateMachines = SerializeProperty(generatedClass, "BakedStateMachines") as JArray
                             ?? new JArray();
@@ -452,29 +466,68 @@ public static class AbpDump
 
             foreach (var state in states.OfType<JObject>())
             {
-                var rootIndex = state.Value<int?>("StateRootNodeIndex");
-                if (rootIndex is not null && exactIndexMap.TryGetValue(rootIndex.Value, out var root))
+                var rootBakedIndex = state.Value<int?>("StateRootNodeIndex");
+                if (rootBakedIndex is not null
+                    && bakedIndexMap.TryGetValue(rootBakedIndex.Value, out var root))
                 {
+                    state["StateRootNodeCompiledIndex"] = root.CompiledIndex;
                     state["StateRootNodeProperty"] = root.PropertyName;
                     state["StateRootNodeType"] = root.Type;
                 }
-
-                var playerProperties = new JArray();
-                foreach (var playerIndex in state["PlayerNodeIndices"]?.Values<int>() ?? [])
+                else
                 {
-                    playerProperties.Add(
-                        exactIndexMap.TryGetValue(playerIndex, out var player)
-                            ? player.PropertyName
-                            : null);
+                    state["StateRootNodeCompiledIndex"] = null;
+                    state["StateRootNodeProperty"] = null;
+                    state["StateRootNodeType"] = null;
                 }
+
+                var playerCompiledIndices = new JArray();
+                var playerProperties = new JArray();
+                var playerTypes = new JArray();
+                foreach (var playerBakedIndex in
+                         state["PlayerNodeIndices"]?.Values<int>() ?? [])
+                {
+                    if (bakedIndexMap.TryGetValue(playerBakedIndex, out var player))
+                    {
+                        playerCompiledIndices.Add(player.CompiledIndex);
+                        playerProperties.Add(player.PropertyName);
+                        playerTypes.Add(player.Type);
+                    }
+                    else
+                    {
+                        playerCompiledIndices.Add(JValue.CreateNull());
+                        playerProperties.Add(JValue.CreateNull());
+                        playerTypes.Add(JValue.CreateNull());
+                    }
+                }
+                state["PlayerNodeCompiledIndices"] = playerCompiledIndices;
                 state["PlayerNodeProperties"] = playerProperties;
+                state["PlayerNodeTypes"] = playerTypes;
 
                 foreach (var stateTransition in state["Transitions"]?.OfType<JObject>() ?? [])
                 {
+                    var delegateBakedIndex =
+                        stateTransition.Value<int?>("CanTakeDelegateIndex");
+                    NodeRecord? delegateNode = null;
+                    if (delegateBakedIndex is not null)
+                    {
+                        bakedIndexMap.TryGetValue(
+                            delegateBakedIndex.Value,
+                            out delegateNode);
+                    }
                     stateTransition["rule"] = new JObject
                     {
+                        ["bakedDelegateIndex"] = delegateBakedIndex,
                         ["compiledDelegateIndex"] =
-                            stateTransition.Value<int?>("CanTakeDelegateIndex"),
+                            delegateNode?.CompiledIndex is int compiledIndex
+                                ? new JValue(compiledIndex)
+                                : JValue.CreateNull(),
+                        ["compiledDelegateProperty"] = delegateNode is null
+                            ? JValue.CreateNull()
+                            : new JValue(delegateNode.PropertyName),
+                        ["compiledDelegateType"] = delegateNode is null
+                            ? JValue.CreateNull()
+                            : new JValue(delegateNode.Type),
                         ["expression"] = new JObject
                         {
                             ["unrecoverable"] =
@@ -632,6 +685,7 @@ public static class AbpDump
         var validations = new JArray();
         validations.Add(ValidateTargetCoverage(payload));
         validations.Add(ValidateGraphStructure(payload));
+        validations.Add(ValidateStateMachineNodeIndexMapping(payload));
         validations.Add(ValidateAlsCustomAnimNodes(payload));
         validations.Add(ValidateRifleExplicitTimes(payload));
         validations.Add(ValidateLayeringDynamicAdditive(payload));
@@ -703,6 +757,7 @@ public static class AbpDump
 
             var serializedNodeCount = asset.Value<int?>("serializedNodeCount");
             var compiledNodeCount = asset.Value<int?>("compiledNodeCount");
+            var bakedNodeCount = asset.Value<int?>("bakedNodeCount");
             if (serializedNodeCount != nodes.Count)
             {
                 errors.Add(
@@ -713,6 +768,12 @@ public static class AbpDump
             {
                 errors.Add($"{assetProperty.Name}: compiledNodeCount is missing or negative");
                 continue;
+            }
+            if (bakedNodeCount != nodes.Count)
+            {
+                errors.Add(
+                    $"{assetProperty.Name}: bakedNodeCount {bakedNodeCount} " +
+                    $"does not match nodes length {nodes.Count}");
             }
 
             var exactIndices = new HashSet<int>();
@@ -837,7 +898,7 @@ public static class AbpDump
                     var isConduit = state.Value<bool?>("bIsAConduit") ?? false;
                     if (rootIndex is null
                         || (rootIndex < 0 && !isConduit)
-                        || rootIndex >= compiledNodeCount)
+                        || rootIndex >= bakedNodeCount)
                     {
                         errors.Add(
                             $"{assetProperty.Name}.{machine.Value<string>("MachineName")}." +
@@ -845,7 +906,7 @@ public static class AbpDump
                     }
                     foreach (var playerIndex in state["PlayerNodeIndices"]?.Values<int>() ?? [])
                     {
-                        if (playerIndex < 0 || playerIndex >= compiledNodeCount)
+                        if (playerIndex < 0 || playerIndex >= bakedNodeCount)
                         {
                             errors.Add(
                                 $"{assetProperty.Name}.{machine.Value<string>("MachineName")}." +
@@ -897,6 +958,422 @@ public static class AbpDump
                 ["assets"] = summaries,
                 ["errors"] = errors,
             });
+    }
+
+    static JObject ValidateStateMachineNodeIndexMapping(JObject payload)
+    {
+        var assets = payload["assets"] as JObject ?? new JObject();
+        var errors = new JArray();
+        var summaries = new JArray();
+        var exactPins = new JArray();
+        var rootAnnotationCount = 0;
+        var playerAnnotationCount = 0;
+        var delegateAnnotationCount = 0;
+
+        foreach (var assetProperty in assets.Properties())
+        {
+            if (assetProperty.Value is not JObject asset
+                || asset["nodes"] is not JArray nodeArray)
+            {
+                continue;
+            }
+
+            var serializedNodes = nodeArray
+                .OfType<JObject>()
+                .OrderBy(node => node.Value<int>("serializedOrder"))
+                .ToArray();
+            if (!serializedNodes
+                    .Select(node => node.Value<int>("serializedOrder"))
+                    .SequenceEqual(Enumerable.Range(0, serializedNodes.Length)))
+            {
+                errors.Add(
+                    $"{assetProperty.Name}: serialized animation-node property order is " +
+                    "not contiguous");
+                continue;
+            }
+
+            var bakedIndexMap = serializedNodes
+                .Reverse()
+                .Select((node, bakedIndex) => (bakedIndex, node))
+                .ToDictionary(entry => entry.bakedIndex, entry => entry.node);
+            var assetRootCount = 0;
+            var assetPlayerCount = 0;
+            var assetDelegateCount = 0;
+
+            foreach (var machine in asset["stateMachines"]?.OfType<JObject>() ?? [])
+            {
+                var machineName = machine.Value<string>("MachineName") ?? "<unnamed>";
+                foreach (var state in machine["States"]?.OfType<JObject>() ?? [])
+                {
+                    var stateName = state.Value<string>("StateName") ?? "<unnamed>";
+                    var context = $"{assetProperty.Name}.{machineName}.{stateName}";
+                    var rootBakedIndex = state.Value<int?>("StateRootNodeIndex");
+                    if (rootBakedIndex is >= 0)
+                    {
+                        rootAnnotationCount++;
+                        assetRootCount++;
+                        if (!bakedIndexMap.TryGetValue(
+                                rootBakedIndex.Value,
+                                out var rootNode))
+                        {
+                            errors.Add(
+                                $"{context}: baked root index {rootBakedIndex} is unresolved");
+                        }
+                        else
+                        {
+                            ValidateNodeAnnotation(
+                                $"{context}.root",
+                                rootNode,
+                                state["StateRootNodeCompiledIndex"],
+                                state["StateRootNodeProperty"],
+                                state["StateRootNodeType"]);
+                            if (rootNode.Value<string>("type") != "FAnimNode_StateResult"
+                                || rootNode.SelectToken("parameters.Name")?.Value<string>()
+                                != stateName)
+                            {
+                                errors.Add(
+                                    $"{context}: baked root does not resolve to its named " +
+                                    "FAnimNode_StateResult");
+                            }
+                        }
+                    }
+                    else if (state["StateRootNodeCompiledIndex"]?.Type != JTokenType.Null
+                             || state["StateRootNodeProperty"]?.Type != JTokenType.Null
+                             || state["StateRootNodeType"]?.Type != JTokenType.Null)
+                    {
+                        errors.Add($"{context}: conduit root annotations must be null");
+                    }
+
+                    var rawPlayerIndices =
+                        state["PlayerNodeIndices"]?.Values<int>().ToArray() ?? [];
+                    var compiledPlayerIndices =
+                        state["PlayerNodeCompiledIndices"] as JArray ?? new JArray();
+                    var playerProperties =
+                        state["PlayerNodeProperties"] as JArray ?? new JArray();
+                    var playerTypes =
+                        state["PlayerNodeTypes"] as JArray ?? new JArray();
+                    if (compiledPlayerIndices.Count != rawPlayerIndices.Length
+                        || playerProperties.Count != rawPlayerIndices.Length
+                        || playerTypes.Count != rawPlayerIndices.Length)
+                    {
+                        errors.Add(
+                            $"{context}: player annotations do not align with raw baked indices");
+                    }
+
+                    for (var index = 0; index < rawPlayerIndices.Length; index++)
+                    {
+                        playerAnnotationCount++;
+                        assetPlayerCount++;
+                        var bakedIndex = rawPlayerIndices[index];
+                        if (!bakedIndexMap.TryGetValue(bakedIndex, out var playerNode))
+                        {
+                            errors.Add(
+                                $"{context}: baked player index {bakedIndex} is unresolved");
+                            continue;
+                        }
+
+                        ValidateNodeAnnotation(
+                            $"{context}.player[{index}]",
+                            playerNode,
+                            compiledPlayerIndices.ElementAtOrDefault(index),
+                            playerProperties.ElementAtOrDefault(index),
+                            playerTypes.ElementAtOrDefault(index));
+                        if (playerNode.Value<string>("type") is not
+                            ("FAnimNode_SequencePlayer"
+                            or "FAnimNode_SequenceEvaluator"
+                            or "FAnimNode_BlendSpaceEvaluator"))
+                        {
+                            errors.Add(
+                                $"{context}: baked player index {bakedIndex} resolves to " +
+                                $"{playerNode.Value<string>("type")}");
+                        }
+                    }
+
+                    foreach (var transition in
+                             state["Transitions"]?.OfType<JObject>() ?? [])
+                    {
+                        var delegateBakedIndex =
+                            transition.Value<int?>("CanTakeDelegateIndex");
+                        if (delegateBakedIndex is not >= 0)
+                            continue;
+
+                        delegateAnnotationCount++;
+                        assetDelegateCount++;
+                        if (!bakedIndexMap.TryGetValue(
+                                delegateBakedIndex.Value,
+                                out var delegateNode))
+                        {
+                            errors.Add(
+                                $"{context}: baked delegate index {delegateBakedIndex} " +
+                                "is unresolved");
+                            continue;
+                        }
+
+                        var rule = transition["rule"] as JObject ?? new JObject();
+                        if (rule.Value<int?>("bakedDelegateIndex") != delegateBakedIndex)
+                        {
+                            errors.Add(
+                                $"{context}: rule does not preserve CanTakeDelegateIndex " +
+                                $"{delegateBakedIndex}");
+                        }
+                        ValidateNodeAnnotation(
+                            $"{context}.delegate[{delegateBakedIndex}]",
+                            delegateNode,
+                            rule["compiledDelegateIndex"],
+                            rule["compiledDelegateProperty"],
+                            rule["compiledDelegateType"]);
+                        if (delegateNode.Value<string>("type")
+                            != "FAnimNode_TransitionResult")
+                        {
+                            errors.Add(
+                                $"{context}: baked delegate index {delegateBakedIndex} " +
+                                "does not resolve to FAnimNode_TransitionResult");
+                        }
+                    }
+                }
+            }
+
+            if (assetRootCount + assetPlayerCount + assetDelegateCount > 0)
+            {
+                summaries.Add(
+                    new JObject
+                    {
+                        ["asset"] = assetProperty.Name,
+                        ["roots"] = assetRootCount,
+                        ["players"] = assetPlayerCount,
+                        ["delegates"] = assetDelegateCount,
+                    });
+            }
+        }
+
+        AddExactPin(
+            "locomotion-grounded-root-and-delegates",
+            "AB_Als_Locomotion",
+            "Locomotion States",
+            "Grounded",
+            1,
+            75,
+            "AnimGraphNode_StateResult",
+            [],
+            [],
+            [],
+            [61, 62],
+            [15, 14],
+            ["AnimGraphNode_TransitionResult_7", "AnimGraphNode_TransitionResult_8"]);
+        AddExactPin(
+            "locomotion-fall-root-and-players",
+            "AB_Als_Locomotion",
+            "Locomotion States",
+            "Fall",
+            3,
+            73,
+            "AnimGraphNode_StateResult_1",
+            [5, 6, 7, 11, 12, 15],
+            [71, 70, 69, 65, 64, 61],
+            [
+                "AnimGraphNode_SequencePlayer",
+                "AnimGraphNode_SequencePlayer_1",
+                "AnimGraphNode_SequencePlayer_2",
+                "AnimGraphNode_SequenceEvaluator",
+                "AnimGraphNode_SequenceEvaluator_1",
+                "AnimGraphNode_BlendSpaceEvaluator",
+            ],
+            [63, 64],
+            [13, 12],
+            ["AnimGraphNode_TransitionResult_9", "AnimGraphNode_TransitionResult_10"]);
+        AddExactPin(
+            "standing-idle-root-player-and-delegates",
+            "AB_Als_Standing",
+            "Standing States",
+            "Idle",
+            139,
+            64,
+            "AnimGraphNode_StateResult_12",
+            [142],
+            [61],
+            ["AnimGraphNode_SequenceEvaluator"],
+            [195, 196, 197],
+            [8, 7, 6],
+            [
+                "AnimGraphNode_TransitionResult_22",
+                "AnimGraphNode_TransitionResult_23",
+                "AnimGraphNode_TransitionResult_24",
+            ]);
+        AddExactPin(
+            "standing-run-start-root-player-and-delegate",
+            "AB_Als_Standing",
+            "Movement Details States",
+            "Run Start",
+            117,
+            86,
+            "AnimGraphNode_StateResult_11",
+            [119, 120, 121, 122],
+            [84, 83, 82, 81],
+            [
+                "AnimGraphNode_SequencePlayer_14",
+                "AnimGraphNode_SequencePlayer_15",
+                "AnimGraphNode_SequencePlayer_16",
+                "AnimGraphNode_SequencePlayer_17",
+            ],
+            [134],
+            [69],
+            ["AnimGraphNode_TransitionResult_17"]);
+
+        var totalsMatch = rootAnnotationCount == 114
+                          && playerAnnotationCount == 227
+                          && delegateAnnotationCount == 304;
+        var exactPinsMatch = exactPins
+            .OfType<JObject>()
+            .All(pin => pin.Value<bool>("passed"));
+        return Validation(
+            "baked-state-machine-node-index-mapping",
+            errors.Count == 0 && totalsMatch && exactPinsMatch,
+            new JObject
+            {
+                ["mapping"] =
+                    "Baked indices address AnimNodeProperties in reverse serialized " +
+                    "generated-class FAnimNode property order; compiled indices are recovered " +
+                    "independently from pose-link SourceLinkID anchors.",
+                ["expectedTotals"] = new JObject
+                {
+                    ["roots"] = 114,
+                    ["players"] = 227,
+                    ["delegates"] = 304,
+                },
+                ["actualTotals"] = new JObject
+                {
+                    ["roots"] = rootAnnotationCount,
+                    ["players"] = playerAnnotationCount,
+                    ["delegates"] = delegateAnnotationCount,
+                },
+                ["assets"] = summaries,
+                ["exactPins"] = exactPins,
+                ["errors"] = errors,
+            });
+
+        void ValidateNodeAnnotation(
+            string context,
+            JObject expectedNode,
+            JToken? actualCompiledIndex,
+            JToken? actualProperty,
+            JToken? actualType)
+        {
+            var expectedCompiledIndex =
+                expectedNode["compiledIndex"]?.Type == JTokenType.Integer
+                    ? expectedNode.Value<int?>("compiledIndex")
+                    : null;
+            if (!NullableIntEquals(actualCompiledIndex, expectedCompiledIndex)
+                || actualProperty?.Value<string>()
+                != expectedNode.Value<string>("property")
+                || actualType?.Value<string>() != expectedNode.Value<string>("type"))
+            {
+                errors.Add(
+                    $"{context}: annotation does not match the reverse serialized-property " +
+                    "mapping");
+            }
+        }
+
+        void AddExactPin(
+            string id,
+            string assetName,
+            string machineName,
+            string stateName,
+            int expectedRootBakedIndex,
+            int expectedRootCompiledIndex,
+            string expectedRootProperty,
+            int[] expectedPlayerBakedIndices,
+            int[] expectedPlayerCompiledIndices,
+            string[] expectedPlayerProperties,
+            int[] expectedDelegateBakedIndices,
+            int[] expectedDelegateCompiledIndices,
+            string[] expectedDelegateProperties)
+        {
+            var state = assets[assetName]?["stateMachines"]?
+                .OfType<JObject>()
+                .FirstOrDefault(machine =>
+                    machine.Value<string>("MachineName") == machineName)?["States"]?
+                .OfType<JObject>()
+                .FirstOrDefault(candidate =>
+                    candidate.Value<string>("StateName") == stateName);
+            if (state is null)
+            {
+                exactPins.Add(
+                    new JObject
+                    {
+                        ["id"] = id,
+                        ["passed"] = false,
+                        ["missing"] = $"{assetName}.{machineName}.{stateName}",
+                    });
+                return;
+            }
+
+            var actualPlayerBakedIndices =
+                state["PlayerNodeIndices"]?.Values<int>().ToArray() ?? [];
+            var actualPlayerCompiledIndices =
+                state["PlayerNodeCompiledIndices"]?.Values<int>().ToArray() ?? [];
+            var actualPlayerProperties =
+                state["PlayerNodeProperties"]?.Values<string>().ToArray() ?? [];
+            var transitions = state["Transitions"]?.OfType<JObject>().ToArray() ?? [];
+            var actualDelegateBakedIndices = transitions
+                .Select(transition => transition.Value<int>("CanTakeDelegateIndex"))
+                .ToArray();
+            var actualDelegateCompiledIndices = transitions
+                .Select(transition =>
+                    transition.SelectToken("rule.compiledDelegateIndex")!.Value<int>())
+                .ToArray();
+            var actualDelegateProperties = transitions
+                .Select(transition =>
+                    transition.SelectToken("rule.compiledDelegateProperty")!.Value<string>()!)
+                .ToArray();
+
+            var passed =
+                state.Value<int?>("StateRootNodeIndex") == expectedRootBakedIndex
+                && state.Value<int?>("StateRootNodeCompiledIndex")
+                == expectedRootCompiledIndex
+                && state.Value<string>("StateRootNodeProperty") == expectedRootProperty
+                && actualPlayerBakedIndices.SequenceEqual(expectedPlayerBakedIndices)
+                && actualPlayerCompiledIndices.SequenceEqual(expectedPlayerCompiledIndices)
+                && actualPlayerProperties.SequenceEqual(expectedPlayerProperties)
+                && actualDelegateBakedIndices.SequenceEqual(expectedDelegateBakedIndices)
+                && actualDelegateCompiledIndices.SequenceEqual(
+                    expectedDelegateCompiledIndices)
+                && actualDelegateProperties.SequenceEqual(expectedDelegateProperties);
+            exactPins.Add(
+                new JObject
+                {
+                    ["id"] = id,
+                    ["passed"] = passed,
+                    ["root"] = new JObject
+                    {
+                        ["bakedIndex"] = state["StateRootNodeIndex"],
+                        ["compiledIndex"] = state["StateRootNodeCompiledIndex"],
+                        ["property"] = state["StateRootNodeProperty"],
+                    },
+                    ["players"] = new JObject
+                    {
+                        ["bakedIndices"] = new JArray(actualPlayerBakedIndices),
+                        ["compiledIndices"] = new JArray(actualPlayerCompiledIndices),
+                        ["properties"] = new JArray(
+                            actualPlayerProperties.Select(
+                                property => property is null
+                                    ? JValue.CreateNull()
+                                    : new JValue(property))),
+                    },
+                    ["delegates"] = new JObject
+                    {
+                        ["bakedIndices"] = new JArray(actualDelegateBakedIndices),
+                        ["compiledIndices"] = new JArray(actualDelegateCompiledIndices),
+                        ["properties"] = new JArray(actualDelegateProperties),
+                    },
+                });
+        }
+
+        static bool NullableIntEquals(JToken? actual, int? expected)
+        {
+            return expected is null
+                ? actual is null || actual.Type is JTokenType.Null
+                : actual?.Type == JTokenType.Integer && actual.Value<int>() == expected;
+        }
     }
 
     static JObject ValidateAlsCustomAnimNodes(JObject payload)

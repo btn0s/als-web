@@ -15,6 +15,7 @@ import { createRigDefinition } from './rig'
 import {
   advanceStateTransition,
   createStateTransitionClock,
+  resetStateTransitionClock,
   startStateTransition,
 } from './stateTransition'
 
@@ -139,6 +140,39 @@ describe('VERIFIED UE standard state transition clock', () => {
     expect(advanceStateTransition(clock, 1)).toBe('steady')
     expect(clock.fromPoseMask).toBe(fromPoseMask)
     expect(clock.toPoseMask).toBe(toPoseMask)
+  })
+
+  it('reinitializes in place with retained pose masks', () => {
+    const clock = createStateTransitionClock('Move Forward', rig.boneCount)
+    const fromPoseMask = clock.fromPoseMask
+    const toPoseMask = clock.toPoseMask
+    startStateTransition(clock, {
+      from: 'Move Forward',
+      to: 'Move Backward',
+      duration: 0.5,
+      blendOption: 'Cubic',
+      blendProfile: profile,
+    })
+    advanceStateTransition(clock, 0.25)
+
+    expect(resetStateTransitionClock(clock, 'Move Left Forward')).toBe(clock)
+    expect(clock).toMatchObject({
+      currentState: 'Move Left Forward',
+      fromState: 'Move Left Forward',
+      toState: 'Move Left Forward',
+      active: false,
+      elapsed: 0,
+      linearAlpha: 1,
+      blendAlpha: 1,
+      fromStateWeight: 0,
+      toStateWeight: 1,
+      blendOption: 'Linear',
+      blendProfile: null,
+    })
+    expect(clock.fromPoseMask).toBe(fromPoseMask)
+    expect(clock.toPoseMask).toBe(toPoseMask)
+    expect([...clock.fromPoseMask].every((weight) => weight === 0)).toBe(true)
+    expect([...clock.toPoseMask].every((weight) => weight === 1)).toBe(true)
   })
 
   it('applies Cubic before the authored WeightFactor profile', () => {
