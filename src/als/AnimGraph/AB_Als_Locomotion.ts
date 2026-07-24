@@ -302,9 +302,30 @@ export const ALS_AIR_LEAN_BLEND_SPACE = {
           Vertices: { X: 0.5, Y: 0 },
           'Vertices[1]': { X: 0.5, Y: 0.5 },
           'Vertices[2]': { X: 0, Y: 0.5 },
-          EdgeInfo: { NeighbourTriangleIndex: 1 },
-          'EdgeInfo[1]': { NeighbourTriangleIndex: 2 },
-          'EdgeInfo[2]': { NeighbourTriangleIndex: -1 },
+          EdgeInfo: {
+            Normal: { X: 1, Y: 0 },
+            NeighbourTriangleIndex: 1,
+            AdjacentPerimeterTriangleIndices: -1,
+            'AdjacentPerimeterTriangleIndices[1]': -1,
+            AdjacentPerimeterVertexIndices: -1,
+            'AdjacentPerimeterVertexIndices[1]': -1,
+          },
+          'EdgeInfo[1]': {
+            Normal: { X: 0, Y: 1 },
+            NeighbourTriangleIndex: 2,
+            AdjacentPerimeterTriangleIndices: -1,
+            'AdjacentPerimeterTriangleIndices[1]': -1,
+            AdjacentPerimeterVertexIndices: -1,
+            'AdjacentPerimeterVertexIndices[1]': -1,
+          },
+          'EdgeInfo[2]': {
+            Normal: { X: -0.70710677, Y: -0.70710677 },
+            NeighbourTriangleIndex: -1,
+            AdjacentPerimeterTriangleIndices: 2,
+            'AdjacentPerimeterTriangleIndices[1]': 1,
+            AdjacentPerimeterVertexIndices: 1,
+            'AdjacentPerimeterVertexIndices[1]': 0,
+          },
         },
         {
           SampleIndices: 2,
@@ -313,9 +334,30 @@ export const ALS_AIR_LEAN_BLEND_SPACE = {
           Vertices: { X: 0.5, Y: 0 },
           'Vertices[1]': { X: 1, Y: 0.5 },
           'Vertices[2]': { X: 0.5, Y: 0.5 },
-          EdgeInfo: { NeighbourTriangleIndex: -1 },
-          'EdgeInfo[1]': { NeighbourTriangleIndex: 3 },
-          'EdgeInfo[2]': { NeighbourTriangleIndex: 0 },
+          EdgeInfo: {
+            Normal: { X: 0.70710677, Y: -0.70710677 },
+            NeighbourTriangleIndex: -1,
+            AdjacentPerimeterTriangleIndices: 0,
+            'AdjacentPerimeterTriangleIndices[1]': 3,
+            AdjacentPerimeterVertexIndices: 2,
+            'AdjacentPerimeterVertexIndices[1]': 0,
+          },
+          'EdgeInfo[1]': {
+            Normal: { X: 0, Y: 1 },
+            NeighbourTriangleIndex: 3,
+            AdjacentPerimeterTriangleIndices: -1,
+            'AdjacentPerimeterTriangleIndices[1]': -1,
+            AdjacentPerimeterVertexIndices: -1,
+            'AdjacentPerimeterVertexIndices[1]': -1,
+          },
+          'EdgeInfo[2]': {
+            Normal: { X: -1, Y: 0 },
+            NeighbourTriangleIndex: 0,
+            AdjacentPerimeterTriangleIndices: -1,
+            'AdjacentPerimeterTriangleIndices[1]': -1,
+            AdjacentPerimeterVertexIndices: -1,
+            'AdjacentPerimeterVertexIndices[1]': -1,
+          },
         },
         {
           SampleIndices: 0,
@@ -324,9 +366,30 @@ export const ALS_AIR_LEAN_BLEND_SPACE = {
           Vertices: { X: 0.5, Y: 0.5 },
           'Vertices[1]': { X: 0.5, Y: 1 },
           'Vertices[2]': { X: 0, Y: 0.5 },
-          EdgeInfo: { NeighbourTriangleIndex: 3 },
-          'EdgeInfo[1]': { NeighbourTriangleIndex: -1 },
-          'EdgeInfo[2]': { NeighbourTriangleIndex: 0 },
+          EdgeInfo: {
+            Normal: { X: 1, Y: 0 },
+            NeighbourTriangleIndex: 3,
+            AdjacentPerimeterTriangleIndices: -1,
+            'AdjacentPerimeterTriangleIndices[1]': -1,
+            AdjacentPerimeterVertexIndices: -1,
+            'AdjacentPerimeterVertexIndices[1]': -1,
+          },
+          'EdgeInfo[1]': {
+            Normal: { X: -0.70710677, Y: 0.70710677 },
+            NeighbourTriangleIndex: -1,
+            AdjacentPerimeterTriangleIndices: 3,
+            'AdjacentPerimeterTriangleIndices[1]': 0,
+            AdjacentPerimeterVertexIndices: 0,
+            'AdjacentPerimeterVertexIndices[1]': 2,
+          },
+          'EdgeInfo[2]': {
+            Normal: { X: 0, Y: -1 },
+            NeighbourTriangleIndex: 0,
+            AdjacentPerimeterTriangleIndices: -1,
+            'AdjacentPerimeterTriangleIndices[1]': -1,
+            AdjacentPerimeterVertexIndices: -1,
+            'AdjacentPerimeterVertexIndices[1]': -1,
+          },
         },
         {
           SampleIndices: 4,
@@ -335,9 +398,30 @@ export const ALS_AIR_LEAN_BLEND_SPACE = {
           Vertices: { X: 1, Y: 0.5 },
           'Vertices[1]': { X: 0.5, Y: 1 },
           'Vertices[2]': { X: 0.5, Y: 0.5 },
-          EdgeInfo: { NeighbourTriangleIndex: -1 },
-          'EdgeInfo[1]': { NeighbourTriangleIndex: 2 },
-          'EdgeInfo[2]': { NeighbourTriangleIndex: 1 },
+          EdgeInfo: {
+            Normal: { X: 0.70710677, Y: 0.70710677 },
+            NeighbourTriangleIndex: -1,
+            AdjacentPerimeterTriangleIndices: 1,
+            'AdjacentPerimeterTriangleIndices[1]': 2,
+            AdjacentPerimeterVertexIndices: 0,
+            'AdjacentPerimeterVertexIndices[1]': 1,
+          },
+          'EdgeInfo[1]': {
+            Normal: { X: -1, Y: 0 },
+            NeighbourTriangleIndex: 2,
+            AdjacentPerimeterTriangleIndices: -1,
+            'AdjacentPerimeterTriangleIndices[1]': -1,
+            AdjacentPerimeterVertexIndices: -1,
+            'AdjacentPerimeterVertexIndices[1]': -1,
+          },
+          'EdgeInfo[2]': {
+            Normal: { X: 0, Y: -1 },
+            NeighbourTriangleIndex: 1,
+            AdjacentPerimeterTriangleIndices: -1,
+            'AdjacentPerimeterTriangleIndices[1]': -1,
+            AdjacentPerimeterVertexIndices: -1,
+            'AdjacentPerimeterVertexIndices[1]': -1,
+          },
         },
       ],
     },
@@ -364,11 +448,7 @@ export const ALS_LAND_MOVEMENT_ADDITIVE_SETTINGS = {
 export const ALS_LOCOMOTION_QUICK_FEET_BLEND_PROFILE =
   ALS_CROUCHING_QUICK_FEET_BLEND_PROFILE satisfies WeightBlendProfile
 
-/**
- * These are the only two UE-runtime details that remain outside the extracted ALS content.
- * Callers provide the automatic-rule result explicitly; BlendSpace perimeter projection uses the
- * engine primitive whose nearest-authored-edge behavior is still awaiting a UE differential.
- */
+/** The remaining UE-runtime detail outside the extracted ALS content. */
 export const ALS_LOCOMOTION_UNRESOLVED_ENGINE_BEHAVIOR = {
   landMovementAutomaticRule: {
     kind: 'hypothesis',
@@ -376,13 +456,6 @@ export const ALS_LOCOMOTION_UNRESOLVED_ENGINE_BEHAVIOR = {
       'The authored rule is automatic remaining-time with trigger time -1.',
     unresolved:
       'The exact dynamically synchronized SequencePlayer comparison boundary.',
-  },
-  airLeanOutsideConvexHull: {
-    kind: 'hypothesis',
-    verified:
-      'The authored diamond topology and perimeter edges are retained verbatim.',
-    unresolved:
-      'UE perimeter traversal tie-breaking for inputs outside the authored diamond.',
   },
 } as const
 

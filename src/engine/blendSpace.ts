@@ -51,7 +51,10 @@ interface CompiledTriangles {
   readonly kind: 'triangles'
   readonly sampleIndices: Int32Array
   readonly vertices: Float64Array
+  readonly edgeNormals: Float64Array
   readonly neighbours: Int32Array
+  readonly adjacentPerimeterTriangles: Int32Array
+  readonly adjacentPerimeterVertices: Int32Array
 }
 
 interface CompiledGrid {
@@ -75,10 +78,7 @@ export interface CompiledBlendSpace {
 }
 
 export interface BlendSpaceSampleWeights {
-  /**
-   * Paired with `weights` for indices below `count`. Entries are always ordered by authored
-   * sample index, making the result stable when a point crosses an authored triangle boundary.
-   */
+  /** Paired with `weights` for indices below `count`, in descending UE sample-weight order. */
   readonly sampleIndices: Int32Array
   readonly weights: Float64Array
   count: number
@@ -86,6 +86,8 @@ export interface BlendSpaceSampleWeights {
 
 export interface BlendSpaceEvaluator {
   readonly blendSpace: CompiledBlendSpace
+  /** UE's FAnimNode_BlendSpacePlayer::CachedTriangulationIndex. */
+  cachedTriangulationIndex: number
   /**
    * Reused by every evaluation. Consumers must read it before evaluating this instance again.
    */
@@ -93,6 +95,8 @@ export interface BlendSpaceEvaluator {
 }
 
 const GEOMETRY_EPSILON = 1e-10
+const UE_KINDA_SMALL_NUMBER = 1e-4
+const ZERO_ANIMWEIGHT_THRESH = 1e-5
 
 function numberedNumber(
   fields: NumberedFields,
@@ -121,6 +125,17 @@ function numberedObject(
 function checkedSampleIndex(value: number, sampleCount: number) {
   if (!Number.isInteger(value) || value < 0 || value >= sampleCount) {
     throw new Error(`BlendSpace sample index ${value} is outside 0..${sampleCount - 1}`)
+  }
+  return value
+}
+
+function checkedOptionalIndex(
+  value: number,
+  count: number,
+  label: string,
+) {
+  if (!Number.isInteger(value) || value < -1 || value >= count) {
+    throw new Error(`${label} ${value} is outside -1..${count - 1}`)
   }
   return value
 }
@@ -156,8 +171,10 @@ function compileTriangles(
   if (triangles.length === 0) throw new Error('BlendSpace has no authored triangles')
   const sampleIndices = new Int32Array(triangles.length * 3)
   const vertices = new Float64Array(triangles.length * 6)
+  const edgeNormals = new Float64Array(triangles.length * 6)
   const neighbours = new Int32Array(triangles.length * 3)
-  neighbours.fill(-1)
+  const adjacentPerimeterTriangles = new Int32Array(triangles.length * 6)
+  const adjacentPerimeterVertices = new Int32Array(triangles.length * 6)
 
   for (let triangleIndex = 0; triangleIndex < triangles.length; triangleIndex++) {
     const triangle = triangles[triangleIndex]
@@ -174,11 +191,30 @@ function compileTriangles(
 
       const edgeKey = vertexIndex === 0 ? 'EdgeInfo' : `EdgeInfo[${vertexIndex}]`
       const edge = triangle[edgeKey]
-      if (edge && typeof edge === 'object') {
-        const neighbour = (edge as NumberedFields).NeighbourTriangleIndex
-        if (typeof neighbour === 'number' && Number.isInteger(neighbour)) {
-          neighbours[sampleOffset] = neighbour
-        }
+      if (!edge || typeof edge !== 'object') {
+        throw new Error(`BlendSpace triangle ${triangleIndex} has no EdgeInfo[${vertexIndex}]`)
+      }
+      const edgeFields = edge as NumberedFields
+      const normal = numberedObject(edgeFields, 'Normal', 0)
+      edgeNormals[vertexOffset] = numberedNumber(normal, 'X', 0)
+      edgeNormals[vertexOffset + 1] = numberedNumber(normal, 'Y', 0)
+      neighbours[sampleOffset] = checkedOptionalIndex(
+        numberedNumber(edgeFields, 'NeighbourTriangleIndex', 0),
+        triangles.length,
+        `BlendSpace neighbour triangle at ${triangleIndex}:${vertexIndex}`,
+      )
+      for (let direction = 0; direction < 2; direction++) {
+        const perimeterOffset = triangleIndex * 6 + vertexIndex * 2 + direction
+        adjacentPerimeterTriangles[perimeterOffset] = checkedOptionalIndex(
+          numberedNumber(edgeFields, 'AdjacentPerimeterTriangleIndices', direction),
+          triangles.length,
+          `BlendSpace adjacent perimeter triangle at ${triangleIndex}:${vertexIndex}:${direction}`,
+        )
+        adjacentPerimeterVertices[perimeterOffset] = checkedOptionalIndex(
+          numberedNumber(edgeFields, 'AdjacentPerimeterVertexIndices', direction),
+          3,
+          `BlendSpace adjacent perimeter vertex at ${triangleIndex}:${vertexIndex}:${direction}`,
+        )
       }
     }
 
@@ -190,11 +226,36 @@ function compileTriangles(
     const cx = vertices[offset + 4]
     const cy = vertices[offset + 5]
     const twiceArea = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
-    if (Math.abs(twiceArea) <= GEOMETRY_EPSILON) {
+    const sampleOffset = triangleIndex * 3
+    const isUeSinglePoint = (
+      triangles.length === 1
+      && sampleIndices[sampleOffset] === sampleIndices[sampleOffset + 1]
+    )
+    const isUeTwoPointLine = (
+      triangles.length === 1
+      && sampleIndices[sampleOffset + 1] === sampleIndices[sampleOffset + 2]
+      && (
+        (bx - ax) * (bx - ax) + (by - ay) * (by - ay)
+        > GEOMETRY_EPSILON
+      )
+    )
+    if (
+      Math.abs(twiceArea) <= GEOMETRY_EPSILON
+      && !isUeSinglePoint
+      && !isUeTwoPointLine
+    ) {
       throw new Error(`BlendSpace triangle ${triangleIndex} has zero area`)
     }
   }
-  return { kind: 'triangles', sampleIndices, vertices, neighbours }
+  return {
+    kind: 'triangles',
+    sampleIndices,
+    vertices,
+    edgeNormals,
+    neighbours,
+    adjacentPerimeterTriangles,
+    adjacentPerimeterVertices,
+  }
 }
 
 function compileGrid(
@@ -308,6 +369,7 @@ export function createBlendSpaceEvaluator(
 ): BlendSpaceEvaluator {
   return {
     blendSpace,
+    cachedTriangulationIndex: -1,
     result: {
       sampleIndices: new Int32Array(blendSpace.samples.length),
       weights: new Float64Array(blendSpace.samples.length),
@@ -323,31 +385,52 @@ function addWeight(
 ) {
   if (weight <= 0) return
 
-  let outputIndex = 0
-  while (
-    outputIndex < result.count
-    && result.sampleIndices[outputIndex] < sampleIndex
-  ) {
-    outputIndex++
-  }
-  if (
-    outputIndex < result.count
-    && result.sampleIndices[outputIndex] === sampleIndex
-  ) {
-    result.weights[outputIndex] += weight
-    return
+  for (let index = 0; index < result.count; index++) {
+    if (result.sampleIndices[index] === sampleIndex) {
+      result.weights[index] += weight
+      return
+    }
   }
 
-  for (let index = result.count; index > outputIndex; index--) {
-    result.sampleIndices[index] = result.sampleIndices[index - 1]
-    result.weights[index] = result.weights[index - 1]
-  }
-  result.sampleIndices[outputIndex] = sampleIndex
-  result.weights[outputIndex] = weight
+  result.sampleIndices[result.count] = sampleIndex
+  result.weights[result.count] = weight
   result.count++
 }
 
-function finishWeights(result: BlendSpaceSampleWeights) {
+function finishWeights(
+  result: BlendSpaceSampleWeights,
+  includeThresholdEquality: boolean,
+) {
+  let retainedCount = 0
+  for (let index = 0; index < result.count; index++) {
+    const weight = result.weights[index]
+    const isRelevant = includeThresholdEquality
+      ? weight >= ZERO_ANIMWEIGHT_THRESH
+      : weight > ZERO_ANIMWEIGHT_THRESH
+    if (!isRelevant) continue
+    result.sampleIndices[retainedCount] = result.sampleIndices[index]
+    result.weights[retainedCount] = weight
+    retainedCount++
+  }
+  result.count = retainedCount
+
+  // UBlendSpace::GetSamplesFromBlendInput sorts largest-to-smallest before normalization.
+  for (let index = 1; index < result.count; index++) {
+    const sampleIndex = result.sampleIndices[index]
+    const weight = result.weights[index]
+    let insertionIndex = index
+    while (
+      insertionIndex > 0
+      && result.weights[insertionIndex - 1] < weight
+    ) {
+      result.sampleIndices[insertionIndex] = result.sampleIndices[insertionIndex - 1]
+      result.weights[insertionIndex] = result.weights[insertionIndex - 1]
+      insertionIndex--
+    }
+    result.sampleIndices[insertionIndex] = sampleIndex
+    result.weights[insertionIndex] = weight
+  }
+
   let totalWeight = 0
   for (let index = 0; index < result.count; index++) {
     totalWeight += result.weights[index]
@@ -358,13 +441,12 @@ function finishWeights(result: BlendSpaceSampleWeights) {
   }
 }
 
-function barycentric(
+function addBarycentricWeights(
   topology: CompiledTriangles,
   triangleIndex: number,
   x: number,
   y: number,
   result: BlendSpaceSampleWeights,
-  clampWeights: boolean,
 ) {
   const vertexOffset = triangleIndex * 6
   const ax = topology.vertices[vertexOffset]
@@ -374,19 +456,13 @@ function barycentric(
   const cx = topology.vertices[vertexOffset + 4]
   const cy = topology.vertices[vertexOffset + 5]
   const denominator = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
-  let weightA = (
+  const weightA = (
     (by - cy) * (x - cx) + (cx - bx) * (y - cy)
   ) / denominator
-  let weightB = (
+  const weightB = (
     (cy - ay) * (x - cx) + (ax - cx) * (y - cy)
   ) / denominator
-  let weightC = 1 - weightA - weightB
-
-  if (clampWeights) {
-    weightA = Math.max(0, weightA)
-    weightB = Math.max(0, weightB)
-    weightC = Math.max(0, weightC)
-  }
+  const weightC = 1 - weightA - weightB
   const sampleOffset = triangleIndex * 3
   addWeight(result, topology.sampleIndices[sampleOffset], weightA)
   addWeight(result, topology.sampleIndices[sampleOffset + 1], weightB)
@@ -397,32 +473,49 @@ function evaluateSegments(
   topology: CompiledSegments,
   x: number,
   result: BlendSpaceSampleWeights,
+  cachedSegmentIndex: number,
 ) {
-  let bestSegment = -1
-  let bestPosition = 0
-  let bestDistance = Number.POSITIVE_INFINITY
   const segmentCount = topology.vertices.length / 2
-  for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++) {
+  if (
+    segmentCount === 1
+    && topology.sampleIndices[0] === topology.sampleIndices[1]
+  ) {
+    addWeight(result, topology.sampleIndices[0], 1)
+    return cachedSegmentIndex
+  }
+
+  let segmentIndex = cachedSegmentIndex
+  if (segmentIndex < 0 || segmentIndex >= segmentCount) {
+    segmentIndex = Math.floor(segmentCount / 2)
+  }
+
+  for (let attempt = 0; attempt < segmentCount; attempt++) {
     const offset = segmentIndex * 2
     const from = topology.vertices[offset]
     const to = topology.vertices[offset + 1]
-    const low = Math.min(from, to)
-    const high = Math.max(from, to)
-    const position = Math.min(Math.max(x, low), high)
-    const distance = Math.abs(x - position)
-    if (distance < bestDistance) {
-      bestDistance = distance
-      bestSegment = segmentIndex
-      bestPosition = position
+    if (x < from) {
+      if (segmentIndex > 0) {
+        segmentIndex--
+      } else {
+        addWeight(result, topology.sampleIndices[offset], 1)
+        return segmentIndex
+      }
+    } else if (x > to) {
+      if (segmentIndex < segmentCount - 1) {
+        segmentIndex++
+      } else {
+        addWeight(result, topology.sampleIndices[offset + 1], 1)
+        return segmentIndex
+      }
+    } else {
+      const alpha = Math.min(Math.max((x - from) / (to - from), 0), 1)
+      addWeight(result, topology.sampleIndices[offset], 1 - alpha)
+      addWeight(result, topology.sampleIndices[offset + 1], alpha)
+      return segmentIndex
     }
   }
 
-  const offset = bestSegment * 2
-  const from = topology.vertices[offset]
-  const to = topology.vertices[offset + 1]
-  const alpha = (bestPosition - from) / (to - from)
-  addWeight(result, topology.sampleIndices[offset], 1 - alpha)
-  addWeight(result, topology.sampleIndices[offset + 1], alpha)
+  throw new Error('Unable to find BlendSpace segment')
 }
 
 function evaluateTriangles(
@@ -430,74 +523,143 @@ function evaluateTriangles(
   x: number,
   y: number,
   result: BlendSpaceSampleWeights,
+  cachedTriangleIndex: number,
 ) {
   const triangleCount = topology.sampleIndices.length / 3
-  for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
-    const offset = triangleIndex * 6
-    const ax = topology.vertices[offset]
-    const ay = topology.vertices[offset + 1]
-    const bx = topology.vertices[offset + 2]
-    const by = topology.vertices[offset + 3]
-    const cx = topology.vertices[offset + 4]
-    const cy = topology.vertices[offset + 5]
-    const denominator = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
-    const weightA = (
-      (by - cy) * (x - cx) + (cx - bx) * (y - cy)
-    ) / denominator
-    const weightB = (
-      (cy - ay) * (x - cx) + (ax - cx) * (y - cy)
-    ) / denominator
-    const weightC = 1 - weightA - weightB
-    if (
-      weightA >= -GEOMETRY_EPSILON
-      && weightB >= -GEOMETRY_EPSILON
-      && weightC >= -GEOMETRY_EPSILON
-    ) {
-      barycentric(topology, triangleIndex, x, y, result, true)
-      return
+  if (triangleCount === 1) {
+    if (topology.sampleIndices[0] === topology.sampleIndices[1]) {
+      addWeight(result, topology.sampleIndices[0], 1)
+      return cachedTriangleIndex
+    }
+    if (topology.sampleIndices[1] === topology.sampleIndices[2]) {
+      const startX = topology.vertices[0]
+      const startY = topology.vertices[1]
+      const deltaX = topology.vertices[2] - startX
+      const deltaY = topology.vertices[3] - startY
+      const alpha = (
+        (x - startX) * deltaX + (y - startY) * deltaY
+      ) / (deltaX * deltaX + deltaY * deltaY)
+      if (alpha < 0) {
+        addWeight(result, topology.sampleIndices[0], 1)
+      } else if (alpha > 1) {
+        addWeight(result, topology.sampleIndices[1], 1)
+      } else {
+        addWeight(result, topology.sampleIndices[0], 1 - alpha)
+        addWeight(result, topology.sampleIndices[1], alpha)
+      }
+      return cachedTriangleIndex
     }
   }
 
-  /*
-   * HYPOTHESIS — UE5.5's perimeter traversal implementation is not present in this repository.
-   * The authored EdgeInfo does prove which triangle edges are perimeter edges. Projecting onto
-   * the nearest such edge is the geometrically canonical clamping operation, but this outside-
-   * convex-hull branch still needs a differential run against UE before it can be called VERIFIED.
-   */
-  let bestTriangle = -1
-  let bestX = 0
-  let bestY = 0
-  let bestDistanceSquared = Number.POSITIVE_INFINITY
-  for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
+  let triangleIndex = cachedTriangleIndex
+  if (triangleIndex < 0 || triangleIndex >= triangleCount) {
+    triangleIndex = Math.floor(triangleCount / 2)
+  }
+
+  for (let attempt = 0; attempt < triangleCount; attempt++) {
+    let largestDistance = UE_KINDA_SMALL_NUMBER
+    let largestEdgeIndex = -1
     for (let edgeIndex = 0; edgeIndex < 3; edgeIndex++) {
-      if (topology.neighbours[triangleIndex * 3 + edgeIndex] >= 0) continue
       const vertexOffset = triangleIndex * 6 + edgeIndex * 2
-      const nextVertexOffset = triangleIndex * 6 + ((edgeIndex + 1) % 3) * 2
-      const ax = topology.vertices[vertexOffset]
-      const ay = topology.vertices[vertexOffset + 1]
-      const bx = topology.vertices[nextVertexOffset]
-      const by = topology.vertices[nextVertexOffset + 1]
-      const dx = bx - ax
-      const dy = by - ay
-      const alpha = Math.min(
-        Math.max(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy), 0),
-        1,
+      const distance = (
+        (x - topology.vertices[vertexOffset]) * topology.edgeNormals[vertexOffset]
+        + (y - topology.vertices[vertexOffset + 1])
+        * topology.edgeNormals[vertexOffset + 1]
       )
-      const closestX = ax + dx * alpha
-      const closestY = ay + dy * alpha
-      const distanceX = x - closestX
-      const distanceY = y - closestY
-      const distanceSquared = distanceX * distanceX + distanceY * distanceY
-      if (distanceSquared < bestDistanceSquared) {
-        bestDistanceSquared = distanceSquared
-        bestTriangle = triangleIndex
-        bestX = closestX
-        bestY = closestY
+      if (distance > largestDistance) {
+        largestDistance = distance
+        largestEdgeIndex = edgeIndex
       }
     }
+
+    if (largestEdgeIndex < 0) {
+      addBarycentricWeights(topology, triangleIndex, x, y, result)
+      return triangleIndex
+    }
+
+    const edgeOffset = triangleIndex * 3 + largestEdgeIndex
+    if (topology.neighbours[edgeOffset] >= 0) {
+      triangleIndex = topology.neighbours[edgeOffset]
+      continue
+    }
+
+    let originalDirection = -1
+    let startIndex = largestEdgeIndex
+    let endIndex = (startIndex + 1) % 3
+    let previousTriangleIndex = triangleIndex
+
+    for (
+      let perimeterAttempt = 0;
+      perimeterAttempt < triangleCount;
+      perimeterAttempt++
+    ) {
+      const vertexOffset = triangleIndex * 6
+      const startOffset = vertexOffset + startIndex * 2
+      const endOffset = vertexOffset + endIndex * 2
+      const startX = topology.vertices[startOffset]
+      const startY = topology.vertices[startOffset + 1]
+      const deltaX = topology.vertices[endOffset] - startX
+      const deltaY = topology.vertices[endOffset + 1] - startY
+      const alpha = (
+        deltaX * (x - startX) + deltaY * (y - startY)
+      ) / (deltaX * deltaX + deltaY * deltaY)
+
+      if (alpha >= 0 && alpha <= 1) {
+        const sampleOffset = triangleIndex * 3
+        addWeight(result, topology.sampleIndices[sampleOffset + startIndex], 1 - alpha)
+        addWeight(result, topology.sampleIndices[sampleOffset + endIndex], alpha)
+        return triangleIndex
+      }
+
+      if (originalDirection < 0) {
+        originalDirection = alpha > 1 ? 1 : 0
+      }
+      const direction = alpha > 1 ? 1 : 0
+      const sampleOffset = triangleIndex * 3
+      if (originalDirection !== direction) {
+        if (direction === 0) {
+          addWeight(
+            result,
+            topology.sampleIndices[sampleOffset + startIndex],
+            1 - alpha,
+          )
+        } else {
+          addWeight(
+            result,
+            topology.sampleIndices[sampleOffset + endIndex],
+            alpha,
+          )
+        }
+        return previousTriangleIndex
+      }
+
+      previousTriangleIndex = triangleIndex
+      const perimeterOffset = (
+        triangleIndex * 6 + startIndex * 2 + direction
+      )
+      triangleIndex = topology.adjacentPerimeterTriangles[perimeterOffset]
+      if (triangleIndex < 0) {
+        if (direction === 0) {
+          addWeight(
+            result,
+            topology.sampleIndices[sampleOffset + startIndex],
+            1 - alpha,
+          )
+        } else {
+          addWeight(
+            result,
+            topology.sampleIndices[sampleOffset + endIndex],
+            alpha,
+          )
+        }
+        return previousTriangleIndex
+      }
+      startIndex = topology.adjacentPerimeterVertices[perimeterOffset]
+      endIndex = (startIndex + 1) % 3
+    }
   }
-  if (bestTriangle < 0) throw new Error('BlendSpace has no authored perimeter edge')
-  barycentric(topology, bestTriangle, bestX, bestY, result, true)
+
+  throw new Error('Unable to find BlendSpace triangle')
 }
 
 function addGridSample(
@@ -565,16 +727,29 @@ export function evaluateBlendSpace(
     : 0
 
   switch (blendSpace.topology.kind) {
-    case 'segments':
-      evaluateSegments(blendSpace.topology, normalizedX, result)
+    case 'segments': {
+      evaluator.cachedTriangulationIndex = evaluateSegments(
+        blendSpace.topology,
+        normalizedX,
+        result,
+        evaluator.cachedTriangulationIndex,
+      )
       break
-    case 'triangles':
-      evaluateTriangles(blendSpace.topology, normalizedX, normalizedY, result)
+    }
+    case 'triangles': {
+      evaluator.cachedTriangulationIndex = evaluateTriangles(
+        blendSpace.topology,
+        normalizedX,
+        normalizedY,
+        result,
+        evaluator.cachedTriangulationIndex,
+      )
       break
+    }
     case 'grid':
       evaluateGrid(blendSpace.topology, normalizedX, normalizedY, result)
       break
   }
-  finishWeights(result)
+  finishWeights(result, blendSpace.topology.kind === 'grid')
   return result
 }

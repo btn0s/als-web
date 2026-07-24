@@ -255,13 +255,19 @@ describe('ALS authored BlendSpaces', () => {
     expect(weights).not.toEqual(expectedWalkRunTriangleWeights(0.25, 0.25))
   })
 
-  it('reuses one stable, sample-index-ordered output buffer', () => {
+  it('reuses one stable, UE weight-ordered output buffer', () => {
     const authored = extracted.blendSpaces.BS_Als_WalkRun_Right_Backward
     const evaluator = createBlendSpaceEvaluator(compileBlendSpace(authored))
     const result = evaluateBlendSpace(evaluator, 0.25, 0.25)
     const indices = result.sampleIndices
     const weights = result.weights
-    expect(Array.from(indices.slice(0, result.count))).toEqual([0, 1, 2, 3])
+    expect(Array.from(indices.slice(0, result.count))).toEqual([1, 0, 3, 2])
+    expect(Array.from(weights.slice(0, result.count))).toEqual([
+      0.5625,
+      0.1875,
+      0.1875,
+      0.0625,
+    ])
 
     const next = evaluateBlendSpace(evaluator, 1, 0)
     expect(next).toBe(result)

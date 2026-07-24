@@ -479,46 +479,9 @@ describe('VERIFIED AB_Als_Locomotion content topology', () => {
         rateScale: sample.rateScale,
       })),
     )
-    expect(ALS_AIR_LEAN_BLEND_SPACE.topology.blendSpaceData.Triangles.map(
-      (triangle) => ({
-        samples: [
-          triangle.SampleIndices,
-          triangle['SampleIndices[1]'],
-          triangle['SampleIndices[2]'],
-        ],
-        vertices: [
-          triangle.Vertices,
-          triangle['Vertices[1]'],
-          triangle['Vertices[2]'],
-        ],
-        neighbours: [
-          triangle.EdgeInfo.NeighbourTriangleIndex,
-          triangle['EdgeInfo[1]'].NeighbourTriangleIndex,
-          triangle['EdgeInfo[2]'].NeighbourTriangleIndex,
-        ],
-      }),
-    )).toEqual(airLean.topology.blendSpaceData.Triangles.map(
-      (triangle) => ({
-        samples: [
-          triangle.SampleIndices,
-          triangle['SampleIndices[1]'],
-          triangle['SampleIndices[2]'],
-        ],
-        vertices: [
-          triangle.Vertices,
-          triangle['Vertices[1]'],
-          triangle['Vertices[2]'],
-        ],
-        neighbours: [
-          (triangle.EdgeInfo as { NeighbourTriangleIndex: number })
-            .NeighbourTriangleIndex,
-          (triangle['EdgeInfo[1]'] as { NeighbourTriangleIndex: number })
-            .NeighbourTriangleIndex,
-          (triangle['EdgeInfo[2]'] as { NeighbourTriangleIndex: number })
-            .NeighbourTriangleIndex,
-        ],
-      }),
-    ))
+    expect(
+      ALS_AIR_LEAN_BLEND_SPACE.topology.blendSpaceData.Triangles,
+    ).toEqual(airLean.topology.blendSpaceData.Triangles)
     expect(ALS_LOCOMOTION_QUICK_FEET_BLEND_PROFILE).toEqual({
       mode: profiles.profiles.QuickFeetBlend.mode,
       entries: profiles.profiles.QuickFeetBlend.entries,
