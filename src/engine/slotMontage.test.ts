@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
+  advanceSlotMontageGroupSamples,
   advanceSlotMontageClock,
   advanceSlotMontageGroup,
   blendSlotCurveValue,
+  calculateSlotMontageWeight,
   createSlotMontageClock,
+  getSlotMontageEvaluationWeight,
   getSlotMontageSample,
+  getSlotMontageSamples,
   playSlotAnimationAsDynamicMontage,
   stopSlotAnimation,
 } from './slotMontage'
 import type { SlotMontageRequest, SlotMontageSample } from './slotMontage'
+
+const UE_MONTAGE_END_OFFSET = 0.00005
 
 function request(
   overrides: Partial<SlotMontageRequest> = {},
@@ -37,7 +43,7 @@ describe('UE dynamic slot montage clock', () => {
     expect(blendSlotCurveValue(1, 100, 2)).toBe(100)
   })
 
-  it('applies segment play rate before mapping montage start time to the source sample', () => {
+  it('keeps start time on the authored montage timeline and applies play rate while advancing', () => {
     const clock = createSlotMontageClock()
     const initial = playSlotAnimationAsDynamicMontage(clock, request({
       playRate: 2,
@@ -45,18 +51,18 @@ describe('UE dynamic slot montage clock', () => {
     }))
 
     expect(initial.montageTime).toBeCloseTo(0.25)
-    expect(initial.sampleTime).toBeCloseTo(0.5)
+    expect(initial.sampleTime).toBeCloseTo(0.25)
     expect(initial.weight).toBe(0)
     expect(initial.status).toBe('blendingIn')
 
     const halfway = advanceSlotMontageGroup(clock, 'DefaultGroup', 0.2)
-    expect(halfway?.montageTime).toBeCloseTo(0.45)
-    expect(halfway?.sampleTime).toBeCloseTo(0.9)
+    expect(halfway?.montageTime).toBeCloseTo(0.65)
+    expect(halfway?.sampleTime).toBeCloseTo(0.65)
     expect(halfway?.weight).toBeCloseTo(0.5)
 
     const full = advanceSlotMontageGroup(clock, 'DefaultGroup', 0.2)
-    expect(full?.montageTime).toBeCloseTo(0.65)
-    expect(full?.sampleTime).toBeCloseTo(1.3)
+    expect(full?.montageTime).toBeCloseTo(1.05)
+    expect(full?.sampleTime).toBeCloseTo(1.05)
     expect(full?.weight).toBe(1)
     expect(full?.status).toBe('playing')
   })
@@ -71,20 +77,20 @@ describe('UE dynamic slot montage clock', () => {
     }))
 
     const atEnd = advanceSlotMontageGroup(clock, 'DefaultGroup', 2 / 3)
-    expect(atEnd?.montageTime).toBeCloseTo(2 / 3)
-    expect(atEnd?.sampleTime).toBe(1)
+    expect(atEnd?.montageTime).toBeCloseTo(1)
+    expect(atEnd?.sampleTime).toBeCloseTo(1 - UE_MONTAGE_END_OFFSET, 8)
     expect(atEnd?.weight).toBe(1)
     expect(atEnd?.status).toBe('blendingOut')
     expect(atEnd?.blendOutReason).toBe('automatic')
 
     const fading = advanceSlotMontageGroup(clock, 'DefaultGroup', 0.1)
-    expect(fading?.montageTime).toBeCloseTo(2 / 3)
-    expect(fading?.sampleTime).toBe(1)
+    expect(fading?.montageTime).toBeCloseTo(1)
+    expect(fading?.sampleTime).toBeCloseTo(1 - UE_MONTAGE_END_OFFSET, 8)
     expect(fading?.weight).toBeCloseTo(0.5)
     expect(fading?.status).toBe('blendingOut')
 
     const completed = advanceSlotMontageGroup(clock, 'DefaultGroup', 0.1)
-    expect(completed?.sampleTime).toBe(1)
+    expect(completed?.sampleTime).toBeCloseTo(1 - UE_MONTAGE_END_OFFSET, 8)
     expect(completed?.weight).toBe(0)
     expect(completed?.status).toBe('completed')
     expect(getSlotMontageSample(clock, 'DefaultGroup')).toBeUndefined()
@@ -100,14 +106,14 @@ describe('UE dynamic slot montage clock', () => {
       startTime: 0.1,
     }))
 
-    const secondLoop = advanceSlotMontageGroup(clock, 'DefaultGroup', 0.4)
-    expect(secondLoop?.montageTime).toBeCloseTo(0.5)
+    const secondLoop = advanceSlotMontageGroup(clock, 'DefaultGroup', 0.45)
+    expect(secondLoop?.montageTime).toBeCloseTo(1)
     expect(secondLoop?.sampleTime).toBeCloseTo(0)
     expect(secondLoop?.status).toBe('playing')
 
     const terminal = advanceSlotMontageGroup(clock, 'DefaultGroup', 0.5)
-    expect(terminal?.montageTime).toBeCloseTo(1)
-    expect(terminal?.sampleTime).toBe(1)
+    expect(terminal?.montageTime).toBeCloseTo(2)
+    expect(terminal?.sampleTime).toBeCloseTo(1 - UE_MONTAGE_END_OFFSET, 8)
     expect(terminal?.status).toBe('blendingOut')
   })
 
@@ -141,17 +147,18 @@ describe('UE dynamic slot montage clock', () => {
     }))
 
     const trigger = advanceSlotMontageGroup(clock, 'DefaultGroup', 1.5)
-    expect(trigger?.montageTime).toBeCloseTo(1.5)
+    expect(trigger?.montageTime).toBeCloseTo(3)
     expect(trigger?.sampleTime).toBeCloseTo(3)
     expect(trigger?.status).toBe('blendingOut')
 
     const halfway = advanceSlotMontageGroup(clock, 'DefaultGroup', 0.25)
+    expect(halfway?.montageTime).toBeCloseTo(3.5)
     expect(halfway?.sampleTime).toBeCloseTo(3.5)
     expect(halfway?.weight).toBeCloseTo(0.5)
 
     const complete = advanceSlotMontageGroup(clock, 'DefaultGroup', 0.25)
-    expect(complete?.montageTime).toBeCloseTo(2)
-    expect(complete?.sampleTime).toBe(4)
+    expect(complete?.montageTime).toBeCloseTo(4)
+    expect(complete?.sampleTime).toBeCloseTo(4 - UE_MONTAGE_END_OFFSET, 8)
     expect(complete?.status).toBe('completed')
   })
 
@@ -207,12 +214,13 @@ describe('UE dynamic slot montage clock', () => {
       .toBe('blendingOut')
     expect(getSlotMontageSample(clock, 'UpperBodyGroup')?.status)
       .toBe('playing')
-    expect(stopSlotAnimation(clock, 0.1)).toHaveLength(2)
+    // StopSlotAnimation(NAME_None) visits active montages, not instances already blending out.
+    expect(stopSlotAnimation(clock, 0.1)).toHaveLength(1)
     expect(getSlotMontageSample(clock, 'UpperBodyGroup')?.status)
       .toBe('blendingOut')
   })
 
-  it('keeps exactly one active owner per slot group and leaves other groups independent', () => {
+  it('keeps one active owner but evaluates the interrupted outgoing montage until its fade ends', () => {
     const clock = createSlotMontageClock()
     const outgoing = playSlotAnimationAsDynamicMontage(clock, request({
       clipKey: 'outgoing',
@@ -232,9 +240,148 @@ describe('UE dynamic slot montage clock', () => {
     expect(replacement.weight).toBe(0)
     expect(getSlotMontageSample(clock, 'DefaultGroup')).toBe(replacement)
     expect(clock.activeByGroup.size).toBe(2)
+
+    const initialSamples = getSlotMontageSamples(clock, 'DefaultGroup')
+    expect(initialSamples).toHaveLength(2)
+    expect(initialSamples.map(({ clipKey, weight, blendOutReason }) => ({
+      clipKey,
+      weight,
+      blendOutReason,
+    }))).toEqual([
+      {
+        clipKey: 'outgoing',
+        weight: 0.5,
+        blendOutReason: 'interrupted',
+      },
+      {
+        clipKey: 'replacement',
+        weight: 0,
+        blendOutReason: null,
+      },
+    ])
+
+    const advanced: SlotMontageSample[] = []
+    advanceSlotMontageGroupSamples(clock, 'DefaultGroup', 0.2, advanced)
+    expect(advanced.map(({ clipKey, weight }) => [clipKey, weight])).toEqual([
+      ['outgoing', 0.25],
+      ['replacement', 0.5],
+    ])
+    expect(calculateSlotMontageWeight(advanced)).toEqual({
+      slotNodeWeight: 0.75,
+      sourceWeight: 0.25,
+      totalNodeWeight: 0.75,
+    })
   })
 
-  it('splits a large delta exactly at blend and end boundaries', () => {
+  it('uses the incoming blend-in duration for a complementary full-weight replacement', () => {
+    const clock = createSlotMontageClock()
+    playSlotAnimationAsDynamicMontage(clock, request({ clipKey: 'outgoing' }))
+    advanceSlotMontageGroup(clock, 'DefaultGroup', 0.4)
+    playSlotAnimationAsDynamicMontage(clock, request({ clipKey: 'incoming' }))
+
+    const samples: SlotMontageSample[] = []
+    advanceSlotMontageGroupSamples(clock, 'DefaultGroup', 0.2, samples)
+
+    expect(samples.map(({ clipKey, weight }) => [clipKey, weight])).toEqual([
+      ['outgoing', 0.5],
+      ['incoming', 0.5],
+    ])
+    expect(calculateSlotMontageWeight(samples)).toEqual({
+      slotNodeWeight: 1,
+      sourceWeight: 0,
+      totalNodeWeight: 1,
+    })
+  })
+
+  it('keeps a longer repeat stop envelope but restarts every older fade for a shorter one', () => {
+    const clock = createSlotMontageClock()
+    playSlotAnimationAsDynamicMontage(clock, request({ clipKey: 'a' }))
+    advanceSlotMontageGroup(clock, 'DefaultGroup', 0.4)
+    playSlotAnimationAsDynamicMontage(clock, request({
+      clipKey: 'b',
+      blendInDuration: 0.4,
+    }))
+    advanceSlotMontageGroup(clock, 'DefaultGroup', 0.1)
+
+    playSlotAnimationAsDynamicMontage(clock, request({
+      clipKey: 'c',
+      blendInDuration: 0.8,
+    }))
+    const longer: SlotMontageSample[] = []
+    advanceSlotMontageGroupSamples(clock, 'DefaultGroup', 0.1, longer)
+    expect(longer.map(({ clipKey, weight }) => [clipKey, weight])).toEqual([
+      ['a', 0.5],
+      ['b', 0.21875],
+      ['c', 0.125],
+    ])
+
+    playSlotAnimationAsDynamicMontage(clock, request({
+      clipKey: 'd',
+      blendInDuration: 0.1,
+    }))
+    const shorter: SlotMontageSample[] = []
+    advanceSlotMontageGroupSamples(clock, 'DefaultGroup', 0.05, shorter)
+    expect(shorter.map(({ clipKey, weight }) => [clipKey, weight])).toEqual([
+      ['a', 0.25],
+      ['b', 0.109375],
+      ['c', 0.0625],
+      ['d', 0.5],
+    ])
+  })
+
+  it('normalizes montage evaluation only when total slot weight exceeds one', () => {
+    const clock = createSlotMontageClock()
+    playSlotAnimationAsDynamicMontage(clock, request({
+      clipKey: 'first',
+      blendInDuration: 0,
+    }))
+    playSlotAnimationAsDynamicMontage(clock, request({
+      clipKey: 'second',
+      blendInDuration: 1,
+    }))
+    const samples = getSlotMontageSamples(clock, 'DefaultGroup')
+    samples[0].weight = 0.8
+    samples[1].weight = 0.7
+
+    const weights = calculateSlotMontageWeight(samples)
+    expect(weights.slotNodeWeight).toBe(1)
+    expect(weights.sourceWeight).toBeCloseTo(0)
+    expect(weights.totalNodeWeight).toBeCloseTo(1.5)
+    expect(getSlotMontageEvaluationWeight(samples[0], weights.totalNodeWeight))
+      .toBeCloseTo(0.8 / 1.5)
+    expect(getSlotMontageEvaluationWeight(samples[1], weights.totalNodeWeight))
+      .toBeCloseTo(0.7 / 1.5)
+  })
+
+  it('clamps Montage_Play start position and supports zero and reverse instance rates', () => {
+    const clampedClock = createSlotMontageClock()
+    const clamped = playSlotAnimationAsDynamicMontage(clampedClock, request({
+      startTime: 3,
+    }))
+    expect(clamped.montageTime).toBe(2)
+    expect(clamped.sampleTime).toBe(2)
+
+    const zeroClock = createSlotMontageClock()
+    playSlotAnimationAsDynamicMontage(zeroClock, request({
+      playRate: 0,
+      startTime: -1,
+    }))
+    const zero = advanceSlotMontageGroup(zeroClock, 'DefaultGroup', 0.2)
+    expect(zero?.montageTime).toBe(0)
+    expect(zero?.sampleTime).toBe(0)
+    expect(zero?.weight).toBeCloseTo(0.5)
+
+    const reverseClock = createSlotMontageClock()
+    playSlotAnimationAsDynamicMontage(reverseClock, request({
+      playRate: -2,
+      startTime: 1,
+    }))
+    const reverse = advanceSlotMontageGroup(reverseClock, 'DefaultGroup', 0.25)
+    expect(reverse?.montageTime).toBeCloseTo(0.5)
+    expect(reverse?.sampleTime).toBeCloseTo(0.5)
+  })
+
+  it('updates weight before position and does not spend post-end overshoot on a new fade', () => {
     const clock = createSlotMontageClock()
     playSlotAnimationAsDynamicMontage(clock, request({
       clipDuration: 1,
@@ -243,13 +390,16 @@ describe('UE dynamic slot montage clock', () => {
     }))
 
     const crossed = advanceSlotMontageGroup(clock, 'DefaultGroup', 1.1)
-    expect(crossed?.sampleTime).toBe(1)
+    expect(crossed?.sampleTime).toBeCloseTo(1 - UE_MONTAGE_END_OFFSET, 8)
     expect(crossed?.status).toBe('blendingOut')
-    expect(crossed?.weight).toBeCloseTo(0.5)
+    expect(crossed?.weight).toBe(1)
 
-    const completed = advanceSlotMontageGroup(clock, 'DefaultGroup', 10)
+    const halfway = advanceSlotMontageGroup(clock, 'DefaultGroup', 0.1)
+    expect(halfway?.weight).toBeCloseTo(0.5)
+
+    const completed = advanceSlotMontageGroup(clock, 'DefaultGroup', 0.1)
     expect(completed?.status).toBe('completed')
-    expect(completed?.sampleTime).toBe(1)
+    expect(completed?.sampleTime).toBeCloseTo(1 - UE_MONTAGE_END_OFFSET, 8)
   })
 
   it('handles zero blend durations and zero-length clips without a ghost owner', () => {
@@ -270,7 +420,7 @@ describe('UE dynamic slot montage clock', () => {
       blendOutDuration: 0,
     }))
     const completed = advanceSlotMontageGroup(clock, 'DefaultGroup', 1)
-    expect(completed?.sampleTime).toBe(1)
+    expect(completed?.sampleTime).toBeCloseTo(1 - UE_MONTAGE_END_OFFSET, 8)
     expect(completed?.status).toBe('completed')
     expect(clock.activeByGroup.size).toBe(0)
   })
@@ -302,13 +452,11 @@ describe('UE dynamic slot montage clock', () => {
     { clipDuration: Number.NaN },
     { blendInDuration: -1 },
     { blendOutDuration: -1 },
-    { playRate: 0 },
-    { playRate: -1 },
+    { playRate: Number.NaN },
     { loopCount: 0 },
     { loopCount: 1.5 },
     { blendOutTriggerTime: Number.POSITIVE_INFINITY },
-    { startTime: -1 },
-    { startTime: 3 },
+    { startTime: Number.NEGATIVE_INFINITY },
   ])('rejects malformed request fields: $overrides', (overrides) => {
     expect(() => playSlotAnimationAsDynamicMontage(
       createSlotMontageClock(),
