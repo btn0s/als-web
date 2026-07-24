@@ -3,13 +3,13 @@ import * as THREE from 'three'
 /**
  * Mirrors B_Als_Character's Blueprint-owned RefreshOverlayObject / AttachOverlayObject behavior.
  * Its CDO selects the right gun virtual bone and SnapToTarget uses identity location, rotation,
- * and scale. SK_Als's runtime virtual bone has the same world transform as our ik_hand_gun bone,
- * so that real 68-bone rig node is the web attachment target.
+ * and scale. The animation runtime materializes SK_Als's generated virtual bones because
+ * AB_Als_Layering node 92 blends their local transforms independently of the physical IK bones.
  *
  * Evidence: scripts/extract-als/props.manifest (rifle entry).
  */
 export const ALS_RIFLE_OVERLAY_OBJECT_URL = '/assets/skm-als-rifle.glb'
-export const ALS_RIFLE_OVERLAY_OBJECT_BONE = 'ik_hand_gun'
+export const ALS_RIFLE_OVERLAY_OBJECT_BONE = 'VB hand_r_to_ik_hand_gun'
 
 export function attachRifleOverlayObject(
   characterScene: THREE.Object3D,

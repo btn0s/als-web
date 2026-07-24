@@ -7,7 +7,10 @@ import {
 } from './AlsCharacter.overlayObjects'
 
 describe('AlsCharacter overlay objects', () => {
-  it('snaps the rifle root to ik_hand_gun with an identity relative transform', () => {
+  it('snaps the rifle root to the authored right-gun virtual bone', () => {
+    expect(ALS_RIFLE_OVERLAY_OBJECT_BONE)
+      .toBe('VB hand_r_to_ik_hand_gun')
+
     const characterScene = new THREE.Group()
     const attachmentBone = new THREE.Bone()
     attachmentBone.name = ALS_RIFLE_OVERLAY_OBJECT_BONE
