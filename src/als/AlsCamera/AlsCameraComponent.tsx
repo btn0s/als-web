@@ -5,6 +5,9 @@ import { useLayoutEffect, useMemo, useRef } from 'react'
 import type { ElementRef, MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { LEVA_ROOTS } from '../../app/levaRoots'
+import {
+  threeOrbitAzimuthToUnrealViewRelativeYawDegrees,
+} from '../../engine/unrealCoordinateSpace'
 import type { CharacterPoseSample } from './poseCameraState'
 
 const POSE_HEIGHT_DAMPING = 7
@@ -32,7 +35,6 @@ interface AlsCameraComponentProps {
 export function AlsCameraComponent({ characterSize, poseSample }: AlsCameraComponentProps) {
   const { camera, size: viewportSize } = useThree()
   const controls = useRef<ElementRef<typeof OrbitControls>>(null)
-  const initialOrbitAzimuth = useRef<number | undefined>(undefined)
   const previousOrbitAzimuth = useRef<number | undefined>(undefined)
   const { poseFollow } = useControls(
     LEVA_ROOTS.camera,
@@ -52,7 +54,9 @@ export function AlsCameraComponent({ characterSize, poseSample }: AlsCameraCompo
       desiredTarget: new THREE.Vector3(),
       targetDelta: new THREE.Vector3(),
       fallbackTarget: new THREE.Vector3(),
-      viewDirection: new THREE.Vector3(0.75, 0.35, 1).normalize(),
+      // Actor forward is three.js +X. Start physically behind it so view yaw zero, actor yaw
+      // zero, and camera-forward input all agree before the user moves the orbit.
+      viewDirection: new THREE.Vector3(-1, 0.35, 0).normalize(),
     }),
     [],
   )
@@ -77,8 +81,7 @@ export function AlsCameraComponent({ characterSize, poseSample }: AlsCameraCompo
     camera.lookAt(target)
     controls.current?.target.copy(target)
     controls.current?.update()
-    initialOrbitAzimuth.current = controls.current?.getAzimuthalAngle()
-    previousOrbitAzimuth.current = initialOrbitAzimuth.current
+    previousOrbitAzimuth.current = controls.current?.getAzimuthalAngle()
   }, [
     camera,
     characterSize,
@@ -113,13 +116,11 @@ export function AlsCameraComponent({ characterSize, poseSample }: AlsCameraCompo
     orbit.update()
 
     const orbitAzimuth = orbit.getAzimuthalAngle()
-    if (initialOrbitAzimuth.current === undefined) {
-      initialOrbitAzimuth.current = orbitAzimuth
-    }
     const previousAzimuth = previousOrbitAzimuth.current ?? orbitAzimuth
-    sample.viewYawAngle = THREE.MathUtils.radToDeg(normalizeAngleRadians(
-      orbitAzimuth - initialOrbitAzimuth.current - sample.characterYaw,
-    ))
+    sample.viewYawAngle = threeOrbitAzimuthToUnrealViewRelativeYawDegrees(
+      orbitAzimuth,
+      sample.characterYaw,
+    )
     sample.viewYawSpeed = delta > 0
       ? Math.abs(THREE.MathUtils.radToDeg(
           normalizeAngleRadians(orbitAzimuth - previousAzimuth),
@@ -132,6 +133,7 @@ export function AlsCameraComponent({ characterSize, poseSample }: AlsCameraCompo
     <OrbitControls
       ref={controls}
       makeDefault
+      enablePan={false}
       target={[0, characterSize.y / 2, 0]}
       minDistance={Math.max(characterSize.length() * 0.2, 0.1)}
       maxDistance={Math.max(characterSize.length() * 8, 10)}

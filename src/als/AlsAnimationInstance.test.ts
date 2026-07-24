@@ -5,8 +5,12 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { compileClipSampler, sampleClip } from '../engine/clipSampler'
+import { compileClipCurveSamplers } from '../engine/curves'
 import { createPoseBuffer } from '../engine/poseBuffer'
 import { createRigDefinition, findBoneIndex } from '../engine/rig'
+import {
+  RIFLE_RELAXED_POSE_TIME,
+} from './AnimGraph/overlayMode'
 import {
   createAlsAnimationInstance,
 } from './AlsAnimationInstance'
@@ -19,6 +23,7 @@ const controls: AlsAnimationInstanceControls = {
   gait: 'Running',
   moving: true,
   stance: 'Standing',
+  rotationMode: 'ViewDirection',
   overlayMode: 'Default',
   speed: 3.75,
   direction: 0,
@@ -155,6 +160,46 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(requestCount()).toBe(3)
     instance.refresh(1 / 60, controls)
     expect(requestCount()).toBe(3)
+  })
+
+  it('publishes the downstream-inertialized Layer curves instead of raw graph values', async () => {
+    const gltf = await loadAlsGltf()
+    const riflePoses = gltf.animations.find(
+      (clip) => clip.name === 'A_Als_Rifle_Poses',
+    )
+    if (!riflePoses) throw new Error('Missing A_Als_Rifle_Poses')
+    const authoredLayerHead = compileClipCurveSamplers(
+      riflePoses,
+    ).LayerHead?.(RIFLE_RELAXED_POSE_TIME)
+    if (authoredLayerHead === undefined) {
+      throw new Error('A_Als_Rifle_Poses is missing LayerHead')
+    }
+    expect(authoredLayerHead).toBeGreaterThan(0.5)
+
+    const instance = createAlsAnimationInstance(gltf)
+    const idleControls: AlsAnimationInstanceControls = {
+      ...controls,
+      gait: 'Walking',
+      moving: false,
+      speed: 0,
+    }
+    instance.refresh(1 / 60, idleControls)
+    expect(window.__weightTable?.LayerHead).toBe(0)
+
+    const rifleControls = {
+      ...idleControls,
+      overlayMode: 'Rifle' as const,
+    }
+    // At zero elapsed time UE's downstream inertialization node reproduces the outgoing curve
+    // container even though the incoming linked layer already resolves its authored non-zero.
+    instance.refresh(0, rifleControls)
+    expect(window.__weightTable?.LayerHead).toBeCloseTo(0, 8)
+
+    refreshFrames(instance, 30, rifleControls)
+    expect(window.__weightTable?.LayerHead).toBeCloseTo(
+      authoredLayerHead,
+      5,
+    )
   })
 
   it('keeps the settled Rifle left arm on its authored synchronized source', async () => {

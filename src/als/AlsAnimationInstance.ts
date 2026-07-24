@@ -10,6 +10,7 @@ import {
 } from '../engine/curves'
 import type {
   ClipCurveSamplers,
+  CurveFrame,
   WeightedCurveSource,
 } from '../engine/curves'
 import { createPoseEvaluator, evaluatePose } from '../engine/evaluator'
@@ -64,7 +65,11 @@ import {
   ALS_AUTHORED_GAIT_SPEEDS,
   buildLocomotionProfile,
 } from './Settings/AlsMovementSettings'
-import type { AlsGait, AlsStance } from './Settings/AlsMovementSettings'
+import type {
+  AlsGait,
+  AlsRotationMode,
+  AlsStance,
+} from './Settings/AlsMovementSettings'
 import { ALS_ROTATE_IN_PLACE_SETTINGS } from './Settings/AlsRotateInPlaceSettings'
 import { ALS_TURN_IN_PLACE_SETTINGS } from './Settings/AlsTurnInPlaceSettings'
 import {
@@ -223,6 +228,7 @@ export interface AlsAnimationInstanceControls {
   gait: AlsGait
   moving: boolean
   stance: AlsStance
+  rotationMode: AlsRotationMode
   overlayMode: AlsOverlayMode
   speed: number
   direction: number
@@ -286,6 +292,34 @@ function clipSyncMarkers(clip: THREE.AnimationClip): readonly SyncMarker[] {
       normalizedTime: clamp01(marker.time / clip.duration),
     }]
   })
+}
+
+/**
+ * Resolves the ordinary weighted graph branch into UE's one final named-curve container. ALS's
+ * graph-specific Pose, Layer, and turn curves override these generic values at the main graph
+ * seam.
+ */
+function resolveWeightedEntryCurves(
+  samples: CurveFrame,
+  output: Map<string, number>,
+  entries: readonly EvaluatorLayerEntry[],
+) {
+  let totalWeight = 0
+  for (const entry of entries) {
+    if (entry.weight > 0) totalWeight += entry.weight
+  }
+  if (totalWeight <= Number.EPSILON) return
+
+  for (const entry of entries) {
+    if (entry.weight <= 0) continue
+    const clipKey = entry.curveKey ?? entry.sampler.clip.name
+    const values = samples.byClip.get(clipKey)
+    if (!values || !samples.activeClips.has(clipKey)) continue
+    const normalizedWeight = entry.weight / totalWeight
+    for (const [name, value] of values) {
+      output.set(name, (output.get(name) ?? 0) + value * normalizedWeight)
+    }
+  }
 }
 
 /**
@@ -500,15 +534,76 @@ export function createAlsAnimationInstance(gltf: {
     syncClips.add(source.clip)
   }
   const locomotionSyncGroup = createSyncGroup('Locomotion', locomotionMembers)
+  const mainCurveEntries = [
+    ...baseEntries,
+    ...[...montageClips].map((clip) => clip.entry),
+  ]
+  const curveSources: readonly OverlayCurveSource[] = overlaySources
+  let graphFallbackGaitAmount = 0
+  let graphCrouchingAmount = 0
+  let graphFootLeftLock = 0
+  let graphFootRightLock = 0
+  let graphRotationYawSpeed = 0
   const mainInput: EvaluatePoseInput = {
     base: baseEntries,
-    montages: [...montageClips].map((clip) => clip.entry),
+    montages: mainCurveEntries.slice(baseEntries.length),
     overlays: overlayEntries.map((overlay) => overlay.entry),
     dynamicAdditives: dynamicAdditives.map((additive) => additive.entry),
     rootMotion,
+    resolveBlendedCurves(samples, output) {
+      resolveWeightedEntryCurves(samples, output, mainCurveEntries)
+
+      // These are the explicit AnimGraph outputs consumed by ALS. They are resolved before the
+      // engine-owned downstream inertialization node so every live consumer sees the same final
+      // named-value container as the pose.
+      output.set(
+        POSE_GAIT_CURVE_NAME,
+        blendCurveValue(
+          samples,
+          POSE_GAIT_CURVE_NAME,
+          gaitSources,
+          graphFallbackGaitAmount,
+        ),
+      )
+      output.set(POSE_CROUCHING_CURVE_NAME, graphCrouchingAmount)
+      output.set(FOOT_LEFT_LOCK_CURVE_NAME, graphFootLeftLock)
+      output.set(FOOT_RIGHT_LOCK_CURVE_NAME, graphFootRightLock)
+      output.set(ROTATION_YAW_SPEED_CURVE_NAME, graphRotationYawSpeed)
+
+      for (const layer of ALS_LAYER_REGIONS) {
+        output.set(
+          layer.baseCurve,
+          blendOverlayCurve(curveSources, layer.baseCurve),
+        )
+        if (layer.additiveCurve) {
+          output.set(
+            layer.additiveCurve,
+            blendOverlayCurve(curveSources, layer.additiveCurve),
+          )
+        }
+        if (layer.localSpaceCurve) {
+          output.set(
+            layer.localSpaceCurve,
+            blendOverlayCurve(curveSources, layer.localSpaceCurve),
+          )
+        }
+      }
+    },
   }
-  const fallbackInput: EvaluatePoseInput = { base: fallbackEntries, rootMotion }
-  const soloInput: EvaluatePoseInput = { base: soloEntries, rootMotion }
+  const fallbackInput: EvaluatePoseInput = {
+    base: fallbackEntries,
+    rootMotion,
+    resolveBlendedCurves: (samples, output) => {
+      resolveWeightedEntryCurves(samples, output, fallbackEntries)
+    },
+  }
+  const soloInput: EvaluatePoseInput = {
+    base: soloEntries,
+    rootMotion,
+    resolveBlendedCurves: (samples, output) => {
+      resolveWeightedEntryCurves(samples, output, soloEntries)
+    },
+  }
 
   let soloClip: RuntimeClip | null = null
   const standTargets = [1, 0, 0, 0]
@@ -681,9 +776,13 @@ export function createAlsAnimationInstance(gltf: {
       }
     }
 
+    const turnInPlaceAllowed = controls.rotationMode === 'ViewDirection'
+    const rotateInPlaceAllowed =
+      controls.rotationMode === 'Aiming' || controls.rotateInPlace
     resetTurnInPlaceFrame(turnInPlaceState)
     if (
-      !controls.rotateInPlace
+      turnInPlaceAllowed
+      && !rotateInPlaceAllowed
       && !controls.moving
       && actionArbiter.active === null
     ) {
@@ -708,7 +807,7 @@ export function createAlsAnimationInstance(gltf: {
           blendDuration: ALS_TURN_IN_PLACE_SETTINGS.blendDuration,
         })
       }
-    } else if (controls.rotateInPlace || controls.moving) {
+    } else if (!turnInPlaceAllowed || rotateInPlaceAllowed || controls.moving) {
       turnInPlaceState.activationDelay = 0
     }
 
@@ -751,12 +850,15 @@ export function createAlsAnimationInstance(gltf: {
     state.crouchingAmount = crouchingAmount
     state.footLeftLock = stanceTransitionState.footLeftLock
     state.footRightLock = stanceTransitionState.footRightLock
+    graphCrouchingAmount = crouchingAmount
+    graphFootLeftLock = state.footLeftLock
+    graphFootRightLock = state.footRightLock
 
     resetRotateInPlaceFrame(rotateInPlaceState)
     refreshRotateInPlaceState(rotateInPlaceState, {
       delta,
       moving: controls.moving || action !== null,
-      allowed: controls.rotateInPlace,
+      allowed: rotateInPlaceAllowed,
       viewYawAngle: controls.viewYawAngle,
       viewYawSpeed: controls.viewYawSpeed,
     })
@@ -903,7 +1005,6 @@ export function createAlsAnimationInstance(gltf: {
         : overlayLocomotionMembers.get(source)?.time ?? 0
     }
 
-    const curveSources: readonly OverlayCurveSource[] = overlaySources
     for (const overlay of overlayEntries) {
       overlay.entry.time = overlay.source.time
       overlay.entry.weight = overlay.source.weight
@@ -937,56 +1038,68 @@ export function createAlsAnimationInstance(gltf: {
         : 0
     }
 
-    const result = evaluatePose(evaluator, mainInput)
-    applyPose(applicator, result.pose)
-
-    let rotationYawSpeed = 0
+    graphRotationYawSpeed = 0
     if (action && activeMontage) {
       const curveTime = activeMontage.clip.time
       const curves = activeMontage.clip.curves
       if (activeMontage.kind === 'turn-in-place') {
-        rotationYawSpeed =
+        graphRotationYawSpeed =
           (curves?.[ROTATION_YAW_SPEED_CURVE_NAME]?.(curveTime) ?? 0)
           * activeMontage.rotationYawScale
           * actionBlendWeight
       }
       if (curves?.[FOOT_LEFT_LOCK_CURVE_NAME]) {
-        state.footLeftLock = clamp01(
+        graphFootLeftLock = clamp01(
           curves[FOOT_LEFT_LOCK_CURVE_NAME](curveTime),
         )
       }
       if (curves?.[FOOT_RIGHT_LOCK_CURVE_NAME]) {
-        state.footRightLock = clamp01(
+        graphFootRightLock = clamp01(
           curves[FOOT_RIGHT_LOCK_CURVE_NAME](curveTime),
         )
       }
     } else if (rotateClip) {
       const curves = rotateClip.curves
-      rotationYawSpeed =
+      graphRotationYawSpeed =
         (curves?.[ROTATION_YAW_SPEED_CURVE_NAME]?.(rotateClipTime) ?? 0)
         * rotateInPlaceState.playRate
         * rotateBlendWeight
       if (curves?.[FOOT_LEFT_LOCK_CURVE_NAME]) {
-        state.footLeftLock = clamp01(
+        graphFootLeftLock = clamp01(
           curves[FOOT_LEFT_LOCK_CURVE_NAME](rotateClipTime),
         )
       }
       if (curves?.[FOOT_RIGHT_LOCK_CURVE_NAME]) {
-        state.footRightLock = clamp01(
+        graphFootRightLock = clamp01(
           curves[FOOT_RIGHT_LOCK_CURVE_NAME](rotateClipTime),
         )
       }
     }
-    state.rotationYawSpeed = rotationYawSpeed
-
+    graphFallbackGaitAmount = fallbackGaitAmount
     for (const source of gaitSources) source.weight = source.entry.weight
-    const gaitAmount = blendCurveValue(
-      result.curves,
-      POSE_GAIT_CURVE_NAME,
-      gaitSources,
-      fallbackGaitAmount,
+
+    const result = evaluatePose(evaluator, mainInput)
+    applyPose(applicator, result.pose)
+
+    const finalCurves = result.curves.values
+    state.crouchingAmount = clamp01(
+      finalCurves.get(POSE_CROUCHING_CURVE_NAME) ?? graphCrouchingAmount,
     )
-    refreshPose(gaitAmount, gaitAmounts)
+    state.footLeftLock = clamp01(
+      finalCurves.get(FOOT_LEFT_LOCK_CURVE_NAME) ?? graphFootLeftLock,
+    )
+    state.footRightLock = clamp01(
+      finalCurves.get(FOOT_RIGHT_LOCK_CURVE_NAME) ?? graphFootRightLock,
+    )
+    state.rotationYawSpeed =
+      finalCurves.get(ROTATION_YAW_SPEED_CURVE_NAME)
+      ?? graphRotationYawSpeed
+    const gaitAmount = finalCurves.get(POSE_GAIT_CURVE_NAME)
+      ?? fallbackGaitAmount
+    refreshPose(
+      gaitAmount,
+      gaitAmounts,
+    )
 
     for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) {
       normalDebugWeights[role] = weights[role]
@@ -1015,25 +1128,19 @@ export function createAlsAnimationInstance(gltf: {
     normalDebugWeights.inertializationRequestCount =
       evaluator.inertialization.requestCount
     for (const layer of ALS_LAYER_REGIONS) {
-      normalDebugWeights[layer.baseCurve] = blendOverlayCurve(
-        curveSources,
-        layer.baseCurve,
-      )
+      normalDebugWeights[layer.baseCurve] =
+        finalCurves.get(layer.baseCurve) ?? 0
       if (layer.additiveCurve) {
-        normalDebugWeights[layer.additiveCurve] = blendOverlayCurve(
-          curveSources,
-          layer.additiveCurve,
-        )
+        normalDebugWeights[layer.additiveCurve] =
+          finalCurves.get(layer.additiveCurve) ?? 0
       }
       if (layer.localSpaceCurve) {
-        normalDebugWeights[layer.localSpaceCurve] = blendOverlayCurve(
-          curveSources,
-          layer.localSpaceCurve,
-        )
+        normalDebugWeights[layer.localSpaceCurve] =
+          finalCurves.get(layer.localSpaceCurve) ?? 0
       }
     }
     window.__weightTable = normalDebugWeights
-    return rotationYawSpeed
+    return state.rotationYawSpeed
   }
 
   return { playClip, clearSoloClip, state, refresh }

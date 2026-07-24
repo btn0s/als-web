@@ -1,7 +1,13 @@
 import { Canvas } from '@react-three/fiber'
 import { Grid } from '@react-three/drei'
-import { useEffect, useRef, useState } from 'react'
+import {
+  CuboidCollider,
+  Physics,
+  RigidBody,
+} from '@react-three/rapier'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { ALS_PHYSICS_TIMESTEP } from '../als/AlsCharacter.hooks'
 import { AlsCameraComponent } from '../als/AlsCamera/AlsCameraComponent'
 import { createCharacterPoseSample } from '../als/AlsCamera/poseCameraState'
 import { Character } from './Character'
@@ -39,7 +45,22 @@ function Scene() {
       />
       <directionalLight color="#9abfff" intensity={1.15} position={[-4, 3.5, 2]} />
 
-      <Character onSizeChange={setCharacterSize} poseSample={poseSample} />
+      <Suspense fallback={null}>
+        <Physics
+          colliders={false}
+          gravity={[0, -9.81, 0]}
+          timeStep={ALS_PHYSICS_TIMESTEP}
+        >
+          <Character onSizeChange={setCharacterSize} poseSample={poseSample} />
+          <RigidBody type="fixed" colliders={false}>
+            <CuboidCollider
+              args={[gridSize / 2, 0.05, gridSize / 2]}
+              position={[0, -0.05, 0]}
+              friction={0}
+            />
+          </RigidBody>
+        </Physics>
+      </Suspense>
 
       <Grid
         args={[gridSize, gridSize]}

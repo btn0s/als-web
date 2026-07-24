@@ -1,6 +1,12 @@
 import { useFrame } from '@react-three/fiber'
 import { Html, useGLTF } from '@react-three/drei'
 import {
+  CapsuleCollider,
+  RigidBody,
+  type RapierCollider,
+  type RapierRigidBody,
+} from '@react-three/rapier'
+import {
   Suspense,
   useCallback,
   useEffect,
@@ -13,6 +19,11 @@ import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { useAlsAnimationInstance } from '../als/AlsAnimationInstance.hooks'
+import {
+  ALS_CAPSULE_RADIUS,
+  ALS_STANDING_CAPSULE_HALF_HEIGHT,
+  useAlsCharacter,
+} from '../als/AlsCharacter.hooks'
 import type { CharacterPoseSample } from '../als/AlsCamera/poseCameraState'
 import {
   ALS_RIFLE_OVERLAY_OBJECT_URL,
@@ -20,6 +31,7 @@ import {
   detachOverlayObject,
 } from '../als/AlsCharacter.overlayObjects'
 import { applyCharacterMaterialOverrides } from '../als/characterMaterials'
+import { ALS_MESH_COMPONENT_YAW_RADIANS } from '../engine/unrealCoordinateSpace'
 
 const CHARACTER_URL = '/assets/skm-als.glb'
 const GLB_MAGIC = [0x67, 0x6c, 0x54, 0x46]
@@ -172,6 +184,8 @@ function LoadedCharacter({
   poseSample: CharacterProps['poseSample']
 }) {
   const characterGroup = useRef<THREE.Group>(null)
+  const rigidBody = useRef<RapierRigidBody>(null)
+  const capsule = useRef<RapierCollider>(null)
   const poseBones = useMemo(
     () => ({
       head: gltf.scene.getObjectByName('head') ?? gltf.scene.getObjectByName('Head'),
@@ -200,9 +214,20 @@ function LoadedCharacter({
     onSizeChange(bounds.size.clone())
   }, [bounds, onSizeChange])
 
+  const character = useAlsCharacter(
+    rigidBody,
+    capsule,
+    characterGroup,
+    poseSample,
+  )
   // The hook owns clip sampling, pose-space composition, and the one skeleton write per frame.
   // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
-  const overlayMode = useAlsAnimationInstance(gltf, characterGroup, poseSample)
+  useAlsAnimationInstance(
+    gltf,
+    characterGroup,
+    character.animationControls,
+    character.character,
+  )
 
   useFrame(() => {
     const group = characterGroup.current
@@ -223,14 +248,41 @@ function LoadedCharacter({
   })
 
   return (
-    <group ref={characterGroup} position={bounds.position}>
-      <primitive object={gltf.scene} />
-      {overlayMode === 'Rifle' && (
-        <Suspense fallback={null}>
-          <RifleOverlayObject characterScene={gltf.scene} />
-        </Suspense>
-      )}
-    </group>
+    <RigidBody
+      ref={rigidBody}
+      type="dynamic"
+      colliders={false}
+      position={[0, ALS_STANDING_CAPSULE_HALF_HEIGHT, 0]}
+      lockRotations
+      canSleep={false}
+      ccd
+      linearDamping={0}
+      angularDamping={0}
+    >
+      <CapsuleCollider
+        ref={capsule}
+        args={[
+          ALS_STANDING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS,
+          ALS_CAPSULE_RADIUS,
+        ]}
+        friction={0}
+      />
+      <group
+        ref={characterGroup}
+        position={[0, -ALS_STANDING_CAPSULE_HALF_HEIGHT, 0]}
+      >
+        <group rotation-y={ALS_MESH_COMPONENT_YAW_RADIANS}>
+          <group position={bounds.position}>
+            <primitive object={gltf.scene} />
+          </group>
+        </group>
+        {character.overlayMode === 'Rifle' && (
+          <Suspense fallback={null}>
+            <RifleOverlayObject characterScene={gltf.scene} />
+          </Suspense>
+        )}
+      </group>
+    </RigidBody>
   )
 }
 
