@@ -363,6 +363,27 @@ dotnet run -- validate-movement-settings movement-settings.json
   values/weights for all 32 keys. Its validator pins the 3 modes, 6 gait rows, 4 referenced
   assets, 8 channels, key times, and authored key values.
 
+## Animation instance settings and rich curves
+
+Run:
+
+```sh
+dotnet run -- dump-animation-settings "$ALS_WORK/stage" animation-settings.json
+dotnet run -- validate-animation-settings animation-settings.json
+```
+
+- **VERIFIED — `AIS_Als_Default` binds authored cadence and InAir curves.** Standing and
+  Crouching select the two stride curves; `InAir.LeanAmountCurve` selects
+  `CF_Als_LeanAmount_Air`, and `InAir.GroundPredictionAmountCurve` selects
+  `CF_Als_GroundPredictionAmount`. The animated gait speeds remain default-valued C++ settings,
+  so the dump reads their initializers from the pinned 4.15 headers.
+
+- **VERIFIED — all four `CurveFloat` payloads are frozen with their exact rich-curve keys.**
+  The validator pins curve/channel names, paths, interpolation/tangent modes, times, values,
+  and independent arrive/leave tangents. Runtime `FAlsInAirSettings` sampling consumes this
+  generated oracle directly; it does not replace the air-lean reversal or landing prediction
+  response with a heuristic.
+
 ## BlendSpaces and complete AnimGraph animation coverage
 
 Run:

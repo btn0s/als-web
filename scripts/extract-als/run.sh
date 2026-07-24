@@ -7,7 +7,7 @@
 # validate-glb.mjs (structure + physical sanity) → AbpDump.cs (compiled FAnimNode
 # structs + validation lookups) → BlendSpaceDump.cs (authored axes/samples/topology)
 # → MovementSettingsDump.cs (MS_Als_Normal + every referenced rich curve) →
-# AnimationInstanceSettingsDump.cs (AIS_Als_Default stride curves + C++ cadence defaults) →
+# AnimationInstanceSettingsDump.cs (AIS_Als_Default locomotion curves + C++ cadence defaults) →
 # SkeletonProfilesDump.cs (SK_Als authored per-bone blend profiles) →
 # InputMappingDump.cs (IMC + action triggers/modifiers) →
 # CameraContentDump.cs (camera defaults + scalar graph + authored transition curves) →

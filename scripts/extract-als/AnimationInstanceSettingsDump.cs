@@ -5,9 +5,9 @@ using CUE4Parse.UE4.Versions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-// Freezes the AIS_Als_Default locomotion cadence inputs that are split between
-// tagged content and default-valued C++ settings. Values remain in Unreal's
-// native units so consumers choose the world-unit conversion at their boundary.
+// Freezes AIS_Als_Default's locomotion cadence and in-air curve inputs. Values
+// remain in Unreal's native units so consumers choose the world-unit conversion
+// at their boundary.
 public static class AnimationInstanceSettingsDump
 {
     const string SettingsAsset = "AIS_Als_Default";
@@ -21,6 +21,8 @@ public static class AnimationInstanceSettingsDump
 
     static readonly string[] ExpectedCurves =
     [
+        "CF_Als_GroundPredictionAmount",
+        "CF_Als_LeanAmount_Air",
         "CF_Als_StrideBlendAmount_Run",
         "CF_Als_StrideBlendAmount_Walk",
     ];
@@ -51,6 +53,7 @@ public static class AnimationInstanceSettingsDump
                                  ?? throw new Exception($"{SettingsAsset} has no properties");
         var standing = RequiredObject(serializedSettings, "Standing");
         var crouching = RequiredObject(serializedSettings, "Crouching");
+        var inAir = RequiredObject(serializedSettings, "InAir");
 
         // AIS_Als_Default does not serialize these values because it uses the C++
         // struct defaults. Read the cited headers so the oracle follows the source
@@ -77,6 +80,10 @@ public static class AnimationInstanceSettingsDump
             ReadReferenceName(standing, "StrideBlendAmountRunCurve");
         var crouchingStrideBlendAmountCurve =
             ReadReferenceName(crouching, "StrideBlendAmountCurve");
+        var groundPredictionAmountCurve =
+            ReadReferenceName(inAir, "GroundPredictionAmountCurve");
+        var leanAmountCurve =
+            ReadReferenceName(inAir, "LeanAmountCurve");
 
         var settings = new JObject
         {
@@ -95,6 +102,11 @@ public static class AnimationInstanceSettingsDump
                 ["AnimatedCrouchSpeed"] = animatedCrouchSpeed,
                 ["StrideBlendAmountCurve"] = crouchingStrideBlendAmountCurve,
             },
+            ["inAir"] = new JObject
+            {
+                ["GroundPredictionAmountCurve"] = groundPredictionAmountCurve,
+                ["LeanAmountCurve"] = leanAmountCurve,
+            },
         };
 
         var referencedCurveNames = new[]
@@ -102,6 +114,8 @@ public static class AnimationInstanceSettingsDump
                 strideBlendAmountWalkCurve,
                 strideBlendAmountRunCurve,
                 crouchingStrideBlendAmountCurve,
+                groundPredictionAmountCurve,
+                leanAmountCurve,
             }
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
@@ -110,7 +124,10 @@ public static class AnimationInstanceSettingsDump
         foreach (var curveName in referencedCurveNames)
         {
             var (assetPath, curveExport) = LoadExport(provider, curveName);
-            curves[curveName] = NormalizeCurve(assetPath, curveExport);
+            curves[curveName] = NormalizeCurve(
+                assetPath,
+                curveExport,
+                CurveChannelName(curveName));
         }
 
         var payload = new JObject
@@ -143,7 +160,7 @@ public static class AnimationInstanceSettingsDump
         PrintValidations(validations);
         ThrowOnValidationFailure(validations);
         Console.WriteLine(
-            $"dumped AIS locomotion cadence settings and {curves.Count} stride curves " +
+            $"dumped AIS locomotion cadence settings and {curves.Count} animation curves " +
             $"-> {outJson} ({new FileInfo(outJson).Length:N0} bytes)");
         return 0;
     }
@@ -231,7 +248,22 @@ public static class AnimationInstanceSettingsDump
             CultureInfo.InvariantCulture);
     }
 
-    static JObject NormalizeCurve(string assetPath, JObject curveExport)
+    static string CurveChannelName(string curveName)
+    {
+        return curveName switch
+        {
+            "CF_Als_GroundPredictionAmount" => "GroundPredictionAmount",
+            "CF_Als_LeanAmount_Air" => "LeanAmount",
+            "CF_Als_StrideBlendAmount_Run" => "StrideBlendAmount",
+            "CF_Als_StrideBlendAmount_Walk" => "StrideBlendAmount",
+            _ => throw new Exception($"{curveName} has no normalized channel name"),
+        };
+    }
+
+    static JObject NormalizeCurve(
+        string assetPath,
+        JObject curveExport,
+        string channelName)
     {
         var type = curveExport.Value<string>("Type")
                    ?? throw new Exception($"{assetPath} has no export type");
@@ -245,7 +277,7 @@ public static class AnimationInstanceSettingsDump
             ["type"] = type,
             ["channels"] = new JObject
             {
-                ["StrideBlendAmount"] = new JObject
+                [channelName] = new JObject
                 {
                     ["sourceIndex"] = 0,
                     ["keys"] = keys.DeepClone(),
@@ -334,9 +366,19 @@ public static class AnimationInstanceSettingsDump
             payload,
             "settings.crouching.StrideBlendAmountCurve",
             "CF_Als_StrideBlendAmount_Walk");
+        ExpectString(
+            errors,
+            payload,
+            "settings.inAir.GroundPredictionAmountCurve",
+            "CF_Als_GroundPredictionAmount");
+        ExpectString(
+            errors,
+            payload,
+            "settings.inAir.LeanAmountCurve",
+            "CF_Als_LeanAmount_Air");
 
         return Validation(
-            "ais-als-default-stride-settings-and-cpp-defaults",
+            "ais-als-default-animation-settings-and-cpp-defaults",
             errors.Count == 0,
             new JObject
             {
@@ -374,6 +416,7 @@ public static class AnimationInstanceSettingsDump
             "CF_Als_StrideBlendAmount_Walk",
             "ALS/Content/ALS/Data/AnimationInstance/Grounded/" +
             "CF_Als_StrideBlendAmount_Walk.uasset",
+            "StrideBlendAmount",
             [
                 ExpectedKey("RCIM_Cubic", "RCTM_Auto", 0, 0.2, 0),
                 ExpectedKey(
@@ -390,6 +433,7 @@ public static class AnimationInstanceSettingsDump
             "CF_Als_StrideBlendAmount_Run",
             "ALS/Content/ALS/Data/AnimationInstance/Grounded/" +
             "CF_Als_StrideBlendAmount_Run.uasset",
+            "StrideBlendAmount",
             [
                 ExpectedKey("RCIM_Cubic", "RCTM_Auto", 0, 0.2, 0),
                 ExpectedKey(
@@ -400,9 +444,57 @@ public static class AnimationInstanceSettingsDump
                     0.0033657213),
                 ExpectedKey("RCIM_Linear", "RCTM_Auto", 350, 1, 0),
             ]);
+        ValidateCurve(
+            errors,
+            curves,
+            "CF_Als_GroundPredictionAmount",
+            "ALS/Content/ALS/Data/AnimationInstance/Air/" +
+            "CF_Als_GroundPredictionAmount.uasset",
+            "GroundPredictionAmount",
+            [
+                ExpectedKeyWithTangents(
+                    "RCIM_Cubic",
+                    "RCTM_User",
+                    0,
+                    1,
+                    -2.066087,
+                    -2.0660884),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 1, 0, 0),
+            ]);
+        ValidateCurve(
+            errors,
+            curves,
+            "CF_Als_LeanAmount_Air",
+            "ALS/Content/ALS/Data/AnimationInstance/Air/" +
+            "CF_Als_LeanAmount_Air.uasset",
+            "LeanAmount",
+            [
+                ExpectedKey("RCIM_Cubic", "RCTM_Auto", -4000, 0, 0),
+                ExpectedKeyWithTangents(
+                    "RCIM_Cubic",
+                    "RCTM_Auto",
+                    -3277.683,
+                    -0.12285149,
+                    -0.00053329713,
+                    -0.00053329713),
+                ExpectedKeyWithTangents(
+                    "RCIM_Cubic",
+                    "RCTM_User",
+                    -2251.931,
+                    -0.93224025,
+                    -0.00046590986,
+                    -0.00046631158),
+                ExpectedKey(
+                    "RCIM_Cubic",
+                    "RCTM_Auto",
+                    -1247.5488,
+                    -0.7941916,
+                    0.0008580371),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 0, 1, 0),
+            ]);
 
         return Validation(
-            "animation-instance-stride-rich-curve-keys",
+            "animation-instance-rich-curve-keys",
             errors.Count == 0,
             new JObject
             {
@@ -419,6 +511,7 @@ public static class AnimationInstanceSettingsDump
         JObject curves,
         string curveName,
         string expectedAssetPath,
+        string expectedChannelName,
         JArray expectedKeys)
     {
         if (curves[curveName] is not JObject curve)
@@ -435,8 +528,8 @@ public static class AnimationInstanceSettingsDump
             errors,
             $"{curveName} channels",
             channels.Properties().Select(channel => channel.Name),
-            ["StrideBlendAmount"]);
-        var channel = channels["StrideBlendAmount"] as JObject;
+            [expectedChannelName]);
+        var channel = channels[expectedChannelName] as JObject;
         if (channel?.Value<int?>("sourceIndex") != 0)
             errors.Add($"{curveName}: source channel index changed");
         var keys = channel?["keys"] as JArray;
@@ -460,6 +553,23 @@ public static class AnimationInstanceSettingsDump
         double value,
         double tangent)
     {
+        return ExpectedKeyWithTangents(
+            interpolationMode,
+            tangentMode,
+            time,
+            value,
+            tangent,
+            tangent);
+    }
+
+    static JObject ExpectedKeyWithTangents(
+        string interpolationMode,
+        string tangentMode,
+        double time,
+        double value,
+        double arriveTangent,
+        double leaveTangent)
+    {
         return new JObject
         {
             ["InterpMode"] = interpolationMode,
@@ -467,9 +577,9 @@ public static class AnimationInstanceSettingsDump
             ["TangentWeightMode"] = "RCTWM_WeightedNone",
             ["Time"] = time,
             ["Value"] = value,
-            ["ArriveTangent"] = tangent,
+            ["ArriveTangent"] = arriveTangent,
             ["ArriveTangentWeight"] = 0.0,
-            ["LeaveTangent"] = tangent,
+            ["LeaveTangent"] = leaveTangent,
             ["LeaveTangentWeight"] = 0.0,
         };
     }
