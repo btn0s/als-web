@@ -38,6 +38,18 @@ import {
   createAlsMantlingState,
 } from './State/AlsMantlingState'
 import type { AlsMantlingState } from './State/AlsMantlingState'
+import {
+  createAlsRagdollingState,
+} from './State/AlsRagdollingState'
+import type {
+  AlsRagdollingState,
+} from './State/AlsRagdollingState'
+import {
+  createAlsRollingState,
+} from './State/AlsRollingState'
+import type {
+  AlsRollingState,
+} from './State/AlsRollingState'
 
 export type AlsLocomotionMode = 'Grounded' | 'InAir' | null
 export type AlsLocomotionAction =
@@ -71,6 +83,8 @@ export interface AlsCharacter {
   readonly locomotionState: AlsLocomotionState
   readonly movement: AlsCharacterMovementComponent
   readonly mantlingState: AlsMantlingState
+  readonly ragdollingState: AlsRagdollingState
+  readonly rollingState: AlsRollingState
   readonly settings: AlsCharacterSettings
 }
 
@@ -140,6 +154,8 @@ export function createAlsCharacter(
     locomotionState,
     movement,
     mantlingState: createAlsMantlingState(),
+    ragdollingState: createAlsRagdollingState(),
+    rollingState: createAlsRollingState(),
     settings,
   }
   refreshLocomotion(character, movement.velocity)
@@ -442,7 +458,7 @@ export function applyDesiredStance(
 
   if (
     character.locomotionAction === 'Rolling'
-    && character.settings.rollingCrouchOnStart
+    && character.settings.Rolling.bCrouchOnStart
   ) {
     return setStance(character, 'Crouching')
   }

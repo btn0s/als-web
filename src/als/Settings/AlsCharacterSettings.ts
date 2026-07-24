@@ -1,4 +1,16 @@
 import characterSettingsSource from '../../../scripts/extract-als/character-settings.json?raw'
+import {
+  ALS_RAGDOLLING_SETTINGS,
+} from './AlsRagdollingSettings'
+import type {
+  AlsRagdollingSettings,
+} from './AlsRagdollingSettings'
+import {
+  ALS_ROLLING_SETTINGS,
+} from './AlsRollingSettings'
+import type {
+  AlsRollingSettings,
+} from './AlsRollingSettings'
 
 export type AlsInAirRotationMode =
   | 'RotateToVelocityOnJump'
@@ -24,8 +36,8 @@ export interface AlsCharacterSettings {
     boolean
   readonly autoRotateOnAnyInputWhileNotMovingInViewDirectionRotationMode:
     boolean
-  /** FAlsRollingSettings::bCrouchOnStart. CS_Als_Default does not override the C++ default. */
-  readonly rollingCrouchOnStart: boolean
+  readonly Ragdolling: Readonly<AlsRagdollingSettings>
+  readonly Rolling: Readonly<AlsRollingSettings>
 }
 
 interface ExtractedCharacterSettings {
@@ -83,5 +95,6 @@ export const ALS_CHARACTER_SETTINGS: Readonly<AlsCharacterSettings> = {
   autoRotateOnAnyInputWhileNotMovingInViewDirectionRotationMode:
     extracted.settings
       .bAutoRotateOnAnyInputWhileNotMovingInViewDirectionRotationMode,
-  rollingCrouchOnStart: true,
+  Ragdolling: ALS_RAGDOLLING_SETTINGS,
+  Rolling: ALS_ROLLING_SETTINGS,
 }

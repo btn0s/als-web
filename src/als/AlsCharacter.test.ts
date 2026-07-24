@@ -24,6 +24,27 @@ import {
 } from './AlsCharacter'
 
 describe('AAlsCharacter input and gait policy', () => {
+  it('owns exact rolling and ragdolling state records', () => {
+    const first = createAlsCharacter()
+    const second = createAlsCharacter()
+
+    expect(first.rollingState).toEqual({
+      TargetYawAngle: 0,
+    })
+    expect(first.ragdollingState).toEqual({
+      Velocity: { x: 0, y: 0, z: 0 },
+      PullForce: 0,
+      SpeedLimitFrameTimeRemaining: 0,
+      SpeedLimit: 0,
+    })
+
+    expect(first.rollingState).not.toBe(second.rollingState)
+    expect(first.ragdollingState).not.toBe(second.ragdollingState)
+    expect(first.ragdollingState.Velocity).not.toBe(
+      second.ragdollingState.Velocity,
+    )
+  })
+
   it('safe-normalizes input and retains its yaw when input stops', () => {
     // AlsCharacter.cpp:1118-1137: SetInputDirection(GetSafeNormal), then only update yaw
     // while bHasInput is true.

@@ -3,6 +3,12 @@ import characterSettingsSource from '../../../scripts/extract-als/character-sett
 import {
   ALS_CHARACTER_SETTINGS,
 } from './AlsCharacterSettings'
+import {
+  ALS_RAGDOLLING_SETTINGS,
+} from './AlsRagdollingSettings'
+import {
+  ALS_ROLLING_SETTINGS,
+} from './AlsRollingSettings'
 
 describe('CS_Als_Default character settings', () => {
   it('uses the shipped asset overrides over the C++ class defaults', () => {
@@ -16,8 +22,32 @@ describe('CS_Als_Default character settings', () => {
       inheritMovementBaseRotationInVelocityDirectionRotationMode: false,
       rotateTowardsDesiredVelocityInVelocityDirectionRotationMode: true,
       autoRotateOnAnyInputWhileNotMovingInViewDirectionRotationMode: true,
-      rollingCrouchOnStart: true,
+      Ragdolling: {
+        bStartRagdollingOnLand: true,
+        RagdollingOnLandSpeedThreshold: 10,
+        bLimitInitialRagdollSpeed: true,
+        GetUpFrontMontage: 'AM_Als_GetUp_Front',
+        GetUpBackMontage: 'AM_Als_GetUp_Back',
+      },
+      Rolling: {
+        Montage: 'AM_Als_Roll',
+        bCrouchOnStart: true,
+        bRotateToInputOnStart: true,
+        RotationInterpolationSpeed: 10,
+        bStartRollingOnLand: true,
+        RollingOnLandSpeedThreshold: 7,
+        bInterruptRollingWhenInAir: false,
+      },
     })
+  })
+
+  it('composes the exact extracted action settings records', () => {
+    expect(ALS_CHARACTER_SETTINGS.Ragdolling).toBe(
+      ALS_RAGDOLLING_SETTINGS,
+    )
+    expect(ALS_CHARACTER_SETTINGS.Rolling).toBe(
+      ALS_ROLLING_SETTINGS,
+    )
   })
 
   it('is backed by a passing extracted content oracle', () => {
