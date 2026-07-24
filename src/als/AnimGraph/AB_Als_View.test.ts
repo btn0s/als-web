@@ -1,8 +1,15 @@
 /// <reference types="node" />
 
 import { readFileSync } from 'node:fs'
+import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import { evaluateBlendSpace } from '../../engine/blendSpace'
+import { compileClipSampler } from '../../engine/clipSampler'
+import type { CompiledClipSampler } from '../../engine/clipSampler'
+import {
+  createPoseBuffer,
+  resetPoseToReference,
+} from '../../engine/poseBuffer'
 import {
   ALS_LOOK_BLEND_SPACE,
   ALS_LOOK_DIRECTION_CHANGE_PROFILE,
@@ -10,9 +17,13 @@ import {
   ALS_LOOK_STATES_MACHINE,
   ALS_VIEW_GRAPH,
   ALS_VIEW_GRAPH_TRANSITIONS,
+  ALS_VIEW_POSE_CLIP_NAMES,
   ALS_VIEW_PLAYERS,
   createAlsViewGraphRuntime,
   createAlsLookBlendSpaceEvaluator,
+  createAlsViewPoseRuntime,
+  isAlsViewPoseBecomingRelevant,
+  refreshAlsViewPoseRuntime,
   resolveAlsViewPlayerParameters,
   sampleAlsViewTransitionBlend,
   selectAlsViewGraphTransition,
@@ -20,6 +31,7 @@ import {
 } from './AB_Als_View'
 import type {
   AlsViewGraphState,
+  AlsViewPoseClipName,
   AlsViewTransitionInput,
 } from './AB_Als_View'
 
@@ -714,5 +726,282 @@ describe('AB_Als_View retained state-machine runtime', () => {
     expect(runtime.currentState).toBe('Look Forward')
     updateAlsViewGraphRuntime(runtime, -170, 0, true)
     expect(runtime.currentState).toBe('Look Left Back')
+  })
+})
+
+const viewPoseRig = {
+  boneCount: 3,
+  physicalBoneCount: 3,
+  boneNames: ['root', 'neck_01', 'head'],
+  parentIndices: new Int16Array([-1, 0, 1]),
+  referencePositions: new Float32Array(9),
+  referenceRotations: new Float32Array([
+    0, 0, 0, 1,
+    0, 0, 0, 1,
+    0, 0, 0, 1,
+  ]),
+  referenceScales: new Float32Array([
+    1, 1, 1,
+    1, 1, 1,
+    1, 1, 1,
+  ]),
+  virtualBones: [],
+}
+
+const viewPoseClipDurations:
+Readonly<Record<AlsViewPoseClipName, number>> = {
+  A_Als_Look_Forward: 2,
+  A_Als_Look_Down: 4,
+  A_Als_Look_Up: 6,
+}
+
+function createViewPoseSamplers() {
+  const samplers = new Map<
+    AlsViewPoseClipName,
+    CompiledClipSampler
+  >()
+  for (const clipName of ALS_VIEW_POSE_CLIP_NAMES) {
+    samplers.set(
+      clipName,
+      compileClipSampler(
+        new THREE.AnimationClip(
+          clipName,
+          viewPoseClipDurations[clipName],
+          [],
+        ),
+        viewPoseRig,
+      ),
+    )
+  }
+  return samplers
+}
+
+function createViewPoseReference() {
+  const reference = createPoseBuffer(viewPoseRig.boneCount)
+  resetPoseToReference(reference, viewPoseRig)
+  reference.positions[0] = 7
+  return reference
+}
+
+function viewPoseLookState(overrides: Partial<{
+  yawAngle: number
+  pitchAngle: number
+  yawForwardAmount: number
+  yawLeftAmount: number
+  yawRightAmount: number
+}> = {}) {
+  return {
+    yawAngle: 0,
+    pitchAngle: 0,
+    yawForwardAmount: 0.2,
+    yawLeftAmount: 0.3,
+    yawRightAmount: 0.7,
+    ...overrides,
+  }
+}
+
+describe('AB_Als_View retained pose-runtime scaffold', () => {
+  it('requires every authored Look sampler by its exact clip name', () => {
+    for (const missingClipName of ALS_VIEW_POSE_CLIP_NAMES) {
+      const samplers = createViewPoseSamplers()
+      samplers.delete(missingClipName)
+      expect(() => createAlsViewPoseRuntime(
+        viewPoseRig,
+        createViewPoseReference(),
+        (clipName) => samplers.get(clipName),
+      )).toThrow(
+        `AB_Als_View missing sampler: ${missingClipName}`,
+      )
+    }
+  })
+
+  it('rejects a lookup that aliases the wrong authored clip', () => {
+    const samplers = createViewPoseSamplers()
+    const forward = samplers.get('A_Als_Look_Forward')
+    const down = samplers.get('A_Als_Look_Down')
+    if (!forward || !down) throw new Error('Missing synthetic Look samplers')
+    samplers.set('A_Als_Look_Forward', down)
+    samplers.set('A_Als_Look_Down', forward)
+
+    expect(() => createAlsViewPoseRuntime(
+      viewPoseRig,
+      createViewPoseReference(),
+      (clipName) => samplers.get(clipName),
+    )).toThrow(
+      'AB_Als_View sampler mismatch: expected A_Als_Look_Forward, '
+      + 'received A_Als_Look_Down',
+    )
+  })
+
+  it('validates the A_Als_Stand_Pose reference bone count', () => {
+    const samplers = createViewPoseSamplers()
+    expect(() => createAlsViewPoseRuntime(
+      viewPoseRig,
+      createPoseBuffer(viewPoseRig.boneCount - 1),
+      (clipName) => samplers.get(clipName),
+    )).toThrow(
+      'AB_Als_View reference pose bone-count mismatch: 2 !== 3',
+    )
+  })
+
+  it('owns all four committed players and allocates pose resources once', () => {
+    const samplers = createViewPoseSamplers()
+    const reference = createViewPoseReference()
+    const runtime = createAlsViewPoseRuntime(
+      viewPoseRig,
+      reference,
+      (clipName) => samplers.get(clipName),
+    )
+
+    expect(ALS_VIEW_POSE_CLIP_NAMES).toEqual(
+      ALS_LOOK_BLEND_SPACE.samples.map(
+        (sample) => sample.animation.name,
+      ),
+    )
+    expect(ALS_LOOK_STATES_MACHINE.states.map(
+      ({ name }) => ({
+        state: runtime.players[name].state,
+        playerNodeIndex:
+          runtime.players[name].binding.compiledNodeIndex,
+        binding: runtime.players[name].binding,
+      }),
+    )).toEqual(ALS_LOOK_STATES_MACHINE.states.map(
+      ({ name, playerNodeIndex }) => ({
+        state: name,
+        playerNodeIndex,
+        binding: ALS_VIEW_PLAYERS[name],
+      }),
+    ))
+    expect(new Set(ALS_LOOK_STATES_MACHINE.states.map(
+      ({ name }) => runtime.players[name].evaluator,
+    )).size).toBe(4)
+
+    for (const clipName of ALS_VIEW_POSE_CLIP_NAMES) {
+      expect(runtime.samplers[clipName]).toBe(
+        samplers.get(clipName),
+      )
+    }
+    const poseBuffers = [
+      runtime.standReferencePose,
+      runtime.samplePose,
+      runtime.sourcePose,
+      runtime.additivePose,
+      runtime.viewInputPose,
+      runtime.viewOutputPose,
+    ]
+    expect(poseBuffers.every(
+      (pose) => pose.boneCount === viewPoseRig.boneCount,
+    )).toBe(true)
+    expect(new Set(poseBuffers.map((pose) => pose.data.buffer)).size)
+      .toBe(poseBuffers.length)
+    expect(runtime.poseAccumulator.boneCount)
+      .toBe(viewPoseRig.boneCount)
+    expect(runtime.meshSpaceScratch.boneCount)
+      .toBe(viewPoseRig.boneCount)
+
+    expect(runtime.standReferencePose.positions[0]).toBe(7)
+    reference.positions[0] = 99
+    expect(runtime.standReferencePose.positions[0]).toBe(7)
+  })
+
+  it('uses UE relevance, reinitialization, and skip-first-update semantics', () => {
+    const samplers = createViewPoseSamplers()
+    const runtime = createAlsViewPoseRuntime(
+      viewPoseRig,
+      createViewPoseReference(),
+      (clipName) => samplers.get(clipName),
+    )
+    const lookState = viewPoseLookState({ yawAngle: 170 })
+
+    expect(isAlsViewPoseBecomingRelevant(runtime, 1e-5))
+      .toBe(false)
+    expect(isAlsViewPoseBecomingRelevant(runtime, 1.00001e-5))
+      .toBe(true)
+    refreshAlsViewPoseRuntime(
+      runtime,
+      lookState,
+      1.00001e-5,
+      0,
+    )
+    expect(runtime.graph.relevant).toBe(true)
+    expect(runtime.graph.currentState).toBe('Look Forward')
+    expect(isAlsViewPoseBecomingRelevant(runtime, 1)).toBe(false)
+
+    refreshAlsViewPoseRuntime(runtime, lookState, 1, 0)
+    expect(runtime.graph.currentState).toBe('Look Right Back')
+
+    refreshAlsViewPoseRuntime(runtime, lookState, 0, 0)
+    expect(runtime.graph.relevant).toBe(false)
+    expect(runtime.graph.currentState).toBe('Look Forward')
+    expect(ALS_LOOK_STATES_MACHINE.states.every(
+      ({ name }) => runtime.players[name].sampleCount === 0,
+    )).toBe(true)
+    expect(isAlsViewPoseBecomingRelevant(runtime, 1)).toBe(true)
+  })
+
+  it('stores each committed pitch sample and exact explicit sampler time', () => {
+    const samplers = createViewPoseSamplers()
+    const runtime = createAlsViewPoseRuntime(
+      viewPoseRig,
+      createViewPoseReference(),
+      (clipName) => samplers.get(clipName),
+    )
+    const posesBeforeRefresh = [
+      runtime.samplePose,
+      runtime.sourcePose,
+      runtime.additivePose,
+      runtime.viewInputPose,
+      runtime.viewOutputPose,
+    ].map((pose) => Array.from(pose.data))
+    const lookState = viewPoseLookState({ pitchAngle: -45 })
+
+    refreshAlsViewPoseRuntime(runtime, lookState, 1, 1 / 60)
+    for (const { name } of ALS_LOOK_STATES_MACHINE.states) {
+      const player = runtime.players[name]
+      expect(player.pitchAngle).toBe(-45)
+      expect(player.sampleCount).toBe(2)
+      expect(Array.from(player.sampleIndices.slice(0, 2)))
+        .toEqual([1, 0])
+      expect(Array.from(player.sampleWeights.slice(0, 2)))
+        .toEqual([0.5, 0.5])
+      expect(player.explicitTime).toBe(
+        resolveAlsViewPlayerParameters(name, lookState)
+          .normalizedTime,
+      )
+      expect(Array.from(player.samplerTimes.slice(0, 2)))
+        .toEqual([
+          player.explicitTime
+            * viewPoseClipDurations.A_Als_Look_Down,
+          player.explicitTime
+            * viewPoseClipDurations.A_Als_Look_Forward,
+        ])
+    }
+    expect(ALS_LOOK_STATES_MACHINE.states.map(
+      ({ name }) => runtime.players[name].explicitTime,
+    )).toEqual([0.2, 0.3, 0.7, 0.5])
+
+    refreshAlsViewPoseRuntime(
+      runtime,
+      viewPoseLookState({ pitchAngle: 45 }),
+      1,
+      1 / 60,
+    )
+    for (const { name } of ALS_LOOK_STATES_MACHINE.states) {
+      const player = runtime.players[name]
+      expect(Array.from(player.sampleIndices.slice(0, 2)))
+        .toEqual([0, 2])
+      expect(Array.from(player.sampleWeights.slice(0, 2)))
+        .toEqual([0.5, 0.5])
+    }
+
+    expect([
+      runtime.samplePose,
+      runtime.sourcePose,
+      runtime.additivePose,
+      runtime.viewInputPose,
+      runtime.viewOutputPose,
+    ].map((pose) => Array.from(pose.data))).toEqual(
+      posesBeforeRefresh,
+    )
   })
 })
