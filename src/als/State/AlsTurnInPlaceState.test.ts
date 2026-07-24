@@ -8,9 +8,21 @@ import {
   getTurnInPlaceActivationDelay,
   refreshTurnInPlace,
   resetTurnInPlaceFrame,
+  takeQueuedTurnInPlaceAnimation,
 } from './AlsTurnInPlaceState'
 
 describe('ALS turn in place', () => {
+  it('initializes the full FAlsTurnInPlaceState payload', () => {
+    expect(createAlsTurnInPlaceState()).toEqual({
+      updatedThisFrame: false,
+      activationDelay: 0,
+      queuedSettings: null,
+      queuedSlotName: null,
+      queuedTurnYawAngle: 0,
+      playRate: 1,
+    })
+  })
+
   it('requires yaw speed below 50 and absolute yaw strictly above 45 degrees', () => {
     const state = createAlsTurnInPlaceState()
     const base = {
@@ -94,5 +106,34 @@ describe('ALS turn in place', () => {
     const selected = selectTurnInPlaceClip('Standing', 100)
     expect(calculateTurnInPlacePlayRate(100, selected.settings))
       .toBeCloseTo(1.2 * 100 / 90)
+  })
+
+  it('defers playback, lets a pending stop win, and clears the queue on take', () => {
+    const state = createAlsTurnInPlaceState()
+    state.activationDelay = 1
+    const request = refreshTurnInPlace(state, {
+      delta: 1 / 60,
+      transitionsAllowed: true,
+      viewYawAngle: -100,
+      viewYawSpeed: 0,
+      stance: 'Crouching',
+    })
+    expect(request?.settings.clip).toBe('A_Als_Crouch_Turn_90_Left')
+    expect(state.queuedSlotName).toBe('TurnInPlaceCrouching')
+    expect(state.playRate).toBe(1)
+
+    expect(takeQueuedTurnInPlaceAnimation(state, true)).toBeNull()
+    expect(state.queuedSettings?.clip).toBe('A_Als_Crouch_Turn_90_Left')
+
+    const queued = takeQueuedTurnInPlaceAnimation(state, false)
+    expect(queued).toMatchObject({
+      slotName: 'TurnInPlaceCrouching',
+      queuedTurnYawAngle: -100,
+      playRate: 1.2 * 100 / 90,
+    })
+    expect(state.playRate).toBeCloseTo(1.2 * 100 / 90)
+    expect(state.queuedSettings).toBeNull()
+    expect(state.queuedSlotName).toBeNull()
+    expect(state.queuedTurnYawAngle).toBe(0)
   })
 })

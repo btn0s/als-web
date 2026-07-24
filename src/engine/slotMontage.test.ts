@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   advanceSlotMontageClock,
   advanceSlotMontageGroup,
+  blendSlotCurveValue,
   createSlotMontageClock,
   getSlotMontageSample,
   playSlotAnimationAsDynamicMontage,
@@ -28,6 +29,14 @@ function request(
 }
 
 describe('UE dynamic slot montage clock', () => {
+  it('uses the same complementary alpha for present and absent montage curves', () => {
+    expect(blendSlotCurveValue(1, -1, 0.25)).toBeCloseTo(0.5)
+    expect(blendSlotCurveValue(1, undefined, 0.25)).toBeCloseTo(0.75)
+    expect(blendSlotCurveValue(0, 100, 0.25)).toBeCloseTo(25)
+    expect(blendSlotCurveValue(1, 100, -1)).toBe(1)
+    expect(blendSlotCurveValue(1, 100, 2)).toBe(100)
+  })
+
   it('applies segment play rate before mapping montage start time to the source sample', () => {
     const clock = createSlotMontageClock()
     const initial = playSlotAnimationAsDynamicMontage(clock, request({

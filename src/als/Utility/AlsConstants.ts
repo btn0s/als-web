@@ -14,6 +14,13 @@ export const HIPS_DIRECTION_LOCK_CURVE_NAME = 'HipsDirectionLock'
 export const FEET_CROSSING_CURVE_NAME = 'FeetCrossing'
 export const ROTATION_YAW_SPEED_CURVE_NAME = 'RotationYawSpeed'
 export const SPRINT_BLOCK_CURVE_NAME = 'SprintBlock'
+export const ALLOW_TRANSITIONS_CURVE_NAME = 'AllowTransitions'
+
+// UAlsConstants slot names plus SK_Als's authored AnimSlotGroup.
+export const TRANSITION_SLOT_NAME = 'Transition'
+export const TURN_IN_PLACE_STANDING_SLOT_NAME = 'TurnInPlaceStanding'
+export const TURN_IN_PLACE_CROUCHING_SLOT_NAME = 'TurnInPlaceCrouching'
+export const GROUNDED_SLOT_GROUP_NAME = 'Grounded'
 
 /**
  * Returns a NEW `THREE.AnimationClip` containing only the tracks of `clip` whose target bone

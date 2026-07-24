@@ -60,6 +60,20 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value))
 }
 
+/**
+ * FAnimNode_Slot's named-curve complement for one source/montage pair.
+ *
+ * A curve absent from a non-additive montage contributes zero.
+ */
+export function blendSlotCurveValue(
+  sourceValue: number,
+  montageValue: number | undefined,
+  montageWeight: number,
+) {
+  const alpha = clamp(montageWeight, 0, 1)
+  return sourceValue * (1 - alpha) + (montageValue ?? 0) * alpha
+}
+
 function validateRequest(request: SlotMontageRequest) {
   if (request.clipKey.length === 0) throw new Error('Slot montage requires a clip key')
   if (request.slotName.length === 0) throw new Error('Slot montage requires a slot name')
