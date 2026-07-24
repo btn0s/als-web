@@ -11,6 +11,7 @@ import { ALS_PHYSICS_TIMESTEP } from '../als/AlsCharacter.hooks'
 import { AlsCameraComponent } from '../als/AlsCamera/AlsCameraComponent'
 import { createCharacterPoseSample } from '../als/AlsCamera/poseCameraState'
 import { Character } from './Character'
+import { FramePerformanceMonitor } from './FramePerformanceMonitor'
 import { PostProcessing } from './PostProcessing'
 import './App.css'
 
@@ -73,6 +74,7 @@ function Scene() {
       />
       <AlsCameraComponent characterSize={characterSize} poseSample={poseSample} />
       <PostProcessing />
+      <FramePerformanceMonitor />
       <SceneReady />
     </>
   )
