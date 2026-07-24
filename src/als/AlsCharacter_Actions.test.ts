@@ -2,18 +2,37 @@ import { describe, expect, it, vi } from 'vitest'
 import type {
   AlsCapturedMantlingTarget,
   AlsMantlingCollisionQuery,
+  AlsMantlingLifecycleAdapter,
   AlsMantlingSweepHit,
   AlsStartMantlingCharacterState,
   StartAlsMantlingInput,
 } from './AlsCharacter_Actions'
 import {
+  prepareCharacterMantling,
+  refreshMantling,
   startMantling,
   startMantlingGrounded,
+  startMantlingImplementation,
   startMantlingInAir,
+  stopMantling,
 } from './AlsCharacter_Actions'
 import {
+  createAlsCharacter,
+  setLocomotionMode,
+} from './AlsCharacter'
+import type {
+  AlsCharacter,
+} from './AlsCharacter'
+import type {
+  AlsRootMotionSource_Mantling,
+} from './RootMotionSources/AlsRootMotionSource_Mantling'
+import {
   ALS_GENERAL_MANTLING_SETTINGS,
+  ALS_MANTLING_SETTINGS,
 } from './Settings/AlsMantlingSettings'
+import type {
+  CompiledAuthoredRootMotion,
+} from '../engine/rootMotion'
 
 const targetPrimitive = {}
 
@@ -115,6 +134,154 @@ function input(
     TargetSpace: targetSpace(),
     ...overrides,
   }
+}
+
+function syntheticRootMotion(
+  clipName: string,
+  duration: number,
+): CompiledAuthoredRootMotion {
+  return {
+    clipName,
+    duration,
+    bEnableRootMotion: true,
+    bForceRootLock: true,
+    RootMotionRootLock: 'AnimFirstFrame',
+    poseReset: {
+      kind: 'animationFirstFrame',
+      translation: new Float32Array(3),
+      rotation: new Float32Array([0, 0, 0, 1]),
+    },
+    times: new Float32Array([0, duration]),
+    // GLB basis: component Y is ALS/Unreal Z.
+    translations: new Float32Array([
+      0, 0, 0,
+      0, 1, 0,
+    ]),
+    rotations: new Float32Array([
+      0, 0, 0, 1,
+      0, 0, 0, 1,
+    ]),
+  }
+}
+
+interface MantlingLifecycleHarness {
+  readonly Lifecycle: AlsMantlingLifecycleAdapter
+  readonly Events: unknown[]
+  readonly RootMotionSources:
+    Map<number, AlsRootMotionSource_Mantling>
+  TargetPrimitiveValid: boolean
+}
+
+function mantlingLifecycle(
+  Character: AlsCharacter,
+  MontagePlayResult = 1,
+): MantlingLifecycleHarness {
+  const Events: unknown[] = []
+  const RootMotionSources =
+    new Map<number, AlsRootMotionSource_Mantling>()
+  const harness: MantlingLifecycleHarness = {
+    Events,
+    RootMotionSources,
+    TargetPrimitiveValid: true,
+    Lifecycle: {
+      SetNetworkSmoothingMode(mode) {
+        Events.push(`NetworkSmoothing:${mode}`)
+      },
+      ResetMeshRelativeTransform() {
+        Events.push('ResetMeshRelativeTransform')
+      },
+      SetMovementModeLocked(bLocked) {
+        Events.push([
+          'SetMovementModeLocked',
+          bLocked,
+          Character.locomotionMode,
+          Character.locomotionAction,
+        ])
+      },
+      SetBase(TargetPrimitive) {
+        Events.push(['SetBase', TargetPrimitive])
+      },
+      ApplyRootMotionSource(RootMotionSource) {
+        const RootMotionSourceId = 41
+        RootMotionSources.set(RootMotionSourceId, RootMotionSource)
+        Events.push([
+          'ApplyRootMotionSource',
+          Character.locomotionMode,
+          Character.locomotionAction,
+        ])
+        return RootMotionSourceId
+      },
+      GetRootMotionSourceByID(RootMotionSourceId) {
+        Events.push(['GetRootMotionSourceByID', RootMotionSourceId])
+        return RootMotionSources.get(RootMotionSourceId) ?? null
+      },
+      Montage_Play(MontageState) {
+        Events.push([
+          'Montage_Play',
+          MontageState.RequestId,
+          Character.mantlingState.RootMotionSourceId,
+          Character.locomotionAction,
+        ])
+        return MontagePlayResult
+      },
+      IsTargetPrimitiveValid(TargetPrimitive) {
+        Events.push(['IsTargetPrimitiveValid', TargetPrimitive])
+        return harness.TargetPrimitiveValid
+      },
+      OnMantlingStarted() {
+        Events.push([
+          'OnMantlingStarted',
+          Character.locomotionAction,
+        ])
+      },
+      OnMantlingEnded() {
+        Events.push('OnMantlingEnded')
+      },
+      ForceNetUpdate() {
+        Events.push('ForceNetUpdate')
+      },
+      StartRagdolling() {
+        Events.push('StartRagdolling')
+      },
+    },
+  }
+  return harness
+}
+
+const lifecycleTarget = {}
+
+function mantlingParameters() {
+  return {
+    TargetPrimitive: lifecycleTarget,
+    TargetRelativeLocation: { x: 1, y: 2, z: 1 },
+    TargetRelativeRotation: {
+      Pitch: 0,
+      Yaw: 450,
+      Roll: 0,
+    },
+    MantlingHeight: 0.75,
+    MantlingType: 'Low',
+  } as const
+}
+
+function startImplementation(
+  Character: AlsCharacter,
+  harness: MantlingLifecycleHarness,
+) {
+  const settings = ALS_MANTLING_SETTINGS.MS_Als_Low_Right
+  return startMantlingImplementation({
+    Character,
+    Parameters: mantlingParameters(),
+    OverlayMode: 'Als.OverlayMode.Rifle',
+    AuthoredRootMotion: syntheticRootMotion(
+      settings.Montage.Sequence,
+      settings.Montage.SequenceLength,
+    ),
+    bUseRelativeLocation: false,
+    ActorFeetLocation: { x: 0.5, y: 1.5, z: 0.25 },
+    ActorRotation: { x: 0, y: 0, z: 0, w: 1 },
+    Lifecycle: harness.Lifecycle,
+  })
 }
 
 describe('AAlsCharacter::StartMantling()', () => {
@@ -434,5 +601,228 @@ describe('AAlsCharacter::StartMantling()', () => {
       Collision,
     }))
     expect(SweepCapsule).not.toHaveBeenCalled()
+  })
+})
+
+describe('AAlsCharacter live mantling lifecycle', () => {
+  it('ports StartMantlingImplementation side effects in source order', () => {
+    const Character = createAlsCharacter()
+    const harness = mantlingLifecycle(Character)
+    const result = startImplementation(Character, harness)
+
+    expect(result).not.toBeNull()
+    if (result === null) return
+    expect(result.RootMotionSource.MantlingSettings.Name)
+      .toBe('MS_Als_Low_Right')
+    expect(result.RootMotionSource.MontageStartTime).toBeCloseTo(0.25, 7)
+    expect(result.RootMotionSource.Duration).toBeCloseTo(1.25, 7)
+    expect(result.RootMotionSource.TargetRelativeRotation)
+      .toEqual({ Pitch: 0, Yaw: 90, Roll: 0 })
+    expect(result.RootMotionSource.ActorFeetLocationOffset)
+      .toEqual({ x: -0.5, y: -0.5, z: -0.75 })
+    expect(result.MontageState).toMatchObject({
+      RequestId: 41,
+      MontagePosition: 0.25,
+      Status: 'Playing',
+    })
+    expect(Character.locomotionMode).toBeNull()
+    expect(Character.locomotionAction).toBe('Mantling')
+    expect(Character.mantlingState.RootMotionSourceId).toBe(41)
+    expect(harness.Events).toEqual([
+      'NetworkSmoothing:Disabled',
+      'ResetMeshRelativeTransform',
+      ['SetMovementModeLocked', true, null, null],
+      ['SetBase', lifecycleTarget],
+      ['ApplyRootMotionSource', null, null],
+      ['Montage_Play', 41, 41, null],
+      ['OnMantlingStarted', 'Mantling'],
+    ])
+  })
+
+  it('rejects an occupied locomotion action before selecting or mutating', () => {
+    const Character = createAlsCharacter()
+    Character.locomotionAction = 'Rolling'
+    const harness = mantlingLifecycle(Character)
+
+    expect(startImplementation(Character, harness)).toBeNull()
+    expect(Character.locomotionMode).toBe('Grounded')
+    expect(Character.mantlingState.RootMotionSourceId).toBe(0)
+    expect(harness.Events).toEqual([])
+  })
+
+  it('retains the applied root source when Montage_Play fails, then unwinds on the next refresh', () => {
+    const Character = createAlsCharacter()
+    const harness = mantlingLifecycle(Character, 0)
+    const result = startImplementation(Character, harness)
+
+    expect(result?.MontageState).toBeNull()
+    expect(Character.locomotionMode).toBeNull()
+    expect(Character.locomotionAction).toBeNull()
+    expect(Character.mantlingState.RootMotionSourceId).toBe(41)
+
+    expect(refreshMantling({
+      Character,
+      Lifecycle: harness.Lifecycle,
+      MontageState: result?.MontageState ?? null,
+    })).toBe(true)
+
+    expect(result?.RootMotionSource.Status).toBe('MarkedForRemoval')
+    expect(Character.mantlingState.RootMotionSourceId).toBe(0)
+    expect(Character.locomotionMode).toBe('Grounded')
+    expect(harness.Events.slice(-5)).toEqual([
+      ['GetRootMotionSourceByID', 41],
+      'NetworkSmoothing:Exponential',
+      ['SetMovementModeLocked', false, null, null],
+      'OnMantlingEnded',
+      'ForceNetUpdate',
+    ])
+  })
+
+  it('uses only the root-source playhead and lets the notify end own action exit', () => {
+    const Character = createAlsCharacter()
+    const harness = mantlingLifecycle(Character)
+    const start = startImplementation(Character, harness)
+    expect(start?.MontageState).not.toBeNull()
+    if (start === null || start.MontageState === null) return
+
+    const result = prepareCharacterMantling({
+      Character,
+      Lifecycle: harness.Lifecycle,
+      RootMotionSource: start.RootMotionSource,
+      MontageState: start.MontageState,
+      SimulationDeltaTime: 0.75,
+      DeltaTime: 1 / 60,
+      bUseRelativeLocation: false,
+      ActorFeetLocation: { x: 0.5, y: 1.5, z: 0.25 },
+      ActorRotation: { x: 0, y: 0, z: 0, w: 1 },
+    })
+
+    expect(result.Clock.RootMotionTime).toBeCloseTo(0.75, 12)
+    expect(result.Clock.MontageTime).toBeCloseTo(1, 7)
+    expect(result.Clock.MontagePosition)
+      .toBeCloseTo(1 - 1 / 60, 7)
+    expect(start.MontageState.MontagePosition)
+      .toBe(result.Clock.MontagePosition)
+    expect(start.MontageState.ElapsedTime).toBeCloseTo(1 / 60, 12)
+    expect(start.MontageState.bMovementActionEndedThisFrame).toBe(true)
+    expect(Character.locomotionAction).toBeNull()
+    expect(Character.mantlingState.RootMotionSourceId).toBe(41)
+
+    const status = start.MontageState.Status
+    refreshMantling({
+      Character,
+      Lifecycle: harness.Lifecycle,
+      MontageState: start.MontageState,
+    })
+    expect(start.RootMotionSource.Status).toBe('MarkedForRemoval')
+    expect(start.MontageState.Status).toBe(status)
+    expect(Character.mantlingState.RootMotionSourceId).toBe(0)
+  })
+
+  it('stops a mode-invalid mantle with the authored global blend duration', () => {
+    const Character = createAlsCharacter()
+    const harness = mantlingLifecycle(Character)
+    const start = startImplementation(Character, harness)
+    expect(start?.MontageState).not.toBeNull()
+    if (start === null || start.MontageState === null) return
+
+    setLocomotionMode(Character, 'Grounded')
+    expect(refreshMantling({
+      Character,
+      Lifecycle: harness.Lifecycle,
+      MontageState: start.MontageState,
+    })).toBe(true)
+
+    expect(start.RootMotionSource.Status).toBe('MarkedForRemoval')
+    expect(start.MontageState.Status).toBe('BlendingOut')
+    expect(start.MontageState.BlendOutDuration)
+      .toBe(ALS_GENERAL_MANTLING_SETTINGS.BlendOutDuration)
+    // StopMantling does not usurp the active montage notify.
+    expect(Character.locomotionAction).toBe('Mantling')
+    expect(Character.locomotionMode).toBe('Grounded')
+  })
+
+  it('stops and requests authored ragdoll behavior when the target is destroyed', () => {
+    const Character = createAlsCharacter()
+    const harness = mantlingLifecycle(Character)
+    const start = startImplementation(Character, harness)
+    expect(start?.MontageState).not.toBeNull()
+    if (start === null) return
+    harness.TargetPrimitiveValid = false
+
+    refreshMantling({
+      Character,
+      Lifecycle: harness.Lifecycle,
+      MontageState: start.MontageState,
+    })
+
+    expect(start.RootMotionSource.Status).toBe('MarkedForRemoval')
+    expect(start.MontageState?.Status).toBe('BlendingOut')
+    expect(harness.Events.at(-1)).toBe('StartRagdolling')
+  })
+
+  it('does not stop a montage when its root source has already left the registry', () => {
+    const Character = createAlsCharacter()
+    const harness = mantlingLifecycle(Character)
+    const start = startImplementation(Character, harness)
+    expect(start?.MontageState).not.toBeNull()
+    if (start === null || start.MontageState === null) return
+    harness.RootMotionSources.delete(41)
+    setLocomotionMode(Character, 'Grounded')
+
+    refreshMantling({
+      Character,
+      Lifecycle: harness.Lifecycle,
+      MontageState: start.MontageState,
+    })
+
+    expect(start.MontageState.Status).toBe('Playing')
+    expect(Character.mantlingState.RootMotionSourceId).toBe(0)
+  })
+
+  it('leaves a finished root source registered until notify exit drives RefreshMantling cleanup', () => {
+    const Character = createAlsCharacter()
+    const harness = mantlingLifecycle(Character)
+    const start = startImplementation(Character, harness)
+    expect(start?.MontageState).not.toBeNull()
+    if (start === null || start.MontageState === null) return
+
+    const result = prepareCharacterMantling({
+      Character,
+      Lifecycle: harness.Lifecycle,
+      RootMotionSource: start.RootMotionSource,
+      MontageState: start.MontageState,
+      SimulationDeltaTime: start.RootMotionSource.Duration,
+      DeltaTime: 1 / 60,
+      bUseRelativeLocation: false,
+      ActorFeetLocation: { x: 0.5, y: 1.5, z: 0.25 },
+      ActorRotation: { x: 0, y: 0, z: 0, w: 1 },
+    })
+
+    expect(result.finished).toBe(true)
+    expect(start.RootMotionSource.Status).toBe('Finished')
+    expect(Character.locomotionAction).toBeNull()
+    expect(Character.mantlingState.RootMotionSourceId).toBe(41)
+
+    refreshMantling({
+      Character,
+      Lifecycle: harness.Lifecycle,
+      MontageState: start.MontageState,
+    })
+    expect(start.RootMotionSource.Status).toBe('MarkedForRemoval')
+    expect(Character.mantlingState.RootMotionSourceId).toBe(0)
+  })
+
+  it('keeps StopMantling idempotent after RootMotionSourceId is cleared', () => {
+    const Character = createAlsCharacter()
+    const harness = mantlingLifecycle(Character)
+
+    expect(stopMantling({
+      Character,
+      Lifecycle: harness.Lifecycle,
+      MontageState: null,
+      bStopMontage: true,
+    })).toBe(false)
+    expect(harness.Events).toEqual([])
   })
 })

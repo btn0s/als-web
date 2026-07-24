@@ -3,13 +3,46 @@ import {
   UE_CHARACTER_MOVEMENT_MIN_FLOOR_DISTANCE,
 } from '../engine/characterMovementFloor'
 import type {
-  AlsRotator,
+  CompiledAuthoredRootMotion,
+} from '../engine/rootMotion'
+import {
+  createAlsMantlingMontageState,
+  refreshAlsMantlingMontage,
+  stopAlsMantlingMontage,
+} from './AnimGraph/mantling'
+import type {
+  AlsMantlingMontageState,
+} from './AnimGraph/mantling'
+import {
+  setLocomotionAction,
+  setLocomotionMode,
+} from './AlsCharacter'
+import type {
+  AlsCharacter,
+} from './AlsCharacter'
+import {
+  createAlsRootMotionSource_Mantling,
+  prepareAlsRootMotionSource_Mantling,
 } from './RootMotionSources/AlsRootMotionSource_Mantling'
+import type {
+  AlsMantlingRootMotionResult,
+  AlsPrimitiveTransform,
+  AlsRootMotionSource_Mantling,
+  AlsRotator,
+  PrepareAlsMantlingRootMotionInput,
+} from './RootMotionSources/AlsRootMotionSource_Mantling'
+import {
+  ALS_GENERAL_MANTLING_SETTINGS,
+  selectAlsMantlingSettings,
+} from './Settings/AlsMantlingSettings'
 import type {
   AlsGeneralMantlingSettings,
   AlsMantlingTraceSettings,
   AlsMantlingType,
 } from './Settings/AlsMantlingSettings'
+import type {
+  AlsQuaternion,
+} from './State/AlsFeetState'
 import {
   unwindDegrees,
 } from './State/AlsLocomotionState'
@@ -539,4 +572,303 @@ export function startMantlingInAir(
         TraceSettings: input.MantlingSettings.InAirTrace,
       })
     : null
+}
+
+export type AlsNetworkSmoothingMode = 'Disabled' | 'Exponential'
+
+/**
+ * UE-owned operations called by AAlsCharacter's mantling lifecycle.
+ *
+ * This adapter is deliberately explicit: the browser runtime must account for
+ * every movement-component, mesh, montage, and event side effect in the same
+ * order as ALS. Root-motion-source ID allocation is an engine responsibility,
+ * just as it is in UCharacterMovementComponent; this module never invents an
+ * independent action clock or ID allocator.
+ */
+export interface AlsMantlingLifecycleAdapter {
+  SetNetworkSmoothingMode(mode: AlsNetworkSmoothingMode): void
+  ResetMeshRelativeTransform(): void
+  SetMovementModeLocked(bLocked: boolean): void
+  SetBase(TargetPrimitive: unknown): void
+  ApplyRootMotionSource(
+    RootMotionSource: AlsRootMotionSource_Mantling,
+  ): number
+  GetRootMotionSourceByID(
+    RootMotionSourceId: number,
+  ): AlsRootMotionSource_Mantling | null
+  Montage_Play(MontageState: AlsMantlingMontageState): number
+  IsTargetPrimitiveValid(TargetPrimitive: unknown): boolean
+  OnMantlingStarted(Parameters: Readonly<AlsMantlingParameters>): void
+  OnMantlingEnded(): void
+  ForceNetUpdate(): void
+  StartRagdolling(): void
+}
+
+export interface StartAlsMantlingImplementationInput {
+  readonly Character: AlsCharacter
+  readonly Parameters: Readonly<AlsMantlingParameters>
+  /** Exact gameplay tag consumed by B_Als_Character's overlay switch. */
+  readonly OverlayMode?: string
+  readonly AuthoredRootMotion: CompiledAuthoredRootMotion
+  readonly bUseRelativeLocation: boolean
+  readonly TargetPrimitiveTransform?: Readonly<AlsPrimitiveTransform>
+  readonly ActorFeetLocation: Readonly<AlsVector3>
+  readonly ActorRotation: Readonly<AlsQuaternion>
+  readonly Lifecycle: AlsMantlingLifecycleAdapter
+}
+
+export interface StartAlsMantlingImplementationResult {
+  readonly RootMotionSource: AlsRootMotionSource_Mantling
+  /**
+   * Null only when Montage_Play() failed. ALS still retains the applied root
+   * source in that case; the following RefreshMantling() performs cleanup.
+   */
+  readonly MontageState: AlsMantlingMontageState | null
+}
+
+/**
+ * `AAlsCharacter::StartMantlingImplementation()`, lines 454-538.
+ *
+ * `createAlsRootMotionSource_Mantling()` owns the exact start-time, target
+ * transform, duration, and actor-offset math. This function owns the character
+ * side effects and their source order.
+ */
+export function startMantlingImplementation(
+  input: Readonly<StartAlsMantlingImplementationInput>,
+): StartAlsMantlingImplementationResult | null {
+  const character = input.Character
+  if (character.locomotionAction !== null) return null
+
+  const settings = selectAlsMantlingSettings(
+    input.Parameters.MantlingType,
+    input.OverlayMode ?? 'Als.OverlayMode.Default',
+  )
+  const RootMotionSource = createAlsRootMotionSource_Mantling({
+    MantlingSettings: settings,
+    AuthoredRootMotion: input.AuthoredRootMotion,
+    MantlingHeight: input.Parameters.MantlingHeight,
+    TargetPrimitive: input.Parameters.TargetPrimitive,
+    bUseRelativeLocation: input.bUseRelativeLocation,
+    TargetPrimitiveTransform: input.TargetPrimitiveTransform,
+    TargetRelativeLocation: input.Parameters.TargetRelativeLocation,
+    TargetRelativeRotation: input.Parameters.TargetRelativeRotation,
+    ActorFeetLocation: input.ActorFeetLocation,
+    ActorRotation: input.ActorRotation,
+  })
+
+  input.Lifecycle.SetNetworkSmoothingMode('Disabled')
+  input.Lifecycle.ResetMeshRelativeTransform()
+
+  // MOVE_Custom is represented by an invalid/null ALS locomotion-mode tag.
+  setLocomotionMode(character, null)
+  input.Lifecycle.SetMovementModeLocked(true)
+  input.Lifecycle.SetBase(input.Parameters.TargetPrimitive)
+
+  character.mantlingState.RootMotionSourceId =
+    input.Lifecycle.ApplyRootMotionSource(RootMotionSource)
+
+  const candidateMontageState = createAlsMantlingMontageState(
+    character.mantlingState.RootMotionSourceId,
+    settings,
+    RootMotionSource.MontageStartTime,
+  )
+  const MontageState = (
+    input.Lifecycle.Montage_Play(candidateMontageState) > 0
+      ? candidateMontageState
+      : null
+  )
+  if (MontageState !== null) {
+    setLocomotionAction(character, 'Mantling')
+  }
+
+  input.Lifecycle.OnMantlingStarted(input.Parameters)
+  return {
+    RootMotionSource,
+    MontageState,
+  }
+}
+
+export interface StopAlsMantlingInput {
+  readonly Character: AlsCharacter
+  readonly Lifecycle: AlsMantlingLifecycleAdapter
+  readonly MontageState: AlsMantlingMontageState | null
+  readonly MantlingSettings?: Readonly<AlsGeneralMantlingSettings>
+  readonly bStopMontage?: boolean
+}
+
+/**
+ * `AAlsCharacter::StopMantling()`, lines 644-676.
+ *
+ * The function intentionally does not clear LocomotionAction. If the montage
+ * is stopped while its movement-action notify is active, that notify owns the
+ * eventual action exit exactly as it does in ALS.
+ */
+export function stopMantling(
+  input: Readonly<StopAlsMantlingInput>,
+): boolean {
+  const character = input.Character
+  const RootMotionSourceId =
+    character.mantlingState.RootMotionSourceId
+  if (RootMotionSourceId <= 0) return false
+
+  const RootMotionSource =
+    input.Lifecycle.GetRootMotionSourceByID(RootMotionSourceId)
+  if (RootMotionSource !== null) {
+    RootMotionSource.Status = 'MarkedForRemoval'
+  }
+
+  character.mantlingState.RootMotionSourceId = 0
+
+  if (
+    input.bStopMontage === true
+    && RootMotionSource !== null
+    && input.MontageState !== null
+    && input.MontageState.MantlingSettings.Montage
+      === RootMotionSource.MantlingSettings.Montage
+  ) {
+    stopAlsMantlingMontage(
+      input.MontageState,
+      (
+        input.MantlingSettings
+        ?? ALS_GENERAL_MANTLING_SETTINGS
+      ).BlendOutDuration,
+    )
+  }
+
+  input.Lifecycle.SetNetworkSmoothingMode('Exponential')
+  input.Lifecycle.SetMovementModeLocked(false)
+  setLocomotionMode(character, 'Grounded')
+  input.Lifecycle.OnMantlingEnded()
+  input.Lifecycle.ForceNetUpdate()
+  return true
+}
+
+export interface RefreshAlsMantlingInput {
+  readonly Character: AlsCharacter
+  readonly Lifecycle: AlsMantlingLifecycleAdapter
+  readonly MontageState: AlsMantlingMontageState | null
+  readonly MantlingSettings?: Readonly<AlsGeneralMantlingSettings>
+}
+
+/**
+ * `AAlsCharacter::RefreshMantling()`, lines 609-642.
+ */
+export function refreshMantling(
+  input: Readonly<RefreshAlsMantlingInput>,
+): boolean {
+  const character = input.Character
+  const RootMotionSourceId =
+    character.mantlingState.RootMotionSourceId
+  if (RootMotionSourceId <= 0) return false
+
+  if (character.locomotionAction !== 'Mantling') {
+    return stopMantling({
+      ...input,
+      bStopMontage: false,
+    })
+  }
+
+  if (character.locomotionMode !== null) {
+    return stopMantling({
+      ...input,
+      bStopMontage: true,
+    })
+  }
+
+  const RootMotionSource =
+    input.Lifecycle.GetRootMotionSourceByID(RootMotionSourceId)
+  if (
+    RootMotionSource !== null
+    && !input.Lifecycle.IsTargetPrimitiveValid(
+      RootMotionSource.TargetPrimitive,
+    )
+  ) {
+    const stopped = stopMantling({
+      ...input,
+      bStopMontage: true,
+    })
+    if (
+      (
+        input.MantlingSettings
+        ?? ALS_GENERAL_MANTLING_SETTINGS
+      ).bStartRagdollingOnTargetPrimitiveDestruction
+    ) {
+      input.Lifecycle.StartRagdolling()
+    }
+    return stopped
+  }
+
+  return false
+}
+
+export interface PrepareAlsCharacterMantlingInput
+  extends Omit<PrepareAlsMantlingRootMotionInput, 'TargetPrimitiveValid'> {
+  readonly Character: AlsCharacter
+  readonly Lifecycle: AlsMantlingLifecycleAdapter
+  readonly RootMotionSource: AlsRootMotionSource_Mantling
+  readonly MontageState: AlsMantlingMontageState | null
+  readonly RootMotionResult?: AlsMantlingRootMotionResult
+}
+
+/**
+ * CharacterMovement's mantling root-source preparation followed by the
+ * PostLocomotion montage update.
+ *
+ * The root source is the sole playhead owner. `MontagePosition` is always the
+ * exact Montage_SetPosition() value from PrepareRootMotion; the montage never
+ * advances its optional fallback clock through this path.
+ */
+export function prepareCharacterMantling(
+  input: Readonly<PrepareAlsCharacterMantlingInput>,
+): AlsMantlingRootMotionResult {
+  const RootMotionResult = prepareAlsRootMotionSource_Mantling(
+    input.RootMotionSource,
+    {
+      SimulationDeltaTime: input.SimulationDeltaTime,
+      DeltaTime: input.DeltaTime,
+      TargetPrimitiveValid:
+        input.Lifecycle.IsTargetPrimitiveValid(
+          input.RootMotionSource.TargetPrimitive,
+        ),
+      bUseRelativeLocation: input.bUseRelativeLocation,
+      TargetPrimitiveTransform: input.TargetPrimitiveTransform,
+      ActorFeetLocation: input.ActorFeetLocation,
+      ActorRotation: input.ActorRotation,
+      MeshScaleZ: input.MeshScaleZ,
+      GravityDirection: input.GravityDirection,
+    },
+    input.RootMotionResult,
+  )
+
+  const MontageState = input.MontageState
+  if (MontageState === null) return RootMotionResult
+
+  refreshAlsMantlingMontage(MontageState, {
+    DeltaTime: input.DeltaTime,
+    AuthoritativeMontagePosition:
+      RootMotionResult.Clock.MontagePosition,
+    bHasInput: input.Character.locomotionState.hasInput,
+    LocomotionMode: input.Character.locomotionMode,
+    RotationMode: input.Character.rotationMode,
+    Stance: input.Character.stance,
+  })
+
+  // UAlsAnimNotifyState_SetLocomotionAction::NotifyEnd() only clears the
+  // action it owns. Montage termination also ends an active notify state.
+  if (
+    (
+      MontageState.bMovementActionEndedThisFrame
+      || (
+        MontageState.bCompletedThisFrame
+        && MontageState.bMovementActionActive
+      )
+    )
+    && input.Character.locomotionAction === 'Mantling'
+  ) {
+    MontageState.bMovementActionActive = false
+    MontageState.bMovementActionEndedThisFrame = true
+    setLocomotionAction(input.Character, null)
+  }
+
+  return RootMotionResult
 }
