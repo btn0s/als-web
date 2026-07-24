@@ -289,6 +289,11 @@ interface CompiledHandIkDefinition {
   readonly targetWhenUsingHandIkBonesIndex: number
   readonly targetOtherwiseIndex: number
   readonly poleVectorSpaceIndex: number
+  /** CR_Als local axes converted from Unreal to the glTF pose basis. */
+  readonly primaryAxis: readonly [number, number, number]
+  readonly secondaryAxis: readonly [number, number, number]
+  /** CR_Als local pole location converted from Unreal centimetres to glTF metres. */
+  readonly poleVector: readonly [number, number, number]
 }
 
 interface AlsControlRigHandIkScratch
@@ -425,6 +430,15 @@ function compileSolver(
     poleVectorSpaceIndex: requireBoneIndex(
       rig,
       definition.poleVectorSpace,
+    ),
+    primaryAxis: convertUnrealVectorTupleToGltf(
+      definition.primaryAxis,
+    ),
+    secondaryAxis: convertUnrealVectorTupleToGltf(
+      definition.secondaryAxis,
+    ),
+    poleVector: convertUnrealPositionTupleToGltf(
+      definition.poleVector,
     ),
   }
 }
@@ -739,7 +753,7 @@ function orientBasicTwoBoneIk(
   transformB: MutableTransform,
   transformC: MutableTransform,
   definition: Pick<
-    AlsControlRigHandIkDefinition,
+    CompiledHandIkDefinition,
     'primaryAxis' | 'secondaryAxis'
   >,
   scratch: AlsControlRigHandIkScratch,
@@ -998,7 +1012,7 @@ function solveHand(
     scratch.parentTransform,
   )
   scratch.poleTarget
-    .fromArray(solver.definition.poleVector)
+    .fromArray(solver.poleVector)
     .applyQuaternion(scratch.parentTransform.rotation)
     .add(scratch.parentTransform.position)
 
@@ -1076,7 +1090,7 @@ function solveHand(
     transformA,
     transformB,
     transformC,
-    solver.definition,
+    solver,
     scratch,
   )
   if (weight < 1 - SMALL_NUMBER) {
@@ -1367,6 +1381,16 @@ function convertUnrealVectorTupleToGltf(
   value: readonly [number, number, number],
 ): readonly [number, number, number] {
   return [value[0], value[2], value[1]]
+}
+
+function convertUnrealPositionTupleToGltf(
+  value: readonly [number, number, number],
+): readonly [number, number, number] {
+  return [
+    value[0] * CENTIMETERS_TO_METERS,
+    value[2] * CENTIMETERS_TO_METERS,
+    value[1] * CENTIMETERS_TO_METERS,
+  ]
 }
 
 /**

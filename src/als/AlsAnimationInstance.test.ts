@@ -26,6 +26,9 @@ import {
   ALS_RIFLE_RELAXED_GRAPH,
 } from './AnimGraph/AB_Als_Rifle'
 import {
+  runRollAnimationPoseDiagnostic,
+} from './parity/animationPoseDiagnostic'
+import {
   createAlsControlRigHandIkRuntime,
   evaluateAlsControlRigHandIk,
 } from './AnimGraph/CR_Als'
@@ -489,17 +492,15 @@ describe('AlsAnimationInstance playback regression', () => {
       6,
     )
 
-    // Rifle's authored upper-body Layering still runs after the full-body PostLocomotion pose.
-    const handLeftIndex = findBoneIndex(rig, 'hand_l')
-    const expectedHandLeft = new THREE.Quaternion(
-      sampled.rotations[handLeftIndex * 4],
-      sampled.rotations[handLeftIndex * 4 + 1],
-      sampled.rotations[handLeftIndex * 4 + 2],
-      sampled.rotations[handLeftIndex * 4 + 3],
-    )
-    expect(
-      bone(gltf.scene, 'hand_l').quaternion.angleTo(expectedHandLeft),
-    ).toBeGreaterThan(0.01)
+    // Rifle's authored Overlay curves remain live when Layering evaluates after
+    // the full-body PostLocomotion pose. Do not use a final hand-angle
+    // difference as the oracle: CR_Als can correctly solve the hand back onto
+    // the montage target, and the old assertion accidentally pinned the
+    // pre-basis-conversion elbow defect.
+    expect(window.__weightTable?.LayerArmLeft).toBe(1)
+    expect(window.__weightTable?.LayerArmRight).toBe(1)
+    expect(window.__weightTable?.LayerHandRight).toBe(1)
+    expect(window.__weightTable?.ControlRigExecuted).toBe(1)
   })
 
   it('advances high mantle by instance PlayRate times authored Montage RateScale', async () => {
@@ -893,6 +894,7 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(instance.rollingMontage.Montage_IsPlaying(
       ALS_ROLLING_MONTAGE.Name,
     )).toBe(true)
+    expect(instance.rollingMontage.IsPlayingRootMotion()).toBe(true)
     // StartRollingImplementation installs the action after this positive return.
     // Montage_Play itself does not fake the branching-point begin.
     expect(instance.rollingMontage.takeNotifyEvents()).toEqual([])
@@ -975,6 +977,67 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(instance.rollingMontage.takeNotifyEvents()).toEqual([])
   })
 
+  it('retains every unconsumed Roll delta across multiple animation updates', async () => {
+    const gltf = await loadAlsGltf()
+    const rollClip = gltf.animations.find(
+      ({ name }) => name === ALS_ROLL_SEQUENCE.Name,
+    )
+    if (!rollClip) throw new Error('Missing A_Als_Roll')
+    const authoredRootMotion = compileAuthoredRootMotion(rollClip)
+    if (!authoredRootMotion) {
+      throw new Error('A_Als_Roll has no authored root motion')
+    }
+    const instance = createAlsAnimationInstance(gltf)
+    expect(instance.rollingMontage.Montage_Play(
+      ALS_ROLLING_MONTAGE.Name,
+      1.3,
+    )).toBeGreaterThan(0)
+
+    // A high-refresh render clock can evaluate twice before the fixed
+    // CharacterMovement boundary. Both authored montage ranges remain pending.
+    instance.refresh(0.025, controls)
+    instance.refresh(0.075, controls)
+
+    const expected = extractAuthoredRootMotionDelta(
+      authoredRootMotion,
+      0,
+      0.13,
+    )
+    const actual =
+      instance.rollingMontage.ConsumeExtractedRootMotion()
+    expect(actual.valid).toBe(true)
+    for (let component = 0; component < 3; component++) {
+      expect(actual.translation[component])
+        .toBeCloseTo(expected.translation[component], 7)
+    }
+    expect(
+      instance.rollingMontage.ConsumeExtractedRootMotion().valid,
+    ).toBe(false)
+  })
+
+  it('matches the authored Roll clip, additive reconstruction, and final graph pose', async () => {
+    const runtimeGltf = await loadAlsGltf()
+    const oracleGltf = await loadAlsGltf()
+    const report = runRollAnimationPoseDiagnostic(
+      runtimeGltf,
+      oracleGltf,
+    )
+
+    expect(report.firstFailingStage).toBeNull()
+    expect(report.stages.map(({ name, report: stage }) => ({
+      name,
+      matches: stage.matches,
+    }))).toEqual([
+      { name: 'clip sampler', matches: true },
+      { name: 'mesh-space dynamic additive', matches: true },
+      { name: 'runtime graph publication', matches: true },
+    ])
+    expect(report.contact.runtimeMinimumY).toBeCloseTo(
+      report.contact.expectedGraphMinimumY,
+      6,
+    )
+  })
+
   it('ends Rolling at the authored marker, emits FromRoll in queued sequence order, and uses no duration timer', async () => {
     const gltf = await loadAlsGltf()
     const instance = createAlsAnimationInstance(gltf)
@@ -1041,6 +1104,10 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(instance.rollingMontage.Montage_IsPlaying(
       ALS_ROLLING_MONTAGE.Name,
     )).toBe(true)
+    // The default negative BlendOutTriggerTime begins the authored .3 s
+    // automatic fade .3 real seconds before the end. Stop() clears Unreal's
+    // RootMotionMontageInstance while the retained pose continues blending.
+    expect(instance.rollingMontage.IsPlayingRootMotion()).toBe(false)
 
     instance.refresh(
       (ALS_ROLLING_MONTAGE.PlayLength - montageTime) / 1.3,
@@ -1197,6 +1264,10 @@ describe('AlsAnimationInstance playback regression', () => {
       instance.rollingMontage.takeNotifyEvents()
     const instanceId = beginEvents[0]?.instanceId
     expect(instanceId).toEqual(expect.any(Number))
+    expect(
+      instance.rollingMontage
+        .ConsumeExtractedRootMotion().valid,
+    ).toBe(true)
 
     const mantleSettings = ALS_MANTLING_SETTINGS.MS_Als_Low
     expect(instance.mantlingMontage.play(

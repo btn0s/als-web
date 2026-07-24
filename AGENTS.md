@@ -65,6 +65,35 @@ before feature work.
 - **Playtesting:** the user playtests feel LIVE in the browser — no headless feel-comparison
   smokes beyond the sanctioned Playwright gate.
 
+## Parity debugging field guide
+
+Trace animation defects through the actual pipeline:
+
+`ALS source/content → extracted channels/curves → clip sampler → AnimGraph stages → Control Rig → pose publication → rendered mesh / camera / physics`
+
+Do not skip directly from “the source clip is correct” to “the runtime is correct.” Preserve a
+reproduction at the first bad boundary and add the cheapest independent check there.
+
+| Symptom / trap | Where to look and how to prove it |
+| --- | --- |
+| A left/right limb looks copied even though the GLB tracks differ | Raw-channel parity proves extraction only. Compare the left and right chains before Layering, after Layering, after Control Rig, and after publication. Use component-space transforms for visual pose comparisons; mirrored skeleton locals are not directly comparable. `pnpm diagnose:animation rifle --json` also checks the shipped arm channels against a fresh CUE4Parse dump. |
+| An “expected vs actual” pose reports zero delta but the screen is wrong | Check whether both sides call the same evaluator. That is a circular oracle. Derive the expected result independently from serialized pins/topology, source keys, or a geometric invariant; compare immediately before and after the suspected stage. |
+| Control Rig elbows, knees, poles, or twist axes point into the wrong plane | Authored Control Rig constants are in Unreal space. At the asset boundary, vectors map `(X,Y,Z) → (X,Z,Y)`, locations also convert centimetres to metres, and rotations use the extractor's reflected-basis conjugation. Keep checked-in oracle constants in Unreal units and convert once when compiling the evaluator. |
+| A virtual-bone target appears cross-wired | SK_Als's hand VBs intentionally use cross-hand chains. Verify `ALS_VIRTUAL_BONES` against `scripts/extract-als/hand-virtual-bones.json`, then inspect compiled source/target indices and component transforms. Generate VB locals on each sampled source pose before blending; do not regenerate them after LayeredBoneBlend or before `CR_Als`, because that erases the authored target offsets. |
+| A transition flashes a strange pose for exactly one frame | Capture the frame before entry, the entry frame, and the next frame. `AnimationFrameCapture` reports triangle-inequality pose detours and the worst bone; `authoredStanceTransitionBoundaries.test.ts` is the stance-transition precedent. Inspect newly relevant player initialization/reset, same-frame curve ownership, inertialization requests, and graph evaluation order before blaming the clip. |
+| Crouch, Roll, or another action floats while standing still | Bone/socket heights are not mesh contact. Measure deformed skinned-mesh `minY` over the transition/action with `captureSkinnedMeshWorldBounds`; compare authored clip, reconstructed graph pose, and published runtime pose. Also separate capsule/base movement from skeletal root/pelvis motion. |
+| An action pose gets a large pelvis/leg offset or the wrong additive base | Gameplay `Stance` and the animation's published `PoseStanding`/`PoseCrouching` curves can intentionally disagree during transitions and actions. Layering and dynamic-additive reference poses must follow the same-frame published `PoseState`, not a requested controls value. Roll is the regression precedent. |
+| Roll moves visually but contact/root travel disagrees | Root-lock pose sampling and extracted root motion are separate channels. Compare the root-locked authored pose, reconstructed mesh-space additive, consumed root-motion delta, and body displacement. Consume root motion exactly once; apply the notify-authored translation scale to translation only. |
+| Breathing/overlay state disappears during turn-in-place or another montage | Look for a full-body replacement where ALS uses `PostLocomotion` followed by Layering/slots. Inspect final per-bone effective weights and same-frame `Layer*`, additive, and slot curves. A correct turn/action owns only its authored stage/regions; idle and overlay contributions continue elsewhere. |
+| A held prop stays near the hand but does not follow its bones | Verify the authored attachment target and timing, not a one-time world transform. Rifle defaults to identity `SnapToTarget` on `VB hand_r_to_ik_hand_gun`; resolve its component transform after pose publication. Check the fallback socket only when the authored gun-bone setting disables the VB path. |
+| Turning the actor makes the camera turn it again forever | Audit the one-way frame order in `ALS_FRAME_PRIORITY`: ControlRotation → Physics → MeshBase → Animation → PosePublication → Camera. Camera view is an input to character facing, while the final camera reads the pose pivot; actor yaw must not be fed back as new camera-input yaw in the same frame. |
+| Debugging leaves the machine full of Chrome helpers | Agents do not launch browser feel-checks. Run `pnpm process-hygiene:agent-browser` to list old agent-browser daemon roots; use `--terminate` only for its re-verified matches. Never broadly kill Chrome/Chromium processes—the user's live playtest browser is outside that scope. |
+
+For animation triage, start with `pnpm diagnose:animation all`; it runs in-process without a
+browser or bound port and reports the first failing stage, ranked bones/regions, left/right
+collapse, and ground contact instead of dumping raw arrays. Finish deterministic changes with
+`pnpm check`; live browser verification remains the orchestrator's final gate.
+
 ## Architecture
 
 The substrate is a set of PURE, framework-free modules (vitest-tested in isolation): the weight

@@ -1,4 +1,10 @@
 import * as THREE from 'three'
+import {
+  captureSkinnedMeshWorldBounds,
+} from './skinnedMeshBounds'
+import type {
+  SkinnedMeshWorldBounds,
+} from './skinnedMeshBounds'
 
 const DEFAULT_FRAME_COUNT = 90
 const MAX_FRAME_COUNT = 240
@@ -7,6 +13,8 @@ const DEFAULT_TRACED_BONES = [
   'pelvis',
   'foot_l',
   'foot_r',
+  'ball_l',
+  'ball_r',
   'hand_l',
   'hand_r',
   'ik_hand_gun',
@@ -29,6 +37,8 @@ export interface AnimationFrameCaptureFrame {
   readonly deltaTime: number
   readonly metadata: AnimationFrameCaptureMetadata
   readonly bones: Readonly<Record<string, AnimationFrameBoneTrace>>
+  /** Exact deformed-vertex world bounds at this evaluated pose. */
+  readonly skinnedMeshBounds: SkinnedMeshWorldBounds | null
 }
 
 export interface AnimationFrameBoneDelta {
@@ -44,12 +54,41 @@ export interface AnimationFrameCaptureDelta {
   readonly scale: AnimationFrameBoneDelta
 }
 
+export interface AnimationFramePoseDetour {
+  readonly frame: number
+  readonly translationMeters: AnimationFrameBoneDelta
+  readonly rotationDegrees: AnimationFrameBoneDelta
+  readonly scale: AnimationFrameBoneDelta
+}
+
+export interface AnimationFrameGroundContactDiagnostics {
+  readonly frameCount: number
+  readonly maximumSeparationMeters: number
+  readonly maximumSeparationFrame: number
+  readonly minimumSeparationMeters: number
+  readonly minimumSeparationFrame: number
+}
+
+export interface AnimationFrameRootMotionDiagnostics {
+  readonly bodyHorizontalDistanceMeters: number
+  readonly consumedHorizontalDistanceMeters: number
+  readonly absoluteDifferenceMeters: number
+}
+
+export interface AnimationFrameCaptureDiagnostics {
+  readonly poseDetours: readonly AnimationFramePoseDetour[]
+  readonly groundedContact: AnimationFrameGroundContactDiagnostics | null
+  readonly rollingContact: AnimationFrameGroundContactDiagnostics | null
+  readonly rollingRootMotion: AnimationFrameRootMotionDiagnostics | null
+}
+
 export interface AnimationFrameCaptureReport {
   readonly boneCount: number
   readonly frameCount: number
   readonly tracedBones: readonly string[]
   readonly frames: readonly AnimationFrameCaptureFrame[]
   readonly deltas: readonly AnimationFrameCaptureDelta[]
+  readonly diagnostics: AnimationFrameCaptureDiagnostics
 }
 
 interface PoseSnapshot {
@@ -206,6 +245,236 @@ function maximumDelta(
   }
 }
 
+function vectorDistance3(
+  valuesA: Float32Array,
+  valuesB: Float32Array,
+  offset: number,
+) {
+  return Math.hypot(
+    valuesA[offset] - valuesB[offset],
+    valuesA[offset + 1] - valuesB[offset + 1],
+    valuesA[offset + 2] - valuesB[offset + 2],
+  )
+}
+
+function quaternionDistanceDegrees(
+  valuesA: Float32Array,
+  valuesB: Float32Array,
+  offset: number,
+) {
+  const dot = Math.abs(
+    valuesA[offset] * valuesB[offset]
+    + valuesA[offset + 1] * valuesB[offset + 1]
+    + valuesA[offset + 2] * valuesB[offset + 2]
+    + valuesA[offset + 3] * valuesB[offset + 3],
+  )
+  return THREE.MathUtils.radToDeg(
+    2 * Math.acos(Math.min(1, dot)),
+  )
+}
+
+/**
+ * Measures a one-frame excursion independently of animation speed.
+ *
+ * Half of the triangle-inequality excess is zero for a monotonic path and
+ * positive when the middle pose travels away and returns on the next frame.
+ * Authored scenario oracles decide the acceptable value; this recorder does
+ * not hide a guessed animation threshold.
+ */
+function measurePoseDetours(
+  bones: readonly THREE.Bone[],
+  poses: readonly PoseSnapshot[],
+): AnimationFramePoseDetour[] {
+  const result: AnimationFramePoseDetour[] = []
+  for (let frame = 1; frame + 1 < poses.length; frame++) {
+    const previous = poses[frame - 1]
+    const current = poses[frame]
+    const next = poses[frame + 1]
+    let translationMeters: AnimationFrameBoneDelta = {
+      bone: bones[0]?.name ?? '',
+      value: 0,
+    }
+    let rotationDegrees: AnimationFrameBoneDelta = {
+      bone: bones[0]?.name ?? '',
+      value: 0,
+    }
+    let scale: AnimationFrameBoneDelta = {
+      bone: bones[0]?.name ?? '',
+      value: 0,
+    }
+
+    for (let boneIndex = 0; boneIndex < bones.length; boneIndex++) {
+      const positionOffset = boneIndex * 3
+      const rotationOffset = boneIndex * 4
+      const translationExcursion = Math.max(
+        0,
+        (
+          vectorDistance3(previous.positions, current.positions, positionOffset)
+          + vectorDistance3(current.positions, next.positions, positionOffset)
+          - vectorDistance3(previous.positions, next.positions, positionOffset)
+        ) / 2,
+      )
+      const rotationExcursion = Math.max(
+        0,
+        (
+          quaternionDistanceDegrees(
+            previous.rotations,
+            current.rotations,
+            rotationOffset,
+          )
+          + quaternionDistanceDegrees(
+            current.rotations,
+            next.rotations,
+            rotationOffset,
+          )
+          - quaternionDistanceDegrees(
+            previous.rotations,
+            next.rotations,
+            rotationOffset,
+          )
+        ) / 2,
+      )
+      const scaleExcursion = Math.max(
+        0,
+        (
+          vectorDistance3(previous.scales, current.scales, positionOffset)
+          + vectorDistance3(current.scales, next.scales, positionOffset)
+          - vectorDistance3(previous.scales, next.scales, positionOffset)
+        ) / 2,
+      )
+      const bone = bones[boneIndex].name
+      if (translationExcursion > translationMeters.value) {
+        translationMeters = { bone, value: translationExcursion }
+      }
+      if (rotationExcursion > rotationDegrees.value) {
+        rotationDegrees = { bone, value: rotationExcursion }
+      }
+      if (scaleExcursion > scale.value) {
+        scale = { bone, value: scaleExcursion }
+      }
+    }
+
+    result.push({
+      frame,
+      translationMeters,
+      rotationDegrees,
+      scale,
+    })
+  }
+  return result
+}
+
+function numericMetadata(
+  frame: AnimationFrameCaptureFrame,
+  name: string,
+): number | null {
+  const value = frame.metadata[name]
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : null
+}
+
+function contactDiagnostics(
+  frames: readonly AnimationFrameCaptureFrame[],
+  include: (frame: AnimationFrameCaptureFrame) => boolean,
+): AnimationFrameGroundContactDiagnostics | null {
+  let frameCount = 0
+  let maximumSeparationMeters = Number.NEGATIVE_INFINITY
+  let maximumSeparationFrame = -1
+  let minimumSeparationMeters = Number.POSITIVE_INFINITY
+  let minimumSeparationFrame = -1
+  for (const frame of frames) {
+    if (!include(frame) || !frame.skinnedMeshBounds) continue
+    const capsuleBottomY = numericMetadata(frame, 'capsuleBottomY')
+    if (capsuleBottomY === null) continue
+    const separation =
+      frame.skinnedMeshBounds.min[1] - capsuleBottomY
+    frameCount++
+    if (separation > maximumSeparationMeters) {
+      maximumSeparationMeters = separation
+      maximumSeparationFrame = frame.index
+    }
+    if (separation < minimumSeparationMeters) {
+      minimumSeparationMeters = separation
+      minimumSeparationFrame = frame.index
+    }
+  }
+  return frameCount === 0
+    ? null
+    : {
+        frameCount,
+        maximumSeparationMeters,
+        maximumSeparationFrame,
+        minimumSeparationMeters,
+        minimumSeparationFrame,
+      }
+}
+
+function rollingRootMotionDiagnostics(
+  frames: readonly AnimationFrameCaptureFrame[],
+): AnimationFrameRootMotionDiagnostics | null {
+  const rollingFrames = frames.filter(
+    ({ metadata }) => metadata.locomotionAction === 'Rolling',
+  )
+  if (rollingFrames.length === 0) return null
+  const first = frames[Math.max(0, rollingFrames[0].index - 1)]
+  const last = frames[frames.length - 1]
+  const startPositionX = numericMetadata(first, 'characterPositionX')
+  const startPositionZ = numericMetadata(first, 'characterPositionZ')
+  const endPositionX = numericMetadata(last, 'characterPositionX')
+  const endPositionZ = numericMetadata(last, 'characterPositionZ')
+  const startConsumedX = numericMetadata(first, 'rootMotionConsumedX')
+  const startConsumedY = numericMetadata(first, 'rootMotionConsumedY')
+  const endConsumedX = numericMetadata(last, 'rootMotionConsumedX')
+  const endConsumedY = numericMetadata(last, 'rootMotionConsumedY')
+  if (
+    startPositionX === null
+    || startPositionZ === null
+    || endPositionX === null
+    || endPositionZ === null
+    || startConsumedX === null
+    || startConsumedY === null
+    || endConsumedX === null
+    || endConsumedY === null
+  ) {
+    return null
+  }
+  const bodyHorizontalDistanceMeters = Math.hypot(
+    endPositionX - startPositionX,
+    endPositionZ - startPositionZ,
+  )
+  const consumedHorizontalDistanceMeters = Math.hypot(
+    endConsumedX - startConsumedX,
+    endConsumedY - startConsumedY,
+  )
+  return {
+    bodyHorizontalDistanceMeters,
+    consumedHorizontalDistanceMeters,
+    absoluteDifferenceMeters: Math.abs(
+      bodyHorizontalDistanceMeters - consumedHorizontalDistanceMeters,
+    ),
+  }
+}
+
+function createDiagnostics(
+  frames: readonly AnimationFrameCaptureFrame[],
+  poses: readonly PoseSnapshot[],
+  bones: readonly THREE.Bone[],
+): AnimationFrameCaptureDiagnostics {
+  return {
+    poseDetours: measurePoseDetours(bones, poses),
+    groundedContact: contactDiagnostics(
+      frames,
+      ({ metadata }) => metadata.locomotionMode === 'Grounded',
+    ),
+    rollingContact: contactDiagnostics(
+      frames,
+      ({ metadata }) => metadata.locomotionAction === 'Rolling',
+    ),
+    rollingRootMotion: rollingRootMotionDiagnostics(frames),
+  }
+}
+
 /**
  * Bounded, opt-in pose recorder for diagnosing single-frame animation discontinuities.
  *
@@ -214,6 +483,7 @@ function maximumDelta(
  * public frame report; the complete pose copies are discarded when the capture resolves.
  */
 export class AnimationFrameCapture {
+  readonly root: THREE.Object3D
   readonly bones: readonly THREE.Bone[]
   readonly bonesByName: ReadonlyMap<string, THREE.Bone>
   readonly tracedBones: readonly string[]
@@ -223,6 +493,7 @@ export class AnimationFrameCapture {
     root: THREE.Object3D,
     tracedBones: readonly string[] = DEFAULT_TRACED_BONES,
   ) {
+    this.root = root
     this.bones = findBones(root)
     this.bonesByName = new Map(this.bones.map((bone) => [bone.name, bone]))
     this.tracedBones = [...new Set(tracedBones)]
@@ -262,6 +533,10 @@ export class AnimationFrameCapture {
         this.bonesByName,
         this.tracedBones,
       ),
+      skinnedMeshBounds: captureSkinnedMeshWorldBounds(
+        this.root,
+        new Set(this.tracedBones),
+      ),
     })
     if (pending.frames.length < pending.frameCount) return true
 
@@ -270,8 +545,7 @@ export class AnimationFrameCapture {
       fromFrame: index,
       toFrame: index + 1,
     }))
-    this.pending = null
-    pending.resolve({
+    const report: AnimationFrameCaptureReport = {
       boneCount: this.bones.length,
       frameCount: pending.frames.length,
       tracedBones: this.tracedBones.filter((name) => (
@@ -279,7 +553,14 @@ export class AnimationFrameCapture {
       )),
       frames: pending.frames,
       deltas,
-    })
+      diagnostics: createDiagnostics(
+        pending.frames,
+        pending.poses,
+        this.bones,
+      ),
+    }
+    this.pending = null
+    pending.resolve(report)
     return true
   }
 
@@ -290,4 +571,3 @@ export class AnimationFrameCapture {
     pending.reject(new Error(reason))
   }
 }
-

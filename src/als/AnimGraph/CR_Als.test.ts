@@ -647,19 +647,35 @@ describe('CR_Als pose-buffer hand IK', () => {
         .normalize()
 
       const upperPrimary = new THREE.Vector3()
-        .fromArray(definition.primaryAxis)
+        .set(
+          definition.primaryAxis[0],
+          definition.primaryAxis[2],
+          definition.primaryAxis[1],
+        )
         .applyQuaternion(upper.rotation)
         .normalize()
       const lowerPrimary = new THREE.Vector3()
-        .fromArray(definition.primaryAxis)
+        .set(
+          definition.primaryAxis[0],
+          definition.primaryAxis[2],
+          definition.primaryAxis[1],
+        )
         .applyQuaternion(lower.rotation)
         .normalize()
       const upperSecondary = new THREE.Vector3()
-        .fromArray(definition.secondaryAxis)
+        .set(
+          definition.secondaryAxis[0],
+          definition.secondaryAxis[2],
+          definition.secondaryAxis[1],
+        )
         .applyQuaternion(upper.rotation)
         .normalize()
       const lowerSecondary = new THREE.Vector3()
-        .fromArray(definition.secondaryAxis)
+        .set(
+          definition.secondaryAxis[0],
+          definition.secondaryAxis[2],
+          definition.secondaryAxis[1],
+        )
         .applyQuaternion(lower.rotation)
         .normalize()
 

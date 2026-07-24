@@ -54,7 +54,13 @@ declare global {
       locomotionAction: AlsLocomotionAction
       animRootMotionTranslationScale: number
       animRootMotionApplied: boolean
+      animRootMotionOwned: boolean
       animRootMotionBlendWeight: number
+      animRootMotionConsumedTranslation: {
+        x: number
+        y: number
+        z: number
+      }
       rollingTargetYawAngle: number
       speed: number
       direction: number

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "diagnose:animation": "node scripts/animation-pose-delta.mjs",
     "test": "vitest run",
     "check": "pnpm test && pnpm build",
     "check:e2e": "playwright test",

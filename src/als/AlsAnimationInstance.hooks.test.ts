@@ -170,6 +170,7 @@ describe('UAlsAnimationInstance live Roll hook seam', () => {
     const rootMotion = createRootMotionMovementParams()
     const montage: AlsRollingMontageBridge = {
       Montage_IsPlaying: () => false,
+      IsPlayingRootMotion: () => false,
       Montage_Play: () => 0,
       takeNotifyEvents: () =>
         events.splice(0, events.length),

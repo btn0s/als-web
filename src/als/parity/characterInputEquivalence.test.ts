@@ -347,6 +347,12 @@ describe('ALS content oracle: implemented character inputs', () => {
     expect(compactControllerSource).toContain(
       'const ragdollTick = ragdollAction.current.update',
     )
+    expect(compactControllerSource).toContain(
+      'current.desiredStance = controls.desiredStance',
+    )
+    expect(compactControllerSource).toContain(
+      'applyDesiredStance(current)',
+    )
     for (const actionName of ['walk', 'crouch', 'rotationMode']) {
       expect(compactControllerSource).toContain(
         `gamepad.${actionName} && !previousGamepad.${actionName}`,

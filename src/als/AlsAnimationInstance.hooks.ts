@@ -53,6 +53,7 @@ import {
 } from './Utility/AlsConstants'
 
 function captureMetadata(frameControls: AlsAnimationInstanceControls) {
+  const characterState = window.__alsCharacterState
   return {
     ...window.__weightTable,
     gait: frameControls.gait,
@@ -69,6 +70,26 @@ function captureMetadata(frameControls: AlsAnimationInstanceControls) {
       ? 'Grounded'
       : frameControls.locomotionMode ?? 'Invalid',
     hasInput: frameControls.hasInput ?? false,
+    ...(characterState
+      ? {
+          locomotionAction:
+            characterState.locomotionAction ?? 'None',
+          characterPositionX: characterState.position.x,
+          characterPositionY: characterState.position.y,
+          characterPositionZ: characterState.position.z,
+          capsuleBottomY: characterState.capsuleBottomY,
+          actorFeetY: characterState.actorFeet.y,
+          meshBaseOffsetY: characterState.meshBaseOffsetY,
+          rootMotionConsumedX:
+            characterState.animRootMotionConsumedTranslation.x,
+          rootMotionConsumedY:
+            characterState.animRootMotionConsumedTranslation.y,
+          rootMotionConsumedZ:
+            characterState.animRootMotionConsumedTranslation.z,
+          rootMotionApplied: characterState.animRootMotionApplied,
+          rootMotionOwned: characterState.animRootMotionOwned,
+        }
+      : {}),
   }
 }
 

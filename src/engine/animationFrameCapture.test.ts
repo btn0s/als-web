@@ -20,8 +20,10 @@ describe('AnimationFrameCapture', () => {
 
     capture.recordFrame(0, { stance: 'Standing' })
     child.position.x = 0.25
-    capture.recordFrame(1 / 60, { stance: 'Crouching', transitionFrame: 1 })
     child.rotation.z = Math.PI / 2
+    capture.recordFrame(1 / 60, { stance: 'Crouching', transitionFrame: 1 })
+    child.position.x = 0
+    child.rotation.z = 0
     capture.recordFrame(1 / 60, { stance: 'Crouching', transitionFrame: 2 })
 
     const report = await reportPromise
@@ -30,6 +32,7 @@ describe('AnimationFrameCapture', () => {
     expect(report.tracedBones).toEqual(['root', 'child'])
     expect(report.frames[0].metadata).toEqual({ stance: 'Standing' })
     expect(report.frames[1].bones.child.worldPosition).toEqual([0.25, 1, 0])
+    expect(report.frames[1].skinnedMeshBounds).toBeNull()
     expect(report.deltas[0]).toMatchObject({
       fromFrame: 0,
       toFrame: 1,
@@ -37,6 +40,14 @@ describe('AnimationFrameCapture', () => {
     })
     expect(report.deltas[1].rotationDegrees.bone).toBe('child')
     expect(report.deltas[1].rotationDegrees.value).toBeCloseTo(90)
+    expect(report.diagnostics.poseDetours[0]).toMatchObject({
+      frame: 1,
+      translationMeters: { bone: 'child', value: 0.25 },
+      rotationDegrees: { bone: 'child' },
+    })
+    expect(report.diagnostics.groundedContact).toBeNull()
+    expect(report.diagnostics.rollingContact).toBeNull()
+    expect(report.diagnostics.rollingRootMotion).toBeNull()
   })
 
   it('validates the bound, rejects overlap, and cancels pending work', async () => {

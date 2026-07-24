@@ -65,6 +65,7 @@ import {
   unrealYawDegreesToThreeRadians,
 } from '../engine/unrealCoordinateSpace'
 import {
+  applyDesiredStance,
   applyRotationYawSpeedAnimationCurve,
   createAlsCharacter,
   refreshAlsCharacter,
@@ -1319,6 +1320,8 @@ export function useAlsCharacter(
   )
   const animRootMotionVelocity =
     useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const animRootMotionConsumedTranslation =
+    useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const debugViewYawWorld = useRef(0)
   const previousStance = useRef<AlsStance>('Standing')
   const capsulesInitialized = useRef(false)
@@ -1791,11 +1794,7 @@ export function useAlsCharacter(
     current.desiredRotationMode = controls.desiredRotationMode
     current.desiredAiming =
       controls.desiredAiming || aimingWithPointer.current || gamepad.aim
-    if (current.locomotionMode === 'InAir') {
-      setStance(current, 'Standing')
-    } else if (current.locomotionMode === 'Grounded') {
-      setStance(current, current.desiredStance)
-    }
+    applyDesiredStance(current)
 
     if (controls.viewYawOverride) {
       current.viewYawAngle = debugViewYawWorld.current
@@ -1918,6 +1917,8 @@ export function useAlsCharacter(
     // refresh therefore cannot replay the same Roll displacement.
     const rollingAnimation =
       actionBridge.current?.RollingMontage.current
+    const animRootMotionOwned =
+      rollingAnimation?.IsPlayingRootMotion() ?? false
     const consumedAnimRootMotion =
       rollingAnimation?.ConsumeExtractedRootMotion(
         extractedAnimRootMotion.current,
@@ -1934,6 +1935,27 @@ export function useAlsCharacter(
         )
       : false
     if (animRootMotionApplied) {
+      setMovementVelocity(
+        current.movement,
+        animRootMotionVelocity.current,
+      )
+      animRootMotionConsumedTranslation.current.x +=
+        animRootMotionVelocity.current.x * ALS_PHYSICS_TIMESTEP
+      animRootMotionConsumedTranslation.current.y +=
+        animRootMotionVelocity.current.y * ALS_PHYSICS_TIMESTEP
+      animRootMotionConsumedTranslation.current.z +=
+        animRootMotionVelocity.current.z * ALS_PHYSICS_TIMESTEP
+    } else if (animRootMotionOwned) {
+      // ACharacter::IsPlayingRootMotion() keeps CharacterMovement out of
+      // CalcVelocity even when this fixed substep has no newly extracted
+      // animation range. The preceding range has already been applied in
+      // full, so a scheduler-only substep contributes zero horizontal motion.
+      animRootMotionVelocity.current.x = 0
+      animRootMotionVelocity.current.y = 0
+      animRootMotionVelocity.current.z =
+        current.locomotionMode === 'InAir'
+          ? actualVelocity.current.z
+          : 0
       setMovementVelocity(
         current.movement,
         animRootMotionVelocity.current,
@@ -1987,6 +2009,7 @@ export function useAlsCharacter(
       body.setGravityScale(1, true)
       if (
         !animRootMotionApplied
+        && !animRootMotionOwned
         && current.locomotionMode === 'InAir'
       ) {
         stepInAirVelocity(
@@ -1994,7 +2017,10 @@ export function useAlsCharacter(
           inputDirection.current,
           ALS_PHYSICS_TIMESTEP,
         )
-      } else if (!animRootMotionApplied) {
+      } else if (
+        !animRootMotionApplied
+        && !animRootMotionOwned
+      ) {
         stepGroundedVelocity(
           current.movement,
           inputDirection.current,
@@ -2105,8 +2131,12 @@ export function useAlsCharacter(
       animRootMotionTranslationScale:
         current.animRootMotionTranslationScale,
       animRootMotionApplied,
+      animRootMotionOwned,
       animRootMotionBlendWeight:
         consumedAnimRootMotion?.blendWeight ?? 0,
+      animRootMotionConsumedTranslation: {
+        ...animRootMotionConsumedTranslation.current,
+      },
       rollingTargetYawAngle:
         current.rollingState.TargetYawAngle,
       speed: state.speed,

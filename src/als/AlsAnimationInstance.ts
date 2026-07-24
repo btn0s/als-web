@@ -56,6 +56,7 @@ import {
 } from '../engine/poseBuffer'
 import { createRigDefinition } from '../engine/rig'
 import {
+  accumulateRootMotion,
   clearRootMotionMovementParams,
   compileAuthoredRootMotion,
   createRootMotionExtractor,
@@ -680,6 +681,8 @@ export type AlsRollingMontageNotifyEvent =
  */
 export interface AlsRollingMontageBridge {
   readonly Montage_IsPlaying: (Montage: string) => boolean
+  /** `ACharacter::IsPlayingRootMotion()` for the retained montage owner. */
+  readonly IsPlayingRootMotion: () => boolean
   readonly Montage_Play: (
     Montage: string,
     PlayRate: number,
@@ -2269,6 +2272,8 @@ export function createAlsAnimationInstance(gltf: {
   const rollingGatheredSequenceNotifies: CompiledSequenceNotify[] = []
   const extractedRollingRootMotion =
     createRootMotionMovementParams()
+  const extractedRollingRootMotionFrame =
+    createRootMotionMovementParams()
   const transitionSlotBindings: RuntimeSlotMontageBinding[] = []
   const transitionSlotCurveScratch = new Map<string, number>()
   const postLocomotionSlotBindings: RuntimeSlotMontageBinding[] = []
@@ -3464,7 +3469,15 @@ export function createAlsAnimationInstance(gltf: {
       // UAnimInstance extracts the authored transform unchanged. The
       // character applies AnimRootMotionTranslationScale after consumption.
       {},
+      extractedRollingRootMotionFrame,
+    )
+    // The browser render clock may update animation more than once before
+    // CharacterMovement's fixed step consumes it. UAnimInstance retains every
+    // extracted delta until ConsumeExtractedRootMotion(), so compose rather
+    // than overwrite those unconsumed frame ranges.
+    accumulateRootMotion(
       extractedRollingRootMotion,
+      extractedRollingRootMotionFrame,
     )
   }
 
@@ -5615,7 +5628,7 @@ export function createAlsAnimationInstance(gltf: {
     blendPoseInPlace(
       layeringReference,
       crouchReference,
-      crouchingAmount,
+      gaitAmounts.crouchingAmount,
     )
 
     locomotionResolvedGraphCurves.clear()
@@ -6383,6 +6396,8 @@ export function createAlsAnimationInstance(gltf: {
     }),
     rollingMontage: Object.freeze({
       Montage_IsPlaying: isRollingMontagePlaying,
+      IsPlayingRootMotion: () =>
+        slotMontageClock.rootMotionMontageInstance !== null,
       Montage_Play: playRollingMontage,
       takeNotifyEvents: takeRollingNotifyEvents,
       ConsumeExtractedRootMotion:
