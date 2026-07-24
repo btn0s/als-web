@@ -7,6 +7,18 @@ import type {
   AuthoredBlendSpace,
   BlendSpaceEvaluator,
 } from '../../engine/blendSpace'
+import type { CompiledWeightBlendProfile } from '../../engine/blendProfile'
+import {
+  advanceStateMachineTransitionStack,
+  createStateMachineTransitionStack,
+  resetStateMachineTransitionStack,
+  startStateMachineStandardTransition,
+  writeStateMachineStateWeights,
+} from '../../engine/stateMachineTransitionStack'
+import type {
+  StateMachineStandardTransition,
+  StateMachineTransitionStack,
+} from '../../engine/stateMachineTransitionStack'
 
 /*
  * ALS standing grounded locomotion, kept as an executable description of AB_Als_Standing.
@@ -21,11 +33,9 @@ import type {
  * - Each state evaluates the bytecode-bound normalized MultiWayBlend over four of the six
  *   synchronized cached BlendSpace players.
  * - Every cached player evaluates the authored topology from blend-spaces.json.
- *
- * HYPOTHESIS:
- * - UE can keep multiple interrupted transitions alive. The owned two-state clock deliberately
- *   waits for the active authored blend to complete until that multi-transition propagation is
- *   independently recovered.
+ * - The Movement States adapter uses the owned UE transition stack, including interrupted
+ *   standard blends, reversal duration scaling, scalar state relevance, and per-bone
+ *   MoveDirectionChange propagation.
  */
 
 export const ALS_GAITS = ['Walking', 'Running', 'Sprinting'] as const
@@ -432,6 +442,28 @@ Readonly<Record<AlsHipsDirection, AlsGroundedDirectionStateDefinition>> = {
   },
 }
 
+export const ALS_GROUNDED_DIRECTION_STATE_ORDER = [
+  'Forward',
+  'Backward',
+  'RightForward',
+  'RightBackward',
+  'LeftForward',
+  'LeftBackward',
+] as const satisfies readonly AlsHipsDirection[]
+
+export const ALS_GROUNDED_DIRECTION_MACHINE = {
+  nodeIndex: 201,
+  stateMachineIndexInClass: 0,
+  machineName: 'Movement States',
+  initialState: 'Forward',
+  maxTransitionsPerFrame: 3,
+  maxTransitionRequests: 32,
+  skipFirstUpdateTransition: true,
+  reinitializeOnBecomingRelevant: true,
+  createNotifyMetadata: true,
+  allowConduitEntryStates: false,
+} as const
+
 export const ALS_GROUNDED_DIRECTION_PLAYER = {
   syncGroupName: 'Movement',
   syncGroupRole: 'CanBeLeader',
@@ -655,8 +687,9 @@ export interface AlsGroundedDirectionStateWeights {
 }
 
 /**
- * Exact steady-state selection. Transition-time weights belong to the authored state machine and
- * its per-bone MoveDirectionChange blend profile; they are intentionally not approximated here.
+ * One-hot convenience view for a settled state. Transition-time callers use
+ * `AlsGroundedDirectionRuntime.stateWeights`, whose scalar recurrence is owned by the generic UE
+ * transition stack.
  */
 export function selectGroundedDirectionState(
   hipsDirection: AlsHipsDirection,
@@ -678,6 +711,255 @@ export function authoredDirectionTransitions(
   return ALS_GROUNDED_DIRECTION_TRANSITIONS.filter(
     (transition) => transition.from === from && transition.to === to,
   )
+}
+
+export interface AlsGroundedDirectionPoseWeights {
+  Forward: number
+  Backward: number
+  RightForward: number
+  RightBackward: number
+  LeftForward: number
+  LeftBackward: number
+}
+
+export function createAlsGroundedDirectionPoseWeights():
+AlsGroundedDirectionPoseWeights {
+  return {
+    Forward: 0,
+    Backward: 0,
+    RightForward: 0,
+    RightBackward: 0,
+    LeftForward: 0,
+    LeftBackward: 0,
+  }
+}
+
+export type AlsGroundedDirectionActiveTransition =
+  StateMachineStandardTransition<AlsHipsDirection>
+
+export interface AlsGroundedDirectionRuntime {
+  relevant: boolean
+  /** Oldest retained pose source in UE's interrupted-transition stack. */
+  readonly baseState: AlsHipsDirection
+  readonly currentState: AlsHipsDirection
+  readonly transitionStack: StateMachineTransitionStack<AlsHipsDirection>
+  /** Oldest-to-newest nested standard-blend plan. */
+  readonly activeTransitions:
+    readonly AlsGroundedDirectionActiveTransition[]
+  /** Scalar GetInstanceStateWeight() values; per-bone pose weights live on each transition. */
+  readonly stateWeights: AlsGroundedDirectionPoseWeights
+  readonly stateWeightBuffer: Float32Array
+  readonly moveDirectionChangeBlendProfile:
+    CompiledWeightBlendProfile | null
+  transitionsTakenThisFrame: number
+  lastSetHipsDirection: AlsHipsDirection | null
+  lastStartedTransition: AlsGroundedDirectionTransition | null
+  pivotActivatedThisFrame: boolean
+}
+
+export interface AlsGroundedDirectionRuntimeInput {
+  readonly relevant: boolean
+  readonly movementDirection: AlsMovementDirection
+  readonly hipsDirectionLockAmount: number
+  readonly feetCrossingAmount: number
+}
+
+export type AlsSetHipsDirection = (
+  hipsDirection: AlsHipsDirection,
+) => void
+
+export type AlsGroundedDirectionTransitionStarted = (
+  transition: AlsGroundedDirectionTransition,
+) => void
+
+/**
+ * Creates AB_Als_Standing node 201 / Movement States.
+ *
+ * The no-argument form exists for scalar state-rule tests. Live pose evaluation supplies the
+ * SK_Als rig bone count and compiled MoveDirectionChange profile so every retained transition
+ * carries the authored WeightFactor masks.
+ */
+export function createAlsGroundedDirectionRuntime(
+  boneCount = 1,
+  moveDirectionChangeBlendProfile:
+    CompiledWeightBlendProfile | null = null,
+): AlsGroundedDirectionRuntime {
+  const transitionStack = createStateMachineTransitionStack(
+    ALS_GROUNDED_DIRECTION_MACHINE.initialState,
+    boneCount,
+    ALS_GROUNDED_DIRECTION_MACHINE.maxTransitionsPerFrame + 1,
+  )
+  const stateWeights = createAlsGroundedDirectionPoseWeights()
+  stateWeights.Forward = 1
+
+  return {
+    relevant: false,
+    get baseState() {
+      return transitionStack.activeTransitions[0]?.previousState
+        ?? transitionStack.currentState
+    },
+    get currentState() {
+      return transitionStack.currentState
+    },
+    transitionStack,
+    activeTransitions: transitionStack.activeTransitions,
+    stateWeights,
+    stateWeightBuffer: new Float32Array(
+      ALS_GROUNDED_DIRECTION_STATE_ORDER.length,
+    ),
+    moveDirectionChangeBlendProfile,
+    transitionsTakenThisFrame: 0,
+    lastSetHipsDirection: null,
+    lastStartedTransition: null,
+    pivotActivatedThisFrame: false,
+  }
+}
+
+function refreshGroundedDirectionStateWeights(
+  runtime: AlsGroundedDirectionRuntime,
+) {
+  writeStateMachineStateWeights(
+    runtime.transitionStack,
+    ALS_GROUNDED_DIRECTION_STATE_ORDER,
+    runtime.stateWeightBuffer,
+  )
+  for (
+    let index = 0;
+    index < ALS_GROUNDED_DIRECTION_STATE_ORDER.length;
+    index++
+  ) {
+    runtime.stateWeights[
+      ALS_GROUNDED_DIRECTION_STATE_ORDER[index]
+    ] = runtime.stateWeightBuffer[index]
+  }
+}
+
+function resetGroundedDirectionRuntimeState(
+  runtime: AlsGroundedDirectionRuntime,
+) {
+  resetStateMachineTransitionStack(
+    runtime.transitionStack,
+    ALS_GROUNDED_DIRECTION_MACHINE.initialState,
+  )
+  refreshGroundedDirectionStateWeights(runtime)
+  runtime.transitionsTakenThisFrame = 0
+  runtime.lastSetHipsDirection = null
+  runtime.lastStartedTransition = null
+  runtime.pivotActivatedThisFrame = false
+}
+
+export function resetAlsGroundedDirectionRuntime(
+  runtime: AlsGroundedDirectionRuntime,
+): AlsGroundedDirectionRuntime {
+  runtime.relevant = false
+  resetGroundedDirectionRuntimeState(runtime)
+  return runtime
+}
+
+function emitSetHipsDirection(
+  runtime: AlsGroundedDirectionRuntime,
+  hipsDirection: AlsHipsDirection,
+  setHipsDirection: AlsSetHipsDirection | undefined,
+) {
+  runtime.lastSetHipsDirection = hipsDirection
+  setHipsDirection?.(hipsDirection)
+}
+
+function startGroundedDirectionTransition(
+  runtime: AlsGroundedDirectionRuntime,
+  transition: AlsGroundedDirectionTransition,
+  setHipsDirection: AlsSetHipsDirection | undefined,
+  transitionStarted:
+    AlsGroundedDirectionTransitionStarted | undefined,
+) {
+  startStateMachineStandardTransition(runtime.transitionStack, {
+    from: transition.from,
+    to: transition.to,
+    duration: transition.duration,
+    blendOption: transition.blendOption,
+    blendProfile: runtime.moveDirectionChangeBlendProfile,
+  })
+  runtime.transitionsTakenThisFrame++
+  runtime.lastStartedTransition = transition
+  runtime.pivotActivatedThisFrame ||= transition.activatePivot
+  refreshGroundedDirectionStateWeights(runtime)
+
+  // Each state authors SetHipsDirection() at OnBecomeRelevant. ActivatePivot is a transition
+  // start notify, so the transition callback observes it on the same update that pushed the
+  // FAnimationActiveTransitionEntry.
+  emitSetHipsDirection(runtime, transition.to, setHipsDirection)
+  transitionStarted?.(transition)
+}
+
+/**
+ * Updates AB_Als_Standing's six-state Movement States machine.
+ *
+ * A rising relevance edge reinitializes Forward, invokes its OnBecomeRelevant
+ * SetHipsDirection(), and consumes bSkipFirstUpdateTransition. Later updates advance every
+ * retained transition oldest-to-newest, then follow at most three authored outgoing edges.
+ */
+export function refreshAlsGroundedDirectionRuntime(
+  runtime: AlsGroundedDirectionRuntime,
+  input: AlsGroundedDirectionRuntimeInput,
+  deltaTime: number,
+  setHipsDirection?: AlsSetHipsDirection,
+  transitionStarted?: AlsGroundedDirectionTransitionStarted,
+): AlsGroundedDirectionRuntime {
+  if (!Number.isFinite(deltaTime) || deltaTime < 0) {
+    throw new Error(
+      'Standing Movement States delta time must be finite and non-negative',
+    )
+  }
+
+  runtime.transitionsTakenThisFrame = 0
+  runtime.lastSetHipsDirection = null
+  runtime.lastStartedTransition = null
+  runtime.pivotActivatedThisFrame = false
+
+  if (!input.relevant) {
+    runtime.relevant = false
+    return runtime
+  }
+
+  if (!runtime.relevant) {
+    resetGroundedDirectionRuntimeState(runtime)
+    runtime.relevant = true
+    emitSetHipsDirection(
+      runtime,
+      ALS_GROUNDED_DIRECTION_MACHINE.initialState,
+      setHipsDirection,
+    )
+    return runtime
+  }
+
+  advanceStateMachineTransitionStack(
+    runtime.transitionStack,
+    deltaTime,
+  )
+  refreshGroundedDirectionStateWeights(runtime)
+
+  while (
+    runtime.transitionsTakenThisFrame
+    < ALS_GROUNDED_DIRECTION_MACHINE.maxTransitionsPerFrame
+  ) {
+    const transition = selectGroundedDirectionTransition({
+      hipsDirection: runtime.currentState,
+      movementDirection: input.movementDirection,
+      hipsDirectionLockAmount: input.hipsDirectionLockAmount,
+      feetCrossingAmount: input.feetCrossingAmount,
+      stateWeight: runtime.stateWeights[runtime.currentState],
+    })
+    if (!transition) break
+
+    startGroundedDirectionTransition(
+      runtime,
+      transition,
+      setHipsDirection,
+      transitionStarted,
+    )
+  }
+
+  return runtime
 }
 
 export interface AlsGroundedVelocityBlend {

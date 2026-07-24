@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest'
 import type { AuthoredBlendSpace } from '../../engine/blendSpace'
 import {
   ALS_ANIMATED_STANDING_SPEEDS_CM_PER_SECOND,
+  ALS_GROUNDED_DIRECTION_MACHINE,
   ALS_GROUNDED_DIRECTION_MULTI_WAY_BLEND_TABLE,
   ALS_GROUNDED_DIRECTION_PLAYER,
   ALS_GROUNDED_DIRECTION_SELECTION_RULE_STATUS,
+  ALS_GROUNDED_DIRECTION_STATE_ORDER,
   ALS_GROUNDED_DIRECTION_STATES,
   ALS_GROUNDED_DIRECTION_TRANSITIONS,
   ALS_HIPS_DIRECTIONS,
@@ -15,10 +17,13 @@ import {
   ALS_NORMAL_STANDING_GAMEPLAY_SPEEDS_CM_PER_SECOND,
   authoredDirectionTransitions,
   calculateMovementDirection,
+  createAlsGroundedDirectionRuntime,
   createGroundedLocomotionGraph,
   evaluateGroundedLocomotionGraph,
+  refreshAlsGroundedDirectionRuntime,
   refreshMovementDirection,
   refreshPoseGait,
+  resetAlsGroundedDirectionRuntime,
   refreshStandingMovement,
   sampleStrideBlendAmountRun,
   sampleStrideBlendAmountWalk,
@@ -52,6 +57,18 @@ interface ExtractedMovementSettings {
   }
 }
 
+interface ExtractedSkeletonProfiles {
+  readonly profiles: {
+    readonly MoveDirectionChange: {
+      readonly mode: 'WeightFactor'
+      readonly entries: readonly {
+        readonly bone: string
+        readonly blendScale: number
+      }[]
+    }
+  }
+}
+
 interface AbpTransition {
   readonly PreviousStateName: string
   readonly NextStateName: string
@@ -81,6 +98,13 @@ interface AbpGraph {
         readonly compiledIndex: number | null
         readonly type: string
         readonly parameters: {
+          readonly StateMachineIndexInClass?: number
+          readonly MaxTransitionsPerFrame?: number
+          readonly MaxTransitionsRequests?: number
+          readonly bSkipFirstUpdateTransition?: boolean
+          readonly bReinitializeOnBecomingRelevant?: boolean
+          readonly bCreateNotifyMetaData?: boolean
+          readonly bAllowConduitEntryStates?: boolean
           readonly GroupName?: string
           readonly GroupRole?: string
           readonly Method?: string
@@ -116,6 +140,11 @@ const movementSettings = JSON.parse(readFileSync(
   new URL('../../../scripts/extract-als/movement-settings.json', import.meta.url),
   'utf8',
 )) as ExtractedMovementSettings
+
+const skeletonProfiles = JSON.parse(readFileSync(
+  new URL('../../../scripts/extract-als/skeleton-profiles.json', import.meta.url),
+  'utf8',
+)) as ExtractedSkeletonProfiles
 
 const abpGraph = JSON.parse(readFileSync(
   new URL('../../../scripts/extract-als/abp-graph.json', import.meta.url),
@@ -777,5 +806,293 @@ describe('VERIFIED ALS content-oracle graph', () => {
       expect(weights.every((entry) => entry.playRate === standing.playRate))
         .toBe(true)
     }
+  })
+})
+
+describe('VERIFIED AB_Als_Standing Movement States runtime', () => {
+  const forward = {
+    relevant: true,
+    movementDirection: 'Forward',
+    hipsDirectionLockAmount: 0,
+    feetCrossingAmount: 1,
+  } as const
+  const authoredProfile = skeletonProfiles.profiles.MoveDirectionChange
+  const moveDirectionChangeProfile = {
+    mode: authoredProfile.mode,
+    blendScales: new Float32Array([
+      1,
+      ...authoredProfile.entries.map((entry) => entry.blendScale),
+    ]),
+  } as const
+
+  it('matches node 201 settings and serialized state order', () => {
+    const node = abpGraph.assets.AB_Als_Standing.nodes.find(
+      (candidate) =>
+        candidate.type === 'FAnimNode_StateMachine'
+        && candidate.parameters.StateMachineIndexInClass === 0,
+    )
+    const machine = abpGraph.assets.AB_Als_Standing.stateMachines.find(
+      (candidate) => candidate.MachineName === 'Movement States',
+    )
+    if (!node || !machine) {
+      throw new Error('Missing AB_Als_Standing Movement States oracle')
+    }
+
+    expect(ALS_GROUNDED_DIRECTION_MACHINE).toEqual({
+      nodeIndex: node.compiledIndex,
+      stateMachineIndexInClass: node.parameters.StateMachineIndexInClass,
+      machineName: machine.MachineName,
+      initialState: hipsDirectionFromStateName(
+        machine.States[machine.InitialState].StateName,
+      ),
+      maxTransitionsPerFrame: node.parameters.MaxTransitionsPerFrame,
+      maxTransitionRequests: node.parameters.MaxTransitionsRequests,
+      skipFirstUpdateTransition:
+        node.parameters.bSkipFirstUpdateTransition,
+      reinitializeOnBecomingRelevant:
+        node.parameters.bReinitializeOnBecomingRelevant,
+      createNotifyMetadata: node.parameters.bCreateNotifyMetaData,
+      allowConduitEntryStates: node.parameters.bAllowConduitEntryStates,
+    })
+    expect(ALS_GROUNDED_DIRECTION_STATE_ORDER).toEqual(
+      machine.States.map((state) => hipsDirectionFromStateName(
+        state.StateName,
+      )),
+    )
+  })
+
+  it('reinitializes Forward, calls SetHipsDirection, and skips the first transition update', () => {
+    const runtime = createAlsGroundedDirectionRuntime()
+    const entered: AlsHipsDirection[] = []
+    const started: number[] = []
+    const left = {
+      ...forward,
+      movementDirection: 'Left',
+    } as const
+
+    refreshAlsGroundedDirectionRuntime(
+      runtime,
+      left,
+      1 / 60,
+      (direction) => entered.push(direction),
+      (transition) => started.push(transition.transitionIndex),
+    )
+    expect(runtime).toMatchObject({
+      relevant: true,
+      baseState: 'Forward',
+      currentState: 'Forward',
+      transitionsTakenThisFrame: 0,
+      lastSetHipsDirection: 'Forward',
+      lastStartedTransition: null,
+      pivotActivatedThisFrame: false,
+    })
+    expect(runtime.activeTransitions).toHaveLength(0)
+    expect(entered).toEqual(['Forward'])
+    expect(started).toEqual([])
+
+    refreshAlsGroundedDirectionRuntime(
+      runtime,
+      left,
+      1 / 60,
+      (direction) => entered.push(direction),
+      (transition) => started.push(transition.transitionIndex),
+    )
+    expect(runtime.currentState).toBe('LeftForward')
+    expect(runtime.activeTransitions[0]).toMatchObject({
+      previousState: 'Forward',
+      nextState: 'LeftForward',
+      crossfadeDuration: 0.7,
+      blendOption: 'Cubic',
+      usesIntermediatePose: false,
+    })
+    expect(entered).toEqual(['Forward', 'LeftForward'])
+    expect(started).toEqual([1])
+  })
+
+  it('propagates the authored MoveDirectionChange profile and ActivatePivot start notify', () => {
+    const runtime = createAlsGroundedDirectionRuntime(
+      moveDirectionChangeProfile.blendScales.length,
+      moveDirectionChangeProfile,
+    )
+    const started: number[] = []
+    refreshAlsGroundedDirectionRuntime(runtime, forward, 0)
+    refreshAlsGroundedDirectionRuntime(
+      runtime,
+      {
+        ...forward,
+        movementDirection: 'Backward',
+      },
+      0,
+      undefined,
+      (transition) => started.push(transition.transitionIndex),
+    )
+
+    const active = runtime.activeTransitions[0]
+    expect(runtime.lastStartedTransition).toMatchObject({
+      transitionIndex: 2,
+      duration: 0.5,
+      activatePivot: true,
+    })
+    expect(runtime.pivotActivatedThisFrame).toBe(true)
+    expect(started).toEqual([2])
+    expect(active.blendProfile).toBe(moveDirectionChangeProfile)
+
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Backward',
+    }, 0.25)
+    expect(active).toMatchObject({
+      linearAlpha: 0.5,
+      alpha: 0.5,
+    })
+    expect(active.previousPoseMask[0]).toBe(0.5)
+    expect(active.nextPoseMask[0]).toBe(0.5)
+    expect(active.previousPoseMask[1]).toBeCloseTo(0.2, 7)
+    expect(active.nextPoseMask[1]).toBeCloseTo(0.8, 7)
+    expect(runtime.stateWeights).toMatchObject({
+      Forward: 0.5,
+      Backward: 0.5,
+    })
+  })
+
+  it('rescales an interrupted reversal from the existing target weight', () => {
+    const runtime = createAlsGroundedDirectionRuntime()
+    refreshAlsGroundedDirectionRuntime(runtime, forward, 0)
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Backward',
+    }, 0)
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Backward',
+    }, 0.25)
+    refreshAlsGroundedDirectionRuntime(runtime, forward, 0)
+
+    expect(runtime.activeTransitions).toHaveLength(2)
+    expect(runtime.activeTransitions[1]).toMatchObject({
+      previousState: 'Backward',
+      nextState: 'Forward',
+      crossfadeDuration: 0.25,
+      usesIntermediatePose: true,
+    })
+    expect(runtime.stateWeights.Forward).toBe(0.5)
+    expect(runtime.stateWeights.Backward).toBe(0.5)
+
+    refreshAlsGroundedDirectionRuntime(runtime, forward, 0.125)
+    expect(runtime.activeTransitions[1].alpha).toBe(0.5)
+    expect(runtime.stateWeights.Forward).toBeCloseTo(0.578125, 7)
+    expect(runtime.stateWeights.Backward).toBeCloseTo(0.421875, 7)
+
+    refreshAlsGroundedDirectionRuntime(runtime, forward, 0.125)
+    expect(runtime.activeTransitions).toHaveLength(0)
+    expect(runtime.currentState).toBe('Forward')
+    expect(runtime.stateWeights.Forward).toBe(1)
+  })
+
+  it('retains interrupted sources and removes only completed older transitions', () => {
+    const runtime = createAlsGroundedDirectionRuntime()
+    refreshAlsGroundedDirectionRuntime(runtime, forward, 0)
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Right',
+    }, 0)
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Left',
+    }, 0.35)
+
+    expect(runtime.currentState).toBe('LeftBackward')
+    expect(runtime.activeTransitions.map((transition) => ({
+      from: transition.previousState,
+      to: transition.nextState,
+      alpha: transition.alpha,
+      intermediate: transition.usesIntermediatePose,
+    }))).toEqual([
+      {
+        from: 'Forward',
+        to: 'RightForward',
+        alpha: 0.5,
+        intermediate: false,
+      },
+      {
+        from: 'RightForward',
+        to: 'LeftBackward',
+        alpha: 0,
+        intermediate: true,
+      },
+    ])
+    expect(runtime.pivotActivatedThisFrame).toBe(true)
+
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Left',
+    }, 0.35)
+    expect(runtime.activeTransitions).toHaveLength(1)
+    expect(runtime.activeTransitions[0]).toMatchObject({
+      previousState: 'RightForward',
+      nextState: 'LeftBackward',
+      usesIntermediatePose: false,
+    })
+    expect(runtime.activeTransitions[0].alpha).toBeCloseTo(0.784, 7)
+    expect(runtime.baseState).toBe('RightForward')
+  })
+
+  it('uses authored QuadraticInOut neutral transitions and resets after relevance loss', () => {
+    const runtime = createAlsGroundedDirectionRuntime()
+    refreshAlsGroundedDirectionRuntime(runtime, forward, 0)
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Backward',
+    }, 0)
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Backward',
+    }, 0.5)
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Right',
+    }, 0)
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Right',
+    }, 0.7)
+    expect(runtime.currentState).toBe('RightBackward')
+    expect(runtime.activeTransitions).toHaveLength(0)
+
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Right',
+      feetCrossingAmount: 0,
+    }, 0)
+    expect(runtime.lastStartedTransition).toMatchObject({
+      transitionIndex: 12,
+      rule: 'NeutralRightBackward',
+      duration: 0.75,
+      blendOption: 'QuadraticInOut',
+    })
+    expect(runtime.activeTransitions[0]).toMatchObject({
+      crossfadeDuration: 0.75,
+      blendOption: 'QuadraticInOut',
+    })
+
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      relevant: false,
+    }, 0)
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Left',
+    }, 0)
+    expect(runtime.currentState).toBe('Forward')
+    expect(runtime.activeTransitions).toHaveLength(0)
+    expect(runtime.lastSetHipsDirection).toBe('Forward')
+
+    expect(resetAlsGroundedDirectionRuntime(runtime)).toBe(runtime)
+    expect(runtime.relevant).toBe(false)
+    expect(() => refreshAlsGroundedDirectionRuntime(
+      runtime,
+      forward,
+      -0.01,
+    )).toThrow('delta time must be finite and non-negative')
   })
 })
