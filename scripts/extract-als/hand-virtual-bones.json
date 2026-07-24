@@ -1,0 +1,686 @@
+{
+  "schemaVersion": 1,
+  "coordinateSpace": {
+    "name": "Unreal",
+    "distanceUnit": "centimeter",
+    "upAxis": "+Z",
+    "quaternionOrder": "xyzw",
+    "quaternionSign": "canonicalized to w >= 0"
+  },
+  "sourceAssets": [
+    {
+      "path": "Content/ALS/Character/SK_Als.uasset",
+      "sha256": "0e9e2ef8429af6a0b32856e5f98386d06a237cf3001006bca50a21275c10a4dd",
+      "role": "physical reference skeleton and virtual-bone definitions"
+    },
+    {
+      "path": "Content/ALSExtras/Editor/B_Als_SkeletonAssetActions.uasset",
+      "sha256": "c749a4735996ecbc62488f37befc766fa5a466a55246e3855d21a88fda2a7b9a",
+      "role": "independent authored virtual-bone setup"
+    },
+    {
+      "path": "Content/ALS/Character/AnimationInstances/AB_Als_Layering.uasset",
+      "sha256": "00f67cf8b83ab3a5ea138c1836884fdb9ee789fc97256c485394075b7075fbcf",
+      "role": "node 92 branch filters and generated per-bone ownership"
+    },
+    {
+      "path": "Content/ALS/Character/CR_Als.uasset",
+      "sha256": "23995a05cfcbf90294eaf4bdd48d2ad4519532a2dd695c670332499a478becb7",
+      "role": "hand-IK target selection and two-bone IK graph"
+    },
+    {
+      "path": "Content/ALS/Character/B_Als_Character.uasset",
+      "sha256": "3b85c6dca313c4925c93c3a5f0fbae9faa059cb1341ec80d68fffccf3254fb90",
+      "role": "overlay-object attachment selection and rules"
+    },
+    {
+      "path": "Content/ALS/Animations/Overlays/Rifle/A_Als_Rifle_Poses.uasset",
+      "sha256": "41c0b28a605befc629db9f44b8d1c4191d53c1b5ed62bb7499aeb4084473f5b2",
+      "role": "non-static right-hand-to-gun transform samples"
+    },
+    {
+      "path": "Content/ALS/Animations/Overlays/Rifle/A_Als_Rifle_Run_Arms.uasset",
+      "sha256": "f39abdd93485e9a60af8dfd41a57f34197f5b579ade1c13ad572d9911b73e0d7",
+      "role": "moving arms-only ownership sentinel"
+    },
+    {
+      "path": "Content/ALS/Animations/Overlays/Rifle/A_Als_Rifle_Sprint_Arms.uasset",
+      "sha256": "c9b07cfeabfff6fe40d98b31fd2ea267c0b23210c4696806e0582ffd32b7392e",
+      "role": "moving arms-only ownership sentinel"
+    },
+    {
+      "path": "Content/ALS/Animations/Overlays/Rifle/A_Als_Rifle_Sprint_Impulse_Arms.uasset",
+      "sha256": "fda47dfb41390aab19c3ef0eb699e4d540c36115ffb23fa6cd566f89eb5ba726",
+      "role": "moving arms-only ownership sentinel"
+    }
+  ],
+  "compactPose": {
+    "physicalBoneCount": 68,
+    "virtualBoneCount": 11,
+    "virtualBones": [
+      {
+        "index": 68,
+        "name": "VB foot_root",
+        "source": "root",
+        "target": "root"
+      },
+      {
+        "index": 69,
+        "name": "VB foot_l",
+        "source": "VB foot_root",
+        "target": "foot_l"
+      },
+      {
+        "index": 70,
+        "name": "VB foot_r",
+        "source": "VB foot_root",
+        "target": "foot_r"
+      },
+      {
+        "index": 71,
+        "name": "VB hand_l_to_hand_r",
+        "source": "hand_l",
+        "target": "hand_r"
+      },
+      {
+        "index": 72,
+        "name": "VB hand_r",
+        "source": "VB hand_l_to_hand_r",
+        "target": "hand_r"
+      },
+      {
+        "index": 73,
+        "name": "VB hand_l_to_ik_hand_gun",
+        "source": "hand_l",
+        "target": "ik_hand_gun"
+      },
+      {
+        "index": 74,
+        "name": "VB ik_hand_r",
+        "source": "VB hand_l_to_ik_hand_gun",
+        "target": "hand_r"
+      },
+      {
+        "index": 75,
+        "name": "VB hand_r_to_hand_r",
+        "source": "hand_r",
+        "target": "hand_r"
+      },
+      {
+        "index": 76,
+        "name": "VB hand_l",
+        "source": "VB hand_r_to_hand_r",
+        "target": "hand_l"
+      },
+      {
+        "index": 77,
+        "name": "VB hand_r_to_ik_hand_gun",
+        "source": "hand_r",
+        "target": "ik_hand_gun"
+      },
+      {
+        "index": 78,
+        "name": "VB ik_hand_l",
+        "source": "VB hand_r_to_ik_hand_gun",
+        "target": "hand_l"
+      }
+    ],
+    "evaluation": {
+      "localMatrix": "inverse(sourceComponentMatrix) * targetComponentMatrix",
+      "componentMatrix": "sourceComponentMatrix * localMatrix"
+    }
+  },
+  "referencePose": {
+    "physicalTargets": [
+      {
+        "name": "hand_l",
+        "parent": "lowerarm_l",
+        "component": {
+          "translation": [
+            56.645980402,
+            -0.335466309,
+            111.679704964
+          ],
+          "rotation": [
+            0.678794986,
+            0.389136136,
+            -0.069540762,
+            0.618849466
+          ],
+          "scale": [
+            0.999999752,
+            1.000000315,
+            0.999999913
+          ]
+        }
+      },
+      {
+        "name": "hand_r",
+        "parent": "lowerarm_r",
+        "component": {
+          "translation": [
+            -56.646092465,
+            -0.335411308,
+            111.679654137
+          ],
+          "rotation": [
+            -0.618849684,
+            -0.069541154,
+            -0.389136172,
+            0.678794631
+          ],
+          "scale": [
+            1.000000004,
+            1.000000025,
+            0.999999951
+          ]
+        }
+      },
+      {
+        "name": "ik_hand_gun",
+        "parent": "ik_hand_root",
+        "component": {
+          "translation": [
+            -56.6461,
+            -0.33541176,
+            111.67966
+          ],
+          "rotation": [
+            -0.618849704,
+            -0.069541134,
+            -0.389136172,
+            0.678794604
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        }
+      }
+    ],
+    "handVirtualBones": [
+      {
+        "name": "VB hand_l_to_hand_r",
+        "local": {
+          "translation": [
+            -77.885383849,
+            -69.601895728,
+            -43.869615084
+          ],
+          "rotation": [
+            0.687474243,
+            0.614357942,
+            0.387225437,
+            0.000000404
+          ],
+          "scale": [
+            0.999999753,
+            1.000000199,
+            1.000000048
+          ]
+        }
+      },
+      {
+        "name": "VB hand_r",
+        "local": {
+          "translation": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        }
+      },
+      {
+        "name": "VB hand_l_to_ik_hand_gun",
+        "local": {
+          "translation": [
+            -77.885392607,
+            -69.60189578,
+            -43.869618913
+          ],
+          "rotation": [
+            0.687474238,
+            0.614357941,
+            0.387225464,
+            0.00000044
+          ],
+          "scale": [
+            0.999999749,
+            1.000000174,
+            1.000000097
+          ]
+        }
+      },
+      {
+        "name": "VB ik_hand_r",
+        "local": {
+          "translation": [
+            0.000001603,
+            0.000009206,
+            0.000002007
+          ],
+          "rotation": [
+            0.000000045,
+            0.000000013,
+            0.000000009,
+            1
+          ],
+          "scale": [
+            1.000000004,
+            1.000000025,
+            0.999999951
+          ]
+        }
+      },
+      {
+        "name": "VB hand_r_to_hand_r",
+        "local": {
+          "translation": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        }
+      },
+      {
+        "name": "VB hand_l",
+        "local": {
+          "translation": [
+            77.88542617,
+            69.601868857,
+            43.869522338
+          ],
+          "rotation": [
+            -0.687474258,
+            -0.614357945,
+            -0.387225347,
+            0.000000356
+          ],
+          "scale": [
+            0.999999768,
+            1.000000325,
+            0.999999907
+          ]
+        }
+      },
+      {
+        "name": "VB hand_r_to_ik_hand_gun",
+        "local": {
+          "translation": [
+            -0.000001603,
+            -0.000009206,
+            -0.000002007
+          ],
+          "rotation": [
+            -0.000000045,
+            -0.000000013,
+            -0.000000009,
+            1
+          ],
+          "scale": [
+            0.999999996,
+            0.999999975,
+            1.000000049
+          ]
+        }
+      },
+      {
+        "name": "VB ik_hand_l",
+        "local": {
+          "translation": [
+            77.885425578,
+            69.601874395,
+            43.869522963
+          ],
+          "rotation": [
+            -0.687474257,
+            -0.614357945,
+            -0.387225354,
+            0.000000416
+          ],
+          "scale": [
+            0.999999752,
+            1.000000315,
+            0.999999913
+          ]
+        }
+      }
+    ]
+  },
+  "layeringNode92": {
+    "asset": "AB_Als_Layering",
+    "compiledIndex": 92,
+    "property": "AnimGraphNode_LayeredBoneBlend",
+    "basePose": "previous node 60 result",
+    "sourcePose": "Overlay",
+    "meshSpaceRotationBlend": false,
+    "meshSpaceScaleBlend": false,
+    "curveBlendMode": "Override",
+    "layers": [
+      {
+        "index": 0,
+        "runtimeWeightProperty": "LayeringState.HandLeftBlendAmount",
+        "curve": "LayerHandLeft",
+        "branchFilters": [
+          "index_01_l",
+          "middle_01_l",
+          "ring_01_l",
+          "pinky_01_l",
+          "thumb_01_l",
+          "VB hand_l_to_hand_r",
+          "VB hand_l_to_ik_hand_gun"
+        ],
+        "selectedCompactPoseIndices": [
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          71,
+          72,
+          73,
+          74
+        ]
+      },
+      {
+        "index": 1,
+        "runtimeWeightProperty": "LayeringState.HandRightBlendAmount",
+        "curve": "LayerHandRight",
+        "branchFilters": [
+          "index_01_r",
+          "middle_01_r",
+          "ring_01_r",
+          "pinky_01_r",
+          "thumb_01_r",
+          "VB hand_r_to_hand_r",
+          "VB hand_r_to_ik_hand_gun"
+        ],
+        "selectedCompactPoseIndices": [
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          75,
+          76,
+          77,
+          78
+        ]
+      }
+    ],
+    "physicalIkBonesRemainBase": [
+      {
+        "index": 64,
+        "name": "ik_hand_root",
+        "sourceIndex": 0,
+        "blendWeight": 0
+      },
+      {
+        "index": 65,
+        "name": "ik_hand_gun",
+        "sourceIndex": 0,
+        "blendWeight": 0
+      },
+      {
+        "index": 66,
+        "name": "ik_hand_l",
+        "sourceIndex": 0,
+        "blendWeight": 0
+      },
+      {
+        "index": 67,
+        "name": "ik_hand_r",
+        "sourceIndex": 0,
+        "blendWeight": 0
+      }
+    ]
+  },
+  "rifleAttachment": {
+    "component": "OverlaySkeletalMesh",
+    "mesh": "SKM_Als_Rifle",
+    "useGunBoneForOverlayObjectsDefault": true,
+    "useLeftGunBone": false,
+    "target": "VB hand_r_to_ik_hand_gun",
+    "relativeTransform": {
+      "translation": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "attachmentRules": {
+      "location": "SnapToTarget",
+      "rotation": "SnapToTarget",
+      "scale": "SnapToTarget",
+      "weldSimulatedBodies": true
+    },
+    "fallbackSocket": {
+      "name": "Rifle",
+      "bone": "hand_r",
+      "translation": [
+        -10.14707,
+        5.234151,
+        -0.669373
+      ],
+      "rotationPitchYawRollDegrees": [
+        1.14474,
+        78.18995,
+        3.937074
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "controlRigHandIk": {
+    "useHandIkBonesDefault": true,
+    "targetSelection": {
+      "left": {
+        "whenTrue": "VB ik_hand_l",
+        "whenFalse": "VB hand_l",
+        "variable": "HandLeftIkTargetBone"
+      },
+      "right": {
+        "whenTrue": "VB ik_hand_r",
+        "whenFalse": "VB hand_r",
+        "variable": "HandRightIkTargetBone"
+      }
+    },
+    "executionOrder": [
+      "left",
+      "right"
+    ],
+    "solvers": {
+      "left": {
+        "itemA": "upperarm_l",
+        "itemB": "lowerarm_l",
+        "effectorItem": "hand_l",
+        "effectorTargetVariable": "HandLeftIkTargetBone",
+        "effectorSpace": "GlobalSpace",
+        "weight": "clamp01(LayerArmLeft) * clamp01(HandLeftIk)",
+        "primaryAxis": [
+          1,
+          0,
+          0
+        ],
+        "secondaryAxis": [
+          0,
+          -1,
+          0
+        ],
+        "poleVector": [
+          0,
+          -30,
+          0
+        ],
+        "poleVectorSpace": "lowerarm_l",
+        "stretchEnabled": false,
+        "stretchStartRatio": 0.75,
+        "stretchMaximumRatio": 1.25,
+        "propagateToChildren": true
+      },
+      "right": {
+        "itemA": "upperarm_r",
+        "itemB": "lowerarm_r",
+        "effectorItem": "hand_r",
+        "effectorTargetVariable": "HandRightIkTargetBone",
+        "effectorSpace": "GlobalSpace",
+        "weight": "clamp01(LayerArmRight) * clamp01(HandRightIk)",
+        "primaryAxis": [
+          -1,
+          0,
+          0
+        ],
+        "secondaryAxis": [
+          0,
+          1,
+          0
+        ],
+        "poleVector": [
+          0,
+          30,
+          0
+        ],
+        "poleVectorSpace": "lowerarm_r",
+        "stretchEnabled": false,
+        "stretchStartRatio": 0.75,
+        "stretchMaximumRatio": 1.25,
+        "propagateToChildren": true
+      }
+    }
+  },
+  "animationEvidence": {
+    "rightHandToGunSamples": [
+      {
+        "clip": "A_Als_Rifle_Poses",
+        "time": 0.05,
+        "translation": [
+          -9.9682714,
+          5.0659954,
+          -0.9382259
+        ],
+        "rotation": [
+          -0.0130483,
+          -0.1356861,
+          0.6053339,
+          0.784213
+        ]
+      },
+      {
+        "clip": "A_Als_Rifle_Poses",
+        "time": 0.25,
+        "translation": [
+          -9.6963909,
+          4.9979735,
+          -0.5281397
+        ],
+        "rotation": [
+          -0.0199745,
+          -0.0303968,
+          0.6302954,
+          0.7755029
+        ]
+      }
+    ],
+    "movingArmsOnlyClips": [
+      {
+        "clip": "A_Als_Rifle_Run_Arms",
+        "presentUnitCurves": [
+          "LayerArmLeft",
+          "LayerArmRight",
+          "LayerHandRight",
+          "HandLeftIk"
+        ],
+        "absentZeroCurves": [
+          "LayerLegs",
+          "LayerHandLeft",
+          "HandRightIk"
+        ]
+      },
+      {
+        "clip": "A_Als_Rifle_Sprint_Arms",
+        "presentUnitCurves": [
+          "LayerArmLeft",
+          "LayerArmRight",
+          "LayerHandRight",
+          "HandLeftIk"
+        ],
+        "absentZeroCurves": [
+          "LayerLegs",
+          "LayerHandLeft",
+          "HandRightIk"
+        ]
+      },
+      {
+        "clip": "A_Als_Rifle_Sprint_Impulse_Arms",
+        "presentUnitCurves": [
+          "LayerArmLeft",
+          "LayerArmRight",
+          "LayerHandRight",
+          "HandLeftIk"
+        ],
+        "absentZeroCurves": [
+          "LayerLegs",
+          "LayerHandLeft",
+          "HandRightIk"
+        ]
+      }
+    ]
+  }
+}
