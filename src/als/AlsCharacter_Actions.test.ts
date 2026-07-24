@@ -27,6 +27,9 @@ import type {
   AlsRootMotionSource_Mantling,
 } from './RootMotionSources/AlsRootMotionSource_Mantling'
 import {
+  refreshAlsMantlingMontage,
+} from './AnimGraph/mantling'
+import {
   ALS_GENERAL_MANTLING_SETTINGS,
   ALS_MANTLING_SETTINGS,
 } from './Settings/AlsMantlingSettings'
@@ -214,6 +217,10 @@ function mantlingLifecycle(
       GetRootMotionSourceByID(RootMotionSourceId) {
         Events.push(['GetRootMotionSourceByID', RootMotionSourceId])
         return RootMotionSources.get(RootMotionSourceId) ?? null
+      },
+      AllocateMontageInstanceId() {
+        Events.push('AllocateMontageInstanceId')
+        return 73
       },
       Montage_Play(MontageState) {
         Events.push([
@@ -621,7 +628,7 @@ describe('AAlsCharacter live mantling lifecycle', () => {
     expect(result.RootMotionSource.ActorFeetLocationOffset)
       .toEqual({ x: -0.5, y: -0.5, z: -0.75 })
     expect(result.MontageState).toMatchObject({
-      RequestId: 41,
+      RequestId: 73,
       MontagePosition: 0.25,
       Status: 'Playing',
     })
@@ -634,9 +641,12 @@ describe('AAlsCharacter live mantling lifecycle', () => {
       ['SetMovementModeLocked', true, null, null],
       ['SetBase', lifecycleTarget],
       ['ApplyRootMotionSource', null, null],
-      ['Montage_Play', 41, 41, null],
+      'AllocateMontageInstanceId',
+      ['Montage_Play', 73, 41, null],
       ['OnMantlingStarted', 'Mantling'],
     ])
+    expect(result.MontageState?.RequestId)
+      .not.toBe(Character.mantlingState.RootMotionSourceId)
   })
 
   it('rejects an occupied locomotion action before selecting or mutating', () => {
@@ -717,6 +727,17 @@ describe('AAlsCharacter live mantling lifecycle', () => {
     expect(start.RootMotionSource.Status).toBe('MarkedForRemoval')
     expect(start.MontageState.Status).toBe(status)
     expect(Character.mantlingState.RootMotionSourceId).toBe(0)
+
+    const retainedPosition = start.MontageState.MontagePosition
+    refreshAlsMantlingMontage(start.MontageState, {
+      DeltaTime: 0.1,
+      bHasInput: Character.locomotionState.hasInput,
+      LocomotionMode: Character.locomotionMode,
+      RotationMode: Character.rotationMode,
+      Stance: Character.stance,
+    })
+    expect(start.MontageState.MontagePosition)
+      .toBeCloseTo(retainedPosition + 0.1, 7)
   })
 
   it('stops a mode-invalid mantle with the authored global blend duration', () => {

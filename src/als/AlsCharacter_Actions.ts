@@ -596,6 +596,11 @@ export interface AlsMantlingLifecycleAdapter {
   GetRootMotionSourceByID(
     RootMotionSourceId: number,
   ): AlsRootMotionSource_Mantling | null
+  /**
+   * FAnimMontageInstance identity comes from the animation runtime. It is
+   * intentionally unrelated to FRootMotionSource::LocalID.
+   */
+  AllocateMontageInstanceId(): number
   Montage_Play(MontageState: AlsMantlingMontageState): number
   IsTargetPrimitiveValid(TargetPrimitive: unknown): boolean
   OnMantlingStarted(Parameters: Readonly<AlsMantlingParameters>): void
@@ -668,7 +673,7 @@ export function startMantlingImplementation(
     input.Lifecycle.ApplyRootMotionSource(RootMotionSource)
 
   const candidateMontageState = createAlsMantlingMontageState(
-    character.mantlingState.RootMotionSourceId,
+    input.Lifecycle.AllocateMontageInstanceId(),
     settings,
     RootMotionSource.MontageStartTime,
   )
@@ -701,7 +706,10 @@ export interface StopAlsMantlingInput {
  *
  * The function intentionally does not clear LocomotionAction. If the montage
  * is stopped while its movement-action notify is active, that notify owns the
- * eventual action exit exactly as it does in ALS.
+ * eventual action exit exactly as it does in ALS. `StopMantling(false)` also
+ * leaves the montage state alive: after its root source is removed, the
+ * animation owner continues `refreshAlsMantlingMontage()` without an
+ * authoritative position until the retained montage finishes blending.
  */
 export function stopMantling(
   input: Readonly<StopAlsMantlingInput>,
