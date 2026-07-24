@@ -7,6 +7,7 @@
 # validate-glb.mjs (structure + physical sanity) → AbpDump.cs (compiled FAnimNode
 # structs + validation lookups) → BlendSpaceDump.cs (authored axes/samples/topology)
 # → MovementSettingsDump.cs (MS_Als_Normal + every referenced rich curve) →
+# AnimationInstanceSettingsDump.cs (AIS_Als_Default stride curves + C++ cadence defaults) →
 # InputMappingDump.cs (IMC + action triggers/modifiers) → copy distributable assets
 # with the upstream MIT notice.
 # clips.manifest is the audited M3 animation allowlist.
@@ -44,6 +45,8 @@ dotnet run -- dump-blend-spaces "$WORK/stage" "$WORK/blend-spaces.json"
 dotnet run -- validate-blend-spaces "$WORK/blend-spaces.json"
 dotnet run -- dump-movement-settings "$WORK/stage" "$WORK/movement-settings.json"
 dotnet run -- validate-movement-settings "$WORK/movement-settings.json"
+dotnet run -- dump-animation-settings "$WORK/stage" "$WORK/animation-settings.json"
+dotnet run -- validate-animation-settings "$WORK/animation-settings.json"
 dotnet run -- dump-input-mappings "$WORK/stage" "$WORK/input-mappings.json"
 dotnet run -- validate-input-mappings "$WORK/input-mappings.json"
 [ -d node_modules ] || pnpm install
@@ -68,8 +71,9 @@ else
   ABP_GRAPH_DESTINATION="scripts/extract-als/abp-graph.json"
 fi
 cp "$WORK/movement-settings.json" "$REPO_ROOT/scripts/extract-als/movement-settings.json"
+cp "$WORK/animation-settings.json" "$REPO_ROOT/scripts/extract-als/animation-settings.json"
 cp "$WORK/blend-spaces.json" "$REPO_ROOT/scripts/extract-als/blend-spaces.json"
 cp "$WORK/input-mappings.json" "$REPO_ROOT/scripts/extract-als/input-mappings.json"
 echo "done: public/assets/skm-als.glb + skm-als-rifle.glb + LICENSE-ALS-Refactored.md"
 echo "done: $ABP_GRAPH_DESTINATION ($ABP_GRAPH_SIZE bytes)"
-echo "done: scripts/extract-als/{movement-settings,blend-spaces,input-mappings}.json"
+echo "done: scripts/extract-als/{movement-settings,animation-settings,blend-spaces,input-mappings}.json"

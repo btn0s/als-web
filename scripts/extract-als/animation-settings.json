@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "engineVersion": "UE5.5",
+    "referenceRelease": "ALS Refactored 4.15",
+    "settingsAssetPath": "ALS/Content/ALS/Data/AnimationInstance/AIS_Als_Default.uasset",
+    "cppDefaults": {
+      "standing": "Source/ALS/Public/Settings/AlsStandingSettings.h",
+      "crouching": "Source/ALS/Public/Settings/AlsCrouchingSettings.h"
+    },
+    "curveConsumption": "Source/ALS/Private/AlsAnimationInstance.cpp"
+  },
+  "settings": {
+    "asset": "AIS_Als_Default",
+    "nativeSpeedUnit": "cm/s",
+    "standing": {
+      "AnimatedWalkSpeed": 150.0,
+      "AnimatedRunSpeed": 350.0,
+      "AnimatedSprintSpeed": 600.0,
+      "StrideBlendAmountWalkCurve": "CF_Als_StrideBlendAmount_Walk",
+      "StrideBlendAmountRunCurve": "CF_Als_StrideBlendAmount_Run"
+    },
+    "crouching": {
+      "AnimatedCrouchSpeed": 150.0,
+      "StrideBlendAmountCurve": "CF_Als_StrideBlendAmount_Walk"
+    }
+  },
+  "curves": {
+    "CF_Als_StrideBlendAmount_Run": {
+      "assetPath": "ALS/Content/ALS/Data/AnimationInstance/Grounded/CF_Als_StrideBlendAmount_Run.uasset",
+      "type": "CurveFloat",
+      "channels": {
+        "StrideBlendAmount": {
+          "sourceIndex": 0,
+          "keys": [
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.0,
+              "Value": 0.2,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 166.9,
+              "Value": 0.45000002,
+              "ArriveTangent": 0.0033657213,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0033657213,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 350.0,
+              "Value": 1.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            }
+          ]
+        }
+      }
+    },
+    "CF_Als_StrideBlendAmount_Walk": {
+      "assetPath": "ALS/Content/ALS/Data/AnimationInstance/Grounded/CF_Als_StrideBlendAmount_Walk.uasset",
+      "type": "CurveFloat",
+      "channels": {
+        "StrideBlendAmount": {
+          "sourceIndex": 0,
+          "keys": [
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.0,
+              "Value": 0.2,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 58.3,
+              "Value": 0.54999995,
+              "ArriveTangent": 0.012879322,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.012879322,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 150.0,
+              "Value": 1.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            }
+          ]
+        }
+      }
+    }
+  },
+  "validations": [
+    {
+      "id": "ais-als-default-stride-settings-and-cpp-defaults",
+      "passed": true,
+      "values": {
+        "standingAnimatedSpeeds": [
+          150.0,
+          350.0,
+          600.0
+        ],
+        "crouchingAnimatedSpeed": 150.0,
+        "errors": []
+      }
+    },
+    {
+      "id": "animation-instance-stride-rich-curve-keys",
+      "passed": true,
+      "values": {
+        "curveCount": 2,
+        "channelCount": 2,
+        "keyCount": 6,
+        "errors": []
+      }
+    }
+  ]
+}
