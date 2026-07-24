@@ -13,6 +13,13 @@ before feature work.
   extraction, curve-driven layering, an owned pose-buffer runtime). Inventing the missing tooling
   IS the project; it's a net good for web gamedev and animation tooling. When a shortcut and a
   faithful mechanism compete, port the mechanism.
+- **Naming parity (user 2026-07-23):** anything with an ALS analog uses ALS Refactored's exact
+  name, so an ALS-fluent reader has zero onboarding: Gait Walking/Running/Sprinting (never
+  "jog"), Stance Standing/Crouching, RotationMode VelocityDirection/ViewDirection/Aiming,
+  LocomotionMode Grounded/InAir, LocomotionAction Mantling/Rolling/GettingUp, VelocityBlend,
+  GaitAmount, curve names verbatim (FootLeftLock, RotationYawSpeed, …). Concepts ALS doesn't
+  have (crawl/prone) are marked EXTENSION in their doc comment; unused sibling vocabulary is
+  deleted on contact, not renamed.
 - **Docs philosophy:** code speaks for itself. ROADMAP.md (plan) + this file (orientation) are
   the only standing docs; design rationale lives in code comments at the relevant site. No
   spec/history markdown files.
