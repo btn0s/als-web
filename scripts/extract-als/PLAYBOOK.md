@@ -233,3 +233,77 @@ extracting asset class X from uncooked ALS-Refactored (.uasset only, no .uexp/.u
 - `/Users/btnorris/dev/games/echelon/tech-demos/als-ue5-r3f/scripts/extract-als/Dump.cs` — `expectedWeightSum` per-mesh magnitude handling (~line 108-115)
 - `/Users/btnorris/dev/games/echelon/tech-demos/als-ue5-r3f/scripts/extract-als/assemble-glb.mjs` — bone canonicalization (`canonicalBoneName`), winding note (~line 270-277)
 - Probe artifacts (throwaway, in tmp): `/Users/btnorris/.claude/jobs/c3251c49/tmp/ser-recon/extract-als-probe/` (instrumented copy), `rifle-dump.json`, `/tmp/main-dump.json`, `/tmp/rifle-dump2.json`, `/tmp/sm-box.json`, `/tmp/sound.json`
+
+## Compiled AnimBlueprint graph serialization
+
+Run:
+
+```sh
+dotnet run -- dump-abp "$ALS_WORK/stage" abp-graph.json
+dotnet run -- validate-abp abp-graph.json
+```
+
+`dump-abp` covers `AB_Als`, `AB_Als_Monolithic`, every `AB_Als_*` below
+`Character/AnimationInstances/` (including `Overlays/` and `Stances/`), and `ALI_Overlay`.
+The 4.15/UE5.5 content currently yields 23 per-asset sections.
+
+- **VERIFIED — compiled nodes live on the generated-class CDO as tagged struct
+  properties.** The class default object has one `AnimGraphNode_*` property per serialized
+  compiled node. `FPropertyTag.TagData.StructType` and `.Module` preserve the exact runtime
+  struct identity (`AnimNode_SequenceEvaluator`, `/Script/AnimGraphRuntime`, etc.). The value
+  is usually an `FStructFallback`; serializing its complete `Properties` list exposes every
+  tagged parameter without a node-type allowlist. Confirmed by direct property enumeration
+  across all 23 targets and by exact lookups of `Sequence`, `ExplicitTime`, `PlayRate`,
+  `LayerSetup`, slot names, linked-layer interface/tag fields, and cached-pose names.
+
+- **VERIFIED — pose links use compiled node indices.** Every nested object containing both
+  `LinkID` and `SourceLinkID` is an `FPoseLink`: `LinkID` is the upstream compiled node and
+  `SourceLinkID` identifies the owning node. This independently verifies a node index whenever
+  a struct has an input pose. Confirmed across ordinary pose fields, pose arrays, and
+  `UseCachedPose.LinkToCachingNode`.
+
+- **VERIFIED — CDO property ordinal is not always the compiled node index.** Compiled index
+  space can contain external or otherwise untagged nodes. Examples: `AB_Als_Rifle` has 57
+  serialized node structs but 58 `AnimNodeData` entries; `AB_Als_Layering` has 92 vs 94.
+  Therefore never wire nodes by array ordinal alone. `dump-abp` anchors indices from
+  `SourceLinkID`, assigns an ordinal only when the surrounding anchors leave exactly one
+  possibility, and otherwise emits `compiledIndexCandidates`, raw link IDs, and
+  `unresolvedCompiledNodeIndices`.
+
+- **VERIFIED — state machines are baked on `UAnimBlueprintGeneratedClass`.**
+  `BakedStateMachines` expands to `FBakedAnimationStateMachine` data: machine name and initial
+  state; state names, root/player/layer node indices, entry/reset flags, and outgoing compiled
+  rule data; transition previous/next state, crossfade duration, blend mode, custom curve,
+  blend profile, and notify indices. Confirmed in the monolithic, locomotion, grounded, view,
+  stance, and weapon-overlay ABPs.
+
+- **VERIFIED negative — transition expressions are not legible from the baked description.**
+  `CanTakeDelegateIndex`, desired result, automatic-rule fields, and bound function names
+  survive, but CUE4Parse does not decompile the delegate's boolean expression. The dump marks
+  each expression `{unrecoverable: reason}` rather than implying that the delegate index is
+  the rule. **HYPOTHESIS:** a future Kismet bytecode decompiler plus property-access-library
+  mapping could recover these expressions; verify it by comparing decompiled predicates with
+  the saved editor transition graphs before treating them as ground truth.
+
+- **VERIFIED — the package import table is directly available.** `Package.ImportMap` retains
+  `ClassPackage`, `ClassName`, `ObjectName`, outer package path, package name, and optional
+  flag. The dump keeps every import and also emits a filtered animation-asset lookup for
+  `AnimSequence`, blend-space, montage, composite, aim-offset, and pose-asset classes.
+
+- **VERIFIED validation oracle:**
+  - `AB_Als_Rifle` has non-zero sequence-evaluator times for `A_Als_Rifle_Poses`
+    (including 0.05, 0.083333, 0.116667, 0.15, 0.183333, 0.216667, 0.25, 0.283333,
+    0.316667, 0.35, and 0.383333 seconds).
+  - Both `AB_Als_Layering` `MakeDynamicAdditive` nodes reach the authored
+    `A_Als_Stand_Pose` and `A_Als_Crouch_Pose` through their cached base-pose wiring; one is
+    local-space and one mesh-space.
+  - The grounded graph's `Crouching Input` is implemented by `AB_Als_Crouching`; its compiled
+    `Idle` output resolves to **`A_Als_Crouch_Pose`**.
+  - Layered-bone-blend branch filters include `spine_01`, `clavicle_l`, and `clavicle_r`.
+
+- **VERIFIED scope boundary — `CR_Als` is not an AnimBlueprint.** It is a
+  `ControlRigBlueprint` with RigVM models/functions (1,877 exports in this content), not an
+  `AnimBlueprintGeneratedClass`/CDO `FAnimNode` graph. `dump-abp` records it as not dumped.
+  **HYPOTHESIS:** a separate Control Rig stage can serialize `RigVMGraph` models and compiled
+  RigVM bytecode; validate graph pins and execution order against the saved Control Rig editor
+  graphs before using such a dump as a runtime oracle.

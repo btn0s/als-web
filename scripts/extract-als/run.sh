@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# ALS Refactored → character + rifle GLBs, fully editor-free (no Unreal install).
+# ALS Refactored → character/rifle GLBs + compiled ABP graph, fully editor-free.
 #
 # Chain: git clone (pinned tag) → Dump.cs (CUE4Parse: skeleton ref pose + AnimDataModel
 # raw tracks + SKM_Als editor LOD0 → JSON) → assemble-glb.mjs (axis/unit
 # conversion, skinned primitives, GLB) →
-# validate-glb.mjs (structure + physical sanity) → copy into public/assets with the
-# upstream MIT notice. clips.manifest is the audited M3 animation allowlist.
+# validate-glb.mjs (structure + physical sanity) → AbpDump.cs (compiled FAnimNode
+# structs + validation lookups) → copy distributable assets with the upstream MIT
+# notice. clips.manifest is the audited M3 animation allowlist.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -31,6 +32,8 @@ dotnet run -- dump \
 dotnet run -- dump \
   "$WORK/stage" "$WORK/als-rifle-dump.json" \
   SK_Als_Rifle SKM_Als_Rifle MI_Als_Rifle
+dotnet run -- dump-abp "$WORK/stage" "$WORK/abp-graph.json"
+dotnet run -- validate-abp "$WORK/abp-graph.json"
 [ -d node_modules ] || pnpm install
 node assemble-glb.mjs "$WORK/als-dump.json" "$WORK/skm-als.glb"
 node assemble-glb.mjs "$WORK/als-rifle-dump.json" "$WORK/skm-als-rifle.glb"
@@ -41,4 +44,13 @@ mkdir -p "$REPO_ROOT/public/assets"
 cp "$WORK/skm-als.glb" "$REPO_ROOT/public/assets/skm-als.glb"
 cp "$WORK/skm-als-rifle.glb" "$REPO_ROOT/public/assets/skm-als-rifle.glb"
 cp "$WORK/ALS-Refactored-$TAG/LICENSE.md" "$REPO_ROOT/public/assets/LICENSE-ALS-Refactored.md"
+ABP_GRAPH_SIZE="$(wc -c < "$WORK/abp-graph.json" | tr -d '[:space:]')"
+if (( ABP_GRAPH_SIZE < 1048576 )); then
+  cp "$WORK/abp-graph.json" "$REPO_ROOT/public/assets/abp-graph.json"
+  ABP_GRAPH_DESTINATION="public/assets/abp-graph.json"
+else
+  cp "$WORK/abp-graph.json" "$REPO_ROOT/scripts/extract-als/abp-graph.json"
+  ABP_GRAPH_DESTINATION="scripts/extract-als/abp-graph.json"
+fi
 echo "done: public/assets/skm-als.glb + skm-als-rifle.glb + LICENSE-ALS-Refactored.md"
+echo "done: $ABP_GRAPH_DESTINATION ($ABP_GRAPH_SIZE bytes)"

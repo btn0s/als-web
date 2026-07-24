@@ -1,7 +1,7 @@
 # Curated ALS Refactored animation payload. Format: clip|what it is for|M3 checklist item.
 # Keep this deliberately smaller than the upstream animation tree: every row must serve M3.
 A_Als_Stand_Pose|Standing reference/fallback pose for complete base-layer bone coverage|M3 Stances: standing
-A_Als_Crouch_Pose|Crouched reference/fallback pose for complete base-layer bone coverage|M3 Stances: crouching
+A_Als_Crouch_Pose|DUAL-PURPOSE: the literal crouched-idle display clip (AB_Als_Crouching Idle state plays exactly this - verified via ABP dump) AND the crouched additive reference pose|M3 Stances: crouching idle
 A_Als_Idle|Standing locomotion center sample|M3 Gaits: idle origin for walk/run/sprint
 A_Als_Walk_Forward|Authored forward walk sample|M3 Gaits and Rotation modes: directional locomotion
 A_Als_Walk_Backward|Authored backward walk sample|M3 Gaits and Rotation modes: directional locomotion
