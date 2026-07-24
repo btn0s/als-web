@@ -3,6 +3,10 @@ import * as THREE from 'three';
 /** Framework-free bone predicates shared by extraction utilities and the owned pose evaluator. */
 
 export const POSE_GAIT_CURVE_NAME = 'PoseGait'
+export const POSE_CROUCHING_CURVE_NAME = 'PoseCrouching'
+export const FOOT_LEFT_LOCK_CURVE_NAME = 'FootLeftLock'
+export const FOOT_RIGHT_LOCK_CURVE_NAME = 'FootRightLock'
+export const ROTATION_YAW_SPEED_CURVE_NAME = 'RotationYawSpeed'
 
 /**
  * Returns a NEW `THREE.AnimationClip` containing only the tracks of `clip` whose target bone
@@ -62,7 +66,7 @@ export function isUpperBodyBone(boneName: string): boolean {
 /**
  * The ARM chain only (clavicle -> upperarm -> lowerarm -> hand -> fingers), both sides — a strict
  * subset of `UPPER_BODY_PREFIXES` that deliberately EXCLUDES spine/neck/Head. Used to split a clip
- * into "arms" vs "everything else" (see Operative's jump: `Jump_Loop` is masked with `!isArmBone`
+ * into "arms" vs "everything else" (`Jump_Loop` is masked with `!isArmBone`
  * so it keeps its airborne legs/torso but never touches the arms, and a separate idle clip masked
  * with `isArmBone` supplies the arm base — so the procedural arm-swing composes additively on the
  * idle-arm pose it was authored against, not on Jump_Loop's arms).

@@ -3,14 +3,14 @@ import * as THREE from 'three'
 /**
  * Reusable procedural pose layer — spring-driven ADDITIVE bone-rotation offsets applied AFTER
  * the mixer: additive layers, each scoped to its own subtree, added on top of the ~weight-1
- * base pose. Operative OWNS its animation pipeline (TD 5.1): one frame callback runs
+ * base pose. The character owns its animation pipeline: one frame callback runs
  * `mixer.update(dt)` first, then every post-mixer stage in source order — this must be invoked
  * from a stage AFTER that update (never before it, or from a separate frame callback), so the
  * mixer has already written this frame's pose and the edits survive to render.
  *
  * Framework-light (plain `three`, no React) so the pure math is Vitest-testable in isolation —
  * mirrors AlsConstants.ts/blendspace.ts's split between "pure system" (this file) and "R3F wiring"
- * (Operative.tsx, where bones get resolved off the cloned skeleton and Leva tunables live).
+ * (the character binding, where bones resolve off the cloned skeleton and Leva tunables live).
  *
  * Everything here does ZERO per-frame allocation: `ProceduralOffset.scratch` is reused every
  * frame, and `axis`/`maxAngle` are meant to be MUTATED in place by the consumer (e.g. copied in

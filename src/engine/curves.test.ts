@@ -24,7 +24,7 @@ describe('float curves', () => {
     expect(frame.activeClips.size).toBe(0)
   })
 
-  it('compiles GLB extras keys and samples them linearly regardless of interpolation metadata', () => {
+  it('compiles GLB extras keys and samples mode-0 segments linearly', () => {
     const samplers = compileClipCurveSamplers({
       userData: {
         alsCurves: [{
@@ -34,6 +34,20 @@ describe('float curves', () => {
       },
     })
     expect(samplers.PoseGait(0.25)).toBeCloseTo(1.5)
+  })
+
+  it('reconstructs the two-key cubic PoseCrouching ramp from GLB interpolation mode 2', () => {
+    const samplers = compileClipCurveSamplers({
+      userData: {
+        alsCurves: [{
+          name: 'PoseCrouching',
+          keys: [[0, 0, 2], [0.833333, 1, 0]],
+        }],
+      },
+    })
+    const quarterTime = 0.833333 * 0.25
+    expect(samplers.PoseCrouching(quarterTime)).toBeCloseTo(0.15625)
+    expect(samplers.PoseCrouching(0.833333 * 0.5)).toBeCloseTo(0.5)
   })
 
   it('blends authored samples and semantic fallbacks by active graph weight', () => {

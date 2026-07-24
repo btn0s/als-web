@@ -13,8 +13,8 @@
  *
  *   Known, deliberate deviation (asserted in weightTable.test.ts rather than "fixed"):
  *   - FINGERS are deliberately under-covered during the jump: jumpArms is masked to the arm chain
- *     WITHOUT fingers so they relax toward the rig's rest hand in flight (see jumpSplitClips in
- *     Operative). Finger coverage is therefore NOT asserted.
+ *     WITHOUT fingers so they relax toward the rig's rest hand in flight. Finger coverage is
+ *     therefore NOT asserted.
  *
  * Framework-free (no three/React imports) so it stays Vitest-testable in isolation, matching
  * blendspace.ts / actionSequence.ts.
@@ -61,7 +61,7 @@ export interface WeightTable {
   crouchRightFwd: number;
   crouchLeftBwd: number;
   crouchRightBwd: number;
-  /** Jump_Loop masked to !arm bones (legs/torso/head) — see Operative's jumpSplitClips. */
+  /** Jump_Loop masked to !arm bones (legs/torso/head). */
   jumpBody: number;
   /** Idle masked to arm-chain-minus-fingers — the arms' airborne base. */
   jumpArms: number;
@@ -173,8 +173,8 @@ export function mapVelocityBlendToSixDirections(
 }
 
 /**
- * The whole base-layer graph, in one pure function. Algebra ported verbatim from the previous
- * inline Operative block — see each intermediate's comment for its meaning. Writes into `out`
+ * The whole base-layer graph, in one pure function. See each intermediate's comment for its
+ * meaning. Writes into `out`
  * (reused — zero allocation) and returns it.
  */
 export function computeWeightTable(

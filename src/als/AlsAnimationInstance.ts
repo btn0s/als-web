@@ -22,6 +22,7 @@ import { copyPose, createPoseBuffer } from '../engine/poseBuffer'
 import { createRigDefinition } from '../engine/rig'
 import { createRootMotionExtractor, resetRootMotionExtractor } from '../engine/rootMotion'
 import type { RootMotionExtractor } from '../engine/rootMotion'
+import { createActionArbiter } from './AnimGraph/actionArbiter'
 import { advanceLocomotionPhase, STAND, updateLocomotionTargets } from './AnimGraph/blendspace'
 import {
   ALS_LAYER_REGIONS,
@@ -47,13 +48,37 @@ import {
   buildLocomotionProfile,
 } from './Settings/AlsMovementSettings'
 import type { AlsGait, AlsStance } from './Settings/AlsMovementSettings'
+import { ALS_ROTATE_IN_PLACE_SETTINGS } from './Settings/AlsRotateInPlaceSettings'
+import { ALS_TURN_IN_PLACE_SETTINGS } from './Settings/AlsTurnInPlaceSettings'
 import {
   createVelocityBlend,
   stepVelocityBlend,
 } from './State/AlsGroundedState'
-import { createAlsPoseState } from './State/AlsPoseState'
+import {
+  createAlsPoseState,
+  createAlsStanceTransitionCurveState,
+  refreshStanceTransition,
+} from './State/AlsPoseState'
 import type { AlsPoseState } from './State/AlsPoseState'
-import { POSE_GAIT_CURVE_NAME, REGION_PREDICATES } from './Utility/AlsConstants'
+import {
+  advanceRotateInPlaceClipTime,
+  createAlsRotateInPlaceState,
+  refreshRotateInPlace as refreshRotateInPlaceState,
+  resetRotateInPlaceFrame,
+} from './State/AlsRotateInPlaceState'
+import {
+  createAlsTurnInPlaceState,
+  refreshTurnInPlace as refreshTurnInPlaceState,
+  resetTurnInPlaceFrame,
+} from './State/AlsTurnInPlaceState'
+import {
+  FOOT_LEFT_LOCK_CURVE_NAME,
+  FOOT_RIGHT_LOCK_CURVE_NAME,
+  POSE_CROUCHING_CURVE_NAME,
+  POSE_GAIT_CURVE_NAME,
+  REGION_PREDICATES,
+  ROTATION_YAW_SPEED_CURVE_NAME,
+} from './Utility/AlsConstants'
 
 const GAIT_SPEEDS = {
   walk: ALS_AUTHORED_GAIT_SPEEDS.standing.walk,
@@ -116,8 +141,22 @@ const ROLE_GAIT_AMOUNT: Record<ClipRole, number> = {
 }
 
 const GAIT_DAMP_RATE = 8
-// ALS does not prescribe the Stance transition rate in C++; this preserves the existing feel.
-const CROUCHING_AMOUNT_DAMP_RATE = 10
+
+const STANCE_TRANSITION_CLIPS = {
+  Crouching: 'A_Als_StandToCrouch',
+  Standing: 'A_Als_CrouchToStand',
+} as const satisfies Record<AlsStance, string>
+
+const ROTATE_IN_PLACE_CLIPS = {
+  Standing: {
+    Left: 'A_Als_Rotate_90_Left',
+    Right: 'A_Als_Rotate_90_Right',
+  },
+  Crouching: {
+    Left: 'A_Als_Crouch_Rotate_90_Left',
+    Right: 'A_Als_Crouch_Rotate_90_Right',
+  },
+} as const satisfies Record<AlsStance, Record<'Left' | 'Right', string>>
 
 interface RuntimeClip {
   readonly sampler: CompiledClipSampler
@@ -149,6 +188,18 @@ interface RuntimeGaitSource extends WeightedCurveSource {
   readonly entry: EvaluatorLayerEntry
 }
 
+type AlsMontageKind = 'stance-transition' | 'turn-in-place'
+
+interface RuntimeMontage {
+  readonly kind: AlsMontageKind
+  readonly clip: RuntimeClip
+  /** Dynamic montage sequence rate (PlaySlotAnimationAsDynamicMontage argument). */
+  readonly sequencePlayRate: number
+  /** AnimGraph multiplier applied to RotationYawSpeed. */
+  readonly rotationYawScale: number
+  readonly blendDuration: number
+}
+
 export interface AlsAnimationInstanceControls {
   gait: AlsGait
   moving: boolean
@@ -156,12 +207,23 @@ export interface AlsAnimationInstanceControls {
   overlayMode: AlsOverlayMode
   speed: number
   direction: number
+  rotateInPlace: boolean
+  viewYawAngle: number
+  viewYawSpeed: number
+}
+
+export interface AlsAnimationInstanceState {
+  crouchingAmount: number
+  footLeftLock: number
+  footRightLock: number
+  rotationYawSpeed: number
 }
 
 export interface AlsAnimationInstance {
   playClip: (name: string | null) => boolean
   clearSoloClip: () => void
-  refresh: (delta: number, controls: AlsAnimationInstanceControls) => void
+  readonly state: AlsAnimationInstanceState
+  refresh: (delta: number, controls: AlsAnimationInstanceControls) => number
 }
 
 function createEntry(
@@ -178,6 +240,26 @@ function advanceClip(clip: RuntimeClip, delta: number) {
 
 function damp(current: number, target: number, rate: number, delta: number) {
   return current + (target - current) * (1 - Math.exp(-rate * delta))
+}
+
+function moveToward(current: number, target: number, maximumDelta: number) {
+  if (current < target) return Math.min(current + maximumDelta, target)
+  return Math.max(current - maximumDelta, target)
+}
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value))
+}
+
+function montageBlendWeight(
+  progress: number,
+  duration: number,
+  blendDuration: number,
+) {
+  if (blendDuration <= 0) return progress < 1 ? 1 : 0
+  const elapsed = progress * duration
+  const remaining = (1 - progress) * duration
+  return Math.max(0, Math.min(1, elapsed / blendDuration, remaining / blendDuration))
 }
 
 /**
@@ -209,6 +291,40 @@ export function createAlsAnimationInstance(gltf: {
   }
 
   const baseEntries = Object.values(roles).map((clip) => clip.entry)
+  const stanceTransitionClips = {
+    Crouching: clipsByName.get(STANCE_TRANSITION_CLIPS.Crouching),
+    Standing: clipsByName.get(STANCE_TRANSITION_CLIPS.Standing),
+  }
+  const rotateInPlaceClips = {
+    Standing: {
+      Left: clipsByName.get(ROTATE_IN_PLACE_CLIPS.Standing.Left),
+      Right: clipsByName.get(ROTATE_IN_PLACE_CLIPS.Standing.Right),
+    },
+    Crouching: {
+      Left: clipsByName.get(ROTATE_IN_PLACE_CLIPS.Crouching.Left),
+      Right: clipsByName.get(ROTATE_IN_PLACE_CLIPS.Crouching.Right),
+    },
+  }
+  const turnInPlaceClips = new Map(
+    (Object.values(ALS_TURN_IN_PLACE_SETTINGS.clips) as Array<
+      typeof ALS_TURN_IN_PLACE_SETTINGS.clips[AlsStance]
+    >)
+      .flatMap((byAngle) => Object.values(byAngle))
+      .flatMap((byDirection) => Object.values(byDirection))
+      .map((settings) => [settings.clip, clipsByName.get(settings.clip)] as const),
+  )
+  const montageClips = new Set<RuntimeClip>()
+  for (const clip of Object.values(stanceTransitionClips)) {
+    if (clip) montageClips.add(clip)
+  }
+  for (const clip of turnInPlaceClips.values()) {
+    if (clip) montageClips.add(clip)
+  }
+  for (const byDirection of Object.values(rotateInPlaceClips)) {
+    for (const clip of Object.values(byDirection)) {
+      if (clip) montageClips.add(clip)
+    }
+  }
   const overlaySources = (
     Object.entries(RIFLE_OVERLAY_CLIPS) as [
       keyof typeof RIFLE_OVERLAY_CLIPS,
@@ -312,6 +428,7 @@ export function createAlsAnimationInstance(gltf: {
   )
   const mainInput: EvaluatePoseInput = {
     base: baseEntries,
+    montages: [...montageClips].map((clip) => clip.entry),
     overlays: overlayEntries.map((overlay) => overlay.entry),
     dynamicAdditives: dynamicAdditives.map((additive) => additive.entry),
     rootMotion,
@@ -323,7 +440,21 @@ export function createAlsAnimationInstance(gltf: {
   const standTargets = [1, 0, 0, 0]
   const standWeights = [1, 0, 0, 0]
   let crouchMoveWeight = 0
-  let crouchingAmount = 0
+  const stanceTransitionState = createAlsStanceTransitionCurveState()
+  const turnInPlaceState = createAlsTurnInPlaceState()
+  const rotateInPlaceState = createAlsRotateInPlaceState()
+  const actionArbiter = createActionArbiter<AlsMontageKind>()
+  let activeMontage: RuntimeMontage | null = null
+  let previousStance: AlsStance | null = null
+  let rotateClip: RuntimeClip | null = null
+  let rotateClipTime = 0
+  let rotateBlendWeight = 0
+  const state: AlsAnimationInstanceState = {
+    crouchingAmount: 0,
+    footLeftLock: 0,
+    footRightLock: 0,
+    rotationYawSpeed: 0,
+  }
   const velocityBlend = createVelocityBlend()
   const velocityTarget = createVelocityBlend()
   let velocityInitialized = false
@@ -363,8 +494,23 @@ export function createAlsAnimationInstance(gltf: {
     soloClip = null
   }
 
+  function requestMontage(montage: RuntimeMontage) {
+    const accepted = actionArbiter.request({
+      kind: montage.kind,
+      clip: montage.clip.sampler.clip.name,
+      duration: montage.clip.sampler.clip.duration / montage.sequencePlayRate,
+      bodyMotion: montage.kind === 'turn-in-place' ? 'kinematic-warp' : 'none',
+      interrupt: 'interruptible',
+    })
+    if (accepted) {
+      montage.clip.time = 0
+      activeMontage = montage
+    }
+    return accepted
+  }
+
   function refresh(delta: number, controls: AlsAnimationInstanceControls) {
-    if (rig.boneCount === 0) return
+    if (rig.boneCount === 0) return 0
     for (const clip of clips) advanceClip(clip, delta)
 
     if (soloClip) {
@@ -372,30 +518,153 @@ export function createAlsAnimationInstance(gltf: {
       soloClip.entry.weight = 1
       applyPose(applicator, evaluatePose(evaluator, soloInput).pose)
       window.__weightTable = soloDebugWeights.get(soloClip.sampler.clip.name)
-      return
+      state.rotationYawSpeed = 0
+      return 0
     }
 
     if (!complete) {
-      if (!fallbackClip) return
+      if (!fallbackClip) return 0
       fallbackClip.entry.time = fallbackClip.time
       fallbackClip.entry.weight = 1
       applyPose(applicator, evaluatePose(evaluator, fallbackInput).pose)
       window.__weightTable = soloDebugWeights.get(fallbackClip.sampler.clip.name)
-      return
+      state.rotationYawSpeed = 0
+      return 0
     }
 
     const rawSpeed = controls.moving
       ? Math.max(0, controls.speed)
       : 0
+    for (const clip of montageClips) clip.entry.weight = 0
     const crouching = controls.stance === 'Crouching'
-    // Deliberate M3 staging trade: StandToCrouch/CrouchToStand clips are present, but until the
-    // transition arbiter owns them, this is the single non-popping Stance path.
-    crouchingAmount = damp(
-      crouchingAmount,
-      crouching ? 1 : 0,
-      CROUCHING_AMOUNT_DAMP_RATE,
+    const targetCrouchingAmount = crouching ? 1 : 0
+
+    if (previousStance === null) {
+      previousStance = controls.stance
+      stanceTransitionState.crouchingAmount = targetCrouchingAmount
+    } else if (controls.stance !== previousStance) {
+      previousStance = controls.stance
+      const clip = stanceTransitionClips[controls.stance]
+      if (clip) {
+        requestMontage({
+          kind: 'stance-transition',
+          clip,
+          sequencePlayRate: 1,
+          rotationYawScale: 1,
+          blendDuration: 0.2,
+        })
+      }
+    }
+
+    resetTurnInPlaceFrame(turnInPlaceState)
+    if (
+      !controls.rotateInPlace
+      && !controls.moving
+      && actionArbiter.active === null
+    ) {
+      const turnRequest = refreshTurnInPlaceState(turnInPlaceState, {
+        delta,
+        transitionsAllowed: true,
+        viewYawAngle: controls.viewYawAngle,
+        viewYawSpeed: controls.viewYawSpeed,
+        stance: controls.stance,
+      })
+      const clip = turnRequest
+        ? turnInPlaceClips.get(turnRequest.settings.clip)
+        : undefined
+      if (turnRequest && clip) {
+        requestMontage({
+          kind: 'turn-in-place',
+          clip,
+          // ALS plays the dynamic montage at the asset's base 1.2 rate, then the AnimGraph scales
+          // RotationYawSpeed by 1.2 * |QueuedAngle / AnimatedAngle| (cpp:1819-1829).
+          sequencePlayRate: turnRequest.settings.playRate,
+          rotationYawScale: turnRequest.playRate,
+          blendDuration: ALS_TURN_IN_PLACE_SETTINGS.blendDuration,
+        })
+      }
+    } else if (controls.rotateInPlace || controls.moving) {
+      turnInPlaceState.activationDelay = 0
+    }
+
+    const action = actionArbiter.update(delta)
+    let actionBlendWeight = 0
+    if (action && activeMontage) {
+      const duration = activeMontage.clip.sampler.clip.duration
+        / activeMontage.sequencePlayRate
+      activeMontage.clip.time = Math.min(
+        action.progress * duration * activeMontage.sequencePlayRate,
+        activeMontage.clip.sampler.clip.duration,
+      )
+      actionBlendWeight = montageBlendWeight(
+        action.progress,
+        duration,
+        activeMontage.blendDuration,
+      )
+      activeMontage.clip.entry.time = activeMontage.clip.time
+      activeMontage.clip.entry.weight = actionBlendWeight
+      activeMontage.clip.entry.loop = false
+    } else if (!actionArbiter.active) {
+      activeMontage = null
+    }
+
+    const stanceTransition = activeMontage?.kind === 'stance-transition'
+      && action
+      ? {
+          time: activeMontage.clip.time,
+          curves: activeMontage.clip.curves ?? {},
+        }
+      : undefined
+    refreshStanceTransition(
+      stanceTransitionState,
+      targetCrouchingAmount,
       delta,
+      stanceTransition,
     )
+    const crouchingAmount = stanceTransitionState.crouchingAmount
+    state.crouchingAmount = crouchingAmount
+    state.footLeftLock = stanceTransitionState.footLeftLock
+    state.footRightLock = stanceTransitionState.footRightLock
+
+    resetRotateInPlaceFrame(rotateInPlaceState)
+    refreshRotateInPlaceState(rotateInPlaceState, {
+      delta,
+      moving: controls.moving || action !== null,
+      allowed: controls.rotateInPlace,
+      viewYawAngle: controls.viewYawAngle,
+      viewYawSpeed: controls.viewYawSpeed,
+    })
+    const rotateDirection = rotateInPlaceState.rotatingLeft
+      ? 'Left'
+      : rotateInPlaceState.rotatingRight ? 'Right' : null
+    const selectedRotateClip = rotateDirection
+      ? rotateInPlaceClips[controls.stance][rotateDirection]
+      : undefined
+    if (selectedRotateClip && selectedRotateClip !== rotateClip) {
+      rotateClip = selectedRotateClip
+      rotateClipTime = 0
+    }
+    rotateBlendWeight = moveToward(
+      rotateBlendWeight,
+      selectedRotateClip ? 1 : 0,
+      delta / ALS_ROTATE_IN_PLACE_SETTINGS.blendDuration,
+    )
+    if (rotateClip && rotateBlendWeight > 0) {
+      rotateClipTime = advanceRotateInPlaceClipTime(
+        rotateClipTime,
+        delta,
+        rotateInPlaceState.playRate,
+        rotateClip.sampler.clip.duration,
+      )
+      rotateClip.time = rotateClipTime
+      rotateClip.entry.time = rotateClipTime
+      rotateClip.entry.weight = rotateBlendWeight
+      rotateClip.entry.loop = true
+    } else if (rotateBlendWeight === 0) {
+      rotateClip = null
+    }
+    const montageWeight = Math.min(1, actionBlendWeight + rotateBlendWeight)
+    const baseWeight = 1 - montageWeight
     // ALS exposes crouch walk/run maxima of 1.5/2.0m/s. The pack has one crouch walk cycle, so
     // speeds above walk cadence-scale that cycle up to the authored crouch-run movement cap.
     const crouchLimitedSpeed = Math.min(rawSpeed, ALS_AUTHORED_GAIT_SPEEDS.crouching.run)
@@ -449,7 +718,7 @@ export function createAlsAnimationInstance(gltf: {
       const clip = roles[role]
       if (!clip) continue
       clip.entry.time = clip.sampler.clip.duration * phase
-      clip.entry.weight = weights[role]
+      clip.entry.weight = weights[role] * baseWeight
     }
 
     const fallbackGaitAmount =
@@ -517,6 +786,45 @@ export function createAlsAnimationInstance(gltf: {
     const result = evaluatePose(evaluator, mainInput)
     applyPose(applicator, result.pose)
 
+    let rotationYawSpeed = 0
+    if (action && activeMontage) {
+      const curveTime = activeMontage.clip.time
+      const curves = activeMontage.clip.curves
+      if (activeMontage.kind === 'turn-in-place') {
+        rotationYawSpeed =
+          (curves?.[ROTATION_YAW_SPEED_CURVE_NAME]?.(curveTime) ?? 0)
+          * activeMontage.rotationYawScale
+          * actionBlendWeight
+      }
+      if (curves?.[FOOT_LEFT_LOCK_CURVE_NAME]) {
+        state.footLeftLock = clamp01(
+          curves[FOOT_LEFT_LOCK_CURVE_NAME](curveTime),
+        )
+      }
+      if (curves?.[FOOT_RIGHT_LOCK_CURVE_NAME]) {
+        state.footRightLock = clamp01(
+          curves[FOOT_RIGHT_LOCK_CURVE_NAME](curveTime),
+        )
+      }
+    } else if (rotateClip) {
+      const curves = rotateClip.curves
+      rotationYawSpeed =
+        (curves?.[ROTATION_YAW_SPEED_CURVE_NAME]?.(rotateClipTime) ?? 0)
+        * rotateInPlaceState.playRate
+        * rotateBlendWeight
+      if (curves?.[FOOT_LEFT_LOCK_CURVE_NAME]) {
+        state.footLeftLock = clamp01(
+          curves[FOOT_LEFT_LOCK_CURVE_NAME](rotateClipTime),
+        )
+      }
+      if (curves?.[FOOT_RIGHT_LOCK_CURVE_NAME]) {
+        state.footRightLock = clamp01(
+          curves[FOOT_RIGHT_LOCK_CURVE_NAME](rotateClipTime),
+        )
+      }
+    }
+    state.rotationYawSpeed = rotationYawSpeed
+
     for (const source of gaitSources) source.weight = source.entry.weight
     const gaitAmount = blendCurveValue(
       result.curves,
@@ -550,6 +858,10 @@ export function createAlsAnimationInstance(gltf: {
     normalDebugWeights.gaitWalkingAmount = gaitAmounts.walking
     normalDebugWeights.gaitRunningAmount = gaitAmounts.running
     normalDebugWeights.gaitSprintingAmount = gaitAmounts.sprinting
+    normalDebugWeights[POSE_CROUCHING_CURVE_NAME] = state.crouchingAmount
+    normalDebugWeights[FOOT_LEFT_LOCK_CURVE_NAME] = state.footLeftLock
+    normalDebugWeights[FOOT_RIGHT_LOCK_CURVE_NAME] = state.footRightLock
+    normalDebugWeights[ROTATION_YAW_SPEED_CURVE_NAME] = state.rotationYawSpeed
     normalDebugWeights.overlayModeRifle = rifleActive ? 1 : 0
     for (const layer of ALS_LAYER_REGIONS) {
       normalDebugWeights[layer.baseCurve] = blendOverlayCurve(
@@ -570,13 +882,20 @@ export function createAlsAnimationInstance(gltf: {
       }
     }
     window.__weightTable = normalDebugWeights
+    return rotationYawSpeed
   }
 
-  return { playClip, clearSoloClip, refresh }
+  return { playClip, clearSoloClip, state, refresh }
 }
 
 /** ALS `RefreshVelocityBlend`; re-exported here so the refresh family lives with its class analog. */
 export const refreshVelocityBlend = stepVelocityBlend
+
+/** ALS `RefreshTurnInPlace`; pure state implementation lives at its mirrored State path. */
+export const refreshTurnInPlace = refreshTurnInPlaceState
+
+/** ALS `RefreshRotateInPlace`; pure state implementation lives at its mirrored State path. */
+export const refreshRotateInPlace = refreshRotateInPlaceState
 
 /** ALS `RefreshPose` gait ramps (AlsAnimationInstance.cpp:313-351). */
 export function refreshPose(

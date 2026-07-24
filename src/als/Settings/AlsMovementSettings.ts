@@ -154,8 +154,8 @@ export interface ResolvedGaitSpeeds {
 /**
  * Resolves authored gait speeds × pace into movement/threshold speeds, keeping walk < run so
  * the blendspace crossfade can't invert however the sliders are set. `slowWalk` (Caps Lock) picks
- * the walk mode, applied to both walk and crouch-walk. Single source consumed by BOTH Player
- * (target speed) and Operative (crossfade thresholds), so they can't diverge.
+ * the walk mode, applied to both walk and crouch-walk. Movement targets and animation crossfade
+ * thresholds consume this single source so they can't diverge.
  */
 export function resolveGaitSpeeds(
   profile: LocomotionProfile,

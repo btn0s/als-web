@@ -12,8 +12,8 @@ import {
  * match the existing foot-IK implementation, but shoulders/elbows/hands intentionally use the
  * same shape: `hip` is the root joint, `knee` the bend joint, and `ankle` the end effector.
  *
- * Operative resolves rig bones as nullable, so this shape accepts the records it already owns and
- * the apply helper preserves the existing "missing chain = skip" behavior. When present, both
+ * Rig bones resolve as nullable, so this shape preserves the existing "missing chain = skip"
+ * behavior. When present, both
  * driven joints must have parents, just as the inline implementations require when converting
  * target world rotations back into local bone rotations.
  */
@@ -36,9 +36,8 @@ export interface TwoBoneIkChain {
 export type TwoBoneIkApplyMode = 'sequential' | 'full-root-first'
 
 /**
- * Caller-owned storage for `applyTwoBoneIkToChain`. It intentionally mirrors the fields already
- * carried by Operative's arm/leg records, so wave 2 can initially pass those records themselves as
- * scratch without allocating or reshaping anything per frame. New call sites should create this
+ * Caller-owned storage for `applyTwoBoneIkToChain`. It mirrors the arm/leg chain fields so callers
+ * can pass their records as scratch without allocating or reshaping anything per frame. New call sites should create this
  * once with `createTwoBoneIkChainScratch`.
  */
 export interface TwoBoneIkChainScratch {
@@ -90,7 +89,7 @@ export function createTwoBoneIkChainScratch(): TwoBoneIkChainScratch {
  * between 0 and 1 the resulting ankle therefore is not guaranteed to approach `target` smoothly;
  * that is the explicitly deferred TD 4.2 behavior, not something TD 4.1 may change.
  *
- * Wave-2 Operative mapping:
+ * Call-site mapping:
  *
  * - hang arm: `applyTwoBoneIkToChain(arm, arm.target, arm.poleDirection, s.weight, 'sequential',
  *   arm)`, then keep the existing caller-owned hand grip-orientation slerp unchanged.

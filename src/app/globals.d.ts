@@ -14,6 +14,8 @@ declare global {
     __setGait?: (gait: AlsGait) => void
     __setStance?: (stance: AlsStance) => void
     __setOverlayMode?: (overlayMode: AlsOverlayMode) => void
+    /** Enable the debug view-yaw override and set its relative angle. */
+    __setViewYaw?: (viewYaw: number) => void
     /** Play a named source clip solo, or pass null to resume the ALS graph. */
     __playClip?: (name: string | null) => boolean
   }

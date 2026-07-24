@@ -182,7 +182,7 @@ function LoadedCharacter({
 
   // The hook owns clip sampling, pose-space composition, and the one skeleton write per frame.
   // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
-  useAlsAnimationInstance(gltf)
+  useAlsAnimationInstance(gltf, characterGroup, poseSample)
 
   useFrame(() => {
     const group = characterGroup.current
@@ -197,6 +197,7 @@ function LoadedCharacter({
     poseBones.pelvis.getWorldPosition(poseSample.current.pelvis)
     poseBones.head.getWorldPosition(poseSample.current.head)
     poseSample.current.poseHeight = poseSample.current.head.y - poseSample.current.ground.y
+    poseSample.current.characterYaw = group.rotation.y
     poseSample.current.ready =
       Number.isFinite(poseSample.current.poseHeight) && poseSample.current.poseHeight > 0
   })

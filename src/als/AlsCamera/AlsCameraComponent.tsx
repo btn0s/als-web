@@ -9,6 +9,10 @@ import type { CharacterPoseSample } from './poseCameraState'
 
 const POSE_HEIGHT_DAMPING = 7
 
+function normalizeAngleRadians(angle: number) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle))
+}
+
 interface AlsCameraComponentProps {
   characterSize: THREE.Vector3
   poseSample: MutableRefObject<CharacterPoseSample>
@@ -28,6 +32,8 @@ interface AlsCameraComponentProps {
 export function AlsCameraComponent({ characterSize, poseSample }: AlsCameraComponentProps) {
   const { camera, size: viewportSize } = useThree()
   const controls = useRef<ElementRef<typeof OrbitControls>>(null)
+  const initialOrbitAzimuth = useRef<number | undefined>(undefined)
+  const previousOrbitAzimuth = useRef<number | undefined>(undefined)
   const { poseFollow } = useControls(
     LEVA_ROOTS.camera,
     {
@@ -71,6 +77,8 @@ export function AlsCameraComponent({ characterSize, poseSample }: AlsCameraCompo
     camera.lookAt(target)
     controls.current?.target.copy(target)
     controls.current?.update()
+    initialOrbitAzimuth.current = controls.current?.getAzimuthalAngle()
+    previousOrbitAzimuth.current = initialOrbitAzimuth.current
   }, [
     camera,
     characterSize,
@@ -103,6 +111,21 @@ export function AlsCameraComponent({ characterSize, poseSample }: AlsCameraCompo
     orbit.target.add(scratch.targetDelta)
     camera.position.add(scratch.targetDelta)
     orbit.update()
+
+    const orbitAzimuth = orbit.getAzimuthalAngle()
+    if (initialOrbitAzimuth.current === undefined) {
+      initialOrbitAzimuth.current = orbitAzimuth
+    }
+    const previousAzimuth = previousOrbitAzimuth.current ?? orbitAzimuth
+    sample.viewYawAngle = THREE.MathUtils.radToDeg(normalizeAngleRadians(
+      orbitAzimuth - initialOrbitAzimuth.current - sample.characterYaw,
+    ))
+    sample.viewYawSpeed = delta > 0
+      ? Math.abs(THREE.MathUtils.radToDeg(
+          normalizeAngleRadians(orbitAzimuth - previousAzimuth),
+        )) / delta
+      : 0
+    previousOrbitAzimuth.current = orbitAzimuth
   })
 
   return (

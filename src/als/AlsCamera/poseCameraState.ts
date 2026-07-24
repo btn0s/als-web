@@ -9,6 +9,12 @@ export interface CharacterPoseSample {
   head: THREE.Vector3
   /** Animated head height above `ground`. */
   poseHeight: number
+  /** Orbit azimuth relative to character facing, in ALS yaw degrees. */
+  viewYawAngle: number
+  /** Absolute orbit yaw speed, in degrees per second. */
+  viewYawSpeed: number
+  /** Rendered character-root yaw, in radians. */
+  characterYaw: number
   ready: boolean
 }
 
@@ -18,6 +24,9 @@ export function createCharacterPoseSample(): CharacterPoseSample {
     pelvis: new THREE.Vector3(),
     head: new THREE.Vector3(),
     poseHeight: 0,
+    viewYawAngle: 0,
+    viewYawSpeed: 0,
+    characterYaw: 0,
     ready: false,
   }
 }

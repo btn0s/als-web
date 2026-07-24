@@ -1,8 +1,10 @@
 import { useFrame } from '@react-three/fiber'
 import { folder, useControls } from 'leva'
 import { useEffect, useMemo, useRef } from 'react'
+import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { LEVA_ROOTS } from '../app/levaRoots'
+import type { CharacterPoseSample } from './AlsCamera/poseCameraState'
 import {
   createAlsAnimationInstance,
 } from './AlsAnimationInstance'
@@ -21,7 +23,7 @@ import type { AlsGait, AlsStance } from './Settings/AlsMovementSettings'
 export function useAlsAnimationInstance(gltf: {
   animations: THREE.AnimationClip[]
   scene: THREE.Object3D
-}) {
+}, characterRoot: MutableRefObject<THREE.Group | null>, poseSample: MutableRefObject<CharacterPoseSample>) {
   const [{
     gait,
     moving,
@@ -29,6 +31,9 @@ export function useAlsAnimationInstance(gltf: {
     overlayMode,
     speed,
     direction,
+    rotateInPlace,
+    viewYawOverride,
+    viewYaw,
   }, setControls] = useControls(
     LEVA_ROOTS.movement,
     () => ({
@@ -66,6 +71,21 @@ export function useAlsAnimationInstance(gltf: {
           step: 1,
           label: 'direction (deg)',
         },
+        rotateInPlace: {
+          value: false,
+          label: 'RotateInPlace',
+        },
+        viewYawOverride: {
+          value: false,
+          label: 'override view yaw',
+        },
+        viewYaw: {
+          value: 0,
+          min: -180,
+          max: 180,
+          step: 1,
+          label: 'view yaw (deg)',
+        },
       }, { collapsed: true }),
     }),
     { order: 1 },
@@ -77,6 +97,9 @@ export function useAlsAnimationInstance(gltf: {
     overlayMode: overlayMode as AlsOverlayMode,
     speed,
     direction,
+    rotateInPlace,
+    viewYawAngle: viewYaw,
+    viewYawSpeed: 0,
   })
   controls.current = {
     gait: gait as AlsGait,
@@ -85,6 +108,9 @@ export function useAlsAnimationInstance(gltf: {
     overlayMode: overlayMode as AlsOverlayMode,
     speed,
     direction,
+    rotateInPlace,
+    viewYawAngle: viewYaw,
+    viewYawSpeed: 0,
   }
 
   useEffect(() => {
@@ -107,11 +133,15 @@ export function useAlsAnimationInstance(gltf: {
     window.__setOverlayMode = (value: AlsOverlayMode) => {
       if (ALS_OVERLAY_MODES.includes(value)) setControls({ overlayMode: value })
     }
+    window.__setViewYaw = (value: number) => {
+      setControls({ viewYaw: value, viewYawOverride: true })
+    }
     return () => {
       delete window.__setSpeed
       delete window.__setGait
       delete window.__setStance
       delete window.__setOverlayMode
+      delete window.__setViewYaw
     }
   }, [setControls])
 
@@ -128,7 +158,25 @@ export function useAlsAnimationInstance(gltf: {
     }
   }, [animationInstance])
 
+  const previousOverrideYaw = useRef(viewYaw)
   useFrame((_, delta) => {
-    animationInstance.refresh(delta, controls.current)
+    const frameControls = controls.current
+    if (viewYawOverride) {
+      frameControls.viewYawAngle = viewYaw
+      frameControls.viewYawSpeed = delta > 0
+        ? Math.abs(viewYaw - previousOverrideYaw.current) / delta
+        : 0
+      previousOverrideYaw.current = viewYaw
+    } else {
+      frameControls.viewYawAngle = poseSample.current.viewYawAngle
+      frameControls.viewYawSpeed = poseSample.current.viewYawSpeed
+      previousOverrideYaw.current = viewYaw
+    }
+    const rotationYawSpeed = animationInstance.refresh(delta, frameControls)
+    const root = characterRoot.current
+    if (root && rotationYawSpeed !== 0) {
+      root.rotation.y += THREE.MathUtils.degToRad(rotationYawSpeed * delta)
+      poseSample.current.characterYaw = root.rotation.y
+    }
   })
 }

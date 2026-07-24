@@ -90,7 +90,7 @@ function createTestChain(): TestChain {
 }
 
 /**
- * Oracle copied from Operative's hang-arm block before extraction. Keep this mechanically explicit:
+ * Independent hang-arm oracle. Keep this mechanically explicit:
  * sharing helper internals here would let a common refactor bug make implementation and oracle pass
  * together. The shoulder is slerped before the elbow target is derived.
  */
@@ -154,7 +154,7 @@ function applyHangArmInlineReference(
 }
 
 /**
- * Oracle copied separately from Operative's foot block. Unlike the arm version, it temporarily
+ * Independent foot-chain oracle. Unlike the arm version, it temporarily
  * installs the full hip target before deriving the knee target, then restores/slerps both joints.
  * This is the TD 4.2 caveat under test, not duplication to "clean up" inside the test.
  */

@@ -41,10 +41,11 @@ export function sampleClipCurves(
   for (const name in samplers) values.set(name, samplers[name](time))
 }
 
-/** Binary-searched linear curve sampler for sidecar/extras data emitted by the asset pipeline. */
+/** Binary-searched scalar-curve sampler for sidecar/extras data emitted by the asset pipeline. */
 export function createKeyframedScalarCurve(
   times: ArrayLike<number>,
   values: ArrayLike<number>,
+  interpolationModes?: ArrayLike<number>,
 ): ScalarCurveSampler {
   if (times.length === 0 || times.length !== values.length) {
     throw new Error('Scalar curve times and values must have the same non-zero length')
@@ -62,14 +63,22 @@ export function createKeyframedScalarCurve(
       else high = middle
     }
     const alpha = (time - times[low]) / (times[high] - times[low])
-    return values[low] + (values[high] - values[low]) * alpha
+    const interpolationMode = interpolationModes?.[low] ?? 0
+    if (interpolationMode === 1) return values[low]
+    // The GLB sidecar retains Unreal's interpolation mode but not RichCurve tangents. ALS's
+    // two-key PoseCrouching transitions are auto-tangent cubic ramps, so their recoverable Hermite
+    // form is smoothstep (zero slope at both authored endpoints).
+    const curveAlpha = interpolationMode === 2
+      ? alpha * alpha * (3 - 2 * alpha)
+      : alpha
+    return values[low] + (values[high] - values[low]) * curveAlpha
   }
 }
 
 /**
  * Compiles the GLB animation `extras.alsCurves` sidecar emitted by the ALS extraction pipeline.
- * Keys are `[time, value, interpolationMode]`; ALS web runtime policy is linear sampling, so the
- * third value is deliberately metadata-only here.
+ * Keys are `[time, value, interpolationMode]`; mode 0 is linear, mode 1 is constant, and mode 2
+ * uses the recoverable tangent-free cubic form documented in `createKeyframedScalarCurve`.
  */
 export function compileClipCurveSamplers(clip: ClipWithCurveExtras): ClipCurveSamplers {
   const extras = clip.userData?.alsCurves
@@ -80,6 +89,7 @@ export function compileClipCurveSamplers(clip: ClipWithCurveExtras): ClipCurveSa
     if (typeof rawCurve?.name !== 'string' || !Array.isArray(rawCurve.keys)) continue
     const times: number[] = []
     const values: number[] = []
+    const interpolationModes: number[] = []
     for (const rawKey of rawCurve.keys) {
       if (
         Array.isArray(rawKey)
@@ -88,10 +98,17 @@ export function compileClipCurveSamplers(clip: ClipWithCurveExtras): ClipCurveSa
       ) {
         times.push(rawKey[0])
         values.push(rawKey[1])
+        interpolationModes.push(
+          typeof rawKey[2] === 'number' ? rawKey[2] : 0,
+        )
       }
     }
     if (times.length > 0) {
-      samplers[rawCurve.name] = createKeyframedScalarCurve(times, values)
+      samplers[rawCurve.name] = createKeyframedScalarCurve(
+        times,
+        values,
+        interpolationModes,
+      )
     }
   }
   return samplers
