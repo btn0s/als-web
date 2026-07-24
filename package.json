@@ -11,6 +11,7 @@
     "check:e2e": "playwright test",
     "e2e": "playwright test",
     "lint": "oxlint",
+    "process-hygiene:agent-browser": "node scripts/agent-browser-process-hygiene.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
