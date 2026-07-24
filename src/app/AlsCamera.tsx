@@ -40,6 +40,9 @@ import { unwindDegrees } from '../als/State/AlsLocomotionState'
 import { createRapierAlsCameraTrace } from '../engine/rapierAlsCameraTrace'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 import {
+  getCharacterMovementFloorOffset,
+} from '../engine/characterMovementFloor'
+import {
   threeToUnrealVector,
   unrealToThreeVector,
 } from '../engine/unrealCoordinateSpace'
@@ -559,6 +562,9 @@ export function AlsCamera({
       threeToUnrealVector(ownerRigidBody.translation(), input.ownerLocation)
       input.ownerLocation.z +=
         activeCapsuleHalfHeight - ALS_STANDING_CAPSULE_HALF_HEIGHT
+        + getCharacterMovementFloorOffset(
+          character.locomotionMode === 'Grounded',
+        )
     } else {
       threeToUnrealVector(sample.ground, input.ownerLocation)
       input.ownerLocation.z +=

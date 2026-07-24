@@ -28,6 +28,9 @@ import {
   useAlsCharacter,
 } from '../als/AlsCharacter.hooks'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import {
+  UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+} from '../engine/characterMovementFloor'
 import { createRapierAlsCapsuleSweep } from '../engine/rapierAlsCapsuleSweep'
 import type { CharacterPoseSample } from './CharacterPoseSample'
 import {
@@ -299,7 +302,12 @@ function LoadedCharacter({
       />
       <group
         ref={characterGroup}
-        position={[0, ALS_MESH_RELATIVE_LOCATION_Z, 0]}
+        position={[
+          0,
+          ALS_MESH_RELATIVE_LOCATION_Z
+            + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+          0,
+        ]}
       >
         <group rotation-y={ALS_MESH_COMPONENT_YAW_RADIANS}>
           <primitive object={gltf.scene} />

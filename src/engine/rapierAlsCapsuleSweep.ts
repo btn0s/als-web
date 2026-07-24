@@ -3,6 +3,9 @@ import type {
   AlsGroundPredictionSweepHitInput,
   AlsGroundPredictionSweepQuery,
 } from '../als/State/AlsInAirState'
+import {
+  UE_CHARACTER_MOVEMENT_MAX_FLOOR_DISTANCE,
+} from './characterMovementFloor'
 
 interface RapierVector {
   x: number
@@ -130,12 +133,12 @@ export interface AlsGroundProbeInput {
 }
 
 /*
- * Rapier does not expose UE CharacterMovement's FindFloor result. This short shape cast is the
- * web-engine equivalent at that missing seam: it tests the complete capsule, excludes its owner,
- * and applies ALS/CharacterMovement's walkable-normal predicate. The 2 cm probe distance is
- * original engine-adapter policy, intentionally isolated here rather than presented as ALS data.
+ * Rapier does not expose UE CharacterMovement's FindFloor result. This short shape cast tests the
+ * complete capsule, excludes its owner, applies CharacterMovement's MAX_FLOOR_DIST boundary, and
+ * then applies ALS's inherited walkable-normal predicate.
  */
-export const ALS_RAPIER_GROUND_PROBE_DISTANCE = 0.02
+export const ALS_RAPIER_GROUND_PROBE_DISTANCE =
+  UE_CHARACTER_MOVEMENT_MAX_FLOOR_DISTANCE
 
 export function probeRapierAlsGround(
   sweepCapsule: AlsGroundPredictionCapsuleSweep,

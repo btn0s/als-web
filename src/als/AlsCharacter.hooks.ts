@@ -11,6 +11,9 @@ import { LEVA_ROOTS } from '../app/levaRoots'
 import {
   probeRapierAlsGround,
 } from '../engine/rapierAlsCapsuleSweep'
+import {
+  getCharacterMovementFloorOffset,
+} from '../engine/characterMovementFloor'
 import type {
   AlsGroundPredictionCapsuleSweep,
 } from './State/AlsInAirState'
@@ -882,12 +885,16 @@ export function useAlsCharacter(
     threeToUnrealVector(linearVelocity, actualVelocity.current)
     threeToUnrealVector(body.translation(), actorLocation.current)
     const queryCapsuleHalfHeight = getAlsCapsuleHalfHeight(current.stance)
+    const queryFloorOffset = getCharacterMovementFloorOffset(
+      current.locomotionMode === 'Grounded',
+    )
     const queryLocation = capsuleLocation.current
     queryLocation.x = actorLocation.current.x
     queryLocation.y = actorLocation.current.y
     queryLocation.z = actorLocation.current.z
       + queryCapsuleHalfHeight
       - ALS_STANDING_CAPSULE_HALF_HEIGHT
+      + queryFloorOffset
     if (sweepCapsule) {
       const ground = probeRapierAlsGround(sweepCapsule, {
         location: queryLocation,
@@ -957,6 +964,10 @@ export function useAlsCharacter(
     )
     const root = characterRoot.current
     if (root) {
+      root.position.y = ALS_MESH_RELATIVE_LOCATION_Z
+        + getCharacterMovementFloorOffset(
+          current.locomotionMode === 'Grounded',
+        )
       root.rotation.y = unrealYawDegreesToThreeRadians(
         current.actorYawAngle,
       )
@@ -985,11 +996,15 @@ export function useAlsCharacter(
     frame.locomotionMode = current.locomotionMode
     frame.scale = 1
     const activeCapsuleHalfHeight = getAlsCapsuleHalfHeight(current.stance)
+    const activeFloorOffset = getCharacterMovementFloorOffset(
+      current.locomotionMode === 'Grounded',
+    )
     queryLocation.x = actorLocation.current.x
     queryLocation.y = actorLocation.current.y
     queryLocation.z = actorLocation.current.z
       + activeCapsuleHalfHeight
       - ALS_STANDING_CAPSULE_HALF_HEIGHT
+      + activeFloorOffset
     frame.location = queryLocation
     frame.velocity = state.velocity
     frame.capsuleRadius = ALS_CAPSULE_RADIUS
