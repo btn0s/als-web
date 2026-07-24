@@ -35,7 +35,11 @@ before feature work.
   this in Blueprint content; ours must be code) and `src/engine/` (UE's animation runtime itself,
   which the plugin doesn't own either). New systems land at their mirrored path or not at all.
 - **Discovery once, determinism forever:** agent reasoning is for uncertainty — cracking a
-  format, probing an asset, root-causing a bug. The moment a behavior is understood and
+  format, probing an asset, root-causing a bug. And before burning discovery on a problem at
+  all, check whether it's ALREADY solved: search for existing libraries, tools, and prior art
+  first (this repo exists because CUE4Parse had already solved uasset parsing, gltf-transform
+  had solved GLB authoring, and ggez had proven the pose-buffer pattern — verify license and
+  quality, prefer proven code as a dependency or a pattern reference over reinvention). The moment a behavior is understood and
   repeatable, capture it where no one pays for it again: a script (`run.sh`, one command per
   pack), a validator that asserts the invariant (`validate-glb.mjs`, the test suites), a data
   file (`clips.manifest`), a persisted research doc consumed as fact by later work, or a rule in
