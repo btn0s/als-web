@@ -5,11 +5,13 @@ import { describe, expect, it } from 'vitest'
 import type { AuthoredBlendSpace } from '../../engine/blendSpace'
 import {
   ALS_ANIMATED_STANDING_SPEEDS_CM_PER_SECOND,
+  ALS_GROUNDED_DIRECTION_MULTI_WAY_BLEND_TABLE,
   ALS_GROUNDED_DIRECTION_PLAYER,
   ALS_GROUNDED_DIRECTION_SELECTION_RULE_STATUS,
   ALS_GROUNDED_DIRECTION_STATES,
   ALS_GROUNDED_DIRECTION_TRANSITIONS,
   ALS_HIPS_DIRECTIONS,
+  ALS_MOVE_DIRECTION_CHANGE_PROFILE_STATUS,
   ALS_NORMAL_STANDING_GAMEPLAY_SPEEDS_CM_PER_SECOND,
   authoredDirectionTransitions,
   calculateMovementDirection,
@@ -20,10 +22,12 @@ import {
   refreshStandingMovement,
   sampleStrideBlendAmountRun,
   sampleStrideBlendAmountWalk,
+  selectGroundedDirectionTransition,
   selectGroundedDirectionState,
 } from './groundedLocomotion'
 import type {
   AlsGait,
+  AlsGroundedVelocityBlend,
   AlsHipsDirection,
   AlsStandingMovementInput,
 } from './groundedLocomotion'
@@ -120,6 +124,34 @@ function denseClipWeights(
   weights: ReturnType<typeof evaluateGroundedLocomotionGraph>,
 ) {
   return Object.fromEntries(weights.map((entry) => [entry.clip, entry.weight]))
+}
+
+const FORWARD_VELOCITY_BLEND: AlsGroundedVelocityBlend = {
+  forwardAmount: 1,
+  backwardAmount: 0,
+  leftAmount: 0,
+  rightAmount: 0,
+}
+
+const BACKWARD_VELOCITY_BLEND: AlsGroundedVelocityBlend = {
+  forwardAmount: 0,
+  backwardAmount: 1,
+  leftAmount: 0,
+  rightAmount: 0,
+}
+
+const LEFT_VELOCITY_BLEND: AlsGroundedVelocityBlend = {
+  forwardAmount: 0,
+  backwardAmount: 0,
+  leftAmount: 1,
+  rightAmount: 0,
+}
+
+const RIGHT_VELOCITY_BLEND: AlsGroundedVelocityBlend = {
+  forwardAmount: 0,
+  backwardAmount: 0,
+  leftAmount: 0,
+  rightAmount: 1,
 }
 
 function independentCubic(
@@ -363,23 +395,61 @@ describe('VERIFIED ALS content-oracle graph', () => {
   })
 
   it.each([
-    ['Forward', 'A_Als_Walk_Forward', 'A_Als_Run_Forward'],
-    ['Backward', 'A_Als_Walk_Backward', 'A_Als_Run_Backward'],
-    ['LeftForward', 'A_Als_Walk_Left_Forward', 'A_Als_Run_Left_Forward'],
-    ['LeftBackward', 'A_Als_Walk_Left_Backward', 'A_Als_Run_Left_Backward'],
-    ['RightForward', 'A_Als_Walk_Right_Forward', 'A_Als_Run_Right_Forward'],
-    ['RightBackward', 'A_Als_Walk_Right_Backward', 'A_Als_Run_Right_Backward'],
+    [
+      'Forward',
+      'Forward',
+      FORWARD_VELOCITY_BLEND,
+      'A_Als_Walk_Forward',
+      'A_Als_Run_Forward',
+    ],
+    [
+      'Backward',
+      'Forward',
+      BACKWARD_VELOCITY_BLEND,
+      'A_Als_Walk_Backward',
+      'A_Als_Run_Backward',
+    ],
+    [
+      'LeftForward',
+      'Forward',
+      LEFT_VELOCITY_BLEND,
+      'A_Als_Walk_Left_Forward',
+      'A_Als_Run_Left_Forward',
+    ],
+    [
+      'LeftBackward',
+      'Backward',
+      LEFT_VELOCITY_BLEND,
+      'A_Als_Walk_Left_Backward',
+      'A_Als_Run_Left_Backward',
+    ],
+    [
+      'RightForward',
+      'Forward',
+      RIGHT_VELOCITY_BLEND,
+      'A_Als_Walk_Right_Forward',
+      'A_Als_Run_Right_Forward',
+    ],
+    [
+      'RightBackward',
+      'Backward',
+      RIGHT_VELOCITY_BLEND,
+      'A_Als_Walk_Right_Backward',
+      'A_Als_Run_Right_Backward',
+    ],
   ] as const)(
-    'selects only the %s authored player and evaluates its Walk/Run corners',
-    (direction, walkClip, runClip) => {
+    'reaches the %s cached player through the authored state table',
+    (_player, state, velocityBlend, walkClip, runClip) => {
       expect(denseClipWeights(evaluateGroundedLocomotionGraph(
         graph,
-        direction,
+        state,
+        velocityBlend,
         { strideBlendAmount: 1, walkRunBlendAmount: 0, playRate: 0.75 },
       ))).toEqual({ [walkClip]: 1 })
       expect(denseClipWeights(evaluateGroundedLocomotionGraph(
         graph,
-        direction,
+        state,
+        velocityBlend,
         { strideBlendAmount: 1, walkRunBlendAmount: 1, playRate: 1.25 },
       ))).toEqual({ [runClip]: 1 })
     },
@@ -388,12 +458,14 @@ describe('VERIFIED ALS content-oracle graph', () => {
   it('uses authored pose samples on the Stride Amount axis instead of an idle crossfade', () => {
     expect(denseClipWeights(evaluateGroundedLocomotionGraph(
       graph,
-      'LeftForward',
+      'Forward',
+      LEFT_VELOCITY_BLEND,
       { strideBlendAmount: 0, walkRunBlendAmount: 0, playRate: 1 },
     ))).toEqual({ A_Als_Walk_Left_Pose: 1 })
     expect(denseClipWeights(evaluateGroundedLocomotionGraph(
       graph,
-      'LeftForward',
+      'Forward',
+      LEFT_VELOCITY_BLEND,
       { strideBlendAmount: 0, walkRunBlendAmount: 1, playRate: 1 },
     ))).toEqual({ A_Als_Run_Left_Pose: 1 })
   })
@@ -401,13 +473,73 @@ describe('VERIFIED ALS content-oracle graph', () => {
   it('preserves the exceptional authored RightBackward GridSamples topology', () => {
     expect(denseClipWeights(evaluateGroundedLocomotionGraph(
       graph,
-      'RightBackward',
+      'Backward',
+      RIGHT_VELOCITY_BLEND,
       { strideBlendAmount: 0.25, walkRunBlendAmount: 0.25, playRate: 1 },
     ))).toEqual({
       A_Als_Walk_Right_Backward: 0.1875,
       A_Als_Walk_Left_Pose: 0.5625,
       A_Als_Run_Right_Backward: 0.0625,
       A_Als_Run_Left_Pose: 0.1875,
+    })
+  })
+
+  it('matches the six state-specific normalized MultiWayBlend cache tables', () => {
+    expect(ALS_GROUNDED_DIRECTION_MULTI_WAY_BLEND_TABLE).toEqual({
+      Forward: ['Forward', 'Backward', 'LeftForward', 'RightForward'],
+      Backward: ['Forward', 'Backward', 'LeftBackward', 'RightBackward'],
+      RightForward: ['Forward', 'Backward', 'LeftBackward', 'RightForward'],
+      RightBackward: ['Forward', 'Backward', 'LeftForward', 'RightBackward'],
+      LeftForward: ['Forward', 'Backward', 'LeftForward', 'RightBackward'],
+      LeftBackward: ['Forward', 'Backward', 'LeftBackward', 'RightForward'],
+    })
+
+    const standing = {
+      strideBlendAmount: 1,
+      walkRunBlendAmount: 1,
+      playRate: 1,
+    }
+    expect(denseClipWeights(evaluateGroundedLocomotionGraph(
+      graph,
+      'RightForward',
+      LEFT_VELOCITY_BLEND,
+      standing,
+    ))).toEqual({ A_Als_Run_Left_Backward: 1 })
+    expect(denseClipWeights(evaluateGroundedLocomotionGraph(
+      graph,
+      'RightBackward',
+      LEFT_VELOCITY_BLEND,
+      standing,
+    ))).toEqual({ A_Als_Run_Left_Forward: 1 })
+    expect(denseClipWeights(evaluateGroundedLocomotionGraph(
+      graph,
+      'LeftForward',
+      RIGHT_VELOCITY_BLEND,
+      standing,
+    ))).toEqual({ A_Als_Run_Right_Backward: 1 })
+    expect(denseClipWeights(evaluateGroundedLocomotionGraph(
+      graph,
+      'LeftBackward',
+      RIGHT_VELOCITY_BLEND,
+      standing,
+    ))).toEqual({ A_Als_Run_Right_Forward: 1 })
+  })
+
+  it('normalizes the four VelocityBlend alphas before mixing cached players', () => {
+    expect(denseClipWeights(evaluateGroundedLocomotionGraph(
+      graph,
+      'Forward',
+      {
+        forwardAmount: 2,
+        backwardAmount: 1,
+        leftAmount: 1,
+        rightAmount: 0,
+      },
+      { strideBlendAmount: 1, walkRunBlendAmount: 1, playRate: 1 },
+    ))).toEqual({
+      A_Als_Run_Forward: 0.5,
+      A_Als_Run_Backward: 0.25,
+      A_Als_Run_Left_Forward: 0.25,
     })
   })
 
@@ -421,7 +553,7 @@ describe('VERIFIED ALS content-oracle graph', () => {
     }
   })
 
-  it('matches all 24 authored transitions without inventing delegate predicates', () => {
+  it('matches all 24 serialized transitions and recovered bytecode predicates', () => {
     const machine = abpGraph.assets.AB_Als_Standing.stateMachines.find(
       (candidate) => candidate.MachineName === 'Movement States',
     )
@@ -454,14 +586,151 @@ describe('VERIFIED ALS content-oracle graph', () => {
 
     expect(machine.InitialState).toBe(0)
     expect(machine.States.every((state) => !state.bAlwaysResetOnEntry)).toBe(true)
-    expect(ALS_GROUNDED_DIRECTION_TRANSITIONS).toEqual(extracted)
+    expect(ALS_GROUNDED_DIRECTION_TRANSITIONS.map(({
+      rule: _rule,
+      priorityOrder: _priorityOrder,
+      ...transition
+    }) => transition)).toEqual(extracted)
     expect(ALS_GROUNDED_DIRECTION_SELECTION_RULE_STATUS.kind)
-      .toBe('unrecoverable')
+      .toBe('verified')
 
-    // Multiple authored edges share endpoints but have different delegate indices. Picking one
-    // without the missing bytecode would be a HYPOTHESIS, so the API returns every candidate.
     expect(authoredDirectionTransitions('RightBackward', 'RightForward'))
       .toHaveLength(3)
+    expect(ALS_GROUNDED_DIRECTION_TRANSITIONS.map((transition) => [
+      transition.rule,
+      transition.priorityOrder,
+    ])).toEqual([
+      ['MoveRight', 1],
+      ['MoveLeft', 1],
+      ['MoveBackward', 1],
+      ['MoveRight', 1],
+      ['MoveLeft', 1],
+      ['MoveForward', 1],
+      ['MoveLeft', 1],
+      ['MoveBackward', 1],
+      ['MoveForward', 1],
+      ['SetHipsLeft', 2],
+      ['MoveLeft', 1],
+      ['MoveForward', 1],
+      ['NeutralRightBackward', 1],
+      ['MoveBackward', 1],
+      ['SetHipsRight', 2],
+      ['MoveRight', 1],
+      ['MoveBackward', 1],
+      ['MoveForward', 1],
+      ['SetHipsRight', 2],
+      ['MoveRight', 1],
+      ['MoveForward', 1],
+      ['NeutralLeftBackward', 1],
+      ['MoveBackward', 1],
+      ['SetHipsLeft', 2],
+    ])
+    expect(ALS_MOVE_DIRECTION_CHANGE_PROFILE_STATUS).toMatchObject({
+      kind: 'measured-gap',
+      implemented: false,
+      blendScale: 2,
+    })
+    expect(ALS_MOVE_DIRECTION_CHANGE_PROFILE_STATUS.bones).toHaveLength(18)
+  })
+
+  it('preserves authored outgoing priority when predicates overlap', () => {
+    expect(selectGroundedDirectionTransition({
+      hipsDirection: 'RightForward',
+      movementDirection: 'Backward',
+      hipsDirectionLockAmount: -1,
+      feetCrossingAmount: 0,
+      stateWeight: 1,
+    })?.transitionIndex).toBe(7)
+    expect(selectGroundedDirectionTransition({
+      hipsDirection: 'RightBackward',
+      movementDirection: 'Forward',
+      hipsDirectionLockAmount: 0,
+      feetCrossingAmount: 0,
+      stateWeight: 1,
+    })?.transitionIndex).toBe(11)
+    expect(selectGroundedDirectionTransition({
+      hipsDirection: 'RightBackward',
+      movementDirection: 'Backward',
+      hipsDirectionLockAmount: 1,
+      feetCrossingAmount: 0,
+      stateWeight: 1,
+    })?.transitionIndex).toBe(13)
+  })
+
+  it('matches SetHips and full-weight neutral guard boundaries', () => {
+    const rightForward = {
+      hipsDirection: 'RightForward' as const,
+      movementDirection: 'Right' as const,
+      stateWeight: 1,
+    }
+    expect(selectGroundedDirectionTransition({
+      ...rightForward,
+      hipsDirectionLockAmount: -0.5,
+      feetCrossingAmount: 0,
+    })?.transitionIndex).toBe(9)
+    expect(selectGroundedDirectionTransition({
+      ...rightForward,
+      hipsDirectionLockAmount: -0.499999,
+      feetCrossingAmount: 0,
+    })).toBeNull()
+    expect(selectGroundedDirectionTransition({
+      ...rightForward,
+      hipsDirectionLockAmount: -1,
+      feetCrossingAmount: Number.EPSILON,
+    })).toBeNull()
+
+    const neutralRightBackward = {
+      hipsDirection: 'RightBackward' as const,
+      movementDirection: 'Right' as const,
+      hipsDirectionLockAmount: 0,
+      feetCrossingAmount: 0,
+    }
+    expect(selectGroundedDirectionTransition({
+      ...neutralRightBackward,
+      stateWeight: 1,
+    })?.transitionIndex).toBe(12)
+    expect(selectGroundedDirectionTransition({
+      ...neutralRightBackward,
+      stateWeight: 0.999999,
+    })).toBeNull()
+    expect(selectGroundedDirectionTransition({
+      ...neutralRightBackward,
+      hipsDirectionLockAmount: -0.5,
+      stateWeight: 1,
+    })).toBeNull()
+    expect(selectGroundedDirectionTransition({
+      ...neutralRightBackward,
+      hipsDirectionLockAmount: 0.5,
+      stateWeight: 1,
+    })?.transitionIndex).toBe(14)
+  })
+
+  it('exposes exact pivot timing and clamps prior resolved curve inputs', () => {
+    expect(selectGroundedDirectionTransition({
+      hipsDirection: 'Forward',
+      movementDirection: 'Backward',
+      hipsDirectionLockAmount: 0,
+      feetCrossingAmount: 0,
+      stateWeight: 1,
+    })).toMatchObject({
+      transitionIndex: 2,
+      duration: 0.5,
+      blendOption: 'Cubic',
+      activatePivot: true,
+    })
+    expect(selectGroundedDirectionTransition({
+      hipsDirection: 'LeftForward',
+      movementDirection: 'Left',
+      hipsDirectionLockAmount: 99,
+      feetCrossingAmount: -99,
+      stateWeight: 1,
+    })).toMatchObject({
+      transitionIndex: 18,
+      rule: 'SetHipsRight',
+      duration: 0.75,
+      blendOption: 'QuadraticInOut',
+      activatePivot: false,
+    })
   })
 
   it('matches the separate MS_Als_Normal gameplay-speed oracle', () => {
@@ -500,6 +769,7 @@ describe('VERIFIED ALS content-oracle graph', () => {
       const weights = evaluateGroundedLocomotionGraph(
         graph,
         'Forward',
+        FORWARD_VELOCITY_BLEND,
         standing,
       )
       expect(weights.every((entry) => entry.playRate === standing.playRate))

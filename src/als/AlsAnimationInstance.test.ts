@@ -129,7 +129,10 @@ describe('AlsAnimationInstance playback regression', () => {
     const normalStart = snapshotMotionBones(normalGltf.scene)
     normal.refresh(0.3, controls)
     const normalMoved = snapshotMotionBones(normalGltf.scene)
-    normal.refresh(run.duration * 2 - 0.3, controls)
+    normal.refresh(
+      run.duration * 2 / normal.state.standingMovement.playRate - 0.3,
+      controls,
+    )
     expectMotionAndPeriodicity(
       normalStart,
       normalMoved,
@@ -234,6 +237,172 @@ describe('AlsAnimationInstance playback regression', () => {
     ).toBe(0)
   })
 
+  it('drives settled Running from the selected authored WalkRun player and exact play rate', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    refreshFrames(instance, 60, controls)
+
+    expect(instance.state.hipsDirection).toBe('Forward')
+    expect(instance.state.standingMovement.strideBlendAmount).toBe(1)
+    expect(instance.state.standingMovement.walkRunBlendAmount).toBe(1)
+    expect(instance.state.standingMovement.playRate).toBeCloseTo(375 / 350, 12)
+    expect(window.__weightTable?.idle).toBe(0)
+    expect(window.__weightTable?.runFwd).toBe(1)
+    expect(window.__weightTable?.walkFwd).toBe(0)
+    expect(window.__weightTable?.A_Als_Run_Forward).toBe(1)
+    expect(window.__weightTable?.A_Als_Run_Backward).toBe(0)
+    expect(window.__weightTable?.['HipsDirection.Forward']).toBe(1)
+    expect(window.__weightTable?.StandingPlayRate).toBeCloseTo(375 / 350, 12)
+  })
+
+  it('uses authored zero-stride pose samples instead of blending low speed with Idle', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const lowSpeed = {
+      ...controls,
+      gait: 'Walking' as const,
+      speed: 0.5,
+      direction: 180,
+    }
+    refreshFrames(instance, 60, lowSpeed)
+
+    const stride = instance.state.standingMovement.strideBlendAmount
+    expect(stride).toBeGreaterThan(0.2)
+    expect(stride).toBeLessThan(1)
+    expect(instance.state.movementDirection).toBe('Backward')
+    expect(instance.state.hipsDirection).toBe('Backward')
+    expect(window.__weightTable?.idle).toBe(0)
+    expect(window.__weightTable?.A_Als_Walk_Backward).toBeCloseTo(stride, 12)
+    expect(window.__weightTable?.A_Als_Walk_Forward_Pose).toBeCloseTo(
+      1 - stride,
+      12,
+    )
+    expect(window.__weightTable?.A_Als_Walk_Forward).toBe(0)
+  })
+
+  it('retains the SetHipsDirection analog seam and keeps Sprint separate', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const leftControls = { ...controls, direction: -90 }
+
+    instance.refresh(0, leftControls)
+    instance.setHipsDirection('LeftForward')
+    refreshFrames(instance, 60, leftControls)
+    expect(window.__weightTable?.runLeftFwd).toBe(1)
+    expect(window.__weightTable?.runFwd).toBe(0)
+    expect(window.__weightTable?.['HipsDirection.LeftForward']).toBe(1)
+
+    const sprint = {
+      ...controls,
+      gait: 'Sprinting' as const,
+      speed: 6.5,
+    }
+    refreshFrames(instance, 60, sprint)
+    expect(window.__weightTable?.sprint).toBe(1)
+    expect(window.__weightTable?.runLeftFwd).toBe(0)
+    expect(instance.state.pose.amount).toBe(3)
+    expect(instance.state.standingMovement.playRate).toBeCloseTo(650 / 600, 12)
+  })
+
+  it('runs RefreshMovementDirection and the recovered state predicates automatically', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const leftControls = { ...controls, direction: -90 }
+
+    // Movement States reinitializes to Forward and skips transitions on its first relevant frame.
+    instance.refresh(0, leftControls)
+    expect(instance.state.movementDirection).toBe('Left')
+    expect(instance.state.hipsDirection).toBe('Forward')
+    expect(instance.state.directionTransitionRequest).toBeNull()
+
+    instance.refresh(1 / 60, leftControls)
+    expect(instance.state.hipsDirection).toBe('LeftForward')
+    expect(instance.state.directionTransitionRequest).toMatchObject({
+      transitionIndex: 1,
+      from: 'Forward',
+      to: 'LeftForward',
+      rule: 'MoveLeft',
+      duration: 0.7,
+      blendOption: 'Cubic',
+      activatePivot: false,
+      moveDirectionChangeProfileApplied: false,
+    })
+    expect(window.__weightTable?.['MovementDirection.Left']).toBe(1)
+    expect(window.__weightTable?.GroundedDirectionTransitionIndex).toBe(1)
+  })
+
+  it('uses the authored normalized MultiWayBlend instead of one directional player', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const diagonalControls = { ...controls, direction: 45 }
+    refreshFrames(instance, 60, diagonalControls)
+
+    // 45 degrees remains the Forward hips state, whose Right input is Move Right Forward.
+    expect(instance.state.hipsDirection).toBe('Forward')
+    expect(window.__weightTable?.runFwd).toBeCloseTo(0.5, 8)
+    expect(window.__weightTable?.runRightFwd).toBeCloseTo(0.5, 8)
+    expect(window.__weightTable?.runBwd).toBe(0)
+    expect(window.__weightTable?.runRightBwd).toBe(0)
+  })
+
+  it('exposes pivot timing and the unapplied MoveDirectionChange profile gap', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    instance.refresh(0, controls)
+
+    instance.refresh(1 / 60, { ...controls, direction: 180 })
+    expect(instance.state.hipsDirection).toBe('Backward')
+    expect(instance.state.directionTransitionRequest).toMatchObject({
+      transitionIndex: 2,
+      from: 'Forward',
+      to: 'Backward',
+      duration: 0.5,
+      blendOption: 'Cubic',
+      activatePivot: true,
+      moveDirectionChangeProfileApplied: false,
+    })
+    expect(window.__weightTable?.GroundedDirectionTransitionDuration).toBe(0.5)
+    expect(window.__weightTable?.GroundedDirectionTransitionActivatePivot).toBe(1)
+    expect(window.__weightTable?.MoveDirectionChangeProfileApplied).toBe(0)
+  })
+
+  it('consumes previous resolved HipsDirectionLock and FeetCrossing values', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const rightControls = { ...controls, direction: 90 }
+    instance.refresh(0, rightControls)
+
+    instance.setHipsDirection('RightForward')
+    instance.state.hipsDirectionLockAmount = -0.5
+    instance.state.feetCrossingAmount = 0
+    instance.refresh(1 / 60, rightControls)
+    expect(instance.state.hipsDirection).toBe('RightBackward')
+    expect(instance.state.directionTransitionRequest).toMatchObject({
+      transitionIndex: 9,
+      rule: 'SetHipsLeft',
+      duration: 0.75,
+      blendOption: 'QuadraticInOut',
+      activatePivot: false,
+    })
+  })
+
+  it('uses the authored 0.2s Hermite Idle-to-Move transition, independent of speed', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const idle = { ...controls, moving: false, speed: 0 }
+    instance.refresh(0, idle)
+    expect(window.__weightTable?.['clipPhase.runFwd']).toBeCloseTo(0.2, 6)
+    expect(window.__weightTable?.['clipPhase.sprint']).toBeCloseTo(0.166667, 6)
+
+    instance.refresh(0.1, controls)
+    expect(window.__weightTable?.idle).toBeCloseTo(0.5, 12)
+    expect(window.__weightTable?.runFwd).toBeCloseTo(0.5, 12)
+
+    instance.refresh(0.1, controls)
+    expect(window.__weightTable?.idle).toBe(0)
+    expect(window.__weightTable?.runFwd).toBe(1)
+  })
+
   it('consumes the real GLB Left/Right extras for marker-relative gait sync', async () => {
     const gltf = await loadAlsGltf()
     const walk = gltf.animations.find(
@@ -248,5 +417,28 @@ describe('AlsAnimationInstance playback regression', () => {
     const blendControls = { ...controls, speed: 2.75 }
     refreshFrames(instance, 30, blendControls)
     expect(window.__weightTable?.locomotionMarkerSync).toBe(1)
+  })
+
+  it('keeps all six upstream WalkRun player sources advancing in the Movement sync group', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const phaseKeys = [
+      'clipPhase.runFwd',
+      'clipPhase.runBwd',
+      'clipPhase.runLeftFwd',
+      'clipPhase.runLeftBwd',
+      'clipPhase.runRightFwd',
+      'clipPhase.runRightBwd',
+    ] as const
+
+    instance.refresh(0, controls)
+    const initialPhases = phaseKeys.map((key) => window.__weightTable?.[key])
+    refreshFrames(instance, 10, controls)
+    const advancedPhases = phaseKeys.map((key) => window.__weightTable?.[key])
+    for (let index = 0; index < phaseKeys.length; index++) {
+      expect(advancedPhases[index], phaseKeys[index]).not.toBe(
+        initialPhases[index],
+      )
+    }
   })
 })

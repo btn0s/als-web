@@ -10,6 +10,8 @@ export const POSE_CROUCHING_CURVE_NAME = 'PoseCrouching'
 export const POSE_MOVING_CURVE_NAME = 'PoseMoving'
 export const FOOT_LEFT_LOCK_CURVE_NAME = 'FootLeftLock'
 export const FOOT_RIGHT_LOCK_CURVE_NAME = 'FootRightLock'
+export const HIPS_DIRECTION_LOCK_CURVE_NAME = 'HipsDirectionLock'
+export const FEET_CROSSING_CURVE_NAME = 'FeetCrossing'
 export const ROTATION_YAW_SPEED_CURVE_NAME = 'RotationYawSpeed'
 
 /**
