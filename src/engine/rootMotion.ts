@@ -169,6 +169,11 @@ export interface AuthoredRootMotionDelta extends RootMotionDelta {
   readonly scale: Float32Array
 }
 
+/** Runtime form of UE's FRootMotionMovementParams. */
+export interface RootMotionMovementParams extends AuthoredRootMotionDelta {
+  blendWeight: number
+}
+
 export interface AuthoredRootMotionExtractionOptions {
   readonly loop?: boolean
   /**
@@ -187,6 +192,8 @@ const ROOT_LOCK_MODES = new Set<RootMotionRootLock>([
   'Zero',
 ])
 const LOOP_EPSILON = 1e-9
+const UE_KINDA_SMALL_NUMBER = 1e-4
+const UE_SMALL_NUMBER = 1e-8
 
 function isFiniteTuple(value: unknown, size: number): value is number[] {
   return (
@@ -339,6 +346,27 @@ export function createAuthoredRootMotionDelta(): AuthoredRootMotionDelta {
   }
 }
 
+export function createRootMotionMovementParams(): RootMotionMovementParams {
+  return {
+    ...createAuthoredRootMotionDelta(),
+    blendWeight: 0,
+  }
+}
+
+export function clearRootMotionMovementParams(
+  rootMotion: RootMotionMovementParams,
+) {
+  rootMotion.translation.fill(0)
+  rootMotion.rotation[0] = 0
+  rootMotion.rotation[1] = 0
+  rootMotion.rotation[2] = 0
+  rootMotion.rotation[3] = 1
+  rootMotion.scale.fill(1)
+  rootMotion.valid = false
+  rootMotion.blendWeight = 0
+  return rootMotion
+}
+
 function positiveModulo(value: number, divisor: number) {
   const result = ((value % divisor) + divisor) % divisor
   return result < LOOP_EPSILON || divisor - result < LOOP_EPSILON ? 0 : result
@@ -454,6 +482,25 @@ function multiplyQuaternion(
   normalizeQuaternionInPlace(out, 0)
 }
 
+function multiplyQuaternionUnnormalized(
+  a: Float32Array,
+  b: Float32Array,
+  out: Float32Array,
+) {
+  const ax = a[0]
+  const ay = a[1]
+  const az = a[2]
+  const aw = a[3]
+  const bx = b[0]
+  const by = b[1]
+  const bz = b[2]
+  const bw = b[3]
+  out[0] = aw * bx + ax * bw + ay * bz - az * by
+  out[1] = aw * by - ax * bz + ay * bw + az * bx
+  out[2] = aw * bz + ax * by - ay * bx + az * bw
+  out[3] = aw * bw - ax * bx - ay * by - az * bz
+}
+
 function rotateVector(
   quaternion: Float32Array,
   x: number,
@@ -481,6 +528,143 @@ const scratchSegmentTranslation = new Float32Array(3)
 const scratchSegmentRotation = new Float32Array(4)
 const scratchRotatedTranslation = new Float32Array(3)
 const scratchComposedRotation = new Float32Array(4)
+const scratchAccumulatedTranslation = new Float32Array(3)
+const scratchAccumulatedRotation = new Float32Array(4)
+
+function setRootMotionMovementParams(
+  out: RootMotionMovementParams,
+  source: Readonly<RootMotionDelta>,
+  blendWeight: number,
+) {
+  out.translation.set(source.translation)
+  out.rotation.set(source.rotation)
+  out.scale.fill(1)
+  out.valid = true
+  out.blendWeight = blendWeight
+  return out
+}
+
+/**
+ * FRootMotionMovementParams::Accumulate. Unreal composes `InTransform * RootMotionTransform`,
+ * which applies the new local delta after the already accumulated trajectory.
+ */
+export function accumulateRootMotion(
+  out: RootMotionMovementParams,
+  source: Readonly<RootMotionDelta>,
+) {
+  if (!source.valid) return out
+  if (!out.valid) return setRootMotionMovementParams(out, source, 1)
+
+  rotateVector(
+    out.rotation,
+    source.translation[0],
+    source.translation[1],
+    source.translation[2],
+    scratchAccumulatedTranslation,
+  )
+  // FRootMotionMovementParams::Accumulate leaves normalization to MakeUpToFullWeight().
+  multiplyQuaternionUnnormalized(
+    out.rotation,
+    source.rotation,
+    scratchAccumulatedRotation,
+  )
+  out.translation[0] += scratchAccumulatedTranslation[0]
+  out.translation[1] += scratchAccumulatedTranslation[1]
+  out.translation[2] += scratchAccumulatedTranslation[2]
+  out.rotation.set(scratchAccumulatedRotation)
+  out.scale.fill(1)
+  return out
+}
+
+/**
+ * FRootMotionMovementParams::AccumulateWithBlend. This is component-linear quaternion
+ * accumulation with shortest-path sign correction, not a quaternion slerp.
+ */
+export function accumulateRootMotionWithBlend(
+  out: RootMotionMovementParams,
+  source: Readonly<RootMotionDelta>,
+  blendWeight: number,
+) {
+  if (!source.valid) return out
+  if (!Number.isFinite(blendWeight)) {
+    throw new Error('Root-motion blend weight must be finite')
+  }
+
+  if (!out.valid) {
+    out.translation[0] = source.translation[0] * blendWeight
+    out.translation[1] = source.translation[1] * blendWeight
+    out.translation[2] = source.translation[2] * blendWeight
+    out.rotation[0] = source.rotation[0] * blendWeight
+    out.rotation[1] = source.rotation[1] * blendWeight
+    out.rotation[2] = source.rotation[2] * blendWeight
+    out.rotation[3] = source.rotation[3] * blendWeight
+    out.scale.fill(1)
+    out.valid = true
+    out.blendWeight = blendWeight
+    return out
+  }
+
+  const x = source.rotation[0] * blendWeight
+  const y = source.rotation[1] * blendWeight
+  const z = source.rotation[2] * blendWeight
+  const w = source.rotation[3] * blendWeight
+  const dot = (
+    x * out.rotation[0]
+    + y * out.rotation[1]
+    + z * out.rotation[2]
+    + w * out.rotation[3]
+  )
+  const sign = dot < 0 ? -1 : 1
+  out.rotation[0] += x * sign
+  out.rotation[1] += y * sign
+  out.rotation[2] += z * sign
+  out.rotation[3] += w * sign
+  out.translation[0] += source.translation[0] * blendWeight
+  out.translation[1] += source.translation[1] * blendWeight
+  out.translation[2] += source.translation[2] * blendWeight
+  out.scale.fill(1)
+  out.blendWeight += blendWeight
+  return out
+}
+
+/**
+ * FRootMotionMovementParams::MakeUpToFullWeight. Missing contribution is identity, followed by
+ * the one normalization UE performs after all queued root-motion blends have accumulated.
+ */
+export function makeUpRootMotionToFullWeight(
+  rootMotion: RootMotionMovementParams,
+) {
+  if (!rootMotion.valid) return rootMotion
+
+  const weightLeft = Math.max(1 - rootMotion.blendWeight, 0)
+  if (weightLeft > UE_KINDA_SMALL_NUMBER) {
+    // AccumulateWithBlend(FTransform::Identity, WeightLeft).
+    const sign = rootMotion.rotation[3] * weightLeft < 0 ? -1 : 1
+    rootMotion.rotation[3] += weightLeft * sign
+    rootMotion.blendWeight += weightLeft
+  }
+
+  const rotationLength = Math.hypot(
+    rootMotion.rotation[0],
+    rootMotion.rotation[1],
+    rootMotion.rotation[2],
+    rootMotion.rotation[3],
+  )
+  if (rotationLength * rotationLength >= UE_SMALL_NUMBER) {
+    const inverseLength = 1 / rotationLength
+    rootMotion.rotation[0] *= inverseLength
+    rootMotion.rotation[1] *= inverseLength
+    rootMotion.rotation[2] *= inverseLength
+    rootMotion.rotation[3] *= inverseLength
+  } else {
+    rootMotion.rotation[0] = 0
+    rootMotion.rotation[1] = 0
+    rootMotion.rotation[2] = 0
+    rootMotion.rotation[3] = 1
+  }
+  rootMotion.scale.fill(1)
+  return rootMotion
+}
 
 function appendContiguousDelta(
   rootMotion: CompiledAuthoredRootMotion,

@@ -16,6 +16,8 @@ export interface SlotMontageRequest {
    * ALS's transition and turn-in-place sequences are non-additive.
    */
   readonly additiveType?: 'none' | 'localSpaceBase' | 'rotationOffsetMeshSpace'
+  /** UAnimSequenceBase::HasRootMotion(), inherited by the generated montage track. */
+  readonly bEnableRootMotion?: boolean
 }
 
 export type SlotMontageStatus =
@@ -36,8 +38,22 @@ export interface SlotMontageSample {
   readonly slotName: string
   readonly groupName: string
   readonly additiveType: NonNullable<SlotMontageRequest['additiveType']>
+  readonly bEnableRootMotion: boolean
+  readonly loopCount: number
   /** Position on the generated montage timeline. */
   montageTime: number
+  /** Start of the montage-track range traversed during this update. */
+  rootMotionPreviousMontageTime: number
+  /**
+   * End of the traversed range. Unlike montageTime, this reaches the exact forward endpoint
+   * before FAnimMontageInstance backs its visible position off by KINDA_SMALL_NUMBER / 2.
+   */
+  rootMotionMontageTime: number
+  /**
+   * This update began with this instance as UAnimInstance::RootMotionMontageInstance.
+   * Automatic blend-out may clear the clock owner later in the same Advance().
+   */
+  extractRootMotionFromMontagesOnly: boolean
   /** Time passed to the source clip sampler. */
   sampleTime: number
   weight: number
@@ -68,6 +84,8 @@ export interface SlotMontageClock {
    * active owner. Arrays preserve MontageInstances insertion order.
    */
   readonly instancesByGroup: Map<string, SlotMontageInstance[]>
+  /** UAnimInstance::RootMotionMontageInstance. Stop() clears this immediately. */
+  rootMotionMontageInstance: SlotMontageInstance | null
 }
 
 export interface SlotMontageWeightData {
@@ -179,6 +197,12 @@ function validateRequest(request: SlotMontageRequest) {
   ) {
     throw new Error('Slot montage additiveType is invalid')
   }
+  if (
+    request.bEnableRootMotion !== undefined
+    && typeof request.bEnableRootMotion !== 'boolean'
+  ) {
+    throw new Error('Slot montage bEnableRootMotion must be boolean')
+  }
 }
 
 function sourceSampleTime(instance: SlotMontageInstance) {
@@ -228,11 +252,13 @@ function updateBlend(instance: SlotMontageInstance, deltaTime: number) {
 }
 
 function beginBlendOut(
+  clock: SlotMontageClock,
   instance: SlotMontageInstance,
   duration: number,
   reason: SlotMontageBlendOutReason,
 ) {
   if (instance.sample.status === 'completed') return instance.sample
+  const wasStopped = instance.stopped
 
   // FAnimMontageInstance::Stop makes interruption sticky even when the existing envelope is kept.
   if (reason === 'interrupted' || instance.sample.blendOutReason === null) {
@@ -251,6 +277,17 @@ function beginBlendOut(
   instance.blendStartWeight = instance.sample.weight
   instance.blendDesiredWeight = 0
   instance.sample.status = 'blendingOut'
+  // FAnimMontageInstance::Stop() calls OnMontageInstanceStopped() on the first stop, which clears
+  // UAnimInstance::RootMotionMontageInstance before the fade itself has completed.
+  if (!wasStopped && clock.rootMotionMontageInstance === instance) {
+    clock.rootMotionMontageInstance = null
+  }
+  if (
+    !wasStopped
+    && clock.activeByGroup.get(instance.request.groupName) === instance
+  ) {
+    clock.activeByGroup.delete(instance.request.groupName)
+  }
   if (duration <= 0 || instance.blendStartWeight <= 0) {
     instance.sample.weight = 0
     instance.playing = false
@@ -286,7 +323,12 @@ function createInstance(request: SlotMontageRequest): SlotMontageInstance {
       slotName: request.slotName,
       groupName: request.groupName,
       additiveType: request.additiveType ?? 'none',
+      bEnableRootMotion: request.bEnableRootMotion ?? false,
+      loopCount: request.loopCount,
       montageTime,
+      rootMotionPreviousMontageTime: montageTime,
+      rootMotionMontageTime: montageTime,
+      extractRootMotionFromMontagesOnly: false,
       sampleTime: 0,
       weight: request.blendInDuration <= 0 ? 1 : 0,
       status: request.blendInDuration <= 0 ? 'playing' : 'blendingIn',
@@ -311,7 +353,11 @@ function safeDeltaTime(deltaTime: number) {
   return Number.isFinite(deltaTime) ? Math.max(0, deltaTime) : 0
 }
 
-function advanceMontagePosition(instance: SlotMontageInstance, deltaTime: number) {
+function advanceMontagePosition(
+  clock: SlotMontageClock,
+  instance: SlotMontageInstance,
+  deltaTime: number,
+) {
   if (!instance.playing || deltaTime <= 0) return
 
   const playRate = instance.request.playRate
@@ -322,6 +368,7 @@ function advanceMontagePosition(instance: SlotMontageInstance, deltaTime: number
     0,
     instance.montageDuration,
   )
+  instance.sample.rootMotionMontageTime = instance.sample.montageTime
 
   const endPosition = playRate >= 0 ? instance.montageDuration : 0
   const playTimeToEnd = Math.abs(
@@ -338,6 +385,7 @@ function advanceMontagePosition(instance: SlotMontageInstance, deltaTime: number
       : instance.request.blendOutDuration
     if (playTimeToEnd <= Math.max(triggerTime, UE_KINDA_SMALL_NUMBER)) {
       beginBlendOut(
+        clock,
         instance,
         customTrigger ? instance.request.blendOutDuration : playTimeToEnd,
         'automatic',
@@ -360,16 +408,27 @@ function advanceMontagePosition(instance: SlotMontageInstance, deltaTime: number
 }
 
 function advanceInstance(
+  clock: SlotMontageClock,
   instance: SlotMontageInstance,
   deltaTime: number,
 ) {
-  if (instance.sample.status === 'completed') return instance.sample
+  const sample = instance.sample
+  sample.rootMotionPreviousMontageTime = sample.montageTime
+  sample.rootMotionMontageTime = sample.montageTime
+  sample.extractRootMotionFromMontagesOnly = (
+    instance.playing
+    && clock.rootMotionMontageInstance === instance
+  )
+  if (sample.status === 'completed') {
+    sample.extractRootMotionFromMontagesOnly = false
+    return sample
+  }
   const delta = safeDeltaTime(deltaTime)
 
   // UAnimInstance::UpdateMontage runs Montage_UpdateWeight for every instance before
   // Montage_Advance. Do not split the delta at blend or position boundaries.
   updateBlend(instance, delta)
-  advanceMontagePosition(instance, delta)
+  advanceMontagePosition(clock, instance, delta)
   refreshSample(instance)
 
   if (instance.stopped && instance.sample.weight <= 0) {
@@ -382,6 +441,7 @@ export function createSlotMontageClock(): SlotMontageClock {
   return {
     activeByGroup: new Map(),
     instancesByGroup: new Map(),
+    rootMotionMontageInstance: null,
   }
 }
 
@@ -416,7 +476,7 @@ function advanceGroupInstances(
 
   let latest: SlotMontageSample | undefined
   for (const instance of instances) {
-    const sample = advanceInstance(instance, deltaTime)
+    const sample = advanceInstance(clock, instance, deltaTime)
     latest = sample
     output?.push(sample)
     if (
@@ -454,9 +514,19 @@ export function playSlotAnimationAsDynamicMontage(
   // until their fades complete, and FAnimNode_Slot evaluates all of them together.
   const groupInstances = clock.instancesByGroup.get(request.groupName) ?? []
   for (const existing of groupInstances) {
-    beginBlendOut(existing, request.blendInDuration, 'interrupted')
+    beginBlendOut(clock, existing, request.blendInDuration, 'interrupted')
   }
   clock.activeByGroup.delete(request.groupName)
+
+  // Montage_PlayInternal independently enforces one root-motion montage across every Slot Group.
+  if (instance.sample.bEnableRootMotion && clock.rootMotionMontageInstance) {
+    beginBlendOut(
+      clock,
+      clock.rootMotionMontageInstance,
+      request.blendInDuration,
+      'interrupted',
+    )
+  }
 
   for (let index = groupInstances.length - 1; index >= 0; index -= 1) {
     const existing = groupInstances[index]
@@ -469,6 +539,9 @@ export function playSlotAnimationAsDynamicMontage(
   groupInstances.push(instance)
   clock.instancesByGroup.set(request.groupName, groupInstances)
   clock.activeByGroup.set(request.groupName, instance)
+  if (instance.sample.bEnableRootMotion) {
+    clock.rootMotionMontageInstance = instance
+  }
   return instance.sample
 }
 
@@ -525,6 +598,9 @@ export function advanceSlotMontageClock(
   for (const groupName of [...clock.instancesByGroup.keys()]) {
     advanceGroupInstances(clock, groupName, deltaTime, output)
   }
+  // MontageInstances is one global insertion-ordered array, while the clock stores per-group
+  // arrays for ownership. InstanceID recovers that exact order for root-motion accumulation.
+  output.sort((a, b) => a.instanceId - b.instanceId)
   return output
 }
 
@@ -547,7 +623,12 @@ export function stopSlotAnimation(
   const stopped: SlotMontageSample[] = []
   for (const [groupName, instance] of [...clock.activeByGroup]) {
     if (slotName !== undefined && instance.request.slotName !== slotName) continue
-    const sample = beginBlendOut(instance, blendOutDuration, 'stopped')
+    const sample = beginBlendOut(
+      clock,
+      instance,
+      blendOutDuration,
+      'stopped',
+    )
     stopped.push(sample)
     clock.activeByGroup.delete(groupName)
     if (sample.weight <= 0) complete(instance)

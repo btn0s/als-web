@@ -7,11 +7,16 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { createPoseBuffer, resetPoseToReference } from './poseBuffer'
 import { createRigDefinition } from './rig'
 import {
+  accumulateRootMotion,
+  accumulateRootMotionWithBlend,
   compileAuthoredRootMotion,
   createAuthoredRootMotionSample,
+  createAuthoredRootMotionDelta,
+  createRootMotionMovementParams,
   createRootMotionExtractor,
   extractAuthoredRootMotionDelta,
   extractRootMotionDelta,
+  makeUpRootMotionToFullWeight,
   sampleAuthoredRootMotion,
 } from './rootMotion'
 
@@ -91,6 +96,94 @@ describe('root motion extraction', () => {
     expect(delta.valid).toBe(true)
     expect([...delta.translation]).toEqual([2, 0, -1])
     expect([...(delta.scale ?? [])]).toEqual([1, 1, 1])
+  })
+
+  it('VERIFIED — matches FRootMotionMovementParams component-linear shortest accumulation', () => {
+    const sine = Math.SQRT1_2
+    const first = createAuthoredRootMotionDelta()
+    first.translation.set([2, 0, 0])
+    first.rotation.set([0, sine, 0, sine])
+    first.valid = true
+    const sameRotationOppositeHemisphere = createAuthoredRootMotionDelta()
+    sameRotationOppositeHemisphere.translation.set([0, 0, 2])
+    sameRotationOppositeHemisphere.rotation.set([0, -sine, 0, -sine])
+    sameRotationOppositeHemisphere.valid = true
+
+    const rootMotion = createRootMotionMovementParams()
+    accumulateRootMotionWithBlend(rootMotion, first, 0.2)
+    accumulateRootMotionWithBlend(
+      rootMotion,
+      sameRotationOppositeHemisphere,
+      0.1,
+    )
+
+    expect([...rootMotion.translation]).toEqual([
+      Math.fround(0.4),
+      0,
+      Math.fround(0.2),
+    ])
+    expect(rootMotion.rotation[1]).toBeCloseTo(sine * 0.3, 7)
+    expect(rootMotion.rotation[3]).toBeCloseTo(sine * 0.3, 7)
+    expect(rootMotion.blendWeight).toBeCloseTo(0.3, 8)
+
+    makeUpRootMotionToFullWeight(rootMotion)
+    const unnormalizedY = sine * 0.3
+    const unnormalizedW = sine * 0.3 + 0.7
+    const inverseLength = 1 / Math.hypot(unnormalizedY, unnormalizedW)
+    expect(rootMotion.rotation[1])
+      .toBeCloseTo(unnormalizedY * inverseLength, 7)
+    expect(rootMotion.rotation[3])
+      .toBeCloseTo(unnormalizedW * inverseLength, 7)
+    expect(rootMotion.blendWeight).toBeCloseTo(1, 8)
+  })
+
+  it('VERIFIED — composes Accumulate as InTransform * existing under UE transform order', () => {
+    const sine = Math.SQRT1_2
+    const first = createAuthoredRootMotionDelta()
+    first.translation.set([1, 2, 3])
+    first.rotation.set([sine, 0, 0, sine])
+    first.valid = true
+    const second = createAuthoredRootMotionDelta()
+    second.translation.set([4, 5, 6])
+    second.rotation.set([0, sine, 0, sine])
+    second.valid = true
+
+    const rootMotion = createRootMotionMovementParams()
+    accumulateRootMotion(rootMotion, first)
+    accumulateRootMotion(rootMotion, second)
+
+    // UE's A * B transform convention applies A first. Therefore
+    // `second * first` rotates second's translation by first before adding first's translation,
+    // and composes the non-commuting rotations as first.rotation * second.rotation.
+    expect(rootMotion.translation[0]).toBeCloseTo(5, 6)
+    expect(rootMotion.translation[1]).toBeCloseTo(-4, 6)
+    expect(rootMotion.translation[2]).toBeCloseTo(8, 6)
+    rootMotion.rotation.forEach((component) => {
+      expect(component).toBeCloseTo(0.5, 6)
+    })
+    expect(rootMotion.blendWeight).toBe(1)
+  })
+
+  it('VERIFIED — MakeUpToFullWeight adds identity only above UE_KINDA_SMALL_NUMBER', () => {
+    const identity = createAuthoredRootMotionDelta()
+    identity.valid = true
+    const tolerance = 1e-4
+    const weightAtTolerance = 1 - tolerance
+    const weightAboveTolerance = 1 - (tolerance + 1e-8)
+
+    const atTolerance = createRootMotionMovementParams()
+    accumulateRootMotionWithBlend(atTolerance, identity, weightAtTolerance)
+    makeUpRootMotionToFullWeight(atTolerance)
+    expect(atTolerance.blendWeight).toBe(weightAtTolerance)
+
+    const aboveTolerance = createRootMotionMovementParams()
+    accumulateRootMotionWithBlend(
+      aboveTolerance,
+      identity,
+      weightAboveTolerance,
+    )
+    makeUpRootMotionToFullWeight(aboveTolerance)
+    expect(aboveTolerance.blendWeight).toBe(1)
   })
 })
 
