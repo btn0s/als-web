@@ -1,4 +1,5 @@
 import {
+  useAfterPhysicsStep,
   useBeforePhysicsStep,
   type RapierCollider,
   type RapierRigidBody,
@@ -10,13 +11,17 @@ import * as THREE from 'three'
 import { LEVA_ROOTS } from '../app/levaRoots'
 import {
   probeRapierAlsGround,
+  rapierAlsMovementBase,
+} from '../engine/rapierAlsCapsuleSweep'
+import type {
+  RapierAlsCapsuleSweep,
+  RapierAlsCapsuleSweepHit,
 } from '../engine/rapierAlsCapsuleSweep'
 import {
   getCharacterMovementFloorOffset,
 } from '../engine/characterMovementFloor'
-import type {
-  AlsGroundPredictionCapsuleSweep,
-} from './State/AlsInAirState'
+import { ALS_NO_BASED_MOVEMENT } from './State/AlsMovementBaseState'
+import type { AlsBasedMovement } from './State/AlsMovementBaseState'
 import {
   setRapierAlsStanceCapsules,
 } from '../engine/rapierAlsStanceCapsules'
@@ -26,6 +31,7 @@ import {
   unrealYawDegreesToThreeRadians,
 } from '../engine/unrealCoordinateSpace'
 import {
+  applyRotationYawSpeedAnimationCurve,
   createAlsCharacter,
   refreshAlsCharacter,
   refreshGroundedFacingTarget,
@@ -87,6 +93,45 @@ export function getAlsCapsuleHalfHeight(stance: AlsStance): number {
     : ALS_STANDING_CAPSULE_HALF_HEIGHT
 }
 
+/**
+ * Reconstructs AActor::GetActorLocation(), which is the active capsule-root centre in ALS.
+ *
+ * Rapier keeps this sample's rigid-body anchor at standing height and offsets only the crouching
+ * collider, so the backend anchor is not the ALS actor transform while crouched.
+ */
+export function resolveAlsActorLocation(
+  rapierBodyAnchor: Readonly<AlsVector3>,
+  stance: AlsStance,
+  locomotionMode: AlsLocomotionMode,
+  out: AlsVector3 = { x: 0, y: 0, z: 0 },
+): AlsVector3 {
+  out.x = rapierBodyAnchor.x
+  out.y = rapierBodyAnchor.y
+  out.z = rapierBodyAnchor.z
+    + getAlsCapsuleHalfHeight(stance)
+    - ALS_STANDING_CAPSULE_HALF_HEIGHT
+    + getCharacterMovementFloorOffset(locomotionMode === 'Grounded')
+  return out
+}
+
+/**
+ * Resolves the mesh component's Y relative to the fixed Rapier body anchor.
+ *
+ * `UAlsCharacterMovementComponent::UAlsCharacterMovementComponent()` sets
+ * `bCrouchMaintainsBaseLocation = true` (`AlsCharacterMovementComponent.cpp:236`), so ALS lowers
+ * the capsule-root actor location by the half-height difference while keeping its base fixed.
+ * The mesh retains AAlsCharacter's authored -92 cm location relative to that active capsule root.
+ */
+export function resolveAlsMeshRootRelativeY(
+  stance: AlsStance,
+  locomotionMode: AlsLocomotionMode,
+): number {
+  return ALS_MESH_RELATIVE_LOCATION_Z
+    + getAlsCapsuleHalfHeight(stance)
+    - ALS_STANDING_CAPSULE_HALF_HEIGHT
+    + getCharacterMovementFloorOffset(locomotionMode === 'Grounded')
+}
+
 // Unreal Enhanced Input's default radial dead-zone lower threshold. The authored IMC mapping
 // dump owns buttons/axes; this engine-level normalization only suppresses browser gamepad drift.
 const GAMEPAD_DEAD_ZONE = 0.2
@@ -134,12 +179,20 @@ export interface AlsCharacterBridge {
   readonly character: MutableRefObject<AlsCharacter>
   readonly animationControls:
     MutableRefObject<AlsCharacterAnimationControls>
+  /** Curves published by the preceding animation evaluation for AAlsCharacter::Tick(). */
+  readonly animationCurves:
+    MutableRefObject<AlsCharacterAnimationCurves>
   /**
    * The evaluator installs UAlsAnimationInstance::Jump() here. The character invokes it only
    * after the movement backend accepts the jump, matching OnJumpedNetworked().
    */
   readonly onJumped: MutableRefObject<(() => void) | null>
   readonly overlayMode: AlsOverlayMode
+}
+
+export interface AlsCharacterAnimationCurves {
+  rotationYawOffset: number
+  rotationYawSpeed: number
 }
 
 /**
@@ -151,10 +204,94 @@ export interface AlsCharacterAnimationControls
   locomotionMode: AlsLocomotionMode
   scale: number
   location: Readonly<AlsVector3>
+  actorYawAngle: number
   velocity: Readonly<AlsVector3>
   capsuleRadius: number
   capsuleHalfHeight: number
   walkableFloorAngleCos: number
+}
+
+export interface AlsCharacterAnimationSnapshotInput {
+  readonly character: AlsCharacter
+  readonly location: Readonly<AlsVector3>
+  readonly basedMovement: Readonly<AlsBasedMovement>
+  readonly acceleration: Readonly<AlsVector3>
+  readonly overlayMode: AlsOverlayMode
+  readonly movementOverride: boolean
+  readonly speedOverride: number
+  readonly directionOverride: number
+  readonly rotateInPlaceOverride: boolean
+}
+
+/**
+ * Publishes one coherent `NativeUpdateAnimation()` character snapshot.
+ *
+ * ALS first copies character modes (`AlsAnimationInstance.cpp:118-124`), then MovementBase,
+ * View, and the complete LocomotionState (`cpp:583-666`). Keeping that order in one pure seam
+ * prevents a post-physics mode change from mixing new capsule data with prior-frame stance,
+ * speed, gait, or direction.
+ */
+export function publishAlsCharacterAnimationSnapshot(
+  output: AlsCharacterAnimationControls,
+  input: AlsCharacterAnimationSnapshotInput,
+): AlsCharacterAnimationControls {
+  const { character } = input
+  const state = character.locomotionState
+
+  output.locomotionMode = character.locomotionMode
+  output.rotationMode = character.rotationMode
+  output.stance = character.stance
+  output.gait = input.movementOverride
+    ? character.desiredGait
+    : character.gait
+  output.overlayMode = input.overlayMode
+
+  output.basedMovement = input.basedMovement
+
+  output.viewYawAngle = unwindDegrees(
+    character.viewYawAngle - character.actorYawAngle,
+  )
+  output.viewYawSpeed = character.viewYawSpeed
+
+  output.hasInput = state.hasInput
+  output.speed = input.movementOverride
+    ? Math.max(0, input.speedOverride)
+    : state.speed
+  output.velocity = state.velocity
+  output.direction = input.movementOverride
+    ? input.directionOverride
+    : unwindDegrees(
+        state.velocityYawAngle - character.actorYawAngle,
+      )
+  output.moving = input.movementOverride
+    ? input.speedOverride > 0
+    : state.moving
+  output.movingSmooth = input.movementOverride
+    ? input.speedOverride > 0
+    : calculateMovingSmooth(state)
+  output.location = input.location
+  output.actorYawAngle = character.actorYawAngle
+  output.scale = 1
+  output.capsuleRadius = ALS_CAPSULE_RADIUS
+  output.capsuleHalfHeight = getAlsCapsuleHalfHeight(character.stance)
+  output.walkableFloorAngleCos = ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS
+
+  const relativeAccelerationAmount = getRelativeAccelerationAmount({
+    actorYaw: character.actorYawAngle * Math.PI / 180,
+    acceleration: input.acceleration,
+    velocity: state.velocity,
+    maxAcceleration: character.movement.maxAccelerationWalking,
+    maxBrakingDeceleration:
+      character.movement.brakingDecelerationWalking,
+  })
+  output.relativeAccelerationAmount.x = input.movementOverride
+    ? 0
+    : relativeAccelerationAmount.x
+  output.relativeAccelerationAmount.y = input.movementOverride
+    ? 0
+    : relativeAccelerationAmount.y
+  output.rotateInPlace = input.rotateInPlaceOverride
+  return output
 }
 
 interface AlsJumpRequestRef {
@@ -278,7 +415,27 @@ export function stepGroundedCharacterYaw(
   character: AlsCharacter,
   deltaTime: number,
   rotationYawOffset = 0,
+  rotationYawSpeed = 0,
 ): number {
+  if (
+    character.locomotionMode !== 'Grounded'
+    || character.locomotionAction !== null
+  ) {
+    return character.actorYawAngle
+  }
+
+  if (!character.locomotionState.moving) {
+    const previousActorYawAngle = character.actorYawAngle
+    character.actorYawAngle = applyRotationYawSpeedAnimationCurve(
+      character.actorYawAngle,
+      rotationYawSpeed,
+      deltaTime,
+    )
+    if (character.actorYawAngle !== previousActorYawAngle) {
+      setTargetYawAngle(character, character.actorYawAngle)
+    }
+  }
+
   const target = refreshGroundedFacingTarget(character, rotationYawOffset)
   if (target.rotationInterpolationSpeed <= 0) {
     return character.actorYawAngle
@@ -490,7 +647,7 @@ export function useAlsCharacter(
   crouchingCapsule: MutableRefObject<RapierCollider | null>,
   characterRoot: MutableRefObject<THREE.Group | null>,
   poseSample: MutableRefObject<CharacterPoseSample>,
-  sweepCapsule?: AlsGroundPredictionCapsuleSweep,
+  sweepCapsule?: RapierAlsCapsuleSweep,
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -585,6 +742,8 @@ export function useAlsCharacter(
     locomotionMode: 'Grounded',
     scale: 1,
     location: { x: 0, y: 0, z: 0 },
+    actorYawAngle: 0,
+    basedMovement: ALS_NO_BASED_MOVEMENT,
     velocity: { x: 0, y: 0, z: 0 },
     capsuleRadius: ALS_CAPSULE_RADIUS,
     capsuleHalfHeight: ALS_STANDING_CAPSULE_HALF_HEIGHT,
@@ -598,6 +757,10 @@ export function useAlsCharacter(
     rotateInPlace: false,
     viewYawAngle: 0,
     viewYawSpeed: 0,
+  })
+  const animationCurves = useRef<AlsCharacterAnimationCurves>({
+    rotationYawOffset: 0,
+    rotationYawSpeed: 0,
   })
   const values = useRef<CharacterControlValues>({
     desiredGait: 'Running',
@@ -651,8 +814,10 @@ export function useAlsCharacter(
   const inputAxes = useRef<InputAxes>({ right: 0, forward: 0 })
   const inputDirection = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const actualVelocity = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const rapierBodyAnchor = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const actorLocation = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
-  const capsuleLocation = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const groundProbeLocation = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const groundSupport = useRef<RapierAlsCapsuleSweepHit | null>(null)
   const acceleration = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const desiredVelocity = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const renderedVelocity = useRef({ x: 0, y: 0, z: 0 })
@@ -883,20 +1048,23 @@ export function useAlsCharacter(
     desiredVelocity.current.z = current.movement.velocity.z
     const linearVelocity = body.linvel()
     threeToUnrealVector(linearVelocity, actualVelocity.current)
-    threeToUnrealVector(body.translation(), actorLocation.current)
-    const queryCapsuleHalfHeight = getAlsCapsuleHalfHeight(current.stance)
-    const queryFloorOffset = getCharacterMovementFloorOffset(
-      current.locomotionMode === 'Grounded',
+    threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
+    resolveAlsActorLocation(
+      rapierBodyAnchor.current,
+      current.stance,
+      current.locomotionMode,
+      actorLocation.current,
     )
-    const queryLocation = capsuleLocation.current
-    queryLocation.x = actorLocation.current.x
-    queryLocation.y = actorLocation.current.y
-    queryLocation.z = actorLocation.current.z
-      + queryCapsuleHalfHeight
-      - ALS_STANDING_CAPSULE_HALF_HEIGHT
-      + queryFloorOffset
+    const queryCapsuleHalfHeight = getAlsCapsuleHalfHeight(current.stance)
+    const queryLocation = resolveAlsActorLocation(
+      rapierBodyAnchor.current,
+      current.stance,
+      current.locomotionMode,
+      groundProbeLocation.current,
+    )
+    let currentGroundSupport: RapierAlsCapsuleSweepHit | null = null
     if (sweepCapsule) {
-      const ground = probeRapierAlsGround(sweepCapsule, {
+      currentGroundSupport = probeRapierAlsGround(sweepCapsule, {
         location: queryLocation,
         capsuleRadius: ALS_CAPSULE_RADIUS,
         capsuleHalfHeight: queryCapsuleHalfHeight,
@@ -904,10 +1072,11 @@ export function useAlsCharacter(
       })
       refreshRapierAlsLocomotionMode(
         current,
-        ground !== null,
+        currentGroundSupport !== null,
         actualVelocity.current.z,
       )
     }
+    groundSupport.current = currentGroundSupport
     if (consumeAlsJumpInput(jumpRequested)) {
       const jumpResult = handleAlsJumpInput(current)
       if (jumpResult === 'Uncrouched') {
@@ -921,7 +1090,6 @@ export function useAlsCharacter(
     const previousVelocityX = current.locomotionState.velocity.x
     const previousVelocityY = current.locomotionState.velocity.y
     const previousVelocityZ = current.locomotionState.velocity.z
-    const locomotionActorYaw = current.actorYawAngle * Math.PI / 180
     refreshAlsCharacter(
       current,
       inputDirection.current,
@@ -956,18 +1124,20 @@ export function useAlsCharacter(
 
     if (current.locomotionMode === 'InAir') {
       stepInAirCharacterYaw(current, ALS_PHYSICS_TIMESTEP)
-    } else {
-      stepGroundedCharacterYaw(current, ALS_PHYSICS_TIMESTEP)
+    } else if (current.locomotionMode === 'Grounded') {
+      stepGroundedCharacterYaw(
+        current,
+        ALS_PHYSICS_TIMESTEP,
+        animationCurves.current.rotationYawOffset,
+        animationCurves.current.rotationYawSpeed,
+      )
     }
-    const animationViewYawAngle = unwindDegrees(
-      current.viewYawAngle - current.actorYawAngle,
-    )
     const root = characterRoot.current
     if (root) {
-      root.position.y = ALS_MESH_RELATIVE_LOCATION_Z
-        + getCharacterMovementFloorOffset(
-          current.locomotionMode === 'Grounded',
-        )
+      root.position.y = resolveAlsMeshRootRelativeY(
+        current.stance,
+        current.locomotionMode,
+      )
       root.rotation.y = unrealYawDegreesToThreeRadians(
         current.actorYawAngle,
       )
@@ -984,58 +1154,26 @@ export function useAlsCharacter(
 
     const state = current.locomotionState
     const frame = animationControls.current
-    frame.gait = controls.movementOverride
-      ? current.desiredGait
-      : current.gait
-    frame.moving = controls.movementOverride
-      ? controls.speed > 0
-      : state.moving
-    frame.movingSmooth = controls.movementOverride
-      ? controls.speed > 0
-      : calculateMovingSmooth(state)
-    frame.locomotionMode = current.locomotionMode
-    frame.scale = 1
-    const activeCapsuleHalfHeight = getAlsCapsuleHalfHeight(current.stance)
-    const activeFloorOffset = getCharacterMovementFloorOffset(
-      current.locomotionMode === 'Grounded',
+    resolveAlsActorLocation(
+      rapierBodyAnchor.current,
+      current.stance,
+      current.locomotionMode,
+      actorLocation.current,
     )
-    queryLocation.x = actorLocation.current.x
-    queryLocation.y = actorLocation.current.y
-    queryLocation.z = actorLocation.current.z
-      + activeCapsuleHalfHeight
-      - ALS_STANDING_CAPSULE_HALF_HEIGHT
-      + activeFloorOffset
-    frame.location = queryLocation
-    frame.velocity = state.velocity
-    frame.capsuleRadius = ALS_CAPSULE_RADIUS
-    frame.capsuleHalfHeight = activeCapsuleHalfHeight
-    frame.walkableFloorAngleCos = ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS
-    frame.stance = current.stance
-    frame.rotationMode = current.rotationMode
-    frame.overlayMode = controls.overlayMode
-    frame.speed = controls.movementOverride
-      ? Math.max(0, controls.speed)
-      : state.speed
-    frame.direction = controls.movementOverride
-      ? controls.direction
-      : unwindDegrees(state.velocityYawAngle - current.actorYawAngle)
-    const relativeAccelerationAmount = getRelativeAccelerationAmount({
-      actorYaw: locomotionActorYaw,
+    publishAlsCharacterAnimationSnapshot(frame, {
+      character: current,
+      location: actorLocation.current,
+      basedMovement: current.locomotionMode === 'Grounded'
+        ? rapierAlsMovementBase(groundSupport.current)
+        : ALS_NO_BASED_MOVEMENT,
       acceleration: acceleration.current,
-      velocity: state.velocity,
-      maxAcceleration: current.movement.maxAccelerationWalking,
-      maxBrakingDeceleration:
-        current.movement.brakingDecelerationWalking,
+      overlayMode: controls.overlayMode,
+      movementOverride: controls.movementOverride,
+      speedOverride: controls.speed,
+      directionOverride: controls.direction,
+      rotateInPlaceOverride: controls.rotateInPlace,
     })
-    frame.relativeAccelerationAmount.x = controls.movementOverride
-      ? 0
-      : relativeAccelerationAmount.x
-    frame.relativeAccelerationAmount.y = controls.movementOverride
-      ? 0
-      : relativeAccelerationAmount.y
-    frame.rotateInPlace = controls.rotateInPlace
-    frame.viewYawAngle = animationViewYawAngle
-    frame.viewYawSpeed = current.viewYawSpeed
+    const activeCapsuleHalfHeight = frame.capsuleHalfHeight
 
     const activeCollider = current.stance === 'Crouching'
       ? crouchingCapsule.current
@@ -1070,9 +1208,85 @@ export function useAlsCharacter(
     }
   })
 
+  useAfterPhysicsStep(() => {
+    const body = rigidBody.current
+    if (!body) return
+
+    const current = character.current
+    threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
+    threeToUnrealVector(body.linvel(), actualVelocity.current)
+    const queryCapsuleHalfHeight = getAlsCapsuleHalfHeight(current.stance)
+    const queryLocation = resolveAlsActorLocation(
+      rapierBodyAnchor.current,
+      current.stance,
+      current.locomotionMode,
+      groundProbeLocation.current,
+    )
+    const currentGroundSupport = sweepCapsule
+      ? probeRapierAlsGround(sweepCapsule, {
+          location: queryLocation,
+          capsuleRadius: ALS_CAPSULE_RADIUS,
+          capsuleHalfHeight: queryCapsuleHalfHeight,
+          walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
+        })
+      : null
+    groundSupport.current = currentGroundSupport
+    if (sweepCapsule) {
+      refreshRapierAlsLocomotionMode(
+        current,
+        currentGroundSupport !== null,
+        actualVelocity.current.z,
+      )
+    }
+
+    if (current.stance !== previousStance.current) {
+      previousStance.current = current.stance
+      setRapierAlsStanceCapsules(
+        standingCapsule.current,
+        crouchingCapsule.current,
+        current.stance,
+      )
+    }
+    const root = characterRoot.current
+    if (root) {
+      root.position.y = resolveAlsMeshRootRelativeY(
+        current.stance,
+        current.locomotionMode,
+      )
+      root.rotation.y = unrealYawDegreesToThreeRadians(
+        current.actorYawAngle,
+      )
+    }
+
+    // UAlsAnimationInstance::NativeUpdateAnimation runs after CharacterMovement. Publish the
+    // post-step tags/location/base, but take Speed/Velocity/VelocityYaw/bMoving together from the
+    // Character's retained LocomotionState just as RefreshLocomotionOnGameThread() does.
+    resolveAlsActorLocation(
+      rapierBodyAnchor.current,
+      current.stance,
+      current.locomotionMode,
+      actorLocation.current,
+    )
+    const controls = values.current
+    publishAlsCharacterAnimationSnapshot(animationControls.current, {
+      character: current,
+      location: actorLocation.current,
+      basedMovement: current.locomotionMode === 'Grounded'
+        ? rapierAlsMovementBase(currentGroundSupport)
+        : ALS_NO_BASED_MOVEMENT,
+      acceleration: acceleration.current,
+      overlayMode: controls.overlayMode,
+      movementOverride: controls.movementOverride,
+      speedOverride: controls.speed,
+      directionOverride: controls.direction,
+      rotateInPlaceOverride: controls.rotateInPlace,
+    })
+  })
+
   return {
     character,
     animationControls,
+    animationCurves,
     onJumped,
     overlayMode: overlayMode as AlsOverlayMode,
   }

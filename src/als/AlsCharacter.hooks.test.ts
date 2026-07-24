@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { createAlsCharacter, refreshAlsCharacter } from './AlsCharacter'
+import {
+  createAlsCharacter,
+  refreshAlsCharacter,
+  setLocomotionMode,
+  setStance,
+} from './AlsCharacter'
 import {
   ALS_CAPSULE_RADIUS,
   ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
@@ -15,11 +20,49 @@ import {
   hasTriggeredSprintHold,
   refreshRapierAlsLocomotionMode,
   requestAlsJumpInput,
+  publishAlsCharacterAnimationSnapshot,
+  resolveAlsActorLocation,
+  resolveAlsMeshRootRelativeY,
   resolveCameraRelativeInput,
   stepGroundedCharacterYaw,
   stepInAirCharacterYaw,
 } from './AlsCharacter.hooks'
+import type {
+  AlsCharacterAnimationControls,
+} from './AlsCharacter.hooks'
 import { exponentialDecay } from './State/AlsGroundedState'
+import { unwindDegrees } from './State/AlsLocomotionState'
+import { ALS_NO_BASED_MOVEMENT } from './State/AlsMovementBaseState'
+import { calculateMovingSmooth } from './Settings/AlsGeneralAnimationSettings'
+import {
+  UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+} from '../engine/characterMovementFloor'
+
+function animationControlsFixture(): AlsCharacterAnimationControls {
+  return {
+    gait: 'Walking',
+    moving: false,
+    movingSmooth: false,
+    locomotionMode: 'Grounded',
+    scale: 1,
+    location: { x: 0, y: 0, z: 0 },
+    actorYawAngle: 0,
+    basedMovement: ALS_NO_BASED_MOVEMENT,
+    velocity: { x: 0, y: 0, z: 0 },
+    capsuleRadius: ALS_CAPSULE_RADIUS,
+    capsuleHalfHeight: ALS_STANDING_CAPSULE_HALF_HEIGHT,
+    walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
+    stance: 'Standing',
+    rotationMode: 'ViewDirection',
+    overlayMode: 'Default',
+    speed: 0,
+    direction: 0,
+    relativeAccelerationAmount: { x: 0, y: 0 },
+    rotateInPlace: false,
+    viewYawAngle: 0,
+    viewYawSpeed: 0,
+  }
+}
 
 describe('AlsCharacter browser bridge math', () => {
   it('pins the ALS character constructor and inherited UE movement defaults in metres', () => {
@@ -32,6 +75,139 @@ describe('AlsCharacter browser bridge math', () => {
     expect(ALS_RAPIER_GRAVITY).toBe(9.8)
     expect(getAlsCapsuleHalfHeight('Standing')).toBe(0.9)
     expect(getAlsCapsuleHalfHeight('Crouching')).toBe(0.56)
+  })
+
+  it('reconstructs the active capsule-root actor location from the Rapier body anchor', () => {
+    const rapierBodyAnchor = { x: 2, y: -3, z: 4 }
+    expect(resolveAlsActorLocation(
+      rapierBodyAnchor,
+      'Standing',
+      'Grounded',
+    )).toEqual({
+      x: 2,
+      y: -3,
+      z: 4 + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+    })
+    expect(resolveAlsActorLocation(
+      rapierBodyAnchor,
+      'Crouching',
+      'Grounded',
+    )).toEqual({
+      x: 2,
+      y: -3,
+      z: 4
+        + ALS_CROUCHING_CAPSULE_HALF_HEIGHT
+        - ALS_STANDING_CAPSULE_HALF_HEIGHT
+        + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+    })
+    expect(resolveAlsActorLocation(
+      rapierBodyAnchor,
+      'Crouching',
+      'InAir',
+    ).z).toBe(
+      4
+      + ALS_CROUCHING_CAPSULE_HALF_HEIGHT
+      - ALS_STANDING_CAPSULE_HALF_HEIGHT,
+    )
+    expect(rapierBodyAnchor).toEqual({ x: 2, y: -3, z: 4 })
+  })
+
+  it('keeps the rendered mesh on the active capsule base while crouching', () => {
+    // UAlsCharacterMovementComponent constructor line 236 enables bCrouchMaintainsBaseLocation.
+    const floorOffset = UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE
+    expect(resolveAlsMeshRootRelativeY('Standing', 'Grounded')).toBe(
+      ALS_MESH_RELATIVE_LOCATION_Z + floorOffset,
+    )
+    expect(resolveAlsMeshRootRelativeY('Crouching', 'Grounded')).toBe(
+      ALS_MESH_RELATIVE_LOCATION_Z
+      + ALS_CROUCHING_CAPSULE_HALF_HEIGHT
+      - ALS_STANDING_CAPSULE_HALF_HEIGHT
+      + floorOffset,
+    )
+    expect(
+      resolveAlsMeshRootRelativeY('Crouching', 'Grounded')
+      - resolveAlsMeshRootRelativeY('Standing', 'Grounded'),
+    ).toBeCloseTo(
+      ALS_CROUCHING_CAPSULE_HALF_HEIGHT
+      - ALS_STANDING_CAPSULE_HALF_HEIGHT,
+      12,
+    )
+    expect(resolveAlsMeshRootRelativeY('Crouching', 'InAir')).toBe(
+      ALS_MESH_RELATIVE_LOCATION_Z
+      + ALS_CROUCHING_CAPSULE_HALF_HEIGHT
+      - ALS_STANDING_CAPSULE_HALF_HEIGHT,
+    )
+  })
+
+  it('publishes landing tags and one retained locomotion bundle as one frame', () => {
+    const character = createAlsCharacter({
+      actorYawAngle: 10,
+      viewYawAngle: 50,
+      desiredStance: 'Crouching',
+      locomotionMode: 'InAir',
+    })
+    setStance(character, 'Standing')
+    refreshAlsCharacter(
+      character,
+      { x: 0, y: 1, z: 0 },
+      { x: 0, y: 1.2, z: -0.15 },
+      { x: 0, y: 6.5, z: 0 },
+    )
+    setLocomotionMode(character, 'Grounded')
+    const location = { x: 2, y: -3, z: 4 }
+    const basedMovement = {
+      ...ALS_NO_BASED_MOVEMENT,
+      primitive: {},
+      hasRelativeLocation: true,
+    }
+    const output = animationControlsFixture()
+
+    publishAlsCharacterAnimationSnapshot(output, {
+      character,
+      location,
+      basedMovement,
+      acceleration: { x: 0, y: -2, z: 0 },
+      overlayMode: 'Rifle',
+      movementOverride: false,
+      speedOverride: 99,
+      directionOverride: -123,
+      rotateInPlaceOverride: true,
+    })
+
+    expect(output).toMatchObject({
+      locomotionMode: 'Grounded',
+      stance: 'Crouching',
+      gait: 'Walking',
+      rotationMode: 'ViewDirection',
+      overlayMode: 'Rifle',
+      hasInput: true,
+      speed: 1.2,
+      moving: true,
+      movingSmooth: true,
+      actorYawAngle: 10,
+      direction: 80,
+      viewYawAngle: 40,
+      capsuleHalfHeight: ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
+      rotateInPlace: true,
+    })
+    expect(output.velocity).toBe(character.locomotionState.velocity)
+    expect(output.velocity).toEqual({ x: 0, y: 1.2, z: -0.15 })
+    expect(output.speed).toBeCloseTo(
+      Math.hypot(output.velocity.x, output.velocity.y),
+      12,
+    )
+    expect(output.direction).toBe(
+      unwindDegrees(
+        character.locomotionState.velocityYawAngle
+        - output.actorYawAngle,
+      ),
+    )
+    expect(output.moving).toBe(character.locomotionState.moving)
+    expect(output.movingSmooth).toBe(
+      calculateMovingSmooth(character.locomotionState),
+    )
+    expect(output.location).toBe(location)
+    expect(output.basedMovement).toBe(basedMovement)
   })
 
   it('fires the authored 0.1s Sprint Hold on the sixth fixed physics tick', () => {
@@ -96,6 +272,42 @@ describe('AlsCharacter browser bridge math', () => {
     expect(split.actorYawAngle).toBeGreaterThan(0)
     expect(split.actorYawAngle).toBeLessThan(single.actorYawAngle)
     expect(single.locomotionState.targetYawAngle).toBe(90)
+  })
+
+  it('consumes the preceding animation curves in AAlsCharacter grounded-rotation order', () => {
+    const stopped = createAlsCharacter({
+      actorYawAngle: 10,
+      viewYawAngle: 80,
+      desiredAiming: true,
+    })
+    refreshAlsCharacter(
+      stopped,
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 0, z: 0 },
+    )
+
+    stepGroundedCharacterYaw(stopped, 0.5, -30, 20)
+
+    expect(stopped.actorYawAngle).toBe(20)
+    expect(stopped.locomotionState.targetYawAngle).toBe(20)
+    expect(stopped.locomotionState.smoothTargetYawAngle).toBe(20)
+
+    const moving = createAlsCharacter({
+      actorYawAngle: 0,
+      viewYawAngle: 90,
+      desiredRotationMode: 'ViewDirection',
+    })
+    refreshAlsCharacter(
+      moving,
+      { x: 1, y: 0, z: 0 },
+      { x: 2, y: 0, z: 0 },
+    )
+    stepGroundedCharacterYaw(moving, 1 / 60, -30, 10_000)
+
+    // RotationYawSpeed is stopped-only. Moving ViewDirection instead consumes the preceding
+    // RotationYawOffset as ViewYaw + Offset before SetRotationExtraSmooth().
+    expect(moving.locomotionState.targetYawAngle).toBe(60)
+    expect(moving.actorYawAngle).toBeLessThan(60)
   })
 
   it('rotates airborne ViewDirection toward velocity at the authored speed', () => {

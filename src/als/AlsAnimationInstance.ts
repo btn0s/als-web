@@ -206,17 +206,23 @@ import {
   composeAlsLayeringFinalCurves,
   createAlsLayeringPoseRuntime,
   evaluateAlsLayeringPose,
+  resolveAlsLayeringState,
 } from './AnimGraph/AlsLayering'
+import type { AlsLayeringState } from './AnimGraph/AlsLayering'
 import {
+  ALS_CONTROL_RIG_FOOT_IK,
+  ALS_CONTROL_RIG_FORWARD_SOLVE,
   ALS_CONTROL_RIG_HAND_IK,
-  createAlsControlRigHandIkRuntime,
-  evaluateAlsControlRigHandIk,
+  createAlsControlRigForwardSolveRuntime,
+  evaluateAlsControlRigForwardSolve,
+} from './AnimGraph/CR_Als'
+import type {
+  AlsControlRigFootOffsetTrace,
+  AlsControlRigInputState,
 } from './AnimGraph/CR_Als'
 import type { WeightTable } from './AnimGraph/weightTable'
-import {
-  ALS_AUTHORED_GAIT_SPEEDS,
-} from './Settings/AlsMovementSettings'
 import { ALS_GENERAL_ANIMATION_SETTINGS } from './Settings/AlsGeneralAnimationSettings'
+import { ALS_CHARACTER_SETTINGS } from './Settings/AlsCharacterSettings'
 import {
   sampleRotationYawOffsets,
 } from './Settings/AlsGroundedSettings'
@@ -232,6 +238,25 @@ import {
 } from './State/AlsGroundedState'
 import type { Velocity3 } from './State/AlsGroundedState'
 import { unwindDegrees } from './State/AlsLocomotionState'
+import {
+  ALS_NO_BASED_MOVEMENT,
+  createAlsMovementBaseState,
+  refreshMovementBaseOnGameThread,
+} from './State/AlsMovementBaseState'
+import type {
+  AlsBasedMovement,
+  AlsMovementBaseState,
+} from './State/AlsMovementBaseState'
+import {
+  ALS_DEFAULT_FOOT_LOCK_ANGLE_LIMIT,
+  createAlsFeetState,
+} from './State/AlsFeetState'
+import type { AlsFeetState } from './State/AlsFeetState'
+import {
+  createAlsSpineState,
+  refreshSpine,
+} from './State/AlsSpineState'
+import type { AlsSpineState } from './State/AlsSpineState'
 import {
   createAlsPoseState,
   createAlsStanceTransitionCurveState,
@@ -268,10 +293,21 @@ import {
 } from './State/AlsRotateInPlaceState'
 import {
   createAlsTransitionsState,
+  queueTransitionAnimation,
   queueStopTransitionAndTurnInPlaceAnimations,
   refreshTransitions,
+  takeQueuedTransitionAnimation,
   takeQueuedTransitionStop,
 } from './State/AlsTransitionsState'
+import type { AlsTransitionsState } from './State/AlsTransitionsState'
+import {
+  createAlsDynamicTransitionsState,
+  refreshDynamicTransitions,
+  resetDynamicTransitionsFrame,
+} from './State/AlsDynamicTransitionsState'
+import type {
+  AlsDynamicTransitionsState,
+} from './State/AlsDynamicTransitionsState'
 import {
   createAlsTurnInPlaceState,
   refreshTurnInPlace as refreshTurnInPlaceState,
@@ -298,6 +334,13 @@ import {
   TURN_IN_PLACE_STANDING_SLOT_NAME,
 } from './Utility/AlsConstants'
 import { ALS_VIRTUAL_BONES } from './Utility/AlsVirtualBones'
+import {
+  createAlsFeetPoseBridge,
+  initializeAlsFeetThighAxesFromRig,
+} from '../engine/alsFeetPoseBridge'
+import type {
+  AlsFeetComponentTargets,
+} from '../engine/alsFeetPoseBridge'
 
 interface ExtractedBlendSpaces {
   readonly blendSpaces: Readonly<Record<string, AuthoredBlendSpace>>
@@ -362,6 +405,14 @@ const OVERLAY_MODE_INERTIALIZATION_DURATION = 0.2
 const SOLO_INERTIALIZATION_DURATION = 0.2
 const IDLE_ADDITIVE_WEIGHT = 0.75
 const STOP_TRANSITION_AND_TURN_IN_PLACE_BLEND_OUT_DURATION = 0.2
+const FOOT_PLANTED_CURVE_NAME = 'FootPlanted'
+const FOOT_LEFT_IK_CURVE_NAME = 'FootLeftIk'
+const FOOT_RIGHT_IK_CURVE_NAME = 'FootRightIk'
+const GROUND_PREDICTION_BLOCK_CURVE_NAME = 'GroundPredictionBlock'
+const VIEW_BLOCK_CURVE_NAME = 'ViewBlock'
+const ALLOW_AIMING_CURVE_NAME = 'AllowAiming'
+
+const NO_CONTROL_RIG_FOOT_TRACE: AlsControlRigFootOffsetTrace = () => null
 
 const STANCE_TRANSITION_CLIPS = {
   Crouching: 'A_Als_StandToCrouch',
@@ -397,14 +448,6 @@ interface RuntimeOverlaySource {
   readonly key: keyof typeof RIFLE_OVERLAY_CLIPS
   readonly clip: RuntimeClip
   time: number
-}
-
-interface RuntimeQueuedTransitionSlot {
-  readonly clip: RuntimeClip
-  readonly blendInDuration: number
-  readonly blendOutDuration: number
-  readonly playRate: number
-  readonly startTime: number
 }
 
 interface RuntimeSlotMontageBinding {
@@ -456,6 +499,10 @@ export interface AlsAnimationInstanceControls {
   hasInput?: boolean
   /** FAlsLocomotionState::Location in metres and ALS coordinates. */
   location?: Readonly<Velocity3>
+  /** Current AAlsCharacter actor yaw in degrees. */
+  actorYawAngle?: number
+  /** Current CharacterMovement supporting primitive snapshot. */
+  basedMovement?: Readonly<AlsBasedMovement>
   /** FAlsLocomotionState::Velocity in metres per second and ALS coordinates. */
   velocity?: Readonly<Velocity3>
   /** Scaled capsule dimensions used by RefreshGroundPrediction(). */
@@ -465,13 +512,18 @@ export interface AlsAnimationInstanceControls {
 }
 
 export interface AlsAnimationInstanceState {
+  readonly layering: AlsLayeringState
+  readonly movementBase: AlsMovementBaseState
+  readonly feet: AlsFeetState
+  readonly spine: AlsSpineState
+  readonly transitions: AlsTransitionsState
+  readonly dynamicTransitions: AlsDynamicTransitionsState
   crouchingAmount: number
   feetCrossingAmount: number
   footLeftLock: number
   footRightLock: number
   hipsDirectionLockAmount: number
   movementDirection: AlsMovementDirection
-  rotationYawSpeed: number
   hipsDirection: AlsHipsDirection
   /**
    * The exact authored state-machine request. Pose evaluation applies SK_Als's WeightFactor
@@ -496,8 +548,10 @@ export interface AlsAnimationInstance {
   setHipsDirection: (hipsDirection: AlsHipsDirection) => void
   /** Exact UAlsAnimationInstance::Jump() request latch. */
   jump: () => void
+  /** USkeletalMeshComponent::GetAnimInstance()->GetCurveValue() on the published graph frame. */
+  getCurveValue: (name: string) => number
   readonly state: AlsAnimationInstanceState
-  refresh: (delta: number, controls: AlsAnimationInstanceControls) => number
+  refresh: (delta: number, controls: AlsAnimationInstanceControls) => void
 }
 
 function createEntry(
@@ -515,6 +569,77 @@ function advanceClip(clip: RuntimeClip, delta: number) {
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value))
+}
+
+function hasCompleteAlsControlRig(
+  boneNames: ReadonlySet<string>,
+): boolean {
+  const forwardSolve = ALS_CONTROL_RIG_FORWARD_SOLVE
+  return (
+    boneNames.has(
+      forwardSolve.diagonalScaling.footRootBoneWhenUsingFootIkBones,
+    )
+    && boneNames.has(
+      forwardSolve.diagonalScaling.footRootBoneOtherwise,
+    )
+    && forwardSolve.spineRotationBones.every((name) => boneNames.has(name))
+    && ALS_CONTROL_RIG_FOOT_IK.feet.every((definition) => (
+      boneNames.has(definition.pelvisItem)
+      && boneNames.has(definition.thighItem)
+      && boneNames.has(definition.calfItem)
+      && boneNames.has(definition.footItem)
+    ))
+    && ALS_CONTROL_RIG_HAND_IK.every((definition) => (
+      boneNames.has(definition.itemA)
+      && boneNames.has(definition.itemB)
+      && boneNames.has(definition.effectorItem)
+      && boneNames.has(definition.targetWhenUsingHandIkBones)
+      && boneNames.has(definition.targetOtherwise)
+      && boneNames.has(definition.poleVectorSpace)
+    ))
+    && boneNames.has('ik_foot_l')
+    && boneNames.has('ik_foot_r')
+  )
+}
+
+export function shouldMarkAlsTeleported(input: {
+  readonly pendingUpdate: boolean
+  readonly previousLocation: Readonly<Velocity3>
+  readonly location: Readonly<Velocity3>
+  readonly threshold?: number
+}): boolean {
+  if (input.pendingUpdate) return false
+  const deltaX = input.location.x - input.previousLocation.x
+  const deltaY = input.location.y - input.previousLocation.y
+  const deltaZ = input.location.z - input.previousLocation.z
+  const threshold =
+    input.threshold ?? ALS_CHARACTER_SETTINGS.teleportDistanceThreshold
+  return (
+    deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ
+    > threshold * threshold
+  )
+}
+
+/** Exact `UAlsAnimationInstance::GetControlRigInput()` field mapping. */
+export function getAlsControlRigInput(input: {
+  readonly locomotionMode: AlsLocomotionMode
+  readonly velocityBlendForwardAmount: number
+  readonly velocityBlendBackwardAmount: number
+  readonly feetTargets: AlsFeetComponentTargets
+  readonly spineYawAngle: number
+}): AlsControlRigInputState {
+  return {
+    bUseHandIkBones: ALS_GENERAL_ANIMATION_SETTINGS.useHandIkBones,
+    bUseFootIkBones: ALS_GENERAL_ANIMATION_SETTINGS.useFootIkBones,
+    bFootOffsetAllowed: input.locomotionMode !== 'InAir',
+    velocityBlendForwardAmount: input.velocityBlendForwardAmount,
+    velocityBlendBackwardAmount: input.velocityBlendBackwardAmount,
+    footLeftLocation: input.feetTargets.left.position,
+    footLeftRotation: input.feetTargets.left.rotation,
+    footRightLocation: input.feetTargets.right.position,
+    footRightRotation: input.feetTargets.right.rotation,
+    spineYawAngle: input.spineYawAngle,
+  }
 }
 
 function clipSyncMarkers(clip: THREE.AnimationClip): readonly SyncMarker[] {
@@ -631,20 +756,23 @@ export function createAlsAnimationInstance(gltf: {
   syncMarkers?: SyncMarkerTable
   /** Backend adapter for UAlsAnimationInstance::RefreshGroundPrediction(). */
   groundPredictionSweep?: AlsGroundPredictionCapsuleSweep
+  /** Backend adapter for CR_Als FAlsRigUnit_FootOffsetTrace. */
+  controlRigFootTrace?: AlsControlRigFootOffsetTrace
 }): AlsAnimationInstance {
   const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
   const applicator = createPoseApplicator(gltf.scene, rig)
   const evaluator = createPoseEvaluator(rig, { development: import.meta.env.DEV })
   const rigBoneNames = new Set(rig.boneNames)
-  const handIkRuntime = ALS_CONTROL_RIG_HAND_IK.every((definition) => (
-    rigBoneNames.has(definition.itemA)
-    && rigBoneNames.has(definition.itemB)
-    && rigBoneNames.has(definition.effectorItem)
-    && rigBoneNames.has(definition.targetWhenUsingHandIkBones)
-    && rigBoneNames.has(definition.targetOtherwise)
-    && rigBoneNames.has(definition.poleVectorSpace)
-  ))
-    ? createAlsControlRigHandIkRuntime(rig)
+  const controlRigRuntime = hasCompleteAlsControlRig(rigBoneNames)
+    ? createAlsControlRigForwardSolveRuntime(rig)
+    : null
+  const feetPoseBridge = controlRigRuntime
+    ? createAlsFeetPoseBridge(
+        rig,
+        applicator,
+        gltf.scene,
+        ALS_GENERAL_ANIMATION_SETTINGS.useFootIkBones,
+      )
     : null
   const missingMoveDirectionBones = MOVE_DIRECTION_CHANGE_PROFILE.entries.filter(
     (entry) => !rigBoneNames.has(entry.bone),
@@ -1498,6 +1626,11 @@ export function createAlsAnimationInstance(gltf: {
     output.set(POSE_STANDING_CURVE_NAME, 1 - graphCrouchingAmount)
     output.set(POSE_CROUCHING_CURVE_NAME, graphCrouchingAmount)
     output.set(POSE_MOVING_CURVE_NAME, graphMovingAmount)
+    // AB_Als_Grounded node 310 writes these graph curves at full weight. They are not clip
+    // curves: the preceding published values drive RefreshFeet() and the current values drive
+    // CR_Als, including while Jump/Fall states retain the Grounded cached pose as their source.
+    output.set(FOOT_LEFT_IK_CURVE_NAME, 1)
+    output.set(FOOT_RIGHT_IK_CURVE_NAME, 1)
     output.set(FOOT_LEFT_LOCK_CURVE_NAME, graphFootLeftLock)
     output.set(FOOT_RIGHT_LOCK_CURVE_NAME, graphFootRightLock)
     output.set(ROTATION_YAW_SPEED_CURVE_NAME, graphRotationYawSpeed)
@@ -1610,7 +1743,7 @@ export function createAlsAnimationInstance(gltf: {
           locomotionPose: context.locomotionPose,
           overlayPose: context.overlayPose,
           basePose: layeringReference,
-          curves: context.overlayCurves,
+          curves: publishedCurves,
         },
         context.outputPose,
       )
@@ -1676,7 +1809,17 @@ export function createAlsAnimationInstance(gltf: {
   const crouchingState = createAlsCrouchingState()
   const leanState = createAlsLeanState()
   const inAirState = createAlsInAirState()
-  let leanPendingUpdate = true
+  const movementBaseState = createAlsMovementBaseState()
+  const feetState = initializeAlsFeetThighAxesFromRig(
+    createAlsFeetState(),
+    rig,
+  )
+  const spineState = createAlsSpineState()
+  const publishedCurves = new Map<string, number>()
+  const locomotionLocation: Velocity3 = { x: 0, y: 0, z: 0 }
+  let pendingUpdate = true
+  let worldTime = 0
+  let teleportedTime = Number.NEGATIVE_INFINITY
   let previousFootPlantedAmount = 0
   let previousGroundPredictionBlockAmount = 0
   let landToGroundedNotifyCount = 0
@@ -1684,7 +1827,6 @@ export function createAlsAnimationInstance(gltf: {
   const crouchingNode34Output = createOutputInertialization()
   let crouchingRotateLeftTime = 0
   let crouchingRotateRightTime = 0
-  let queuedTransitionSlot: RuntimeQueuedTransitionSlot | null = null
   let stopQuickNotifyCount = 0
   const stanceTransitionState = createAlsStanceTransitionCurveState()
   const groundedStanceTransitionState =
@@ -1695,6 +1837,7 @@ export function createAlsAnimationInstance(gltf: {
     RuntimeGroundedStanceTransitionSource | null = null
   let groundedStanceTransitionSourceWeight = 0
   const transitionsState = createAlsTransitionsState()
+  const dynamicTransitionsState = createAlsDynamicTransitionsState()
   const turnInPlaceState = createAlsTurnInPlaceState()
   const slotMontageClock = createSlotMontageClock()
   const slotMontageSamples: SlotMontageSample[] = []
@@ -1719,14 +1862,20 @@ export function createAlsAnimationInstance(gltf: {
   let previousMovingSmooth: boolean | null = null
   let previousOverlayMode: AlsOverlayMode | null = null
   const gaitAmounts = createAlsPoseState()
+  const layeringState = resolveAlsLayeringState(publishedCurves)
   const state: AlsAnimationInstanceState = {
+    layering: layeringState,
+    movementBase: movementBaseState,
+    feet: feetState,
+    spine: spineState,
+    transitions: transitionsState,
+    dynamicTransitions: dynamicTransitionsState,
     crouchingAmount: 0,
     feetCrossingAmount: 0,
     footLeftLock: 0,
     footRightLock: 0,
     hipsDirectionLockAmount: 0,
     movementDirection: 'Forward',
-    rotationYawSpeed: 0,
     hipsDirection: 'Forward',
     directionTransitionRequest: null,
     standingMovement: refreshStandingMovement({
@@ -1784,6 +1933,21 @@ export function createAlsAnimationInstance(gltf: {
     requestAlsAnimationJump(inAirState)
   }
 
+  function refreshDynamicTransitionsFromGraph(
+    controls: AlsAnimationInstanceControls,
+  ) {
+    return refreshDynamicTransitions(
+      dynamicTransitionsState,
+      {
+        stance: controls.stance,
+        scale: controls.scale ?? 1,
+        leftFoot: feetState.left,
+        rightFoot: feetState.right,
+        transitions: transitionsState,
+      },
+    )
+  }
+
   function processCrouchingLifecycleEvents() {
     for (const event of crouchingStateRuntime.lifecycleEvents) {
       if (
@@ -1806,13 +1970,13 @@ export function createAlsAnimationInstance(gltf: {
       }
       if (event.kind === 'PlayTransitionRightAnimation') {
         if (crouchingTransitionRightClip) {
-          queuedTransitionSlot = {
-            clip: crouchingTransitionRightClip,
+          queueTransitionAnimation(transitionsState, {
+            clip: crouchingTransitionRightClip.sampler.clip.name,
             blendInDuration: event.blendInDuration,
             blendOutDuration: event.blendOutDuration,
             playRate: event.playRate,
             startTime: event.startTime,
-          }
+          })
         }
         continue
       }
@@ -1826,6 +1990,7 @@ export function createAlsAnimationInstance(gltf: {
 
   function processStandingLifecycleEvent(
     event: AlsStandingLifecycleEvent,
+    controls: AlsAnimationInstanceControls,
   ) {
     if (event.kind === 'CallFunction') {
       if (event.functionName === 'InitializeStandingMovement') {
@@ -1833,6 +1998,8 @@ export function createAlsAnimationInstance(gltf: {
         standingGraphRuntime.pivotActive = false
       } else if (event.functionName === 'InitializeTurnInPlace') {
         turnInPlaceState.activationDelay = 0
+      } else if (event.functionName === 'RefreshDynamicTransitions') {
+        refreshDynamicTransitionsFromGraph(controls)
       } else if (
         event.functionName
           === 'StopTransitionAndTurnInPlaceAnimations'
@@ -1849,13 +2016,13 @@ export function createAlsAnimationInstance(gltf: {
     if (event.kind === 'PlayStopTransitionAnimation') {
       const clip = standingStopTransitionClips[event.direction]
       if (clip) {
-        queuedTransitionSlot = {
-          clip,
+        queueTransitionAnimation(transitionsState, {
+          clip: clip.sampler.clip.name,
           blendInDuration: event.blendInDuration,
           blendOutDuration: event.blendOutDuration,
           playRate: event.playRate,
           startTime: event.startTime,
-        }
+        })
       }
       return
     }
@@ -1863,9 +2030,11 @@ export function createAlsAnimationInstance(gltf: {
     if (event.name === 'StopQuick') stopQuickNotifyCount++
   }
 
-  function processStandingLifecycleEvents() {
+  function processStandingLifecycleEvents(
+    controls: AlsAnimationInstanceControls,
+  ) {
     for (const event of standingGraphRuntime.lifecycleEvents) {
-      processStandingLifecycleEvent(event)
+      processStandingLifecycleEvent(event, controls)
     }
   }
 
@@ -2099,33 +2268,34 @@ export function createAlsAnimationInstance(gltf: {
 
   function processQueuedTransitionAndTurnInPlaceAnimations() {
     // NativePostUpdateAnimation order: play queued transition, play queued turn, stop queued Slots.
-    if (
-      queuedTransitionSlot
-      && !transitionsState.stopTransitionsQueued
-    ) {
-      const queued = queuedTransitionSlot
-      queued.clip.time = 0
-      queued.clip.entry.time = 0
-      queued.clip.entry.loop = false
-      playSlotAnimationAsDynamicMontage(
-        slotMontageClock,
-        {
-          clipKey: queued.clip.sampler.clip.name,
-          clipDuration: queued.clip.sampler.clip.duration,
-          slotName: TRANSITION_SLOT_NAME,
-          groupName: GROUNDED_SLOT_GROUP_NAME,
-          blendInDuration: queued.blendInDuration,
-          blendOutDuration: queued.blendOutDuration,
-          playRate: queued.playRate,
-          loopCount: 1,
-          blendOutTriggerTime: 0,
-          startTime: queued.startTime,
-          additiveType: slotAdditiveTypeForClip(queued.clip),
-          bEnableRootMotion:
-            queued.clip.sampler.clip.userData?.bEnableRootMotion === true,
-        },
-      )
-      queuedTransitionSlot = null
+    const queuedTransition = takeQueuedTransitionAnimation(
+      transitionsState,
+    )
+    if (queuedTransition) {
+      const clip = clipsByName.get(queuedTransition.clip)
+      if (clip) {
+        clip.time = 0
+        clip.entry.time = 0
+        clip.entry.loop = false
+        playSlotAnimationAsDynamicMontage(
+          slotMontageClock,
+          {
+            clipKey: clip.sampler.clip.name,
+            clipDuration: clip.sampler.clip.duration,
+            slotName: TRANSITION_SLOT_NAME,
+            groupName: GROUNDED_SLOT_GROUP_NAME,
+            blendInDuration: queuedTransition.blendInDuration,
+            blendOutDuration: queuedTransition.blendOutDuration,
+            playRate: queuedTransition.playRate,
+            loopCount: 1,
+            blendOutTriggerTime: 0,
+            startTime: queuedTransition.startTime,
+            additiveType: slotAdditiveTypeForClip(clip),
+            bEnableRootMotion:
+              clip.sampler.clip.userData?.bEnableRootMotion === true,
+          },
+        )
+      }
     }
 
     const queuedTurn = takeQueuedTurnInPlaceAnimation(
@@ -2176,6 +2346,11 @@ export function createAlsAnimationInstance(gltf: {
       stopBlendOutDuration,
       TURN_IN_PLACE_CROUCHING_SLOT_NAME,
     )
+  }
+
+  function nativePostUpdateAnimation() {
+    processQueuedTransitionAndTurnInPlaceAnimations()
+    pendingUpdate = false
   }
 
   function enterAuthoredStanceState(targetCrouchingAmount: number) {
@@ -2447,6 +2622,15 @@ export function createAlsAnimationInstance(gltf: {
     }
   }
 
+  function reinitializeLocomotionSequencePlayers() {
+    for (const player of locomotionSequencePlayers) {
+      resetLocomotionPlayer(player)
+    }
+    for (const group of Object.values(locomotionSyncGroups)) {
+      group.leaderKey = null
+    }
+  }
+
   function refreshLocomotionPlayerWeights(
     referencedStates: ReadonlySet<AlsLocomotionPoseState>,
     input: AlsLocomotionPoseGraphInput,
@@ -2639,15 +2823,162 @@ export function createAlsAnimationInstance(gltf: {
     }
   }
 
+  function applyEvaluatedGraphPose(
+    result: ReturnType<typeof evaluatePose>,
+    locomotionMode: AlsLocomotionMode,
+    deltaTime: number,
+  ) {
+    const finalCurves = result.curves.values
+    if (controlRigRuntime && feetPoseBridge) {
+      evaluateAlsControlRigForwardSolve(controlRigRuntime, {
+        isGameWorld: true,
+        pose: result.pose,
+        curves: finalCurves,
+        rigInput: getAlsControlRigInput({
+          locomotionMode,
+          velocityBlendForwardAmount: velocityBlend.forwardAmount,
+          velocityBlendBackwardAmount: velocityBlend.backwardAmount,
+          feetTargets: feetPoseBridge.targets,
+          spineYawAngle: spineState.yawAngle,
+        }),
+        deltaTime: Math.max(0, deltaTime),
+        trace: gltf.controlRigFootTrace ?? NO_CONTROL_RIG_FOOT_TRACE,
+      })
+    }
+
+    applyPose(applicator, result.pose)
+    publishedCurves.clear()
+    for (const [name, value] of finalCurves) {
+      publishedCurves.set(name, value)
+    }
+    return finalCurves
+  }
+
   function refresh(delta: number, controls: AlsAnimationInstanceControls) {
-    if (rig.boneCount === 0) return 0
+    if (rig.boneCount === 0) return
+    const deltaTime = Math.max(0, delta)
+    const pendingUpdateThisFrame = pendingUpdate
+    const locomotionMode = controls.locomotionMode === undefined
+      ? 'Grounded'
+      : controls.locomotionMode
+    const hasInput = controls.hasInput ?? false
+    worldTime += deltaTime
+
+    // NativeUpdateAnimation(): PreviousLocation → MovementBase → View → Locomotion → InAir →
+    // Feet → teleport detection. The live bridge has already captured the character-owned View
+    // and Locomotion fields into controls at the same post-physics boundary.
+    const previousLocation = {
+      x: locomotionLocation.x,
+      y: locomotionLocation.y,
+      z: locomotionLocation.z,
+    }
+    refreshMovementBaseOnGameThread(
+      movementBaseState,
+      controls.basedMovement ?? ALS_NO_BASED_MOVEMENT,
+    )
+    const location = controls.location
+    if (location) {
+      locomotionLocation.x = location.x
+      locomotionLocation.y = location.y
+      locomotionLocation.z = location.z
+    }
+    refreshInAirOnGameThread(inAirState, pendingUpdateThisFrame)
+    feetPoseBridge?.capturePublishedPose(feetState)
+    if (location) {
+      if (shouldMarkAlsTeleported({
+        pendingUpdate: pendingUpdateThisFrame,
+        previousLocation,
+        location: locomotionLocation,
+      })) {
+        teleportedTime = worldTime
+      }
+    }
+
+    // NativeThreadSafeUpdateAnimation(): UAnimInstanceProxy exposes the preceding published
+    // curve frame here. Those values refresh ALS state before the current graph is evaluated.
+    resetDynamicTransitionsFrame(dynamicTransitionsState)
+    resetRotateInPlaceFrame(rotateInPlaceState)
+    resetTurnInPlaceFrame(turnInPlaceState)
+    Object.assign(
+      layeringState,
+      resolveAlsLayeringState(publishedCurves),
+    )
+    refreshPose(publishedCurves, gaitAmounts)
+    const viewAmount = 1 - clamp01(
+      publishedCurves.get(VIEW_BLOCK_CURVE_NAME) ?? 0,
+    )
+    const aimingAmount = clamp01(
+      publishedCurves.get(ALLOW_AIMING_CURVE_NAME) ?? 0,
+    )
+    refreshSpine(spineState, {
+      spineRotationAllowed: controls.rotationMode === 'Aiming',
+      spineBlendAmount: viewAmount * aimingAmount,
+      deltaTime,
+      pendingUpdate: pendingUpdateThisFrame,
+      viewYawAngle: controls.viewYawAngle,
+      viewYawSpeed: controls.viewYawSpeed,
+      actorYawAngle: controls.actorYawAngle ?? 0,
+      movementBaseHasRelativeRotation:
+        movementBaseState.hasRelativeRotation,
+      movementBaseDeltaRotationYaw:
+        movementBaseState.deltaRotation.yaw,
+    })
+    previousFootPlantedAmount = Math.max(
+      -1,
+      Math.min(
+        1,
+        publishedCurves.get(FOOT_PLANTED_CURVE_NAME) ?? 0,
+      ),
+    )
+    feetPoseBridge?.refresh(feetState, {
+      deltaTime,
+      pendingUpdate: pendingUpdateThisFrame,
+      timeSinceTeleported: worldTime - teleportedTime,
+      baseChanged: movementBaseState.baseChanged,
+      movementBase: movementBaseState,
+      movingSmooth: controls.movingSmooth,
+      grounded: locomotionMode === 'Grounded',
+      disableFootLock: false,
+      footLockAngleLimit: ALS_DEFAULT_FOOT_LOCK_ANGLE_LIMIT,
+      footPlantedCurveAmount:
+        publishedCurves.get(FOOT_PLANTED_CURVE_NAME) ?? 0,
+      feetCrossingCurveAmount:
+        publishedCurves.get(FEET_CROSSING_CURVE_NAME) ?? 0,
+      footLeftIkCurveAmount:
+        publishedCurves.get(FOOT_LEFT_IK_CURVE_NAME) ?? 0,
+      footRightIkCurveAmount:
+        publishedCurves.get(FOOT_RIGHT_IK_CURVE_NAME) ?? 0,
+      footLeftLockCurveAmount:
+        publishedCurves.get(FOOT_LEFT_LOCK_CURVE_NAME) ?? 0,
+      footRightLockCurveAmount:
+        publishedCurves.get(FOOT_RIGHT_LOCK_CURVE_NAME) ?? 0,
+    })
+    refreshTransitions(
+      transitionsState,
+      publishedCurves.get(ALLOW_TRANSITIONS_CURVE_NAME) ?? 0,
+    )
+
+    previousGroundPredictionBlockAmount = clamp01(
+      publishedCurves.get(GROUND_PREDICTION_BLOCK_CURVE_NAME) ?? 0,
+    )
+    state.hipsDirectionLockAmount = Math.max(
+      -1,
+      Math.min(
+        1,
+        publishedCurves.get(HIPS_DIRECTION_LOCK_CURVE_NAME) ?? 0,
+      ),
+    )
+    state.standingSprint.sprintBlockAmount = clamp01(
+      publishedCurves.get(SPRINT_BLOCK_CURVE_NAME) ?? 0,
+    )
+    state.crouchingAmount = gaitAmounts.crouchingAmount
+    state.footLeftLock = feetState.left.lockAmount
+    state.footRightLock = feetState.right.lockAmount
+    state.feetCrossingAmount = feetState.feetCrossingAmount
     mainInput.deltaTime = delta
     fallbackInput.deltaTime = delta
     soloInput.deltaTime = delta
-    refreshInAirOnGameThread(inAirState, leanPendingUpdate)
     const jumpedThisFrame = inAirState.jumped
-    const locomotionMode = controls.locomotionMode ?? 'Grounded'
-    const hasInput = controls.hasInput ?? false
     if (!locomotionPoseGraphRuntime.relevant) {
       // AB_Als_Locomotion node3 calls InitializeLean on becoming relevant before its state update
       // functions refresh the same values for this frame.
@@ -2692,7 +3023,7 @@ export function createAlsAnimationInstance(gltf: {
         controls.direction,
       )
       refreshInAirLean(leanState, {
-        pendingUpdate: leanPendingUpdate,
+        pendingUpdate: pendingUpdateThisFrame,
         deltaTime: Math.max(0, delta),
         relativeVelocity: {
           x: Math.cos(directionRadians) * Math.max(0, controls.speed),
@@ -2710,7 +3041,12 @@ export function createAlsAnimationInstance(gltf: {
       advanceClip(soloClip, delta)
       soloClip.entry.time = soloClip.time
       soloClip.entry.weight = 1
-      applyPose(applicator, evaluatePose(evaluator, soloInput).pose)
+      const soloResult = evaluatePose(evaluator, soloInput)
+      applyEvaluatedGraphPose(
+        soloResult,
+        locomotionMode,
+        delta,
+      )
       const debugWeights = soloDebugWeights.get(soloClip.sampler.clip.name)
       if (debugWeights) {
         debugWeights.clipTime = soloClip.entry.time
@@ -2731,9 +3067,10 @@ export function createAlsAnimationInstance(gltf: {
       // Controls may change while the normal graph is dormant. The solo transition request owns
       // the eventual handoff, so do not emit a second overlay request on the first resumed frame.
       previousOverlayMode = controls.overlayMode
-      state.rotationYawSpeed = 0
       locomotionPoseGraphRuntime.relevant = false
-      return 0
+      velocityInitialized = false
+      nativePostUpdateAnimation()
+      return
     }
 
     advanceSlotMontageGroupSamples(
@@ -2766,11 +3103,19 @@ export function createAlsAnimationInstance(gltf: {
     }
 
     if (!complete) {
-      if (!fallbackClip) return 0
+      if (!fallbackClip) {
+        nativePostUpdateAnimation()
+        return
+      }
       if (syncClips.has(fallbackClip)) advanceClip(fallbackClip, delta)
       fallbackClip.entry.time = fallbackClip.time
       fallbackClip.entry.weight = 1
-      applyPose(applicator, evaluatePose(evaluator, fallbackInput).pose)
+      const fallbackResult = evaluatePose(evaluator, fallbackInput)
+      applyEvaluatedGraphPose(
+        fallbackResult,
+        locomotionMode,
+        delta,
+      )
       const debugWeights = soloDebugWeights.get(fallbackClip.sampler.clip.name)
       if (debugWeights) {
         debugWeights.clipTime = fallbackClip.entry.time
@@ -2783,19 +3128,35 @@ export function createAlsAnimationInstance(gltf: {
           inertializationRequestCount()
       }
       window.__weightTable = debugWeights
-      state.rotationYawSpeed = 0
-      return 0
+      nativePostUpdateAnimation()
+      return
     }
 
     const rawSpeed = Math.max(0, controls.speed)
+    const directionRadians = THREE.MathUtils.degToRad(
+      controls.direction,
+    )
+    const velocity = controls.velocity ?? {
+      x: Math.cos(directionRadians) * rawSpeed,
+      y: Math.sin(directionRadians) * rawSpeed,
+      z: 0,
+    }
+    refreshVelocityBlend(
+      velocityBlend,
+      velocity,
+      THREE.MathUtils.degToRad(controls.actorYawAngle ?? 0),
+      delta,
+      !velocityInitialized,
+      velocityTarget,
+    )
+    velocityInitialized = true
     if (locomotionMode === 'Grounded') {
       refreshGroundedLean(leanState, {
-        pendingUpdate: leanPendingUpdate,
+        pendingUpdate: pendingUpdateThisFrame,
         deltaTime: Math.max(0, delta),
         relativeAccelerationAmount: controls.relativeAccelerationAmount,
       })
     }
-    leanPendingUpdate = false
     if (crouchingLeanSourceComplete) {
       const leanSamples = evaluateBlendSpace(
         crouchingLeanBlendSpace,
@@ -2823,7 +3184,6 @@ export function createAlsAnimationInstance(gltf: {
 
     // NativeThreadSafeUpdateAnimation refreshes this state before Grounded States evaluates its
     // priority-zero direct stance route.
-    resetRotateInPlaceFrame(rotateInPlaceState)
     refreshRotateInPlaceState(rotateInPlaceState, {
       delta,
       moving:
@@ -2974,12 +3334,9 @@ export function createAlsAnimationInstance(gltf: {
       )
     }
     const crouchingAmount = stanceTransitionState.crouchingAmount
-    state.crouchingAmount = crouchingAmount
-    state.footLeftLock = stanceTransitionState.footLeftLock
-    state.footRightLock = stanceTransitionState.footRightLock
     graphCrouchingAmount = crouchingAmount
-    graphFootLeftLock = state.footLeftLock
-    graphFootRightLock = state.footRightLock
+    graphFootLeftLock = stanceTransitionState.footLeftLock
+    graphFootRightLock = stanceTransitionState.footRightLock
     const locomotionCrouchingAmount = retainedStanceSource
       ? retainedStanceSource.targetCrouchingAmount
       : crouchingAmount
@@ -3019,6 +3376,12 @@ export function createAlsAnimationInstance(gltf: {
       }
     }
     processCrouchingLifecycleEvents()
+    if (
+      crouchingGraphRelevant
+      && crouchingStateRuntime.stateWeights.Idle > Number.EPSILON
+    ) {
+      refreshDynamicTransitionsFromGraph(controls)
+    }
     for (const request of crouchingStateRuntime.inertializationRequests) {
       crouchingNode34.requestInertialization(request.duration)
     }
@@ -3049,27 +3412,6 @@ export function createAlsAnimationInstance(gltf: {
     activeCrouchingGraphWeight = crouchingGraphWeight
 
     graphGroundedAmount = 1
-
-    // ALS exposes crouch walk/run maxima of 1.5/2.0m/s. The pack has one crouch walk cycle, so
-    // speeds above walk cadence-scale that cycle up to the authored crouch-run movement cap.
-    const crouchLimitedSpeed = Math.min(rawSpeed, ALS_AUTHORED_GAIT_SPEEDS.crouching.run)
-    const locomotionSpeed = rawSpeed
-      + (crouchLimitedSpeed - rawSpeed) * locomotionCrouchingAmount
-
-    const directionRadians = THREE.MathUtils.degToRad(controls.direction)
-    refreshVelocityBlend(
-      velocityBlend,
-      {
-        x: Math.cos(directionRadians) * locomotionSpeed,
-        y: Math.sin(directionRadians) * locomotionSpeed,
-        z: 0,
-      },
-      0,
-      delta,
-      !velocityInitialized,
-      velocityTarget,
-    )
-    velocityInitialized = true
 
     const viewRelativeVelocityYawAngle = unwindDegrees(
       controls.direction - controls.viewYawAngle,
@@ -3116,7 +3458,7 @@ export function createAlsAnimationInstance(gltf: {
         speedCmPerSecond: rawSpeed * 100,
       },
     )
-    processStandingLifecycleEvents()
+    processStandingLifecycleEvents(controls)
     state.hipsDirection = standingGraphRuntime.hipsDirection
     const standingDirectionTransition =
       standingGraphRuntime.direction.lastStartedTransition
@@ -3140,7 +3482,6 @@ export function createAlsAnimationInstance(gltf: {
       },
     )
 
-    resetTurnInPlaceFrame(turnInPlaceState)
     const turnInPlaceGraphRelevant =
       controls.stance === 'Crouching'
         ? (
@@ -3882,12 +4223,12 @@ export function createAlsAnimationInstance(gltf: {
     graphFootLeftLock = clamp01(
       locomotionResolvedGraphCurves.get(
         FOOT_LEFT_LOCK_CURVE_NAME,
-      ) ?? state.footLeftLock,
+      ) ?? graphFootLeftLock,
     )
     graphFootRightLock = clamp01(
       locomotionResolvedGraphCurves.get(
         FOOT_RIGHT_LOCK_CURVE_NAME,
-      ) ?? state.footRightLock,
+      ) ?? graphFootRightLock,
     )
     graphRotationYawSpeed =
       locomotionResolvedGraphCurves.get(
@@ -3905,6 +4246,13 @@ export function createAlsAnimationInstance(gltf: {
     )
     graphFallbackGaitAmount = fallbackGaitAmount
 
+    if (!locomotionPoseGraphRuntime.relevant) {
+      // AB_Als_Locomotion has bReinitializeOnBecomingRelevant. Its caller-owned
+      // SequencePlayers initialize with the graph even when the stale and newly selected outer
+      // states have the same name (for example Fall -> solo -> Fall). Reinitialize before
+      // GetRelevantAnimTimeRemaining() feeds this frame's automatic transition rules.
+      reinitializeLocomotionSequencePlayers()
+    }
     const jumpLaunchRemainingTime = mostRelevantRemainingTime([
       jumpWalkLeftPlayer,
       jumpRunLeftPlayer,
@@ -3961,58 +4309,14 @@ export function createAlsAnimationInstance(gltf: {
 
     const result = evaluatePose(evaluator, mainInput)
     processLocomotionLifecycleEvents()
-    if (handIkRuntime) {
-      evaluateAlsControlRigHandIk(handIkRuntime, {
-        pose: result.pose,
-        curves: result.curves.values,
-        useHandIkBones: ALS_GENERAL_ANIMATION_SETTINGS.useHandIkBones,
-      })
+    if (!result.curves.values.has(POSE_GAIT_CURVE_NAME)) {
+      result.curves.values.set(POSE_GAIT_CURVE_NAME, fallbackGaitAmount)
     }
-    applyPose(applicator, result.pose)
-
-    const finalCurves = result.curves.values
-    previousFootPlantedAmount = Math.max(
-      -1,
-      Math.min(1, finalCurves.get('FootPlanted') ?? 0),
+    const finalCurves = applyEvaluatedGraphPose(
+      result,
+      locomotionMode,
+      delta,
     )
-    previousGroundPredictionBlockAmount = clamp01(
-      finalCurves.get('GroundPredictionBlock') ?? 0,
-    )
-    refreshTransitions(
-      transitionsState,
-      finalCurves.get(ALLOW_TRANSITIONS_CURVE_NAME)
-        ?? graphAllowTransitions,
-    )
-    state.crouchingAmount = clamp01(
-      finalCurves.get(POSE_CROUCHING_CURVE_NAME) ?? graphCrouchingAmount,
-    )
-    state.footLeftLock = clamp01(
-      finalCurves.get(FOOT_LEFT_LOCK_CURVE_NAME) ?? graphFootLeftLock,
-    )
-    state.footRightLock = clamp01(
-      finalCurves.get(FOOT_RIGHT_LOCK_CURVE_NAME) ?? graphFootRightLock,
-    )
-    state.hipsDirectionLockAmount = Math.max(
-      -1,
-      Math.min(
-        1,
-        finalCurves.get(HIPS_DIRECTION_LOCK_CURVE_NAME) ?? 0,
-      ),
-    )
-    state.feetCrossingAmount = clamp01(
-      finalCurves.get(FEET_CROSSING_CURVE_NAME) ?? 0,
-    )
-    state.standingSprint.sprintBlockAmount = clamp01(
-      finalCurves.get(SPRINT_BLOCK_CURVE_NAME) ?? 0,
-    )
-    state.rotationYawSpeed =
-      finalCurves.get(ROTATION_YAW_SPEED_CURVE_NAME)
-      ?? graphRotationYawSpeed
-    if (!finalCurves.has(POSE_GAIT_CURVE_NAME)) {
-      finalCurves.set(POSE_GAIT_CURVE_NAME, fallbackGaitAmount)
-    }
-    refreshPose(finalCurves, gaitAmounts)
-
     for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) {
       const clip = roles[role]
       if (clip) {
@@ -4257,12 +4561,38 @@ export function createAlsAnimationInstance(gltf: {
     normalDebugWeights[HIPS_DIRECTION_LOCK_CURVE_NAME] =
       state.hipsDirectionLockAmount
     normalDebugWeights[FEET_CROSSING_CURVE_NAME] = state.feetCrossingAmount
-    normalDebugWeights[ROTATION_YAW_SPEED_CURVE_NAME] = state.rotationYawSpeed
+    normalDebugWeights[ROTATION_YAW_SPEED_CURVE_NAME] =
+      finalCurves.get(ROTATION_YAW_SPEED_CURVE_NAME)
+      ?? graphRotationYawSpeed
+    normalDebugWeights.PublishedRotationYawSpeed =
+      finalCurves.get(ROTATION_YAW_SPEED_CURVE_NAME)
+      ?? graphRotationYawSpeed
+    normalDebugWeights.PublishedPoseCrouching = clamp01(
+      finalCurves.get(POSE_CROUCHING_CURVE_NAME) ?? graphCrouchingAmount,
+    )
+    normalDebugWeights.PublishedFootLeftLock = clamp01(
+      finalCurves.get(FOOT_LEFT_LOCK_CURVE_NAME) ?? graphFootLeftLock,
+    )
+    normalDebugWeights.PublishedFootRightLock = clamp01(
+      finalCurves.get(FOOT_RIGHT_LOCK_CURVE_NAME) ?? graphFootRightLock,
+    )
+    normalDebugWeights.PublishedHipsDirectionLock = Math.max(
+      -1,
+      Math.min(
+        1,
+        finalCurves.get(HIPS_DIRECTION_LOCK_CURVE_NAME) ?? 0,
+      ),
+    )
+    normalDebugWeights.PublishedSprintBlock = clamp01(
+      finalCurves.get(SPRINT_BLOCK_CURVE_NAME) ?? 0,
+    )
     normalDebugWeights.RotationYawOffset =
       finalCurves.get('RotationYawOffset') ?? 0
     normalDebugWeights[ALLOW_TRANSITIONS_CURVE_NAME] =
       finalCurves.get(ALLOW_TRANSITIONS_CURVE_NAME)
       ?? graphAllowTransitions
+    normalDebugWeights.TransitionsAllowed =
+      Number(transitionsState.transitionsAllowed)
     normalDebugWeights.TurnInPlaceMontageWeight =
       turnInPlaceMontageWeight
     normalDebugWeights.TurnInPlaceMontageTime =
@@ -4425,7 +4755,36 @@ export function createAlsAnimationInstance(gltf: {
       inAirState.groundPredictionAmount
     normalDebugWeights.GroundPredictionBlock =
       previousGroundPredictionBlockAmount
+    normalDebugWeights.PublishedGroundPredictionBlock = clamp01(
+      finalCurves.get(GROUND_PREDICTION_BLOCK_CURVE_NAME) ?? 0,
+    )
     normalDebugWeights.FootPlanted = previousFootPlantedAmount
+    normalDebugWeights.PublishedFootPlanted = Math.max(
+      -1,
+      Math.min(
+        1,
+        finalCurves.get(FOOT_PLANTED_CURVE_NAME) ?? 0,
+      ),
+    )
+    normalDebugWeights.PublishedFeetCrossing = clamp01(
+      finalCurves.get(FEET_CROSSING_CURVE_NAME) ?? 0,
+    )
+    normalDebugWeights.ControlRigExecuted =
+      Number(controlRigRuntime?.executed ?? false)
+    normalDebugWeights.ControlRigDiagonalScalingFactor =
+      controlRigRuntime?.diagonalScalingFactor ?? 0
+    normalDebugWeights.ControlRigSpineRotationApplied =
+      Number(controlRigRuntime?.spineRotationApplied ?? false)
+    normalDebugWeights.PublishedCurveFrameSize = publishedCurves.size
+    normalDebugWeights.MovementBaseChanged =
+      Number(movementBaseState.baseChanged)
+    normalDebugWeights.FeetFootPlantedAmount =
+      feetState.footPlantedAmount
+    normalDebugWeights.FeetCrossingAmount =
+      feetState.feetCrossingAmount
+    normalDebugWeights.SpineYawAngle = spineState.yawAngle
+    normalDebugWeights.TimeSinceTeleported =
+      worldTime - teleportedTime
     normalDebugWeights.InAirLeanRightAmount = leanState.rightAmount
     normalDebugWeights.InAirLeanForwardAmount = leanState.forwardAmount
     normalDebugWeights.InAirJumpLaunchRemainingTime =
@@ -4468,8 +4827,7 @@ export function createAlsAnimationInstance(gltf: {
     ) {
       groundedStanceTransitionSource = null
     }
-    processQueuedTransitionAndTurnInPlaceAnimations()
-    return state.rotationYawSpeed
+    nativePostUpdateAnimation()
   }
 
   return {
@@ -4477,6 +4835,7 @@ export function createAlsAnimationInstance(gltf: {
     clearSoloClip,
     setHipsDirection,
     jump,
+    getCurveValue: (name) => publishedCurves.get(name) ?? 0,
     state,
     refresh,
   }

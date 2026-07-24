@@ -13,11 +13,41 @@ import {
   ALS_STANCE_TRANSITION_INERTIALIZATION_DURATION,
   ALS_STANCE_TRANSITION_SEQUENCE_PLAY_RATE,
 } from '../AnimGraph/groundedStance'
+import {
+  ALS_CONTROL_RIG_FOOT_IK,
+  ALS_CONTROL_RIG_FORWARD_SOLVE,
+  ALS_CONTROL_RIG_HAND_IK,
+} from '../AnimGraph/CR_Als'
 import { createAlsAnimationInstance } from '../AlsAnimationInstance'
 import type { AlsAnimationInstanceControls } from '../AlsAnimationInstance'
 
 const FPS = 60
 const DT = 1 / FPS
+const NO_IGNORED_BONES: ReadonlySet<string> = new Set()
+
+// These are exactly the local-pose items written by CR_Als Forward Solve's authored SetScale,
+// DistributeRotationSimple, foot BasicIK, and hand BasicIK nodes. Targets and propagated children
+// remain in the graph-owned metric; this must never become a limb-prefix exclusion.
+const CONTROL_RIG_OWNED_LOCAL_BONES = new Set<string>([
+  ALS_CONTROL_RIG_FORWARD_SOLVE.diagonalScaling
+    .footRootBoneWhenUsingFootIkBones,
+  ALS_CONTROL_RIG_FORWARD_SOLVE.diagonalScaling
+    .footRootBoneOtherwise,
+  ...ALS_CONTROL_RIG_FORWARD_SOLVE.spineRotationBones,
+  ...ALS_CONTROL_RIG_FOOT_IK.feet.flatMap((foot) => [
+    foot.pelvisItem,
+    foot.thighItem,
+    foot.calfItem,
+    foot.footItem,
+  ]),
+  ...ALS_CONTROL_RIG_HAND_IK.flatMap((hand) => [
+    hand.itemA,
+    hand.itemB,
+    hand.effectorItem,
+  ]),
+])
+const FOOT_EFFECTOR_BOUNDARY_POSITION_TOLERANCE_METERS = 1e-4
+const FOOT_EFFECTOR_BOUNDARY_ROTATION_TOLERANCE_DEGREES = 0.01
 
 type Stance = 'Standing' | 'Crouching'
 type OwnerPath = readonly [blueprint: string, machine: string, state: string]
@@ -204,12 +234,14 @@ function delta(
   rig: ReturnType<typeof createRigDefinition>,
   from: Frame,
   to: Frame,
+  ignoredBoneNames: ReadonlySet<string> = NO_IGNORED_BONES,
 ): Delta {
   let rotationDegrees: Peak = { value: 0, bone: rig.boneNames[0] ?? '' }
   let translationMeters: Peak = { value: 0, bone: rig.boneNames[0] ?? '' }
   let scale: Peak = { value: 0, bone: rig.boneNames[0] ?? '' }
 
   for (let bone = 0; bone < rig.boneCount; bone++) {
+    if (ignoredBoneNames.has(rig.boneNames[bone])) continue
     const p = bone * 3
     const q = bone * 4
     const translation = Math.hypot(
@@ -252,10 +284,54 @@ function delta(
 function deltas(
   rig: ReturnType<typeof createRigDefinition>,
   frames: readonly Frame[],
+  ignoredBoneNames: ReadonlySet<string> = NO_IGNORED_BONES,
 ) {
   return frames.slice(1).map((frame, index) =>
-    delta(rig, frames[index], frame)
+    delta(rig, frames[index], frame, ignoredBoneNames)
   )
+}
+
+function componentBoneTransform(
+  rig: ReturnType<typeof createRigDefinition>,
+  frame: Frame,
+  boneName: string,
+) {
+  const boneIndex = rig.boneNames.indexOf(boneName)
+  if (boneIndex < 0) throw new Error(`Missing bone "${boneName}"`)
+  const hierarchy: number[] = []
+  for (let index = boneIndex; index >= 0; index = rig.parentIndices[index]) {
+    hierarchy.push(index)
+  }
+  const matrix = new THREE.Matrix4()
+  const local = new THREE.Matrix4()
+  const position = new THREE.Vector3()
+  const rotation = new THREE.Quaternion()
+  const scale = new THREE.Vector3()
+  for (let index = hierarchy.length - 1; index >= 0; index--) {
+    const bone = hierarchy[index]
+    local.compose(
+      position.fromArray(frame.pose.positions, bone * 3),
+      rotation.fromArray(frame.pose.rotations, bone * 4),
+      scale.fromArray(frame.pose.scales, bone * 3),
+    )
+    matrix.multiply(local)
+  }
+  matrix.decompose(position, rotation, scale)
+  return { position: position.clone(), rotation: rotation.clone() }
+}
+
+function componentBoneDelta(
+  rig: ReturnType<typeof createRigDefinition>,
+  from: Frame,
+  to: Frame,
+  boneName: string,
+) {
+  const a = componentBoneTransform(rig, from, boneName)
+  const b = componentBoneTransform(rig, to, boneName)
+  return {
+    positionMeters: a.position.distanceTo(b.position),
+    rotationDegrees: THREE.MathUtils.radToDeg(a.rotation.angleTo(b.rotation)),
+  }
 }
 
 function worst(samples: readonly Delta[], metric: keyof Pick<
@@ -454,7 +530,11 @@ async function runtimeReport(
     throw new Error(`${ownership.transition.clip} did not reach its destination`)
   }
 
-  const samples = deltas(rig, frames)
+  const samples = deltas(
+    rig,
+    frames,
+    CONTROL_RIG_OWNED_LOCAL_BONES,
+  )
   instance.refresh(DT, targetControls)
   const destinationNext = capture(
     'destination-next',
@@ -462,12 +542,43 @@ async function runtimeReport(
     null,
     ownership.destination.time,
   )
+  const footEffectorBoundaries = {
+    entry: {
+      left: componentBoneDelta(rig, frames[0], frames[1], 'foot_l'),
+      right: componentBoneDelta(rig, frames[0], frames[1], 'foot_r'),
+    },
+    exit: {
+      left: componentBoneDelta(
+        rig,
+        frames.at(-2)!,
+        frames.at(-1)!,
+        'foot_l',
+      ),
+      right: componentBoneDelta(
+        rig,
+        frames.at(-2)!,
+        frames.at(-1)!,
+        'foot_r',
+      ),
+    },
+  }
   return {
     samples,
     frameStates,
+    footEffectorBoundaries,
     observedFrameCount: frames.length - 2,
-    sourceCadence: delta(rig, sourcePrevious, frames[0]),
-    destinationCadence: delta(rig, frames.at(-1)!, destinationNext),
+    sourceCadence: delta(
+      rig,
+      sourcePrevious,
+      frames[0],
+      CONTROL_RIG_OWNED_LOCAL_BONES,
+    ),
+    destinationCadence: delta(
+      rig,
+      frames.at(-1)!,
+      destinationNext,
+      CONTROL_RIG_OWNED_LOCAL_BONES,
+    ),
     entry: samples[0],
     exit: samples.at(-1)!,
     worstRotation: worst(samples, 'rotationDegrees'),
@@ -567,6 +678,7 @@ describe('ALS authored stance-transition boundaries', () => {
         runtimeWorstRotation: runtime.worstRotation,
         runtimeWorstTranslation: runtime.worstTranslation,
         runtimeWorstScale: runtime.worstScale,
+        footEffectorBoundaries: runtime.footEffectorBoundaries,
       }
 
       expect(authored.boneCount).toBe(68)
@@ -589,6 +701,27 @@ describe('ALS authored stance-transition boundaries', () => {
       expect(runtime.frameStates.at(-1)?.inertializationRequestCount).toBe(
         runtime.frameStates.at(-2)?.inertializationRequestCount,
       )
+
+      // The local thigh/calf/foot rotations are CR_Als's correct compensation: prove the solved
+      // component-space effectors remain continuous at both graph boundaries.
+      for (const [boundary, feet] of Object.entries(
+        runtime.footEffectorBoundaries,
+      )) {
+        for (const [side, foot] of Object.entries(feet)) {
+          expect(
+            foot.positionMeters,
+            `${ownership.transition.clip} ${boundary} ${side} foot position`,
+          ).toBeLessThanOrEqual(
+            FOOT_EFFECTOR_BOUNDARY_POSITION_TOLERANCE_METERS,
+          )
+          expect(
+            foot.rotationDegrees,
+            `${ownership.transition.clip} ${boundary} ${side} foot rotation`,
+          ).toBeLessThanOrEqual(
+            FOOT_EFFECTOR_BOUNDARY_ROTATION_TOLERANCE_DEGREES,
+          )
+        }
+      }
 
       for (const [label, sample] of [
         ['authored entry', authored.entry],

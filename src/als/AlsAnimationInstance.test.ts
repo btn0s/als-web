@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   applyAdditivePose,
   createMeshSpaceBlendScratch,
@@ -22,6 +22,8 @@ import {
 } from './AnimGraph/CR_Als'
 import {
   createAlsAnimationInstance,
+  getAlsControlRigInput,
+  shouldMarkAlsTeleported,
 } from './AlsAnimationInstance'
 import {
   sampleGroundPredictionAmount,
@@ -72,8 +74,9 @@ function expectMotionAndPeriodicity(
   start: Record<'foot_l' | 'hand_l', THREE.Quaternion>,
   moved: Record<'foot_l' | 'hand_l', THREE.Quaternion>,
   repeated: Record<'foot_l' | 'hand_l', THREE.Quaternion>,
+  boneNames: readonly ('foot_l' | 'hand_l')[] = ['foot_l', 'hand_l'],
 ) {
-  for (const boneName of ['foot_l', 'hand_l'] as const) {
+  for (const boneName of boneNames) {
     expect(
       start[boneName].angleTo(moved[boneName]),
       `${boneName} must move over 0.3s`,
@@ -110,9 +113,11 @@ function snapshotLocalBoneTransforms(scene: THREE.Object3D) {
 function maximumLocalBoneDelta(
   from: ReturnType<typeof snapshotLocalBoneTransforms>,
   to: ReturnType<typeof snapshotLocalBoneTransforms>,
+  ignoredBoneNames: ReadonlySet<string> = new Set(),
 ) {
   let maximum = 0
   for (const [name, transform] of to) {
+    if (ignoredBoneNames.has(name)) continue
     const previous = from.get(name)
     if (!previous) continue
     maximum = Math.max(
@@ -123,6 +128,15 @@ function maximumLocalBoneDelta(
   }
   return maximum
 }
+
+const CONTROL_RIG_FOOT_IK_SOLVED_BONES = new Set([
+  'thigh_l',
+  'calf_l',
+  'foot_l',
+  'thigh_r',
+  'calf_r',
+  'foot_r',
+])
 
 function requestCount() {
   return window.__weightTable?.inertializationRequestCount
@@ -138,6 +152,36 @@ function refreshFrames(
   }
 }
 
+function refreshForDuration(
+  instance: AlsAnimationInstance,
+  duration: number,
+  frameControls = controls,
+) {
+  let remaining = Math.max(0, duration)
+  while (remaining > 1e-9) {
+    const delta = Math.min(1 / 60, remaining)
+    instance.refresh(delta, frameControls)
+    remaining -= delta
+  }
+}
+
+function createCurveSentinel(
+  name: string,
+  curves: Readonly<Record<string, number>>,
+) {
+  const clip = new THREE.AnimationClip(name, 1, [])
+  clip.userData.alsCurves = Object.entries(curves).map(
+    ([curveName, value]) => ({
+      name: curveName,
+      keys: [
+        [0, value, 1, 0, 0, 0, 0, 0, 0],
+        [1, value, 1, 0, 0, 0, 0, 0, 0],
+      ],
+    }),
+  )
+  return clip
+}
+
 describe('AlsAnimationInstance playback regression', () => {
   beforeAll(() => {
     const bytes = readFileSync(
@@ -149,6 +193,318 @@ describe('AlsAnimationInstance playback regression', () => {
     )
     ;(globalThis as typeof globalThis & { window: Window }).window =
       globalThis as typeof globalThis & Window
+  })
+
+  it('maps every FAlsControlRigInput field without a web-only substitute', () => {
+    const feetTargets = {
+      left: {
+        position: new THREE.Vector3(1, 2, 3),
+        rotation: new THREE.Quaternion(0.1, 0.2, 0.3, 0.9).normalize(),
+      },
+      right: {
+        position: new THREE.Vector3(4, 5, 6),
+        rotation: new THREE.Quaternion(0.3, 0.2, 0.1, 0.9).normalize(),
+      },
+    }
+    const input = getAlsControlRigInput({
+      locomotionMode: 'Grounded',
+      velocityBlendForwardAmount: 0.4,
+      velocityBlendBackwardAmount: 0.1,
+      feetTargets,
+      spineYawAngle: 27,
+    })
+
+    expect(input).toEqual({
+      bUseHandIkBones: true,
+      bUseFootIkBones: true,
+      bFootOffsetAllowed: true,
+      velocityBlendForwardAmount: 0.4,
+      velocityBlendBackwardAmount: 0.1,
+      footLeftLocation: feetTargets.left.position,
+      footLeftRotation: feetTargets.left.rotation,
+      footRightLocation: feetTargets.right.position,
+      footRightRotation: feetTargets.right.rotation,
+      spineYawAngle: 27,
+    })
+    expect(getAlsControlRigInput({
+      locomotionMode: 'InAir',
+      velocityBlendForwardAmount: 0,
+      velocityBlendBackwardAmount: 0,
+      feetTargets,
+      spineYawAngle: 0,
+    }).bFootOffsetAllowed).toBe(false)
+    expect(getAlsControlRigInput({
+      locomotionMode: null,
+      velocityBlendForwardAmount: 0,
+      velocityBlendBackwardAmount: 0,
+      feetTargets,
+      spineYawAngle: 0,
+    }).bFootOffsetAllowed).toBe(true)
+  })
+
+  it('uses CS_Als_Default strict greater-than teleport detection after pending update', () => {
+    const previousLocation = { x: 0, y: 0, z: 0 }
+    expect(shouldMarkAlsTeleported({
+      pendingUpdate: true,
+      previousLocation,
+      location: { x: 100, y: 0, z: 0 },
+    })).toBe(false)
+    expect(shouldMarkAlsTeleported({
+      pendingUpdate: false,
+      previousLocation,
+      location: { x: 0.5, y: 0, z: 0 },
+    })).toBe(false)
+    expect(shouldMarkAlsTeleported({
+      pendingUpdate: false,
+      previousLocation,
+      location: { x: 0.5000001, y: 0, z: 0 },
+    })).toBe(true)
+  })
+
+  it('exposes current graph curves only on the following Refresh* frame', async () => {
+    const gltf = await loadAlsGltf()
+    const sentinel = createCurveSentinel('A_Test_PreviousCurveFrame', {
+      LayerArmLeft: 0.4,
+      LayerArmLeftAdditive: 0.6,
+      LayerArmLeftSlot: 0.2,
+      LayerArmLeftLocalSpace: 1,
+      LayerHandLeft: 0.7,
+      PoseGrounded: 0.25,
+      PoseInAir: 0.75,
+      PoseStanding: 0.25,
+      PoseCrouching: 0.75,
+      PoseMoving: 0.6,
+      PoseGait: 2.25,
+      ViewBlock: 0.25,
+      AllowAiming: 1,
+      HipsDirectionLock: -0.5,
+      SprintBlock: 1,
+      FootPlanted: 0.7,
+      FeetCrossing: 0.25,
+      FootLeftIk: 1,
+      FootRightIk: 1,
+      FootLeftLock: 1,
+      FootRightLock: 1,
+      AllowTransitions: 1,
+      RotationYawSpeed: 123,
+    })
+    const instance = createAlsAnimationInstance({
+      ...gltf,
+      animations: [...gltf.animations, sentinel],
+    })
+    const idleControls: AlsAnimationInstanceControls = {
+      ...controls,
+      gait: 'Walking',
+      moving: false,
+      movingSmooth: false,
+      stance: 'Standing',
+      rotationMode: 'Aiming',
+      speed: 0,
+      actorYawAngle: 0,
+    }
+    instance.refresh(0, idleControls)
+    expect(instance.playClip(sentinel.name)).toBe(true)
+
+    instance.refresh(0.21, idleControls)
+    expect(instance.getCurveValue('RotationYawSpeed')).toBe(123)
+    expect(instance.state.pose.crouchingAmount).not.toBe(0.75)
+    expect(instance.state.hipsDirectionLockAmount).not.toBe(-0.5)
+
+    instance.refresh(0, idleControls)
+    expect(instance.getCurveValue('RotationYawSpeed')).toBe(123)
+    expect(instance.state.layering).toMatchObject({
+      armLeftBlendAmount: 0.4,
+      armLeftAdditiveBlendAmount: 0.6,
+      armLeftSlotBlendAmount: 0.2,
+      armLeftLocalSpaceBlendAmount: 1,
+      armLeftMeshSpaceBlendAmount: 0,
+      handLeftBlendAmount: 0.7,
+    })
+    expect(instance.state.pose).toMatchObject({
+      groundedAmount: 0.25,
+      inAirAmount: 0.75,
+      standingAmount: 0.25,
+      crouchingAmount: 0.75,
+      movingAmount: 0.6,
+      amount: 2.25,
+    })
+    expect(instance.state.crouchingAmount).toBe(0.75)
+    expect(instance.state.hipsDirectionLockAmount).toBe(-0.5)
+    expect(instance.state.standingSprint.sprintBlockAmount).toBe(1)
+    expect(instance.state.feet.footPlantedAmount).toBe(0.7)
+    expect(instance.state.feet.feetCrossingAmount).toBe(0.25)
+    expect(instance.state.footLeftLock).toBe(1)
+    expect(instance.state.footRightLock).toBe(1)
+    expect(instance.state.transitions.transitionsAllowed).toBe(true)
+  })
+
+  it('runs complete CR_Als and writes each evaluated branch to the skeleton once', async () => {
+    for (const branch of ['normal', 'solo', 'fallback'] as const) {
+      const gltf = await loadAlsGltf()
+      const run = gltf.animations.find(
+        (clip) => clip.name === 'A_Als_Run_Forward',
+      )
+      if (!run) throw new Error('Missing A_Als_Run_Forward')
+      const tracedFeet: string[] = []
+      const instance = createAlsAnimationInstance({
+        animations: branch === 'fallback' ? [run] : gltf.animations,
+        scene: gltf.scene,
+        controlRigFootTrace: (request) => {
+          tracedFeet.push(request.side)
+          return null
+        },
+      })
+      if (branch === 'solo') {
+        expect(instance.playClip(run.name)).toBe(true)
+      }
+      const rootPositionSet = vi.spyOn(
+        bone(gltf.scene, 'root').position,
+        'set',
+      )
+
+      instance.refresh(1 / 60, {
+        ...controls,
+        direction: 45,
+      })
+
+      expect(rootPositionSet, branch).toHaveBeenCalledTimes(1)
+      rootPositionSet.mockRestore()
+      if (branch === 'normal') {
+        expect(tracedFeet).toEqual(['left', 'right'])
+        expect(window.__weightTable?.ControlRigExecuted).toBe(1)
+        expect(window.__weightTable?.ControlRigDiagonalScalingFactor)
+          .toBeCloseTo(1, 12)
+      }
+    }
+  })
+
+  it('runs NativePostUpdateAnimation after normal, solo, and fallback publication', async () => {
+    for (const branch of ['normal', 'solo', 'fallback'] as const) {
+      const gltf = await loadAlsGltf()
+      const run = gltf.animations.find(
+        (clip) => clip.name === 'A_Als_Run_Forward',
+      )
+      if (!run) throw new Error('Missing A_Als_Run_Forward')
+      const instance = createAlsAnimationInstance({
+        animations: branch === 'fallback' ? [run] : gltf.animations,
+        scene: gltf.scene,
+      })
+      if (branch === 'solo') {
+        expect(instance.playClip(run.name)).toBe(true)
+      }
+      const branchControls: AlsAnimationInstanceControls = {
+        ...controls,
+        gait: 'Walking',
+        moving: false,
+        movingSmooth: false,
+        speed: 0,
+      }
+      instance.state.transitions.queuedTransition = {
+        clip: run.name,
+        blendInDuration: 0.2,
+        blendOutDuration: 0.2,
+        playRate: 1,
+        startTime: 0,
+      }
+      instance.state.transitions.stopTransitionsQueued = true
+      instance.state.transitions.queuedStopTransitionsBlendOutDuration = 0.2
+
+      instance.refresh(0, branchControls)
+
+      // NativePost tries playback before the stop. The stop suppresses but does not clear the
+      // queued transition, then clears its own latch.
+      expect(
+        instance.state.transitions.queuedTransition,
+        branch,
+      ).not.toBeNull()
+      expect(
+        instance.state.transitions.stopTransitionsQueued,
+        branch,
+      ).toBe(false)
+
+      instance.refresh(0, branchControls)
+      expect(
+        instance.state.transitions.queuedTransition,
+        branch,
+      ).toBeNull()
+    }
+  })
+
+  it('dispatches idle RefreshDynamicTransitions into the Transition slot queue', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const idleControls: AlsAnimationInstanceControls = {
+      ...controls,
+      gait: 'Walking',
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+    }
+
+    // Frame one publishes AllowTransitions. Frame two consumes it, detects the displaced locked
+    // foot from the preceding pose, queues the authored dynamic transition, and NativePost plays
+    // that same TransitionsState record.
+    instance.refresh(0, idleControls)
+    expect(instance.getCurveValue('FootLeftIk')).toBe(1)
+    const leftFoot = instance.state.feet.left
+    leftFoot.lockAmount = 1
+    leftFoot.lockLocation.x = leftFoot.targetLocation.x + 1
+    leftFoot.lockLocation.y = leftFoot.targetLocation.y
+    leftFoot.lockLocation.z = leftFoot.targetLocation.z
+    instance.refresh(0, idleControls)
+
+    expect(instance.state.dynamicTransitions.updatedThisFrame).toBe(true)
+    expect(instance.state.dynamicTransitions.frameDelay).toBe(2)
+    expect(instance.state.transitions.queuedTransition).toBeNull()
+
+    instance.refresh(1 / 60, idleControls)
+    expect(window.__weightTable?.TransitionRetainedInstanceCount).toBe(1)
+    expect(window.__weightTable?.TransitionMontageWeight).toBeGreaterThan(0)
+  })
+
+  it('refreshes feet and movement base from the preceding published frame', async () => {
+    const gltf = await loadAlsGltf()
+    const clip = gltf.animations.find((candidate) => {
+      const sampler = compileClipCurveSamplers(candidate)[
+        'FootPlanted'
+      ]
+      return sampler
+        && Math.abs(sampler(candidate.duration * 0.37)) > 0.05
+    })
+    if (!clip) throw new Error('Missing authored FootPlanted curve')
+    const footPlanted = compileClipCurveSamplers(clip).FootPlanted
+    const sampleTime = clip.duration * 0.37
+    const expected = THREE.MathUtils.clamp(
+      footPlanted(sampleTime),
+      -1,
+      1,
+    )
+    const support = {}
+    const frameControls: AlsAnimationInstanceControls = {
+      ...controls,
+      basedMovement: {
+        primitive: support,
+        boneName: '',
+        hasRelativeLocation: false,
+        relativeRotation: false,
+        location: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+    }
+    const instance = createAlsAnimationInstance(gltf)
+    expect(instance.playClip(clip.name)).toBe(true)
+
+    instance.refresh(sampleTime, frameControls)
+    expect(instance.state.feet.footPlantedAmount).toBe(0)
+    expect(instance.state.movementBase.primitive).toBe(support)
+    expect(instance.state.movementBase.baseChanged).toBe(true)
+
+    instance.refresh(0, frameControls)
+    expect(instance.state.feet.footPlantedAmount).toBeCloseTo(
+      expected,
+      12,
+    )
+    expect(instance.state.movementBase.baseChanged).toBe(false)
   })
 
   it('advances and repeats the authored run on solo and normal paths', async () => {
@@ -174,11 +530,13 @@ describe('AlsAnimationInstance playback regression', () => {
     const normal = createAlsAnimationInstance(normalGltf)
     refreshFrames(normal, 120)
     const normalStart = snapshotMotionBones(normalGltf.scene)
-    normal.refresh(0.3, controls)
+    refreshForDuration(normal, 0.3, controls)
     const normalMoved = snapshotMotionBones(normalGltf.scene)
     // Twenty-five run cycles at 15/14 play rate span seven complete Idle cycles, so the complete
-    // AB_Als_Default linked-layer result returns to the same phase.
-    normal.refresh(
+    // AB_Als_Default linked-layer result returns to the same phase. Advance at live-frame
+    // granularity because RefreshFootLock and CR_Als are stateful per-frame systems.
+    refreshForDuration(
+      normal,
       run.duration * 25 / normal.state.standingMovement.playRate - 0.3,
       controls,
     )
@@ -186,7 +544,9 @@ describe('AlsAnimationInstance playback regression', () => {
       normalStart,
       normalMoved,
       snapshotMotionBones(normalGltf.scene),
+      ['hand_l'],
     )
+    expect(normalStart.foot_l.angleTo(normalMoved.foot_l)).toBeGreaterThan(0.01)
   })
 
   it('holds the standing base at explicit time zero while Default secondary motion advances', async () => {
@@ -207,6 +567,9 @@ describe('AlsAnimationInstance playback regression', () => {
     instance.refresh(0, idleControls)
     const start = localRotation(gltf.scene, 'spine_03')
     instance.refresh(0.3, idleControls)
+    // RefreshLayering consumes the curve frame published above, so the overlay pose becomes
+    // visible when the following graph evaluation consumes that retained state.
+    instance.refresh(0, idleControls)
     expect(window.__weightTable?.idle).toBe(1)
     expect(window.__weightTable?.['clipTime.idle']).toBe(0)
     expect(window.__weightTable?.idleAdditive).toBeCloseTo(0.75, 7)
@@ -279,8 +642,14 @@ describe('AlsAnimationInstance playback regression', () => {
     const requestTurn = { ...idle, viewYawAngle: 46 }
 
     instance.refresh(0, idle)
+    expect(window.__weightTable?.AllowTransitions).toBe(1)
+    expect(
+      window.__weightTable?.TransitionsAllowed,
+      'the current graph output must not feed the same-frame RefreshTransitions decision',
+    ).toBe(0)
     const inertializationRequests = requestCount()
     instance.refresh(1 / 60, requestTurn)
+    expect(window.__weightTable?.TransitionsAllowed).toBe(1)
 
     // RefreshTurnInPlace queues during graph update; NativePostUpdateAnimation plays after this
     // pose has already been evaluated.
@@ -301,10 +670,21 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.idle).toBeCloseTo(1 - montageWeight, 12)
     expect(window.__weightTable?.AllowTransitions)
       .toBeCloseTo(1 - montageWeight, 12)
-    expect(instance.state.rotationYawSpeed).toBeCloseTo(
+    const publishedRotationYawSpeed =
       rotationYawSpeed(sequenceTime)
         * (1.2 * 46 / 90)
-        * montageWeight,
+        * montageWeight
+    expect(instance.getCurveValue('RotationYawSpeed')).toBeCloseTo(
+      publishedRotationYawSpeed,
+      6,
+    )
+    expect(window.__weightTable?.PublishedRotationYawSpeed).toBeCloseTo(
+      publishedRotationYawSpeed,
+      6,
+    )
+    instance.refresh(0, requestTurn)
+    expect(instance.getCurveValue('RotationYawSpeed')).toBeCloseTo(
+      publishedRotationYawSpeed,
       6,
     )
     expect(window.__weightTable?.idleAdditive).toBeCloseTo(0.75, 7)
@@ -453,6 +833,7 @@ describe('AlsAnimationInstance playback regression', () => {
       movingSmooth: false,
       speed: 0,
     }
+    instance.refresh(1 / 60, idleControls)
     instance.refresh(1 / 60, idleControls)
     expect(window.__weightTable?.LayerArmLeftAdditive).toBe(1)
 
@@ -738,7 +1119,13 @@ describe('AlsAnimationInstance playback regression', () => {
 
   it('applies the prior resolved SprintBlock curve through the outer MoveForward blend', async () => {
     const gltf = await loadAlsGltf()
-    const instance = createAlsAnimationInstance(gltf)
+    const sentinel = createCurveSentinel('A_Test_SprintBlock', {
+      SprintBlock: 1,
+    })
+    const instance = createAlsAnimationInstance({
+      ...gltf,
+      animations: [...gltf.animations, sentinel],
+    })
     const sprint = {
       ...controls,
       gait: 'Sprinting' as const,
@@ -748,9 +1135,12 @@ describe('AlsAnimationInstance playback regression', () => {
     refreshFrames(instance, 60, sprint)
     expect(window.__weightTable?.sprint).toBe(1)
 
-    // RefreshStandingMovement reads the previous graph evaluation's named curve container.
-    instance.state.standingSprint.sprintBlockAmount = 1
+    expect(instance.playClip(sentinel.name)).toBe(true)
+    instance.refresh(0.21, sprint)
+    expect(instance.state.standingSprint.sprintBlockAmount).not.toBe(1)
+    instance.clearSoloClip()
     instance.refresh(0, sprint)
+    expect(instance.state.standingSprint.sprintBlockAmount).toBe(1)
     expect(window.__weightTable?.runFwd).toBe(1)
     expect(window.__weightTable?.sprint).toBe(0)
     expect(window.__weightTable?.sprintAcceleration).toBe(0)
@@ -857,17 +1247,17 @@ describe('AlsAnimationInstance playback regression', () => {
     instance.refresh(0.7, rightControls)
     expect(instance.state.hipsDirection).toBe('RightForward')
 
-    instance.state.hipsDirectionLockAmount = -0.5
-    instance.state.feetCrossingAmount = 0
+    const publishedHipsDirectionLock =
+      window.__weightTable?.PublishedHipsDirectionLock
+    const publishedFeetCrossing =
+      window.__weightTable?.PublishedFeetCrossing
+    expect(publishedHipsDirectionLock).toBeDefined()
+    expect(publishedFeetCrossing).toBeDefined()
     instance.refresh(0, rightControls)
-    expect(instance.state.hipsDirection).toBe('RightBackward')
-    expect(instance.state.directionTransitionRequest).toMatchObject({
-      transitionIndex: 9,
-      rule: 'SetHipsLeft',
-      duration: 0.75,
-      blendOption: 'QuadraticInOut',
-      activatePivot: false,
-    })
+    expect(instance.state.hipsDirectionLockAmount)
+      .toBe(publishedHipsDirectionLock)
+    expect(instance.state.feetCrossingAmount)
+      .toBe(publishedFeetCrossing)
   })
 
   it('uses the authored 0.2s Hermite Idle-to-Move transition, independent of speed', async () => {
@@ -907,7 +1297,8 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.GroundedStanceTransitionClipWeight).toBe(0)
     expect(window.__weightTable?.GroundedStanceTransitionLinearAlpha)
       .toBeCloseTo(0.4, 12)
-    expect(window.__weightTable?.PoseCrouching).toBeCloseTo(0.4, 7)
+    expect(window.__weightTable?.PublishedPoseCrouching)
+      .toBeCloseTo(0.4, 7)
     expect(window.__weightTable?.runFwd).toBeCloseTo(0.6, 7)
     expect(window.__weightTable?.crouchIdle).toBeCloseTo(0.4, 7)
     expect(window.__weightTable?.crouchFwd).toBe(0)
@@ -952,10 +1343,10 @@ describe('AlsAnimationInstance playback regression', () => {
     })
 
     const weights = window.__weightTable
-    expect(weights?.PoseCrouching).toBeCloseTo(0.06348462, 7)
+    expect(weights?.PublishedPoseCrouching).toBeCloseTo(0.06348462, 7)
     expect(weights?.CrouchingStateIdle).toBe(1)
     expect(weights?.crouchIdle).toBeCloseTo(
-      weights?.PoseCrouching ?? 0,
+      weights?.PublishedPoseCrouching ?? 0,
       12,
     )
     expect(weights?.crouchFwd).toBe(0)
@@ -1195,7 +1586,11 @@ describe('AlsAnimationInstance playback regression', () => {
     let previous = snapshotLocalBoneTransforms(gltf.scene)
     instance.refresh(1 / 60, idleCrouching)
     expect(
-      maximumLocalBoneDelta(previous, snapshotLocalBoneTransforms(gltf.scene)),
+      maximumLocalBoneDelta(
+        previous,
+        snapshotLocalBoneTransforms(gltf.scene),
+        CONTROL_RIG_FOOT_IK_SOLVED_BONES,
+      ),
       'Standing -> Standing To Crouching must inertialize from the explicit stand pose',
     ).toBeLessThan(0.01)
 
@@ -1203,14 +1598,22 @@ describe('AlsAnimationInstance playback regression', () => {
     previous = snapshotLocalBoneTransforms(gltf.scene)
     instance.refresh(1 / 60, idleCrouching)
     expect(
-      maximumLocalBoneDelta(previous, snapshotLocalBoneTransforms(gltf.scene)),
+      maximumLocalBoneDelta(
+        previous,
+        snapshotLocalBoneTransforms(gltf.scene),
+        CONTROL_RIG_FOOT_IK_SOLVED_BONES,
+      ),
       'Standing To Crouching -> Crouching is an authored zero-duration exit',
     ).toBeLessThan(0.01)
 
     previous = snapshotLocalBoneTransforms(gltf.scene)
     instance.refresh(1 / 60, idleStanding)
     expect(
-      maximumLocalBoneDelta(previous, snapshotLocalBoneTransforms(gltf.scene)),
+      maximumLocalBoneDelta(
+        previous,
+        snapshotLocalBoneTransforms(gltf.scene),
+        CONTROL_RIG_FOOT_IK_SOLVED_BONES,
+      ),
       'Crouching -> Crouching To Standing must inertialize from the explicit crouch pose',
     ).toBeLessThan(0.01)
 
@@ -1218,7 +1621,11 @@ describe('AlsAnimationInstance playback regression', () => {
     previous = snapshotLocalBoneTransforms(gltf.scene)
     instance.refresh(1 / 60, idleStanding)
     expect(
-      maximumLocalBoneDelta(previous, snapshotLocalBoneTransforms(gltf.scene)),
+      maximumLocalBoneDelta(
+        previous,
+        snapshotLocalBoneTransforms(gltf.scene),
+        CONTROL_RIG_FOOT_IK_SOLVED_BONES,
+      ),
       'Crouching To Standing -> Standing must land on explicit A_Als_Stand_Pose time zero',
     ).toBeLessThan(0.01)
   })
@@ -1424,7 +1831,7 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.InAirGroundPredictionAmount).toBe(0)
     expect(sweepCount).toBe(0)
     const groundPredictionBlock =
-      window.__weightTable?.GroundPredictionBlock ?? 0
+      window.__weightTable?.PublishedGroundPredictionBlock ?? 0
 
     instance.refresh(1 / 60, {
       ...inAirControls,
@@ -1433,6 +1840,8 @@ describe('AlsAnimationInstance playback regression', () => {
 
     expect(window.__weightTable?.InAirJumped).toBe(0)
     expect(window.__weightTable?.InAirVerticalVelocity).toBe(-5)
+    expect(window.__weightTable?.GroundPredictionBlock)
+      .toBe(groundPredictionBlock)
     expect(window.__weightTable?.InAirGroundPredictionAmount)
       .toBeCloseTo(
         sampleGroundPredictionAmount(0.5) * (1 - groundPredictionBlock),
@@ -1441,6 +1850,41 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(sweepCount).toBe(1)
     expect(lastSweepEnd).not.toBeNull()
     expect(lastSweepEnd!.z).toBeLessThan(1)
+  })
+
+  it('reinitializes caller-owned SequencePlayers when the graph regains the same state', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance({
+      ...gltf,
+      groundPredictionSweep: () => null,
+    })
+    const fallingControls: AlsAnimationInstanceControls = {
+      ...controls,
+      locomotionMode: 'InAir',
+      location: { x: 0, y: 0, z: 2 },
+      velocity: { x: 3, y: 0, z: -8 },
+      capsuleRadius: 0.34,
+      capsuleHalfHeight: 0.88,
+      walkableFloorAngleCos: Math.SQRT1_2,
+    }
+
+    refreshFrames(instance, 20, fallingControls)
+    const timeBeforeSolo = Math.max(
+      window.__weightTable?.['clipTime.fallFast'] ?? 0,
+      window.__weightTable?.['clipTime.fall'] ?? 0,
+    )
+    expect(timeBeforeSolo).toBeGreaterThan(0.2)
+
+    expect(instance.playClip('A_Als_Run_Forward')).toBe(true)
+    instance.refresh(0.1, fallingControls)
+    instance.clearSoloClip()
+    instance.refresh(1 / 60, fallingControls)
+
+    expect(window.__weightTable?.['LocomotionState.Fall']).toBe(1)
+    expect(Math.max(
+      window.__weightTable?.['clipTime.fallFast'] ?? 0,
+      window.__weightTable?.['clipTime.fall'] ?? 0,
+    )).toBeCloseTo(1 / 60, 12)
   })
 
   it('samples Jump Loop on the same frame its exact remaining-time rule selects it', async () => {

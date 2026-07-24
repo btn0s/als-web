@@ -23,15 +23,15 @@ import { useAlsAnimationInstance } from '../als/AlsAnimationInstance.hooks'
 import {
   ALS_CAPSULE_RADIUS,
   ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
-  ALS_MESH_RELATIVE_LOCATION_Z,
   ALS_STANDING_CAPSULE_HALF_HEIGHT,
+  resolveAlsMeshRootRelativeY,
   useAlsCharacter,
 } from '../als/AlsCharacter.hooks'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
-import {
-  UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
-} from '../engine/characterMovementFloor'
 import { createRapierAlsCapsuleSweep } from '../engine/rapierAlsCapsuleSweep'
+import {
+  createRapierAlsControlRigFootTrace,
+} from '../engine/rapierAlsControlRigFootTrace'
 import type { CharacterPoseSample } from './CharacterPoseSample'
 import {
   ALS_RIFLE_OVERLAY_OBJECT_URL,
@@ -193,6 +193,7 @@ function LoadedCharacter({
 }) {
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
+  const RapierRay = rapier.Ray
   const characterGroup = useRef<THREE.Group>(null)
   const rigidBody = useRef<RapierRigidBody>(null)
   const standingCapsule = useRef<RapierCollider>(null)
@@ -205,6 +206,33 @@ function LoadedCharacter({
       filterFlags: rapier.QueryFilterFlags.EXCLUDE_SENSORS,
     }),
     [RapierCapsule, rapier.QueryFilterFlags.EXCLUDE_SENSORS, world],
+  )
+  const controlRigFootTrace = useMemo(
+    () => createRapierAlsControlRigFootTrace({
+      world,
+      Ray: RapierRay,
+      component: gltf.scene,
+      queryFilterForChannel: () => ({
+        flags: rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+      }),
+      resolveExcludeRigidBody: () => rigidBody.current,
+      getOwnerColliders: () => {
+        const colliders: RapierCollider[] = []
+        if (standingCapsule.current) {
+          colliders.push(standingCapsule.current)
+        }
+        if (crouchingCapsule.current) {
+          colliders.push(crouchingCapsule.current)
+        }
+        return colliders
+      },
+    }),
+    [
+      gltf.scene,
+      RapierRay,
+      rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+      world,
+    ],
   )
   const poseBones = useMemo(
     () => ({
@@ -244,11 +272,12 @@ function LoadedCharacter({
   // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
   useAlsAnimationInstance(
     gltf,
-    characterGroup,
     character.animationControls,
+    character.animationCurves,
     character.character,
     character.onJumped,
     capsuleSweep,
+    controlRigFootTrace,
   )
 
   useFrame(() => {
@@ -307,8 +336,7 @@ function LoadedCharacter({
         ref={characterGroup}
         position={[
           0,
-          ALS_MESH_RELATIVE_LOCATION_Z
-            + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+          resolveAlsMeshRootRelativeY('Standing', 'Grounded'),
           0,
         ]}
       >

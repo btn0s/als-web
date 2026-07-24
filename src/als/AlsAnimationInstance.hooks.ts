@@ -4,19 +4,24 @@ import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { AnimationFrameCapture } from '../engine/animationFrameCapture'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
-import { unrealYawDegreesToThreeRadians } from '../engine/unrealCoordinateSpace'
-import {
-  applyRotationYawSpeedAnimationCurve,
-  setTargetYawAngle,
-} from './AlsCharacter'
 import type { AlsCharacter } from './AlsCharacter'
+import type {
+  AlsCharacterAnimationCurves,
+} from './AlsCharacter.hooks'
 import type {
   AlsGroundPredictionCapsuleSweep,
 } from './State/AlsInAirState'
+import type {
+  AlsControlRigFootOffsetTrace,
+} from './AnimGraph/CR_Als'
 import {
   createAlsAnimationInstance,
 } from './AlsAnimationInstance'
 import type { AlsAnimationInstanceControls } from './AlsAnimationInstance'
+import {
+  ROTATION_YAW_OFFSET_CURVE_NAME,
+  ROTATION_YAW_SPEED_CURVE_NAME,
+} from './Utility/AlsConstants'
 
 function captureMetadata(frameControls: AlsAnimationInstanceControls) {
   return {
@@ -31,33 +36,37 @@ function captureMetadata(frameControls: AlsAnimationInstanceControls) {
     direction: frameControls.direction,
     viewYawAngle: frameControls.viewYawAngle,
     viewYawSpeed: frameControls.viewYawSpeed,
-    locomotionMode: frameControls.locomotionMode ?? 'Grounded',
+    locomotionMode: frameControls.locomotionMode === undefined
+      ? 'Grounded'
+      : frameControls.locomotionMode ?? 'Invalid',
     hasInput: frameControls.hasInput ?? false,
   }
 }
 
 /**
  * Thin React binding for the framework-free AlsAnimationInstance frame brain. Character policy
- * and physics own the controls; this hook owns pose evaluation and applies authored
- * RotationYawSpeed only through AAlsCharacter's stopped-grounded seam.
+ * and physics own the controls; this hook owns pose evaluation and publishes the resulting curves
+ * for the following AAlsCharacter::Tick().
  */
 export function useAlsAnimationInstance(
   gltf: {
     animations: THREE.AnimationClip[]
     scene: THREE.Object3D
   },
-  characterRoot: MutableRefObject<THREE.Group | null>,
   controls: MutableRefObject<AlsAnimationInstanceControls>,
+  animationCurves: MutableRefObject<AlsCharacterAnimationCurves>,
   character: MutableRefObject<AlsCharacter>,
   onJumped: MutableRefObject<(() => void) | null>,
   groundPredictionSweep: AlsGroundPredictionCapsuleSweep,
+  controlRigFootTrace: AlsControlRigFootOffsetTrace,
 ) {
   const animationInstance = useMemo(
     () => createAlsAnimationInstance({
       ...gltf,
       groundPredictionSweep,
+      controlRigFootTrace,
     }),
-    [gltf, groundPredictionSweep],
+    [controlRigFootTrace, gltf, groundPredictionSweep],
   )
   const frameCapture = useMemo(
     () => new AnimationFrameCapture(gltf.scene),
@@ -94,24 +103,11 @@ export function useAlsAnimationInstance(
     const frameControls = controls.current
     const current = character.current
     frameControls.hasInput = current.locomotionState.hasInput
-    const rotationYawSpeed = animationInstance.refresh(delta, frameControls)
+    animationInstance.refresh(delta, frameControls)
+    animationCurves.current.rotationYawOffset =
+      animationInstance.getCurveValue(ROTATION_YAW_OFFSET_CURVE_NAME)
+    animationCurves.current.rotationYawSpeed =
+      animationInstance.getCurveValue(ROTATION_YAW_SPEED_CURVE_NAME)
     frameCapture.recordFrame(delta, captureMetadata(frameControls))
-    const root = characterRoot.current
-    if (
-      root
-      && current.locomotionMode === 'Grounded'
-      && !frameControls.moving
-      && rotationYawSpeed !== 0
-    ) {
-      current.actorYawAngle = applyRotationYawSpeedAnimationCurve(
-        current.actorYawAngle,
-        rotationYawSpeed,
-        delta,
-      )
-      setTargetYawAngle(current, current.actorYawAngle)
-      root.rotation.y = unrealYawDegreesToThreeRadians(
-        current.actorYawAngle,
-      )
-    }
   }, ALS_FRAME_PRIORITY.Animation)
 }
