@@ -578,4 +578,15 @@ describe('AAlsCharacter RotationMode policy', () => {
     expect(character.viewYawSpeed).toBe(0)
     expect(character.viewYawAngle - character.actorYawAngle).toBe(45)
   })
+
+  it('retains view pitch for legacy yaw-only refreshes and accepts explicit camera pitch', () => {
+    expect(createAlsCharacter().viewPitchAngle).toBe(0)
+    const character = createAlsCharacter({ viewPitchAngle: 15 })
+
+    refreshView(character, 45, 1 / 60)
+    expect(character.viewPitchAngle).toBe(15)
+
+    refreshView(character, 45, 1 / 60, -30)
+    expect(character.viewPitchAngle).toBe(-30)
+  })
 })

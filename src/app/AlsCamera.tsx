@@ -445,7 +445,12 @@ export function AlsCamera({
       viewRotation.current.yaw = unwindDegrees(yaw)
       const character = poseSample.current.character
       if (character) {
-        refreshView(character, viewRotation.current.yaw, 0)
+        refreshView(
+          character,
+          viewRotation.current.yaw,
+          0,
+          viewRotation.current.pitch,
+        )
         poseSample.current.viewYawAngle = unwindDegrees(
           viewRotation.current.yaw - character.actorYawAngle,
         )
@@ -518,7 +523,7 @@ export function AlsCamera({
     )
     pointerDelta.current.x = 0
     pointerDelta.current.y = 0
-    refreshView(character, rotation.yaw, deltaTime)
+    refreshView(character, rotation.yaw, deltaTime, rotation.pitch)
     sample.viewYawAngle = unwindDegrees(
       character.viewYawAngle - character.actorYawAngle,
     )

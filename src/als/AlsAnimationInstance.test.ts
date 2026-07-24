@@ -35,6 +35,8 @@ import {
 import {
   createAlsAnimationInstance,
   getAlsControlRigInput,
+  isRotateInPlaceAllowed,
+  isTurnInPlaceAllowed,
   shouldMarkAlsTeleported,
 } from './AlsAnimationInstance'
 import {
@@ -51,6 +53,20 @@ import type {
   AlsAnimationInstance,
   AlsAnimationInstanceControls,
 } from './AlsAnimationInstance'
+
+describe('ALS ViewMode rotation gates', () => {
+  it.each([
+    ['VelocityDirection', 'ThirdPerson', false, false],
+    ['VelocityDirection', 'FirstPerson', true, false],
+    ['ViewDirection', 'ThirdPerson', false, true],
+    ['ViewDirection', 'FirstPerson', true, false],
+    ['Aiming', 'ThirdPerson', true, false],
+    ['Aiming', 'FirstPerson', true, false],
+  ] as const)('%s / %s', (rotationMode, viewMode, rotate, turn) => {
+    expect(isRotateInPlaceAllowed(rotationMode, viewMode)).toBe(rotate)
+    expect(isTurnInPlaceAllowed(rotationMode, viewMode)).toBe(turn)
+  })
+})
 
 const controls: AlsAnimationInstanceControls = {
   gait: 'Running',

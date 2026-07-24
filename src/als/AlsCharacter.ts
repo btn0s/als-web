@@ -93,6 +93,7 @@ export interface AlsCharacter {
   /** ACharacter::AnimRootMotionTranslationScale. */
   animRootMotionTranslationScale: number
   viewYawAngle: number
+  viewPitchAngle: number
   viewYawSpeed: number
   desiredVelocityYawAngle: number
   hasDesiredVelocity: boolean
@@ -108,6 +109,7 @@ export interface AlsCharacter {
 export interface CreateAlsCharacterOptions {
   readonly actorYawAngle?: number
   readonly viewYawAngle?: number
+  readonly viewPitchAngle?: number
   readonly desiredAiming?: boolean
   readonly desiredRotationMode?: AlsRotationMode
   readonly desiredStance?: AlsStance
@@ -165,6 +167,7 @@ export function createAlsCharacter(
     actorYawAngle,
     animRootMotionTranslationScale: 1,
     viewYawAngle,
+    viewPitchAngle: options.viewPitchAngle ?? 0,
     viewYawSpeed: 0,
     desiredVelocityYawAngle: actorYawAngle,
     hasDesiredVelocity: false,
@@ -191,9 +194,11 @@ export function refreshView(
   character: AlsCharacter,
   viewYawAngle: number,
   deltaTime: number,
+  viewPitchAngle = character.viewPitchAngle,
 ): AlsCharacter {
   const previousYawAngle = character.viewYawAngle
   character.viewYawAngle = unwindDegrees(viewYawAngle)
+  character.viewPitchAngle = unwindDegrees(viewPitchAngle)
   character.viewYawSpeed = deltaTime > UE_SMALL_NUMBER
     ? Math.abs(character.viewYawAngle - previousYawAngle) / deltaTime
     : 0

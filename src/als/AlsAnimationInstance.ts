@@ -244,6 +244,7 @@ import type {
 import type {
   AlsLocomotionAction,
   AlsLocomotionMode,
+  AlsViewMode,
 } from './AlsCharacter'
 import {
   refreshAlsJumpStateClock,
@@ -316,6 +317,13 @@ import {
   refreshSpine,
 } from './State/AlsSpineState'
 import type { AlsSpineState } from './State/AlsSpineState'
+import {
+  createAlsViewAnimationState,
+  refreshView as refreshViewAnimationState,
+} from './State/AlsViewAnimationState'
+import type {
+  AlsViewAnimationState,
+} from './State/AlsViewAnimationState'
 import {
   createAlsPoseState,
   createAlsStanceTransitionCurveState,
@@ -564,6 +572,8 @@ export interface AlsAnimationInstanceControls {
   movingSmooth: boolean
   stance: AlsStance
   rotationMode: AlsRotationMode
+  viewMode?: AlsViewMode
+  viewPitchAngle?: number
   overlayMode: AlsOverlayMode
   speed: number
   /** LocomotionState.Scale; defaults to the live character's unit scale. */
@@ -574,6 +584,9 @@ export interface AlsAnimationInstanceControls {
   rotateInPlace: boolean
   viewYawAngle: number
   viewYawSpeed: number
+  locomotionYawSpeed?: number
+  inputYawAngle?: number
+  targetYawAngle?: number
   /** AAlsCharacter::LocomotionMode, supplied by the live character bridge. */
   locomotionMode?: AlsLocomotionMode
   /**
@@ -597,10 +610,27 @@ export interface AlsAnimationInstanceControls {
   walkableFloorAngleCos?: number
 }
 
+/** UAlsAnimationInstance rotation-in-place predicate. */
+export function isRotateInPlaceAllowed(
+  rotationMode: AlsRotationMode,
+  viewMode: AlsViewMode,
+) {
+  return rotationMode === 'Aiming' || viewMode === 'FirstPerson'
+}
+
+/** UAlsAnimationInstance turn-in-place predicate. */
+export function isTurnInPlaceAllowed(
+  rotationMode: AlsRotationMode,
+  viewMode: AlsViewMode,
+) {
+  return rotationMode === 'ViewDirection' && viewMode !== 'FirstPerson'
+}
+
 export interface AlsAnimationInstanceState {
   readonly layering: AlsLayeringState
   readonly movementBase: AlsMovementBaseState
   readonly feet: AlsFeetState
+  readonly view: AlsViewAnimationState
   readonly spine: AlsSpineState
   readonly transitions: AlsTransitionsState
   readonly dynamicTransitions: AlsDynamicTransitionsState
@@ -2220,6 +2250,7 @@ export function createAlsAnimationInstance(gltf: {
     rig,
   )
   const spineState = createAlsSpineState()
+  const viewAnimationState = createAlsViewAnimationState()
   const publishedCurves = new Map<string, number>()
   const locomotionLocation: Velocity3 = { x: 0, y: 0, z: 0 }
   let pendingUpdate = true
@@ -2346,6 +2377,7 @@ export function createAlsAnimationInstance(gltf: {
     layering: layeringState,
     movementBase: movementBaseState,
     feet: feetState,
+    view: viewAnimationState,
     spine: spineState,
     transitions: transitionsState,
     dynamicTransitions: dynamicTransitionsState,
@@ -4229,19 +4261,22 @@ export function createAlsAnimationInstance(gltf: {
       resolveAlsLayeringState(publishedCurves),
     )
     refreshPose(publishedCurves, gaitAmounts)
-    const viewAmount = 1 - clamp01(
-      publishedCurves.get(VIEW_BLOCK_CURVE_NAME) ?? 0,
-    )
-    const aimingAmount = clamp01(
-      publishedCurves.get(ALLOW_AIMING_CURVE_NAME) ?? 0,
-    )
+    const viewRefresh = refreshViewAnimationState(viewAnimationState, {
+      viewBlockAmount: publishedCurves.get(VIEW_BLOCK_CURVE_NAME) ?? 0,
+      allowAimingAmount: publishedCurves.get(ALLOW_AIMING_CURVE_NAME) ?? 0,
+      locomotionAction: controls.locomotionAction,
+      viewYawAngle: (controls.actorYawAngle ?? 0) + controls.viewYawAngle,
+      viewPitchAngle: controls.viewPitchAngle ?? 0,
+      locomotionYawAngle: controls.actorYawAngle ?? 0,
+      viewYawSpeed: controls.viewYawSpeed,
+    })
     refreshSpine(spineState, {
       spineRotationAllowed: controls.rotationMode === 'Aiming',
-      spineBlendAmount: viewAmount * aimingAmount,
+      spineBlendAmount: viewRefresh.spineBlendAmount,
+      viewYawAngle: viewAnimationState.yawAngle,
+      viewYawSpeed: viewAnimationState.yawSpeed,
       deltaTime,
       pendingUpdate: pendingUpdateThisFrame,
-      viewYawAngle: controls.viewYawAngle,
-      viewYawSpeed: controls.viewYawSpeed,
       actorYawAngle: controls.actorYawAngle ?? 0,
       movementBaseHasRelativeRotation:
         movementBaseState.hasRelativeRotation,
@@ -4506,9 +4541,14 @@ export function createAlsAnimationInstance(gltf: {
     for (const clip of stanceStateClips) clip.entry.weight = 0
     const crouching = controls.stance === 'Crouching'
     const targetCrouchingAmount = crouching ? 1 : 0
-    const turnInPlaceAllowed = controls.rotationMode === 'ViewDirection'
+    const viewMode = controls.viewMode ?? 'ThirdPerson'
+    const turnInPlaceAllowed = isTurnInPlaceAllowed(
+      controls.rotationMode,
+      viewMode,
+    )
     const rotateInPlaceAllowed =
-      controls.rotationMode === 'Aiming' || controls.rotateInPlace
+      isRotateInPlaceAllowed(controls.rotationMode, viewMode)
+      || controls.rotateInPlace
 
     // NativeThreadSafeUpdateAnimation refreshes this state before Grounded States evaluates its
     // priority-zero direct stance route.

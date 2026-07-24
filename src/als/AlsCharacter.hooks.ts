@@ -559,6 +559,7 @@ export interface AlsCharacterAnimationSnapshotInput {
   readonly speedOverride: number
   readonly directionOverride: number
   readonly rotateInPlaceOverride: boolean
+  readonly locomotionYawSpeed: number
 }
 
 /**
@@ -591,6 +592,11 @@ export function publishAlsCharacterAnimationSnapshot(
     character.viewYawAngle - character.actorYawAngle,
   )
   output.viewYawSpeed = character.viewYawSpeed
+  output.viewMode = character.viewMode
+  output.viewPitchAngle = character.viewPitchAngle
+  output.inputYawAngle = state.inputYawAngle
+  output.targetYawAngle = state.targetYawAngle
+  output.locomotionYawSpeed = input.locomotionYawSpeed
 
   output.hasInput = state.hasInput
   output.speed = input.movementOverride
@@ -1238,7 +1244,14 @@ export function useAlsCharacter(
     rotateInPlace: false,
     viewYawAngle: 0,
     viewYawSpeed: 0,
+    viewMode: 'ThirdPerson',
+    viewPitchAngle: 0,
+    inputYawAngle: 0,
+    targetYawAngle: 0,
+    locomotionYawSpeed: 0,
   })
+  const previousAnimationActorYawAngle = useRef(character.current.actorYawAngle)
+  const animationLocomotionYawSpeed = useRef(0)
   const animationCurves = useRef<AlsCharacterAnimationCurves>({
     rotationYawOffset: 0,
     rotationYawSpeed: 0,
@@ -2085,6 +2098,10 @@ export function useAlsCharacter(
       : current.locomotionMode === 'Grounded'
         ? rapierAlsMovementBase(groundSupport.current)
         : ALS_NO_BASED_MOVEMENT
+    animationLocomotionYawSpeed.current = unwindDegrees(
+      current.actorYawAngle - previousAnimationActorYawAngle.current,
+    ) / ALS_PHYSICS_TIMESTEP
+    previousAnimationActorYawAngle.current = current.actorYawAngle
     publishAlsCharacterAnimationSnapshot(frame, {
       character: current,
       location: actorLocation.current,
@@ -2095,6 +2112,7 @@ export function useAlsCharacter(
       speedOverride: controls.speed,
       directionOverride: controls.direction,
       rotateInPlaceOverride: controls.rotateInPlace,
+      locomotionYawSpeed: animationLocomotionYawSpeed.current,
     })
     const activeCapsuleHalfHeight = frame.capsuleHalfHeight
 
@@ -2313,6 +2331,7 @@ export function useAlsCharacter(
       speedOverride: controls.speed,
       directionOverride: controls.direction,
       rotateInPlaceOverride: controls.rotateInPlace,
+      locomotionYawSpeed: animationLocomotionYawSpeed.current,
     })
   })
 

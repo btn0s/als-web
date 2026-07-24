@@ -249,9 +249,12 @@ describe('AlsCharacter browser bridge math', () => {
     const character = createAlsCharacter({
       actorYawAngle: 10,
       viewYawAngle: 50,
+      viewPitchAngle: -25,
+      viewMode: 'FirstPerson',
       desiredStance: 'Crouching',
       locomotionMode: 'InAir',
     })
+    character.viewYawSpeed = 12
     setStance(character, 'Standing')
     refreshAlsCharacter(
       character,
@@ -261,6 +264,8 @@ describe('AlsCharacter browser bridge math', () => {
     )
     setLocomotionMode(character, 'Grounded')
     setLocomotionAction(character, 'Rolling')
+    character.locomotionState.inputYawAngle = 35
+    character.locomotionState.targetYawAngle = -70
     const location = { x: 2, y: -3, z: 4 }
     const basedMovement = {
       ...ALS_NO_BASED_MOVEMENT,
@@ -279,6 +284,7 @@ describe('AlsCharacter browser bridge math', () => {
       speedOverride: 99,
       directionOverride: -123,
       rotateInPlaceOverride: true,
+      locomotionYawSpeed: -45,
     })
 
     expect(output).toMatchObject({
@@ -295,6 +301,12 @@ describe('AlsCharacter browser bridge math', () => {
       actorYawAngle: 10,
       direction: 80,
       viewYawAngle: 40,
+      viewPitchAngle: -25,
+      viewYawSpeed: 12,
+      viewMode: 'FirstPerson',
+      inputYawAngle: 35,
+      targetYawAngle: -70,
+      locomotionYawSpeed: -45,
       capsuleHalfHeight: ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
       rotateInPlace: true,
     })
