@@ -2409,3 +2409,59 @@ export function evaluateAlsControlRigFootIk(
   refreshFootIk(runtime, input)
   return input.pose
 }
+
+/**
+ * The contiguous IK tail of CR_Als's authored forward-solve graph.
+ *
+ * RefreshDiagonalScaling and RefreshSpineRotation precede this sequence in the uasset but do not
+ * have pose-buffer evaluators yet. Keeping this tail explicit prevents a live owner from running
+ * the already-landed hand solve before the foot/pelvis solve.
+ */
+export const ALS_CONTROL_RIG_IK_FORWARD_SOLVE = {
+  executionOrder: [
+    'RefreshFootOffset',
+    'RefreshPelvisOffset',
+    'RefreshFootIk',
+    'RefreshHandIk',
+  ],
+} as const
+
+export interface AlsControlRigIkForwardSolveRuntime {
+  readonly footIk: AlsControlRigFootIkRuntime
+  readonly handIk: AlsControlRigHandIkRuntime
+}
+
+export interface EvaluateAlsControlRigIkForwardSolveInput
+  extends EvaluateAlsControlRigFootIkInput {
+  /** FAlsGeneralAnimationSettings::bUseHandIkBones. The authored default is true. */
+  readonly useHandIkBones?: boolean
+}
+
+export function createAlsControlRigIkForwardSolveRuntime(
+  rig: RigDefinition,
+): AlsControlRigIkForwardSolveRuntime {
+  return {
+    footIk: createAlsControlRigFootIkRuntime(rig),
+    handIk: createAlsControlRigHandIkRuntime(rig),
+  }
+}
+
+/**
+ * Runs CR_Als's implemented IK forward-solve tail against one final pose and curve buffer.
+ *
+ * The caller must supply the same-frame final AnimGraph curves plus FAlsControlRigInput. In UE,
+ * the foot locations/rotations in that input come from FAlsFeetState::Final* values refreshed
+ * from the prior published skeletal frame.
+ */
+export function evaluateAlsControlRigIkForwardSolve(
+  runtime: AlsControlRigIkForwardSolveRuntime,
+  input: EvaluateAlsControlRigIkForwardSolveInput,
+): LocalPoseBuffer {
+  evaluateAlsControlRigFootIk(runtime.footIk, input)
+  evaluateAlsControlRigHandIk(runtime.handIk, {
+    pose: input.pose,
+    curves: input.curves,
+    useHandIkBones: input.useHandIkBones,
+  })
+  return input.pose
+}

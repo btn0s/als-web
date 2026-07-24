@@ -12,10 +12,13 @@ import type { RigDefinition } from '../../engine/rig'
 import {
   ALS_CONTROL_RIG_FOOT_IK,
   ALS_CONTROL_RIG_HAND_IK,
+  ALS_CONTROL_RIG_IK_FORWARD_SOLVE,
   createAlsControlRigFootIkRuntime,
   createAlsControlRigHandIkRuntime,
+  createAlsControlRigIkForwardSolveRuntime,
   evaluateAlsControlRigFootIk,
   evaluateAlsControlRigHandIk,
+  evaluateAlsControlRigIkForwardSolve,
   resolveAlsControlRigHandIkWeight,
   type AlsControlRigFootOffsetTrace,
 } from './CR_Als'
@@ -305,6 +308,45 @@ function createFootTestRig() {
     boneCount,
     boneNames: FOOT_BONE_NAMES,
     parentIndices: FOOT_PARENT_INDICES,
+    referencePositions,
+    referenceRotations,
+    referenceScales,
+  } as unknown as RigDefinition
+}
+
+function createIkForwardSolveTestRig() {
+  const footBoneCount = FOOT_BONE_NAMES.length
+  const boneNames = [
+    ...FOOT_BONE_NAMES,
+    ...BONE_NAMES.slice(1),
+  ]
+  const boneCount = boneNames.length
+  const parentIndices = new Int16Array(boneCount)
+  parentIndices.set(FOOT_PARENT_INDICES)
+  const referencePositions = new Float32Array(boneCount * 3)
+  const referenceRotations = new Float32Array(boneCount * 4)
+  const referenceScales = new Float32Array(boneCount * 3)
+
+  for (let bone = 0; bone < footBoneCount; bone++) {
+    referencePositions.set(FOOT_LOCAL_POSITIONS[bone], bone * 3)
+  }
+  for (let sourceBone = 1; sourceBone < BONE_NAMES.length; sourceBone++) {
+    const bone = footBoneCount + sourceBone - 1
+    const sourceParent = PARENT_INDICES[sourceBone]
+    parentIndices[bone] = sourceParent === 0
+      ? 0
+      : footBoneCount + sourceParent - 1
+    referencePositions.set(LOCAL_POSITIONS[sourceBone], bone * 3)
+  }
+  for (let bone = 0; bone < boneCount; bone++) {
+    referenceRotations[bone * 4 + 3] = 1
+    referenceScales.set([1, 1, 1], bone * 3)
+  }
+
+  return {
+    boneCount,
+    boneNames,
+    parentIndices,
     referencePositions,
     referenceRotations,
     referenceScales,
@@ -1160,5 +1202,94 @@ describe('CR_Als pure foot offset and pelvis stage', () => {
       createAlsControlRigFootIkRuntime(rig),
       footTestInput(pose, new Map(), () => null),
     )).toBe(pose)
+  })
+})
+
+describe('CR_Als IK forward-solve tail', () => {
+  it('pins the contiguous foot, pelvis, foot IK, then hand IK graph order', () => {
+    expect(ALS_CONTROL_RIG_IK_FORWARD_SOLVE.executionOrder).toEqual([
+      'RefreshFootOffset',
+      'RefreshPelvisOffset',
+      'RefreshFootIk',
+      'RefreshHandIk',
+    ])
+    expectControlRigLink(
+      'RigVMModel',
+      'RefreshFootOffset.Input',
+      'RefreshPelvisOffset.Input',
+    )
+    expectControlRigLink(
+      'RigVMModel',
+      'RefreshPelvisOffset.Input',
+      'RefreshFootIk.Input',
+    )
+    expectControlRigLink(
+      'RigVMModel',
+      'RefreshFootIk.Input',
+      'RefreshHandIk.Input',
+    )
+  })
+
+  it('runs both foot traces before mutating the arms for hand IK', () => {
+    const rig = createIkForwardSolveTestRig()
+    const runtime = createAlsControlRigIkForwardSolveRuntime(rig)
+    const pose = createTestPose(rig)
+    const upperArmLeft = index(rig, 'upperarm_l')
+    const upperArmRight = index(rig, 'upperarm_r')
+    const armRotationsBefore = [
+      ...pose.rotations.slice(
+        upperArmLeft * 4,
+        upperArmLeft * 4 + 4,
+      ),
+      ...pose.rotations.slice(
+        upperArmRight * 4,
+        upperArmRight * 4 + 4,
+      ),
+    ]
+    const tracedSides: string[] = []
+    const curves = new Map([
+      ['FootLeftIk', 1],
+      ['FootRightIk', 1],
+      ...allHandIkCurves(),
+    ])
+    const input = footTestInput(
+      pose,
+      curves,
+      (traceRequest) => {
+        tracedSides.push(traceRequest.side)
+        expect([
+          ...pose.rotations.slice(
+            upperArmLeft * 4,
+            upperArmLeft * 4 + 4,
+          ),
+          ...pose.rotations.slice(
+            upperArmRight * 4,
+            upperArmRight * 4 + 4,
+          ),
+        ]).toEqual(armRotationsBefore)
+        return {
+          impactPoint: new THREE.Vector3(
+            traceRequest.start.x,
+            0,
+            traceRequest.start.z,
+          ),
+          impactNormal: new THREE.Vector3(0, 1, 0),
+        }
+      },
+    )
+
+    expect(evaluateAlsControlRigIkForwardSolve(runtime, input))
+      .toBe(pose)
+    expect(tracedSides).toEqual(['left', 'right'])
+    expect([
+      ...pose.rotations.slice(
+        upperArmLeft * 4,
+        upperArmLeft * 4 + 4,
+      ),
+      ...pose.rotations.slice(
+        upperArmRight * 4,
+        upperArmRight * 4 + 4,
+      ),
+    ]).not.toEqual(armRotationsBefore)
   })
 })
