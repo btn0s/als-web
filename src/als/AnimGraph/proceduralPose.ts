@@ -9,7 +9,7 @@ import * as THREE from 'three'
  * mixer has already written this frame's pose and the edits survive to render.
  *
  * Framework-light (plain `three`, no React) so the pure math is Vitest-testable in isolation —
- * mirrors trackMask.ts/blendspace.ts's split between "pure system" (this file) and "R3F wiring"
+ * mirrors AlsConstants.ts/blendspace.ts's split between "pure system" (this file) and "R3F wiring"
  * (Operative.tsx, where bones get resolved off the cloned skeleton and Leva tunables live).
  *
  * Everything here does ZERO per-frame allocation: `ProceduralOffset.scratch` is reused every

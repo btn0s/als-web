@@ -1,4 +1,4 @@
-import type { RegionName } from './trackMask';
+import type { RegionName } from '../Utility/AlsConstants';
 
 /**
  * Declarative extension rules for non-OverlayMode state layers. ALS OverlayMode itself lives in
@@ -32,7 +32,7 @@ export interface RegionOverlayRule {
   id: string;
   /** Source clip name (any clip in the merged animation set). */
   clip: string;
-  /** Body region the clip is masked to (see trackMask.REGION_PREDICATES). */
+  /** Body region the clip is masked to (see Utility/AlsConstants.REGION_PREDICATES). */
   region: RegionName;
   /** Ride the shared locomotion footfall phase instead of free-running mixer time. */
   phaseLock: boolean;

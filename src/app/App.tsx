@@ -2,10 +2,10 @@ import { Canvas } from '@react-three/fiber'
 import { Grid } from '@react-three/drei'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { Character } from './scene/Character'
-import { PoseOrbitCamera } from './scene/PoseOrbitCamera'
-import { PostProcessing } from './scene/PostProcessing'
-import { createCharacterPoseSample } from './scene/poseCameraState'
+import { AlsCameraComponent } from '../als/AlsCamera/AlsCameraComponent'
+import { createCharacterPoseSample } from '../als/AlsCamera/poseCameraState'
+import { Character } from './Character'
+import { PostProcessing } from './PostProcessing'
 import './App.css'
 
 const DEFAULT_CHARACTER_SIZE = new THREE.Vector3(0.7, 1.9, 0.7)
@@ -50,7 +50,7 @@ function Scene() {
         sectionColor="#68809d"
         sectionSize={gridSize / 8}
       />
-      <PoseOrbitCamera characterSize={characterSize} poseSample={poseSample} />
+      <AlsCameraComponent characterSize={characterSize} poseSample={poseSample} />
       <PostProcessing />
       <SceneReady />
     </>

@@ -20,7 +20,7 @@
  * blendspace.ts / actionSequence.ts.
  */
 
-import type { VelocityBlend } from './velocityBlend'
+import type { AlsVelocityBlendState } from '../State/AlsGroundedState'
 
 /** Damped/stateful blend values, computed by the frame loop (springs stay with their state). */
 export interface WeightTableInput {
@@ -35,7 +35,7 @@ export interface WeightTableInput {
   /** Slot-montage gate, 0..1 — every base weight scales by its complement (see slotMontage.ts). */
   montageGate: number;
   /** ALS's damped actor-local Forward/Backward/Left/Right velocity blend. */
-  velocityBlend: Readonly<VelocityBlend>;
+  velocityBlend: Readonly<AlsVelocityBlendState>;
 }
 
 /** Effective weights for every base-layer action, by clip role. All values >= 0. */
@@ -118,7 +118,7 @@ export function createSixDirectionWeights(): SixDirectionWeights {
  * authored diagonal at 45° and a centered lateral silhouette at 90°.
  */
 export function mapVelocityBlendToSixDirections(
-  blend: Readonly<VelocityBlend>,
+  blend: Readonly<AlsVelocityBlendState>,
   out: SixDirectionWeights = createSixDirectionWeights(),
 ): SixDirectionWeights {
   const rawForward = Math.max(0, blend.forwardAmount)

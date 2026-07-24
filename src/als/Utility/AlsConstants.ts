@@ -2,6 +2,8 @@ import * as THREE from 'three';
 
 /** Framework-free bone predicates shared by extraction utilities and the owned pose evaluator. */
 
+export const POSE_GAIT_CURVE_NAME = 'PoseGait'
+
 /**
  * Returns a NEW `THREE.AnimationClip` containing only the tracks of `clip` whose target bone
  * passes `keep`. Uses `THREE.PropertyBinding.parseTrackName` to pull the bone name off each
@@ -131,3 +133,46 @@ export const REGION_PREDICATES = {
   upperBody: isUpperBodyBone,
 } as const;
 export type RegionName = keyof typeof REGION_PREDICATES;
+
+export interface AlsLayerRegion {
+  readonly region: RegionName
+  readonly baseCurve: string
+  readonly additiveCurve?: string
+  readonly localSpaceCurve?: string
+  readonly additiveSpace?: 'local' | 'mesh'
+}
+
+/**
+ * UAlsConstants Layer* names mapped onto AB_Als_Layering's branch roots. Additive curves drive
+ * the graph's dynamic locomotion additive; LayerArm*LocalSpace chooses its rotation space.
+ */
+export const ALS_LAYER_REGIONS: readonly AlsLayerRegion[] = [
+  {
+    region: 'head',
+    baseCurve: 'LayerHead',
+    additiveCurve: 'LayerHeadAdditive',
+    additiveSpace: 'mesh',
+  },
+  {
+    region: 'armLeft',
+    baseCurve: 'LayerArmLeft',
+    additiveCurve: 'LayerArmLeftAdditive',
+    localSpaceCurve: 'LayerArmLeftLocalSpace',
+  },
+  {
+    region: 'armRight',
+    baseCurve: 'LayerArmRight',
+    additiveCurve: 'LayerArmRightAdditive',
+    localSpaceCurve: 'LayerArmRightLocalSpace',
+  },
+  { region: 'handLeft', baseCurve: 'LayerHandLeft' },
+  { region: 'handRight', baseCurve: 'LayerHandRight' },
+  {
+    region: 'spine',
+    baseCurve: 'LayerSpine',
+    additiveCurve: 'LayerSpineAdditive',
+    additiveSpace: 'mesh',
+  },
+  { region: 'pelvis', baseCurve: 'LayerPelvis' },
+  { region: 'legs', baseCurve: 'LayerLegs' },
+] as const

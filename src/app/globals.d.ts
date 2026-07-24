@@ -1,5 +1,5 @@
-import type { AlsGait, AlsStance } from './player/locomotionProfile'
-import type { AlsOverlayMode } from './player/overlayMode'
+import type { AlsOverlayMode } from '../als/AnimGraph/overlayMode'
+import type { AlsGait, AlsStance } from '../als/Settings/AlsMovementSettings'
 
 export {}
 

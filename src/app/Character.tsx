@@ -11,9 +11,9 @@ import {
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
-import { applyCharacterMaterialOverrides } from './characterMaterials'
-import type { CharacterPoseSample } from './poseCameraState'
-import { useLocomotionRig } from './useLocomotionRig'
+import { useAlsAnimationInstance } from '../als/AlsAnimationInstance.hooks'
+import type { CharacterPoseSample } from '../als/AlsCamera/poseCameraState'
+import { applyCharacterMaterialOverrides } from '../als/characterMaterials'
 
 const CHARACTER_URL = '/assets/skm-als.glb'
 const GLB_MAGIC = [0x67, 0x6c, 0x54, 0x46]
@@ -182,7 +182,7 @@ function LoadedCharacter({
 
   // The hook owns clip sampling, pose-space composition, and the one skeleton write per frame.
   // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
-  useLocomotionRig(gltf)
+  useAlsAnimationInstance(gltf)
 
   useFrame(() => {
     const group = characterGroup.current

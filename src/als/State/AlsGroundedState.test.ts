@@ -3,7 +3,7 @@ import {
   createVelocityBlend,
   stepVelocityBlend,
   velocityBlendTarget,
-} from './velocityBlend'
+} from './AlsGroundedState'
 
 describe('ALS velocity blend', () => {
   it.each([

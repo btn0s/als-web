@@ -4,12 +4,12 @@ import { useControls } from 'leva'
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import type { ElementRef, MutableRefObject } from 'react'
 import * as THREE from 'three'
-import { LEVA_ROOTS } from './levaRoots'
+import { LEVA_ROOTS } from '../../app/levaRoots'
 import type { CharacterPoseSample } from './poseCameraState'
 
 const POSE_HEIGHT_DAMPING = 7
 
-interface PoseOrbitCameraProps {
+interface AlsCameraComponentProps {
   characterSize: THREE.Vector3
   poseSample: MutableRefObject<CharacterPoseSample>
 }
@@ -25,7 +25,7 @@ interface PoseOrbitCameraProps {
  * Reticle-true zoom from the sibling camera is deferred until this repo has an aiming/reticle
  * system (M3); there is no meaningful optical anchor to preserve yet.
  */
-export function PoseOrbitCamera({ characterSize, poseSample }: PoseOrbitCameraProps) {
+export function AlsCameraComponent({ characterSize, poseSample }: AlsCameraComponentProps) {
   const { camera, size: viewportSize } = useThree()
   const controls = useRef<ElementRef<typeof OrbitControls>>(null)
   const { poseFollow } = useControls(

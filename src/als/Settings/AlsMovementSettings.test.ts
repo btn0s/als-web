@@ -7,7 +7,7 @@ import {
   buildLocomotionProfile,
   resolveDesiredGaitSpeed,
   resolveGaitSpeeds,
-} from './locomotionProfile'
+} from './AlsMovementSettings'
 
 function clip(name: string, duration: number) {
   return new THREE.AnimationClip(name, duration, [

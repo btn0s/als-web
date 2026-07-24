@@ -11,14 +11,14 @@ export interface Velocity3 {
   z: number
 }
 
-export interface VelocityBlend {
+export interface AlsVelocityBlendState {
   forwardAmount: number
   backwardAmount: number
   leftAmount: number
   rightAmount: number
 }
 
-export function createVelocityBlend(): VelocityBlend {
+export function createVelocityBlend(): AlsVelocityBlendState {
   return { forwardAmount: 0, backwardAmount: 0, leftAmount: 0, rightAmount: 0 }
 }
 
@@ -29,8 +29,8 @@ export function createVelocityBlend(): VelocityBlend {
 export function velocityBlendTarget(
   velocity: Velocity3,
   actorYaw: number,
-  out: VelocityBlend = createVelocityBlend(),
-): VelocityBlend {
+  out: AlsVelocityBlendState = createVelocityBlend(),
+): AlsVelocityBlendState {
   const cos = Math.cos(actorYaw)
   const sin = Math.sin(actorYaw)
   const localX = velocity.x * cos + velocity.y * sin
@@ -64,13 +64,13 @@ export function velocityBlendTarget(
  * exponential decay `lerp(current, target, 1 - exp(-12 * dt))` rather than `FInterpTo`.
  */
 export function stepVelocityBlend(
-  current: VelocityBlend,
+  current: AlsVelocityBlendState,
   velocity: Velocity3,
   actorYaw: number,
   deltaTime: number,
   initialize = false,
-  target: VelocityBlend = createVelocityBlend(),
-): VelocityBlend {
+  target: AlsVelocityBlendState = createVelocityBlend(),
+): AlsVelocityBlendState {
   velocityBlendTarget(velocity, actorYaw, target)
   const alpha = initialize
     ? 1

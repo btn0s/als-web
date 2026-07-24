@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test": "vitest run",
+    "check": "pnpm test && pnpm build",
+    "check:e2e": "playwright test",
     "e2e": "playwright test",
     "lint": "oxlint",
     "preview": "vite preview"

@@ -2,7 +2,7 @@
  * Pure locomotion blendspace math.
  *
  * Gait breakpoints and strides come from ALS's authored movement settings through
- * `locomotionProfile.ts`; the clips are in-place, so root-motion measurement is not a valid
+ * `Settings/AlsMovementSettings.ts`; the clips are in-place, so root-motion measurement is not a valid
  * source. Directional distribution is a separate pure layer in `weightTable.ts`.
  *
  * Kept framework-free (no `three` import) so it stays Vitest-testable in isolation.

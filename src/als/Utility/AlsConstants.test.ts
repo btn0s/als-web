@@ -6,7 +6,7 @@ import {
   isArmBone,
   isFingerBone,
   REGION_PREDICATES,
-} from './trackMask';
+} from './AlsConstants';
 
 /** Builds a minimal 2-keyframe quaternion track for `boneName`, matching how baked clips are shaped. */
 function boneTrack(boneName: string) {

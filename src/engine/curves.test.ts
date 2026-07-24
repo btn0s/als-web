@@ -5,7 +5,6 @@ import {
   compileClipCurveSamplers,
   createCurveFrame,
   createKeyframedScalarCurve,
-  resolvePoseGaitAmounts,
   sampleClipCurves,
 } from './curves'
 
@@ -44,14 +43,5 @@ describe('float curves', () => {
       { clipKey: 'run', weight: 0.75, fallback: 2 },
       { clipKey: 'idle-without-curves', weight: 0.25, fallback: 0 },
     ])).toBeCloseTo(1.5)
-  })
-
-  it('segments PoseGait with ALS walking/running/sprinting overlapping ramps', () => {
-    expect(resolvePoseGaitAmounts(2.5)).toEqual({
-      amount: 2.5,
-      walking: 1,
-      running: 1,
-      sprinting: 0.5,
-    })
   })
 })

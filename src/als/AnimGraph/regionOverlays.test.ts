@@ -4,7 +4,7 @@ import {
   evaluateRegionOverlays,
 } from './regionOverlays';
 import type { OverlayContext } from './regionOverlays';
-import { REGION_PREDICATES } from './trackMask';
+import { REGION_PREDICATES } from '../Utility/AlsConstants';
 
 function makeCtx(overrides: Partial<OverlayContext> = {}): OverlayContext {
   return {

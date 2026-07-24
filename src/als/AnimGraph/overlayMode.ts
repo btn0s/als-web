@@ -1,5 +1,9 @@
-import type { ClipCurveSamplers } from './pose/curves'
-import type { RegionName } from './trackMask'
+import type { ClipCurveSamplers } from '../../engine/curves'
+import { ALS_LAYER_REGIONS } from '../Utility/AlsConstants'
+import type { AlsLayerRegion } from '../Utility/AlsConstants'
+
+export { ALS_LAYER_REGIONS }
+export type { AlsLayerRegion }
 
 export const ALS_OVERLAY_MODES = ['Default', 'Rifle'] as const
 export type AlsOverlayMode = (typeof ALS_OVERLAY_MODES)[number]
@@ -16,49 +20,6 @@ export const RIFLE_OVERLAY_CLIPS = {
  * standing-relaxed pose and preserves the curves authored on that exact frame.
  */
 export const RIFLE_RELAXED_POSE_TIME = 0
-
-export interface AlsLayerRegion {
-  readonly region: RegionName
-  readonly baseCurve: string
-  readonly additiveCurve?: string
-  readonly localSpaceCurve?: string
-  readonly additiveSpace?: 'local' | 'mesh'
-}
-
-/**
- * UAlsConstants Layer* names mapped onto AB_Als_Layering's branch roots. Additive curves drive
- * the graph's dynamic locomotion additive; LayerArm*LocalSpace chooses its rotation space.
- */
-export const ALS_LAYER_REGIONS: readonly AlsLayerRegion[] = [
-  {
-    region: 'head',
-    baseCurve: 'LayerHead',
-    additiveCurve: 'LayerHeadAdditive',
-    additiveSpace: 'mesh',
-  },
-  {
-    region: 'armLeft',
-    baseCurve: 'LayerArmLeft',
-    additiveCurve: 'LayerArmLeftAdditive',
-    localSpaceCurve: 'LayerArmLeftLocalSpace',
-  },
-  {
-    region: 'armRight',
-    baseCurve: 'LayerArmRight',
-    additiveCurve: 'LayerArmRightAdditive',
-    localSpaceCurve: 'LayerArmRightLocalSpace',
-  },
-  { region: 'handLeft', baseCurve: 'LayerHandLeft' },
-  { region: 'handRight', baseCurve: 'LayerHandRight' },
-  {
-    region: 'spine',
-    baseCurve: 'LayerSpine',
-    additiveCurve: 'LayerSpineAdditive',
-    additiveSpace: 'mesh',
-  },
-  { region: 'pelvis', baseCurve: 'LayerPelvis' },
-  { region: 'legs', baseCurve: 'LayerLegs' },
-] as const
 
 export interface RifleOverlaySourceWeights {
   poses: number

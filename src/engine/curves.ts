@@ -125,23 +125,3 @@ export function blendCurveValue(
   }
   return totalWeight > Number.EPSILON ? weighted / totalWeight : fallback
 }
-
-export interface PoseGaitAmounts {
-  amount: number
-  walking: number
-  running: number
-  sprinting: number
-}
-
-/** `RefreshPose` gait ramps (AlsAnimationInstance.cpp:313-351). */
-export function resolvePoseGaitAmounts(
-  gaitAmount: number,
-  out: PoseGaitAmounts = { amount: 0, walking: 0, running: 0, sprinting: 0 },
-): PoseGaitAmounts {
-  const clamped = Math.max(0, Math.min(3, gaitAmount))
-  out.amount = clamped
-  out.walking = Math.max(0, Math.min(1, clamped))
-  out.running = Math.max(0, Math.min(1, clamped - 1))
-  out.sprinting = Math.max(0, Math.min(1, clamped - 2))
-  return out
-}
