@@ -13,6 +13,11 @@ before feature work.
   extraction, curve-driven layering, an owned pose-buffer runtime). Inventing the missing tooling
   IS the project; it's a net good for web gamedev and animation tooling. When a shortcut and a
   faithful mechanism compete, port the mechanism.
+- **Spec-gap resolution order (user 2026-07-23):** when ALS's C++ has no constant/formula for
+  something, the answer is almost always in ALS's CONTENT — authored transition clips, Pose*/
+  Layer* curves, blend settings in data assets — or in the AnimGraph conventions the spec flags.
+  Look there FIRST. The sibling repo's solutions are a last resort, flagged loudly as shims with
+  a scheduled replacement — "the sibling did X" is never, by itself, a justification.
 - **Naming parity (user 2026-07-23):** anything with an ALS analog uses ALS Refactored's exact
   name, so an ALS-fluent reader has zero onboarding: Gait Walking/Running/Sprinting (never
   "jog"), Stance Standing/Crouching, RotationMode VelocityDirection/ViewDirection/Aiming,
