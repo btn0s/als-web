@@ -189,6 +189,13 @@ describe('ALS layering regions', () => {
     expect(REGION_PREDICATES.handRight('ring_01_r')).toBe(true)
     expect(REGION_PREDICATES.handLeft('hand_l')).toBe(false)
 
+    expect(REGION_PREDICATES.ikHandLeft('ik_hand_l')).toBe(true)
+    expect(REGION_PREDICATES.ikHandLeft('ik_hand_gun')).toBe(false)
+    for (const bone of ['ik_hand_root', 'ik_hand_gun', 'ik_hand_r']) {
+      expect(REGION_PREDICATES.ikHandRight(bone)).toBe(true)
+    }
+    expect(REGION_PREDICATES.ikHandRight('ik_hand_l')).toBe(false)
+
     expect(REGION_PREDICATES.pelvis('pelvis')).toBe(true)
     expect(REGION_PREDICATES.pelvis('spine_01')).toBe(false)
     for (const bone of ['thigh_l', 'calf_twist_01_r', 'foot_l', 'ball_r']) {

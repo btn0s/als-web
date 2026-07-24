@@ -47,7 +47,7 @@ describe('region overlay rules', () => {
       id: 'custom',
       clip: 'clip',
       region: 'arms' as const,
-      phaseLock: true,
+      syncGroup: 'Locomotion',
       weight: (c: OverlayContext) => c.runShare + c.sprintShare,
     }]
     const out = [0]

@@ -405,15 +405,16 @@ export function RefreshVelocityBlend(Input: {
   )
   let TargetVelocityBlend = Vector()
 
-  const RelativeVelocitySize = Math.hypot(
-    RelativeVelocityDirection.X,
-    RelativeVelocityDirection.Y,
-    RelativeVelocityDirection.Z,
-  )
-  if (RelativeVelocitySize > UE_SMALL_NUMBER) {
+  // FVector3f::Normalize(Tolerance = SMALL_NUMBER) compares the SQUARED sum against the
+  // tolerance (UnrealMathUtility: `SquareSum > Tolerance`), not the linear magnitude.
+  const RelativeVelocitySizeSquared =
+    RelativeVelocityDirection.X * RelativeVelocityDirection.X
+    + RelativeVelocityDirection.Y * RelativeVelocityDirection.Y
+    + RelativeVelocityDirection.Z * RelativeVelocityDirection.Z
+  if (RelativeVelocitySizeSquared > UE_SMALL_NUMBER) {
     RelativeVelocityDirection = MultiplyVector(
       RelativeVelocityDirection,
-      1.0 / RelativeVelocitySize,
+      1.0 / Math.sqrt(RelativeVelocitySizeSquared),
     )
     TargetVelocityBlend = MultiplyVector(
       RelativeVelocityDirection,

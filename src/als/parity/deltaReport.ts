@@ -21,7 +21,7 @@ export interface AlsParityDelta {
 
 export const ALS_PARITY_DELTA_REPORT: readonly AlsParityDelta[] = [
   {
-    id: 'cpp-velocity-normalize-tolerance',
+    id: 'cpp-velocity-normalize-tolerance', // RESOLVED 2026-07-23: UE_SMALL_NUMBER squared-length check in AlsGroundedState
     category: 'bug-in-ours',
     oracle: 'C++ differential',
     source: 'AlsAnimationInstance.cpp:743-751 (FVector3f::Normalize)',

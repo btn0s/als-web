@@ -8,8 +8,8 @@ import type { RegionName } from '../Utility/AlsConstants';
  *  - Rules emit conventional non-negative layer alphas for the consumer to apply through a mask.
  *  - Every rule's weight is scaled by the frame's groundedAmount or inAirAmount, so montages and
  *    locomotion-mode changes fade the overlay with the base it rides on and the damping RATIO holds.
- *  - `phaseLock: true` rides the shared locomotion phase (footfall-synced clips, e.g. a moving
- *    gait's arms); `false` plays on its own mixer clock (idles/holds).
+ *  - Moving overlays name an engine sync group (for example `Locomotion`); unsynchronized holds
+ *    omit it. Playback ownership stays in `src/engine/syncGroups.ts`.
  *
  * The `weight` functions read damped signals — no need to re-damp inside a rule.
  */
@@ -34,12 +34,12 @@ export interface RegionOverlayRule {
   clip: string;
   /** Body region the clip is masked to (see Utility/AlsConstants.REGION_PREDICATES). */
   region: RegionName;
-  /** Ride the shared locomotion footfall phase instead of free-running mixer time. */
-  phaseLock: boolean;
+  /** Optional engine marker-sync group membership. */
+  syncGroup?: string;
   /**
    * Freeze the clip at this normalized playhead (0..1) and blend the HELD POSE instead of the
    * moving clip — for mining a single pose out of a longer clip (e.g. Celebration's hands-up
-   * apex as the airborne reach). Mutually exclusive with phaseLock.
+   * apex as the airborne reach). Mutually exclusive with syncGroup.
    */
   holdAt?: number;
   /**

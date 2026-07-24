@@ -92,6 +92,8 @@ export function isArmBone(boneName: string): boolean {
 const HEAD_PREFIXES = ['head', 'neck_'];
 const SPINE_PREFIXES = ['spine_'];
 const LEG_PREFIXES = ['thigh_', 'calf_', 'foot_', 'ball_'];
+const IK_HAND_LEFT_BONES = new Set(['ik_hand_l'])
+const IK_HAND_RIGHT_BONES = new Set(['ik_hand_root', 'ik_hand_gun', 'ik_hand_r'])
 
 function isSide(bone: string, side: 'l' | 'r') {
   return bone.endsWith(`_${side}`)
@@ -129,6 +131,10 @@ export const REGION_PREDICATES = {
   /** ALS hand layers are the five finger branches, not the wrist already owned by LayerArm*. */
   handLeft: (bone: string) => isHand(bone, 'l'),
   handRight: (bone: string) => isHand(bone, 'r'),
+  /** Left-hand IK target follows the left arm and its authored HandLeftIk gate. */
+  ikHandLeft: (bone: string) => IK_HAND_LEFT_BONES.has(bone),
+  /** Shared IK root, gun target, and right-hand target follow the rifle's right arm source. */
+  ikHandRight: (bone: string) => IK_HAND_RIGHT_BONES.has(bone),
   /** Pelvis only; child spine and thigh branches have their own Layer* curves. */
   pelvis: (bone: string) => bone === 'pelvis',
   /** Both thigh branches and every descendant leg bone. */

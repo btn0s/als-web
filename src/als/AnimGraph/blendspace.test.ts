@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   IDLE_EPS,
   STAND,
-  advanceLocomotionPhase,
+  calculateLocomotionCadence,
   updateLocomotionTargets,
   type GaitSpeeds,
   type GaitStrides,
@@ -72,29 +72,26 @@ describe('updateLocomotionTargets', () => {
   });
 });
 
-describe('advanceLocomotionPhase', () => {
+describe('calculateLocomotionCadence', () => {
   const WALKING = [0, 1, 0, 0];
 
   it('freezes while within the idle deadzone', () => {
-    expect(advanceLocomotionPhase(0.3, 1 / 60, IDLE_EPS, [1, 0, 0, 0], 0, 0, STRIDES)).toBe(0.3);
+    expect(calculateLocomotionCadence(IDLE_EPS, [1, 0, 0, 0], 0, 0, STRIDES)).toBe(0);
   });
 
-  it('advances at cadence = speed / stride (foot-locked)', () => {
-    // walkStride 1, speed 2, dt 0.1 => cadence 2 cycles/s => +0.2 phase
-    expect(advanceLocomotionPhase(0, 0.1, 2, WALKING, 0, 0, STRIDES)).toBeCloseTo(0.2, 6);
+  it('returns cadence = speed / stride (foot-locked)', () => {
+    expect(calculateLocomotionCadence(2, WALKING, 0, 0, STRIDES)).toBeCloseTo(2, 6);
   });
 
-  it('scales phase advance linearly with ground speed (no foot slide at any speed)', () => {
-    const slow = advanceLocomotionPhase(0, 0.1, 2, WALKING, 0, 0, STRIDES);
-    const fast = advanceLocomotionPhase(0, 0.1, 4, WALKING, 0, 0, STRIDES);
-    expect(fast).toBeCloseTo(2 * slow, 6); // double the speed => double the cadence
+  it('scales cadence linearly with ground speed (no foot slide at any speed)', () => {
+    const slow = calculateLocomotionCadence(2, WALKING, 0, 0, STRIDES);
+    const fast = calculateLocomotionCadence(4, WALKING, 0, 0, STRIDES);
+    expect(fast).toBeCloseTo(2 * slow, 6);
   });
 
   it('uses PoseGait ramps to blend walk, run, and sprint strides', () => {
     // PoseGait 2.5 is halfway from run stride 1.5 to sprint stride 2.
-    const phase = advanceLocomotionPhase(
-      0,
-      0.1,
+    const cadence = calculateLocomotionCadence(
       1.75,
       [0, 0, 0.5, 0.5],
       0,
@@ -102,18 +99,12 @@ describe('advanceLocomotionPhase', () => {
       STRIDES,
       2.5,
     );
-    expect(phase).toBeCloseTo(0.1, 6);
+    expect(cadence).toBeCloseTo(1, 6);
   });
 
   it('blends Standing and Crouching strides by crouchingAmount', () => {
     // standStride 1 and crouchStride 0.75 at crouchingAmount 0.5 yield 0.875.
-    // speed 1, dt 1 => cadence 1/0.875 => %1
-    const phase = advanceLocomotionPhase(0, 1, 1, WALKING, 1, 0.5, STRIDES);
-    expect(phase).toBeCloseTo((1 / 0.875) % 1, 6);
-  });
-
-  it('wraps around 1', () => {
-    // cadence 1 cycle/s, dt 1 => 0.9 + 1 = 1.9 -> %1 = 0.9
-    expect(advanceLocomotionPhase(0.9, 1, 1, WALKING, 0, 0, STRIDES)).toBeCloseTo(0.9, 6);
+    expect(calculateLocomotionCadence(1, WALKING, 1, 0.5, STRIDES))
+      .toBeCloseTo(1 / 0.875, 6);
   });
 });

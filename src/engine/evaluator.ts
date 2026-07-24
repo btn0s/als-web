@@ -20,6 +20,11 @@ import { copyPose, createPoseBuffer, resetPoseToReference } from './poseBuffer'
 import type { RigDefinition } from './rig'
 import type { RootMotionDelta, RootMotionExtractor } from './rootMotion'
 import { extractRootMotionDelta } from './rootMotion'
+import {
+  applyInertialization,
+  createInertialization,
+} from './inertialization'
+import type { Inertialization } from './inertialization'
 
 export interface EvaluatorClipEntry {
   readonly sampler: CompiledClipSampler
@@ -42,6 +47,7 @@ export interface EvaluatePoseInput {
   readonly additives?: readonly EvaluatorLayerEntry[]
   readonly dynamicAdditives?: readonly EvaluatorDynamicAdditiveEntry[]
   readonly rootMotion?: RootMotionExtractor
+  deltaTime?: number
 }
 
 export interface EvaluatorDynamicAdditiveEntry {
@@ -75,6 +81,7 @@ export interface PoseEvaluator {
   readonly overlayAccumulator: PoseAccumulator
   readonly meshSpaceScratch: MeshSpaceBlendScratch
   readonly curves: CurveFrame
+  readonly inertialization: Inertialization
   readonly result: PoseEvaluationResult
   readonly development: boolean
   readonly coverageThreshold: number
@@ -108,6 +115,7 @@ export function createPoseEvaluator(
     overlayAccumulator: createPoseAccumulator(rig.boneCount),
     meshSpaceScratch: createMeshSpaceBlendScratch(rig.boneCount),
     curves,
+    inertialization: createInertialization(rig.boneCount),
     result,
     development: options.development ?? false,
     coverageThreshold: options.coverageThreshold ?? 0.999,
@@ -276,6 +284,13 @@ export function evaluatePose(
     }
   }
 
+  // UE's Inertialization node sits downstream of the graph: source selection hard-switches, then
+  // the captured outgoing correction is applied to the fully composed incoming pose.
+  applyInertialization(
+    evaluator.inertialization,
+    evaluator.outputPose,
+    input.deltaTime ?? 0,
+  )
   evaluator.result.rootMotionDelta = input.rootMotion
     ? extractRootMotionDelta(input.rootMotion, evaluator.outputPose)
     : undefined

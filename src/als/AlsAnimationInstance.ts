@@ -18,12 +18,25 @@ import type {
   EvaluatorDynamicAdditiveEntry,
   EvaluatorLayerEntry,
 } from '../engine/evaluator'
+import { measureInertializationCorrectionMagnitude } from '../engine/inertialization'
 import { copyPose, createPoseBuffer } from '../engine/poseBuffer'
 import { createRigDefinition } from '../engine/rig'
 import { createRootMotionExtractor, resetRootMotionExtractor } from '../engine/rootMotion'
 import type { RootMotionExtractor } from '../engine/rootMotion'
+import {
+  advanceSyncGroup,
+  createSyncGroup,
+} from '../engine/syncGroups'
+import type {
+  SyncGroupMember,
+  SyncMarkerTable,
+} from '../engine/syncGroups'
 import { createActionArbiter } from './AnimGraph/actionArbiter'
-import { advanceLocomotionPhase, STAND, updateLocomotionTargets } from './AnimGraph/blendspace'
+import {
+  calculateLocomotionCadence,
+  STAND,
+  updateLocomotionTargets,
+} from './AnimGraph/blendspace'
 import {
   ALS_LAYER_REGIONS,
   blendOverlayCurve,
@@ -144,6 +157,8 @@ const ROLE_GAIT_AMOUNT: Record<ClipRole, number> = {
 }
 
 const GAIT_DAMP_RATE = 8
+const OVERLAY_MODE_INERTIALIZATION_DURATION = 0.2
+const SOLO_INERTIALIZATION_DURATION = 0.2
 
 const STANCE_TRANSITION_CLIPS = {
   Crouching: 'A_Als_StandToCrouch',
@@ -254,17 +269,6 @@ function clamp01(value: number) {
   return Math.max(0, Math.min(1, value))
 }
 
-function montageBlendWeight(
-  progress: number,
-  duration: number,
-  blendDuration: number,
-) {
-  if (blendDuration <= 0) return progress < 1 ? 1 : 0
-  const elapsed = progress * duration
-  const remaining = (1 - progress) * duration
-  return Math.max(0, Math.min(1, elapsed / blendDuration, remaining / blendDuration))
-}
-
 /**
  * Owns sampling, pose-space composition, and the sole skeleton write for the character. The pure
  * weight table and region rules remain the graph; the React hook only forwards frame delta and
@@ -273,6 +277,8 @@ function montageBlendWeight(
 export function createAlsAnimationInstance(gltf: {
   animations: THREE.AnimationClip[]
   scene: THREE.Object3D
+  /** Authored marker injection seam; the current extracted GLB does not carry sync markers yet. */
+  syncMarkers?: SyncMarkerTable
 }): AlsAnimationInstance {
   const rig = createRigDefinition(gltf.scene)
   const applicator = createPoseApplicator(gltf.scene, rig)
@@ -288,9 +294,13 @@ export function createAlsAnimationInstance(gltf: {
   })
   const clipsByName = new Map(clips.map((clip) => [clip.sampler.clip.name, clip]))
   const roles: Partial<Record<ClipRole, RuntimeClip>> = {}
+  const roleByClip = new Map<RuntimeClip, ClipRole>()
   for (const [role, clipName] of Object.entries(CLIP_ROLES) as [ClipRole, string][]) {
     const clip = clipsByName.get(clipName)
-    if (clip) roles[role] = clip
+    if (clip) {
+      roles[role] = clip
+      roleByClip.set(clip, role)
+    }
   }
 
   const baseEntries = Object.values(roles).map((clip) => clip.entry)
@@ -430,6 +440,46 @@ export function createAlsAnimationInstance(gltf: {
         : []
     },
   )
+  const locomotionRoles = (Object.keys(CLIP_ROLES) as ClipRole[]).filter(
+    (role) => role !== 'idle' && role !== 'crouchIdle',
+  )
+  const locomotionMembersByRole = new Map<ClipRole, SyncGroupMember>()
+  const locomotionMembers: SyncGroupMember[] = []
+  const syncClips = new Set<RuntimeClip>()
+  for (const role of locomotionRoles) {
+    const clip = roles[role]
+    if (!clip) continue
+    const clipName = clip.sampler.clip.name
+    const member: SyncGroupMember = {
+      id: clipName,
+      duration: clip.sampler.clip.duration,
+      markers: gltf.syncMarkers?.[clipName] ?? [],
+      time: 0,
+      weight: 0,
+      playRate: 0,
+    }
+    locomotionMembersByRole.set(role, member)
+    locomotionMembers.push(member)
+    syncClips.add(clip)
+  }
+  const overlayLocomotionMembers = new Map<RuntimeOverlaySource, SyncGroupMember>()
+  for (const source of overlaySources) {
+    if (source.key === 'poses') continue
+    const clipName = source.clip.sampler.clip.name
+    const member: SyncGroupMember = {
+      id: clipName,
+      duration: source.clip.sampler.clip.duration,
+      markers: gltf.syncMarkers?.[clipName] ?? [],
+      canLead: false,
+      time: 0,
+      weight: 0,
+      playRate: 0,
+    }
+    overlayLocomotionMembers.set(source, member)
+    locomotionMembers.push(member)
+    syncClips.add(source.clip)
+  }
+  const locomotionSyncGroup = createSyncGroup('Locomotion', locomotionMembers)
   const mainInput: EvaluatePoseInput = {
     base: baseEntries,
     montages: [...montageClips].map((clip) => clip.entry),
@@ -450,6 +500,7 @@ export function createAlsAnimationInstance(gltf: {
   const actionArbiter = createActionArbiter<AlsMontageKind>()
   let activeMontage: RuntimeMontage | null = null
   let previousStance: AlsStance | null = null
+  let previousOverlayMode: AlsOverlayMode | null = null
   let rotateClip: RuntimeClip | null = null
   let rotateClipTime = 0
   let rotateBlendWeight = 0
@@ -463,7 +514,6 @@ export function createAlsAnimationInstance(gltf: {
   const velocityTarget = createVelocityBlend()
   let velocityInitialized = false
   const directionWeights = createSixDirectionWeights()
-  let phase = 0
   const gaitAmounts = createAlsPoseState()
   const table = createWeightTable()
   const rifleSourceWeights = { poses: 1, runArms: 0, sprintArms: 0 }
@@ -478,6 +528,11 @@ export function createAlsAnimationInstance(gltf: {
 
   function playClip(name: string | null) {
     if (name === null) {
+      if (soloClip) {
+        evaluator.inertialization.requestInertialization(
+          SOLO_INERTIALIZATION_DURATION,
+        )
+      }
       soloClip = null
       if (rootMotion) resetRootMotionExtractor(rootMotion)
       return true
@@ -487,6 +542,11 @@ export function createAlsAnimationInstance(gltf: {
       console.warn(`[Animation] Unknown clip "${name}"`)
       return false
     }
+    if (clip !== soloClip) {
+      evaluator.inertialization.requestInertialization(
+        SOLO_INERTIALIZATION_DURATION,
+      )
+    }
     clip.time = 0
     soloEntries[0] = clip.entry
     soloClip = clip
@@ -495,7 +555,7 @@ export function createAlsAnimationInstance(gltf: {
   }
 
   function clearSoloClip() {
-    soloClip = null
+    playClip(null)
   }
 
   function requestMontage(montage: RuntimeMontage) {
@@ -509,29 +569,70 @@ export function createAlsAnimationInstance(gltf: {
     if (accepted) {
       montage.clip.time = 0
       activeMontage = montage
+      evaluator.inertialization.requestInertialization(montage.blendDuration)
     }
     return accepted
   }
 
   function refresh(delta: number, controls: AlsAnimationInstanceControls) {
     if (rig.boneCount === 0) return 0
-    for (const clip of clips) advanceClip(clip, delta)
-
+    mainInput.deltaTime = delta
+    fallbackInput.deltaTime = delta
+    soloInput.deltaTime = delta
     if (soloClip) {
+      // Solo owns its selected clip clock directly. Sync-group membership only has meaning while
+      // the graph is evaluating the group; bypassing it here prevents the early return from
+      // freezing locomotion clips that happen to be group members.
+      advanceClip(soloClip, delta)
       soloClip.entry.time = soloClip.time
       soloClip.entry.weight = 1
       applyPose(applicator, evaluatePose(evaluator, soloInput).pose)
-      window.__weightTable = soloDebugWeights.get(soloClip.sampler.clip.name)
+      const debugWeights = soloDebugWeights.get(soloClip.sampler.clip.name)
+      if (debugWeights) {
+        debugWeights.clipTime = soloClip.entry.time
+        debugWeights.clipPhase = soloClip.sampler.clip.duration > 0
+          ? soloClip.entry.time / soloClip.sampler.clip.duration
+          : 0
+        const role = roleByClip.get(soloClip)
+        if (role) {
+          debugWeights[`clipTime.${role}`] = debugWeights.clipTime
+          debugWeights[`clipPhase.${role}`] = debugWeights.clipPhase
+        }
+        debugWeights.inertializationCorrectionMagnitude =
+          measureInertializationCorrectionMagnitude(evaluator.inertialization)
+        debugWeights.inertializationRequestCount =
+          evaluator.inertialization.requestCount
+      }
+      window.__weightTable = debugWeights
+      // Controls may change while the normal graph is dormant. The solo transition request owns
+      // the eventual handoff, so do not emit a second overlay request on the first resumed frame.
+      previousOverlayMode = controls.overlayMode
       state.rotationYawSpeed = 0
       return 0
     }
 
+    for (const clip of clips) {
+      if (!syncClips.has(clip)) advanceClip(clip, delta)
+    }
+
     if (!complete) {
       if (!fallbackClip) return 0
+      if (syncClips.has(fallbackClip)) advanceClip(fallbackClip, delta)
       fallbackClip.entry.time = fallbackClip.time
       fallbackClip.entry.weight = 1
       applyPose(applicator, evaluatePose(evaluator, fallbackInput).pose)
-      window.__weightTable = soloDebugWeights.get(fallbackClip.sampler.clip.name)
+      const debugWeights = soloDebugWeights.get(fallbackClip.sampler.clip.name)
+      if (debugWeights) {
+        debugWeights.clipTime = fallbackClip.entry.time
+        debugWeights.clipPhase = fallbackClip.sampler.clip.duration > 0
+          ? fallbackClip.entry.time / fallbackClip.sampler.clip.duration
+          : 0
+        debugWeights.inertializationCorrectionMagnitude =
+          measureInertializationCorrectionMagnitude(evaluator.inertialization)
+        debugWeights.inertializationRequestCount =
+          evaluator.inertialization.requestCount
+      }
+      window.__weightTable = debugWeights
       state.rotationYawSpeed = 0
       return 0
     }
@@ -600,15 +701,16 @@ export function createAlsAnimationInstance(gltf: {
         action.progress * duration * activeMontage.sequencePlayRate,
         activeMontage.clip.sampler.clip.duration,
       )
-      actionBlendWeight = montageBlendWeight(
-        action.progress,
-        duration,
-        activeMontage.blendDuration,
-      )
+      actionBlendWeight = 1
       activeMontage.clip.entry.time = activeMontage.clip.time
       activeMontage.clip.entry.weight = actionBlendWeight
       activeMontage.clip.entry.loop = false
     } else if (!actionArbiter.active) {
+      if (activeMontage) {
+        evaluator.inertialization.requestInertialization(
+          activeMontage.blendDuration,
+        )
+      }
       activeMontage = null
     }
 
@@ -721,8 +823,9 @@ export function createAlsAnimationInstance(gltf: {
     for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) {
       const clip = roles[role]
       if (!clip) continue
-      clip.entry.time = clip.sampler.clip.duration * phase
+      const syncMember = locomotionMembersByRole.get(role)
       clip.entry.weight = weights[role] * baseWeight
+      if (syncMember) syncMember.weight = clip.entry.weight
     }
 
     const fallbackGaitAmount =
@@ -733,16 +836,53 @@ export function createAlsAnimationInstance(gltf: {
       + crouchMoveWeight * crouchingAmount
 
     const rifleActive = controls.overlayMode === 'Rifle'
+    if (previousOverlayMode === null) {
+      previousOverlayMode = controls.overlayMode
+    } else if (controls.overlayMode !== previousOverlayMode) {
+      previousOverlayMode = controls.overlayMode
+      // AB_Als linked-layer transition timing is not present in the extracted GLB yet. Use the
+      // existing ALS 0.2s transition duration at this explicit data seam until the ABP dump owns it.
+      evaluator.inertialization.requestInertialization(
+        OVERLAY_MODE_INERTIALIZATION_DURATION,
+      )
+    }
     resolveRifleOverlaySourceWeights(
       fallbackGaitAmount,
       rifleSourceWeights,
     )
     for (const source of overlaySources) {
       source.weight = rifleActive ? rifleSourceWeights[source.key] : 0
+      const syncMember = overlayLocomotionMembers.get(source)
+      if (syncMember) syncMember.weight = source.weight
+    }
+
+    const locomotionCadence = calculateLocomotionCadence(
+      locomotionSpeed,
+      standWeights,
+      crouchMoveWeight,
+      crouchingAmount,
+      {
+        walk: profile.walk.stride,
+        run: profile.run.stride,
+        sprint: profile.sprint.stride,
+        crouchWalk: profile.crouchWalk.stride,
+      },
+      gaitAmounts.amount,
+    )
+    for (const member of locomotionSyncGroup.members) {
+      member.playRate = locomotionCadence * member.duration
+    }
+    advanceSyncGroup(locomotionSyncGroup, delta)
+    for (const [role, member] of locomotionMembersByRole) {
+      const clip = roles[role]
+      if (clip) clip.entry.time = member.time
+    }
+    for (const source of overlaySources) {
       source.time = source.key === 'poses'
         ? resolveRiflePoseBankTime(crouchingAmount)
-        : source.clip.sampler.clip.duration * phase
+        : overlayLocomotionMembers.get(source)?.time ?? 0
     }
+
     const curveSources: readonly OverlayCurveSource[] = overlaySources
     for (const overlay of overlayEntries) {
       overlay.entry.time = overlay.source.time
@@ -828,24 +968,16 @@ export function createAlsAnimationInstance(gltf: {
     )
     refreshPose(gaitAmount, gaitAmounts)
 
-    phase = advanceLocomotionPhase(
-      phase,
-      delta,
-      locomotionSpeed,
-      standWeights,
-      crouchMoveWeight,
-      crouchingAmount,
-      {
-        walk: profile.walk.stride,
-        run: profile.run.stride,
-        sprint: profile.sprint.stride,
-        crouchWalk: profile.crouchWalk.stride,
-      },
-      gaitAmounts.amount,
-    )
-
     for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) {
       normalDebugWeights[role] = weights[role]
+      const clip = roles[role]
+      if (clip) {
+        normalDebugWeights[`clipTime.${role}`] = clip.entry.time
+        normalDebugWeights[`clipPhase.${role}`] =
+          clip.sampler.clip.duration > 0
+            ? clip.entry.time / clip.sampler.clip.duration
+            : 0
+      }
     }
     normalDebugWeights.groundedAmount = weights.groundedAmount
     normalDebugWeights.gaitAmount = gaitAmounts.amount
@@ -857,6 +989,10 @@ export function createAlsAnimationInstance(gltf: {
     normalDebugWeights[FOOT_RIGHT_LOCK_CURVE_NAME] = state.footRightLock
     normalDebugWeights[ROTATION_YAW_SPEED_CURVE_NAME] = state.rotationYawSpeed
     normalDebugWeights.overlayModeRifle = rifleActive ? 1 : 0
+    normalDebugWeights.inertializationCorrectionMagnitude =
+      measureInertializationCorrectionMagnitude(evaluator.inertialization)
+    normalDebugWeights.inertializationRequestCount =
+      evaluator.inertialization.requestCount
     for (const layer of ALS_LAYER_REGIONS) {
       normalDebugWeights[layer.baseCurve] = blendOverlayCurve(
         curveSources,

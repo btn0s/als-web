@@ -65,16 +65,12 @@ export function updateLocomotionTargets(
 }
 
 /**
- * Advances the shared locomotion phase (0..1, wraps) that keeps footfalls in sync across the
- * blended gait clips. Cadence (cycles/sec) is `groundSpeed / strideLength`, so a planted foot
- * moves exactly with the ground at ANY speed — no sliding, and never the "authored 1× regardless
- * of movement" that made walk look slow. The effective stride is the weight-blend of the active
- * gaits, cross-faded between ALS's Standing and Crouching pose amounts. Phase freezes while
- * stationary.
+ * Calculates the cadence consumed by the engine Locomotion sync group's elected leader.
+ * Cadence (cycles/sec) is `groundSpeed / strideLength`, so a planted foot moves exactly with the
+ * ground at any speed. The effective stride is the weight-blend of the active gaits, cross-faded
+ * between ALS's Standing and Crouching pose amounts. Playback freezes while stationary.
  */
-export function advanceLocomotionPhase(
-  phase: number,
-  dt: number,
+export function calculateLocomotionCadence(
   speed: number,
   standWeights: number[],
   crouchMoveWeight: number,
@@ -99,6 +95,5 @@ export function advanceLocomotionPhase(
   const crouchStride = crouchMoveWeight * strides.crouchWalk;
   const effStride = lerp(standStride, crouchStride, crouchingAmount);
 
-  const cadence = effStride > 1e-4 ? speed / effStride : 0;
-  return speed > IDLE_EPS ? (phase + dt * cadence) % 1 : phase;
+  return speed > IDLE_EPS && effStride > 1e-4 ? speed / effStride : 0;
 }

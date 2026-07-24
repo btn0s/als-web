@@ -37,7 +37,11 @@ export function velocityBlendTarget(
   const localY = -velocity.x * sin + velocity.y * cos
   const length = Math.hypot(localX, localY, velocity.z)
 
-  if (length <= Number.EPSILON) {
+  // UE FVector::GetSafeNormal treats squared length <= SMALL_NUMBER (1e-8) as zero —
+  // i.e. |v| <= 1e-4 cm/s. Number.EPSILON here flipped ForwardAmount to 1 at |v|=5e-5
+  // (parity delta cpp-velocity-normalize-tolerance, now un-skipped).
+  const UE_SMALL_NUMBER = 1e-8
+  if (length * length <= UE_SMALL_NUMBER) {
     out.forwardAmount = 0
     out.backwardAmount = 0
     out.leftAmount = 0

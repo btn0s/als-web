@@ -226,7 +226,7 @@ describe('ALS C++ differential oracle', () => {
     expect(getAlsParityDelta('cpp-exp-decay').category).toBe('designed deviation')
   })
 
-  it.skip('BUG-IN-OURS cpp-velocity-normalize-tolerance: 5e-5 cm/s produces ForwardAmount 1 instead of ALS 0 (delta 1.0)', () => {
+  it('cpp-velocity-normalize-tolerance: near-zero velocity matches ALS GetSafeNormal semantics (fixed)', () => {
     // AlsAnimationInstance.cpp:743-751; FVector3f::Normalize compares squared length to 1e-8.
     const runtime = createVelocityBlend()
     const reference = referenceVelocityState(runtime, true)
