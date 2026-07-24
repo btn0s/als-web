@@ -10,10 +10,14 @@ import {
 } from '../../engine/poseBuffer'
 import type { RigDefinition } from '../../engine/rig'
 import {
+  ALS_CONTROL_RIG_FOOT_IK,
   ALS_CONTROL_RIG_HAND_IK,
+  createAlsControlRigFootIkRuntime,
   createAlsControlRigHandIkRuntime,
+  evaluateAlsControlRigFootIk,
   evaluateAlsControlRigHandIk,
   resolveAlsControlRigHandIkWeight,
+  type AlsControlRigFootOffsetTrace,
 } from './CR_Als'
 
 type Vector3Tuple = readonly [number, number, number]
@@ -56,6 +60,62 @@ const oracle = JSON.parse(readFileSync(
   ),
   'utf8',
 )) as HandIkOracle
+
+interface ControlRigGraphOracle {
+  readonly graphs: readonly {
+    readonly path: string
+    readonly nodes: readonly {
+      readonly path: string
+      readonly resolvedFunctionName?: string
+    }[]
+    readonly pins: readonly {
+      readonly path: string
+      readonly defaultValue?: string
+    }[]
+    readonly links: readonly {
+      readonly source: string
+      readonly target: string
+    }[]
+  }[]
+}
+
+const controlRigOracle = JSON.parse(readFileSync(
+  new URL(
+    '../../../scripts/extract-als/control-rig/CR_Als.json',
+    import.meta.url,
+  ),
+  'utf8',
+)) as ControlRigGraphOracle
+
+function controlRigGraph(path: string) {
+  const graph = controlRigOracle.graphs.find(
+    (candidate) => candidate.path === path,
+  )
+  if (!graph) throw new Error(`Missing CR_Als oracle graph "${path}"`)
+  return graph
+}
+
+function controlRigPinDefault(
+  graphPath: string,
+  pinPath: string,
+) {
+  const pin = controlRigGraph(graphPath).pins.find(
+    (candidate) => candidate.path === pinPath,
+  )
+  if (!pin) throw new Error(`Missing CR_Als oracle pin "${pinPath}"`)
+  return pin.defaultValue
+}
+
+function expectControlRigLink(
+  graphPath: string,
+  source: string,
+  target: string,
+) {
+  expect(controlRigGraph(graphPath).links).toContainEqual({
+    source,
+    target,
+  })
+}
 
 const BONE_NAMES = [
   'root',
@@ -190,6 +250,116 @@ function expectVectorClose(
   expect(actual.x).toBeCloseTo(expected.x, precision)
   expect(actual.y).toBeCloseTo(expected.y, precision)
   expect(actual.z).toBeCloseTo(expected.z, precision)
+}
+
+const FOOT_BONE_NAMES = [
+  'root',
+  'pelvis',
+  'thigh_l',
+  'calf_l',
+  'foot_l',
+  'ball_l',
+  'thigh_r',
+  'calf_r',
+  'foot_r',
+  'ball_r',
+] as const
+
+const FOOT_PARENT_INDICES = new Int16Array([
+  -1,
+  0,
+  1,
+  2,
+  3,
+  4,
+  1,
+  6,
+  7,
+  8,
+])
+
+const FOOT_LOCAL_POSITIONS: readonly Vector3Tuple[] = [
+  [0, 0, 0],
+  [0, 1, 0],
+  [0, -0.1, 0.12],
+  [0, -0.4, 0],
+  [0, -0.4, 0],
+  [0.12, -0.04, 0],
+  [0, -0.1, -0.12],
+  [0, -0.4, 0],
+  [0, -0.4, 0],
+  [0.12, -0.04, 0],
+]
+
+function createFootTestRig() {
+  const boneCount = FOOT_BONE_NAMES.length
+  const referencePositions = new Float32Array(boneCount * 3)
+  const referenceRotations = new Float32Array(boneCount * 4)
+  const referenceScales = new Float32Array(boneCount * 3)
+  for (let bone = 0; bone < boneCount; bone++) {
+    referencePositions.set(FOOT_LOCAL_POSITIONS[bone], bone * 3)
+    referenceRotations[bone * 4 + 3] = 1
+    referenceScales.set([1, 1, 1], bone * 3)
+  }
+  return {
+    boneCount,
+    boneNames: FOOT_BONE_NAMES,
+    parentIndices: FOOT_PARENT_INDICES,
+    referencePositions,
+    referenceRotations,
+    referenceScales,
+  } as unknown as RigDefinition
+}
+
+function footTestInput(
+  pose: LocalPoseBuffer,
+  curves: ReadonlyMap<string, number>,
+  trace: AlsControlRigFootOffsetTrace,
+  overrides: Partial<{
+    deltaTime: number
+    bFootOffsetAllowed: boolean
+    footLeftLocation: THREE.Vector3
+    footLeftRotation: THREE.Quaternion
+    footRightLocation: THREE.Vector3
+    footRightRotation: THREE.Quaternion
+  }> = {},
+) {
+  return {
+    pose,
+    curves,
+    deltaTime: overrides.deltaTime ?? 1 / 60,
+    trace,
+    rigInput: {
+      bFootOffsetAllowed: overrides.bFootOffsetAllowed ?? true,
+      footLeftLocation:
+        overrides.footLeftLocation
+        ?? new THREE.Vector3(0, 0.1, 0.12),
+      footLeftRotation:
+        overrides.footLeftRotation
+        ?? new THREE.Quaternion(),
+      footRightLocation:
+        overrides.footRightLocation
+        ?? new THREE.Vector3(0, 0.1, -0.12),
+      footRightRotation:
+        overrides.footRightRotation
+        ?? new THREE.Quaternion(),
+    },
+  }
+}
+
+function groundTrace(
+  leftHeight: number,
+  rightHeight = leftHeight,
+  normal = new THREE.Vector3(0, 1, 0),
+): AlsControlRigFootOffsetTrace {
+  return (request) => ({
+    impactPoint: new THREE.Vector3(
+      request.start.x,
+      request.side === 'left' ? leftHeight : rightHeight,
+      request.start.z,
+    ),
+    impactNormal: normal,
+  })
 }
 
 describe('CR_Als hand IK authored parity', () => {
@@ -450,6 +620,545 @@ describe('CR_Als pose-buffer hand IK', () => {
     expect(evaluateAlsControlRigHandIk(
       createAlsControlRigHandIkRuntime(rig),
       { pose, curves: new Map() },
+    )).toBe(pose)
+  })
+})
+
+describe('CR_Als foot IK authored graph parity', () => {
+  it('pins construction, graph order, trace, pelvis, solve, and rotation constants', () => {
+    const construction = 'RigVMModel'
+    const trace =
+      'RigVMFunctionLibrary/TraceFootOffset/New Function_ContainedGraph'
+    const pelvis =
+      'RigVMFunctionLibrary/RefreshPelvisOffset/ContainedGraph'
+    const apply =
+      'RigVMFunctionLibrary/ApplyFootIk/New Function_ContainedGraph'
+    const refresh =
+      'RigVMFunctionLibrary/RefreshFootIk/ContainedGraph'
+
+    expect(controlRigPinDefault(
+      construction,
+      'GetTransform/Item/Name',
+    )).toBe(ALS_CONTROL_RIG_FOOT_IK.construction.footHeightItem)
+    expect(controlRigPinDefault(
+      construction,
+      'AlsRigUnit_ChainLength/AncestorItem/Name',
+    )).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.construction.legLengthAncestorItem,
+    )
+    expect(controlRigPinDefault(
+      construction,
+      'AlsRigUnit_ChainLength/DescendantItem/Name',
+    )).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.construction.legLengthDescendantItem,
+    )
+    expectControlRigLink(
+      construction,
+      'RefreshFootOffset.Input',
+      'RefreshPelvisOffset.Input',
+    )
+    expectControlRigLink(
+      construction,
+      'RefreshPelvisOffset.Input',
+      'RefreshFootIk.Input',
+    )
+
+    expect(Number(controlRigPinDefault(
+      trace,
+      'AlsRigUnit_FootOffset/TraceDistanceUpward',
+    ))).toBe(ALS_CONTROL_RIG_FOOT_IK.trace.traceDistanceUpward)
+    expect(Number(controlRigPinDefault(
+      trace,
+      'AlsRigUnit_FootOffset/TraceDistanceDownward',
+    ))).toBe(ALS_CONTROL_RIG_FOOT_IK.trace.traceDistanceDownward)
+    expect(controlRigPinDefault(
+      trace,
+      'AlsRigUnit_FootOffset/TraceChannel',
+    )).toBe('ECC_Visibility')
+    expect(controlRigPinDefault(
+      trace,
+      'AlsRigUnit_FootOffset/bDrawDebug',
+    )).toBe('False')
+    expect(Number(controlRigPinDefault(
+      trace,
+      'LessEqual_1/B',
+    ))).toBe(ALS_CONTROL_RIG_FOOT_IK.trace.footIkAmountThreshold)
+
+    expect(Number(controlRigPinDefault(
+      pelvis,
+      'Clamp/Minimum',
+    ))).toBe(ALS_CONTROL_RIG_FOOT_IK.pelvis.minimumOffset)
+    expect(Number(controlRigPinDefault(
+      pelvis,
+      'Clamp/Maximum',
+    ))).toBe(ALS_CONTROL_RIG_FOOT_IK.pelvis.maximumOffset)
+    expect(Number(controlRigPinDefault(
+      pelvis,
+      'MathFloatMul_2/B',
+    ))).toBe(ALS_CONTROL_RIG_FOOT_IK.pelvis.amountScale)
+    expect(Number(controlRigPinDefault(
+      pelvis,
+      'Greater_1/B',
+    ))).toBe(ALS_CONTROL_RIG_FOOT_IK.pelvis.relevanceThreshold)
+    expect(Number(controlRigPinDefault(
+      pelvis,
+      'SpringInterpV2_1_1/Strength',
+    ))).toBe(ALS_CONTROL_RIG_FOOT_IK.pelvis.spring.strength)
+    expect(Number(controlRigPinDefault(
+      pelvis,
+      'SpringInterpV2_1_1/CriticalDamping',
+    ))).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.pelvis.spring.criticalDamping,
+    )
+    expect(Number(controlRigPinDefault(
+      pelvis,
+      'SpringInterpV2_1_1/TargetVelocityAmount',
+    ))).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.pelvis.spring.targetVelocityAmount,
+    )
+    expect(controlRigPinDefault(
+      pelvis,
+      'SpringInterpV2_1_1/bUseCurrentInput',
+    )).toBe('false')
+    expect(controlRigPinDefault(
+      pelvis,
+      'SpringInterpV2_1_1/bInitializeFromTarget',
+    )).toBe('true')
+
+    expect(Number(controlRigPinDefault(
+      apply,
+      'AlsRigUnit_ApplyFootOffsetLocation/MaxLegStretchRatio',
+    ))).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.footLocation.maximumLegStretchRatio,
+    )
+    expect(Number(controlRigPinDefault(
+      apply,
+      'AlsRigUnit_ApplyFootOffsetLocation/MinPelvisToFootDistanceZ',
+    ))).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.footLocation
+        .minimumPelvisToFootDistance,
+    )
+    expect(Number(controlRigPinDefault(
+      apply,
+      'AlsRigUnit_ApplyFootOffsetLocation/OffsetInterpolationFrequency',
+    ))).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.footLocation.interpolationFrequency,
+    )
+    expect(Number(controlRigPinDefault(
+      apply,
+      'AlsRigUnit_ApplyFootOffsetLocation/OffsetInterpolationDampingRatio',
+    ))).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.footLocation
+        .interpolationDampingRatio,
+    )
+    expect(Number(controlRigPinDefault(
+      apply,
+      'AlsRigUnit_ApplyFootOffsetLocation/OffsetInterpolationTargetVelocityAmount',
+    ))).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.footLocation
+        .interpolationTargetVelocityAmount,
+    )
+    expect(Number(controlRigPinDefault(
+      apply,
+      'MathVectorScale_2/Factor',
+    ))).toBe(ALS_CONTROL_RIG_FOOT_IK.pole.distance)
+    expect(Number(controlRigPinDefault(
+      apply,
+      'AlsRigVMFunction_ExponentialDecayVector/Lambda',
+    ))).toBe(ALS_CONTROL_RIG_FOOT_IK.pole.interpolationLambda)
+    expect(controlRigPinDefault(
+      apply,
+      'AlsRigUnit_ApplyFootOffsetRotation/LimitOffset',
+    )).toBe('(X=0.001903,Y=-0.043578,Z=0.043578,W=0.998097)')
+    expect(Number(controlRigPinDefault(
+      apply,
+      'AlsRigUnit_ApplyFootOffsetRotation/Swing1LimitAngle',
+    ))).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.footRotation.swing1LimitAngle,
+    )
+    expect(Number(controlRigPinDefault(
+      apply,
+      'AlsRigUnit_ApplyFootOffsetRotation/Swing2LimitAngle',
+    ))).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.footRotation.swing2LimitAngle,
+    )
+    expect(Number(controlRigPinDefault(
+      apply,
+      'AlsRigUnit_ApplyFootOffsetRotation/TwistLimitAngle',
+    ))).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.footRotation.twistLimitAngle,
+    )
+    expect(Number(controlRigPinDefault(
+      apply,
+      'AlsRigUnit_ApplyFootOffsetRotation/OffsetInterpolationSpeed',
+    ))).toBe(
+      ALS_CONTROL_RIG_FOOT_IK.footRotation.interpolationSpeed,
+    )
+    expect(controlRigPinDefault(
+      apply,
+      'TwoBoneIKSimplePerItem/PoleVectorKind',
+    )).toBe(ALS_CONTROL_RIG_FOOT_IK.twoBoneIk.poleVectorKind)
+    expect(Number(controlRigPinDefault(
+      apply,
+      'TwoBoneIKSimplePerItem/SecondaryAxisWeight',
+    ))).toBe(ALS_CONTROL_RIG_FOOT_IK.twoBoneIk.secondaryAxisWeight)
+    expect(controlRigPinDefault(
+      apply,
+      'TwoBoneIKSimplePerItem/bEnableStretch',
+    )).toBe('false')
+    expect(controlRigPinDefault(
+      apply,
+      'TwoBoneIKSimplePerItem/bPropagateToChildren',
+    )).toBe('true')
+    expectControlRigLink(
+      apply,
+      'Entry.Input',
+      'AlsRigUnit_ApplyFootOffsetLocation.ExecuteContext',
+    )
+    expectControlRigLink(
+      apply,
+      'AlsRigUnit_ApplyFootOffsetLocation.ExecuteContext',
+      'TwoBoneIKSimplePerItem.ExecuteContext',
+    )
+    expectControlRigLink(
+      apply,
+      'TwoBoneIKSimplePerItem.ExecuteContext',
+      'AlsRigUnit_ApplyFootOffsetRotation.ExecuteContext',
+    )
+
+    expect(ALS_CONTROL_RIG_FOOT_IK.feet.map((foot) => foot.side))
+      .toEqual(['left', 'right'])
+    for (
+      let footIndex = 0;
+      footIndex < ALS_CONTROL_RIG_FOOT_IK.feet.length;
+      footIndex++
+    ) {
+      const definition = ALS_CONTROL_RIG_FOOT_IK.feet[footIndex]
+      const node = footIndex === 0 ? 'ApplyFootIk' : 'ApplyFootIk_1'
+      const curveNode = footIndex === 0
+        ? 'GetCurveValue_2'
+        : 'GetCurveValue_2_1'
+      expect(controlRigPinDefault(
+        refresh,
+        `${node}/PelvisItem/Name`,
+      )).toBe(definition.pelvisItem)
+      expect(controlRigPinDefault(
+        refresh,
+        `${node}/ThighItem/Name`,
+      )).toBe(definition.thighItem)
+      expect(controlRigPinDefault(
+        refresh,
+        `${node}/CalfItem/Name`,
+      )).toBe(definition.calfItem)
+      expect(controlRigPinDefault(
+        refresh,
+        `${node}/FootItem/Name`,
+      )).toBe(definition.footItem)
+      expect(Number(controlRigPinDefault(
+        refresh,
+        `${node}/PrimaryAxis/X`,
+      ))).toBe(definition.primaryAxis[0])
+      expect(Number(controlRigPinDefault(
+        refresh,
+        `${node}/SecondaryAxis/Y`,
+      ))).toBe(definition.secondaryAxis[1])
+      expect(controlRigPinDefault(
+        refresh,
+        `${curveNode}/Curve`,
+      )).toBe(definition.curveName)
+    }
+    expectControlRigLink(refresh, 'Entry.Input', 'ApplyFootIk.Input')
+    expectControlRigLink(
+      refresh,
+      'ApplyFootIk.Input',
+      'ApplyFootIk_1.Input',
+    )
+  })
+
+  it('derives the authored foot height and shared left-leg chain length', () => {
+    const runtime = createAlsControlRigFootIkRuntime(
+      createFootTestRig(),
+    )
+    expect(runtime.footHeight).toBeCloseTo(0.1, 6)
+    expect(runtime.legLength).toBeCloseTo(0.8, 6)
+  })
+})
+
+describe('CR_Als pure foot offset and pelvis stage', () => {
+  it('traces left then right from absolute +50 cm to -80 cm in rig space', () => {
+    const rig = createFootTestRig()
+    const pose = createTestPose(rig)
+    const requests: {
+      side: string
+      start: THREE.Vector3
+      end: THREE.Vector3
+    }[] = []
+    evaluateAlsControlRigFootIk(
+      createAlsControlRigFootIkRuntime(rig),
+      footTestInput(
+        pose,
+        new Map([
+          ['FootLeftIk', 1],
+          ['FootRightIk', 1],
+        ]),
+        (request) => {
+          requests.push({
+            side: request.side,
+            start: request.start.clone(),
+            end: request.end.clone(),
+          })
+          return {
+            impactPoint: new THREE.Vector3(
+              request.start.x,
+              0,
+              request.start.z,
+            ),
+            impactNormal: new THREE.Vector3(0, 1, 0),
+          }
+        },
+      ),
+    )
+
+    expect(requests.map((request) => request.side))
+      .toEqual(['left', 'right'])
+    expectVectorClose(
+      requests[0].start,
+      new THREE.Vector3(0, 0.5, 0.12),
+    )
+    expectVectorClose(
+      requests[0].end,
+      new THREE.Vector3(0, -0.8, 0.12),
+    )
+    expectVectorClose(
+      requests[1].start,
+      new THREE.Vector3(0, 0.5, -0.12),
+    )
+  })
+
+  it('uses the authored allowed-or-negligible trace gate and resets disabled output', () => {
+    const rig = createFootTestRig()
+    const runtime = createAlsControlRigFootIkRuntime(rig)
+    const pose = createTestPose(rig)
+    const sides: string[] = []
+    const trace: AlsControlRigFootOffsetTrace = (request) => {
+      sides.push(request.side)
+      return {
+        impactPoint: new THREE.Vector3(0, 0.2, 0),
+        impactNormal: new THREE.Vector3(0, 1, 0),
+      }
+    }
+
+    evaluateAlsControlRigFootIk(
+      runtime,
+      footTestInput(
+        pose,
+        new Map([
+          ['FootLeftIk', 0],
+          ['FootRightIk', 1],
+        ]),
+        trace,
+        { bFootOffsetAllowed: false },
+      ),
+    )
+    expect(sides).toEqual(['left'])
+    expect(runtime.feet[0].footOffsetLocation).toBeCloseTo(0.2)
+    expect(runtime.feet[1].footOffsetLocation).toBe(0)
+    expect(runtime.feet[1].footOffsetNormal.toArray())
+      .toEqual([0, 1, 0])
+  })
+
+  it('applies slope-height correction and accepts every blocking hit normal', () => {
+    const rig = createFootTestRig()
+    const runtime = createAlsControlRigFootIkRuntime(rig)
+    const pose = createTestPose(rig)
+    const normal = new THREE.Vector3(
+      0,
+      Math.SQRT1_2,
+      Math.SQRT1_2,
+    )
+    evaluateAlsControlRigFootIk(
+      runtime,
+      footTestInput(
+        pose,
+        new Map(),
+        groundTrace(0, 0, normal),
+      ),
+    )
+    const expected =
+      runtime.footHeight / normal.y - runtime.footHeight
+    expect(runtime.feet[0].footOffsetLocation)
+      .toBeCloseTo(expected, 7)
+    expectVectorClose(runtime.feet[0].footOffsetNormal, normal, 7)
+  })
+
+  it('uses min(left,right), clamps to -30/+40 cm, and weights the pelvis write', () => {
+    const rig = createFootTestRig()
+    const runtime = createAlsControlRigFootIkRuntime(rig)
+    const pose = createTestPose(rig)
+    evaluateAlsControlRigFootIk(
+      runtime,
+      footTestInput(
+        pose,
+        new Map([
+          ['FootLeftIk', 1],
+          ['FootRightIk', 0],
+        ]),
+        groundTrace(-1, 0.8),
+      ),
+    )
+    const transforms = componentTransforms(rig, pose)
+
+    expect(runtime.pelvisOffsetAmount).toBe(0.5)
+    expect(runtime.pelvisOffset).toBeCloseTo(-0.3, 7)
+    // The stored spring result is -0.3 m; FRigUnit_SetTranslation writes at curve-average 0.5.
+    expect(transforms[index(rig, 'pelvis')].position.y)
+      .toBeCloseTo(0.85, 6)
+  })
+
+  it('keeps every local transform bit-identical at zero weights while advancing foot state', () => {
+    const rig = createFootTestRig()
+    const runtime = createAlsControlRigFootIkRuntime(rig)
+    const pose = createTestPose(rig)
+    const before = pose.data.slice()
+    evaluateAlsControlRigFootIk(
+      runtime,
+      footTestInput(pose, new Map(), groundTrace(0.1)),
+    )
+
+    expect(pose.data).toEqual(before)
+    expect(runtime.pelvisOffsetAmount).toBe(0)
+    expect(runtime.feet[0].offsetLocationInitialized).toBe(true)
+    expect(runtime.feet[0].poleLocationInitialized).toBe(true)
+    expect(runtime.feet[0].offsetNormalInitialized).toBe(true)
+  })
+
+  it('snaps each foot-location unit twice before starting its authored spring damper', () => {
+    const rig = createFootTestRig()
+    const runtime = createAlsControlRigFootIkRuntime(rig)
+    const pose = createTestPose(rig)
+    const curves = new Map<string, number>()
+
+    evaluateAlsControlRigFootIk(
+      runtime,
+      footTestInput(pose, curves, groundTrace(0)),
+    )
+    expect(runtime.feet[0].offsetLocation).toBeCloseTo(0, 7)
+    expect(runtime.feet[0].offsetLocationSpring.valid).toBe(false)
+
+    evaluateAlsControlRigFootIk(
+      runtime,
+      footTestInput(pose, curves, groundTrace(0.1)),
+    )
+    expect(runtime.feet[0].offsetLocation).toBeCloseTo(0.1, 7)
+    expect(runtime.feet[0].offsetLocationSpring.valid).toBe(true)
+
+    evaluateAlsControlRigFootIk(
+      runtime,
+      footTestInput(pose, curves, groundTrace(0.2)),
+    )
+    expect(runtime.feet[0].offsetLocation).toBeGreaterThan(0.1)
+    expect(runtime.feet[0].offsetLocation).toBeLessThan(0.2)
+  })
+
+  it('runs the exact no-stretch solve and propagates unchanged child locals', () => {
+    const rig = createFootTestRig()
+    const runtime = createAlsControlRigFootIkRuntime(rig)
+    const pose = createTestPose(rig)
+    const ballLeft = index(rig, 'ball_l')
+    const ballLeftLocal = pose.positions.slice(
+      ballLeft * 3,
+      ballLeft * 3 + 3,
+    )
+    evaluateAlsControlRigFootIk(
+      runtime,
+      footTestInput(
+        pose,
+        new Map([
+          ['FootLeftIk', 1],
+          ['FootRightIk', 1],
+        ]),
+        groundTrace(0),
+      ),
+    )
+    const transforms = componentTransforms(rig, pose)
+    const thighLeft = transforms[index(rig, 'thigh_l')].position
+    const footLeft = transforms[index(rig, 'foot_l')].position
+
+    expect(footLeft.distanceTo(thighLeft))
+      .toBeCloseTo(runtime.legLength * 0.99, 5)
+    expect([...pose.positions.slice(
+      ballLeft * 3,
+      ballLeft * 3 + 3,
+    )]).toEqual([...ballLeftLocal])
+  })
+
+  it('conjugates the authored Unreal axes into the glTF pose basis', () => {
+    const rig = createFootTestRig()
+    const pose = createTestPose(rig)
+    evaluateAlsControlRigFootIk(
+      createAlsControlRigFootIkRuntime(rig),
+      footTestInput(
+        pose,
+        new Map([
+          ['FootLeftIk', 1],
+          ['FootRightIk', 1],
+        ]),
+        groundTrace(0),
+      ),
+    )
+    const transforms = componentTransforms(rig, pose)
+
+    for (const side of ['l', 'r'] as const) {
+      const thigh = transforms[index(rig, `thigh_${side}`)]
+      const calf = transforms[index(rig, `calf_${side}`)]
+      const foot = transforms[index(rig, `foot_${side}`)]
+      const primary = new THREE.Vector3(
+        side === 'l' ? -1 : 1,
+        0,
+        0,
+      )
+      const secondary = new THREE.Vector3(
+        0,
+        0,
+        side === 'l' ? 1 : -1,
+      )
+      const upperDirection = calf.position.clone()
+        .sub(thigh.position)
+        .normalize()
+      const lowerDirection = foot.position.clone()
+        .sub(calf.position)
+        .normalize()
+      expect(
+        primary.clone().applyQuaternion(thigh.rotation)
+          .dot(upperDirection),
+      ).toBeGreaterThan(0.99999)
+      expect(
+        primary.clone().applyQuaternion(calf.rotation)
+          .dot(lowerDirection),
+      ).toBeGreaterThan(0.99999)
+
+      const bend = calf.position.clone().sub(
+        foot.position.clone().add(thigh.position).multiplyScalar(0.5),
+      )
+      const upperBend = bend.clone()
+        .addScaledVector(
+          upperDirection,
+          -bend.dot(upperDirection),
+        )
+        .normalize()
+      expect(
+        secondary.clone().applyQuaternion(thigh.rotation)
+          .dot(upperBend),
+      ).toBeGreaterThan(0.99999)
+    }
+  })
+
+  it('returns the supplied pose buffer for post-pose pipeline chaining', () => {
+    const rig = createFootTestRig()
+    const pose = createTestPose(rig)
+    expect(evaluateAlsControlRigFootIk(
+      createAlsControlRigFootIkRuntime(rig),
+      footTestInput(pose, new Map(), () => null),
     )).toBe(pose)
   })
 })
