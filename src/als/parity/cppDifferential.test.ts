@@ -22,6 +22,7 @@ import type {
   FAlsVelocityBlendState,
 } from '../reference/AlsAnimationInstance.reference'
 import {
+  getRelativeAccelerationAmount,
   refreshPose,
   refreshRotateInPlace,
   refreshTurnInPlace,
@@ -44,8 +45,20 @@ import {
   exponentialDecay,
 } from '../State/AlsGroundedState'
 import {
+  createAlsLeanState,
+  refreshGroundedLean,
+  refreshInAirLean,
+} from '../State/AlsLeanState'
+import {
+  createAlsLookState,
+  refreshLook,
+} from '../State/AlsLookState'
+import {
+  createAlsSpineState,
+  refreshSpine,
+} from '../State/AlsSpineState'
+import {
   ALS_PARITY_DELTA_REPORT,
-  getAlsParityDelta,
 } from './deltaReport'
 
 const PROPERTY_CASES = 320
@@ -84,6 +97,38 @@ function referenceVelocityState(
     BackwardAmount: state.backwardAmount,
     LeftAmount: state.leftAmount,
     RightAmount: state.rightAmount,
+  }
+}
+
+function referenceLeanState(state: ReturnType<typeof createAlsLeanState>) {
+  return {
+    RightAmount: state.rightAmount,
+    ForwardAmount: state.forwardAmount,
+  }
+}
+
+function referenceLookState(state: ReturnType<typeof createAlsLookState>) {
+  return {
+    bInitializationRequired: state.initializationRequired,
+    WorldYawAngle: state.worldYawAngle,
+    YawAngle: state.yawAngle,
+    PitchAngle: state.pitchAngle,
+    YawForwardAmount: state.yawForwardAmount,
+    YawLeftAmount: state.yawLeftAmount,
+    YawRightAmount: state.yawRightAmount,
+  }
+}
+
+function referenceSpineState(state: ReturnType<typeof createAlsSpineState>) {
+  return {
+    bSpineRotationAllowed: state.spineRotationAllowed,
+    SpineAmount: state.spineAmount,
+    SpineAmountScale: state.spineAmountScale,
+    SpineAmountBias: state.spineAmountBias,
+    LastYawAngle: state.lastYawAngle,
+    LastActorYawAngle: state.lastActorYawAngle,
+    CurrentYawAngle: state.currentYawAngle,
+    YawAngle: state.yawAngle,
   }
 }
 
@@ -251,24 +296,326 @@ describe('ALS C++ differential oracle', () => {
     expect(runtime.forwardAmount).toBe(reference.ForwardAmount)
   })
 
-  it(`RefreshPose gait family matches for ${PROPERTY_CASES} seeded and threshold cases`, () => {
+  it(`GetRelativeAccelerationAmount matches for ${PROPERTY_CASES} seeded and 3D clamp cases`, () => {
+    const random = seededRandom(0xacc311)
+    const maximumEdges = [0, 1e-8, 1e-4, 1.00001e-4, 1, 5]
+    for (let index = 0; index < PROPERTY_CASES; index++) {
+      const actorYaw = range(random, -Math.PI, Math.PI)
+      const acceleration = index === 0
+        ? { x: 1, y: 0, z: 10 }
+        : {
+            x: range(random, -20, 20),
+            y: range(random, -20, 20),
+            z: range(random, -20, 20),
+          }
+      const velocity = index === 1
+        ? { x: -1, y: 0, z: 0 }
+        : {
+            x: range(random, -10, 10),
+            y: range(random, -10, 10),
+            z: range(random, -10, 10),
+          }
+      const maxAcceleration =
+        maximumEdges[index] ?? range(random, 0, 20)
+      const maxBrakingDeceleration =
+        maximumEdges[(index + 2) % maximumEdges.length]
+        ?? range(random, 0, 20)
+
+      const runtime = getRelativeAccelerationAmount({
+        actorYaw,
+        acceleration,
+        velocity,
+        maxAcceleration,
+        maxBrakingDeceleration,
+      })
+      const reference = GetRelativeAccelerationAmount({
+        RotationQuaternion: yawQuaternion(actorYaw),
+        Acceleration: {
+          X: acceleration.x,
+          Y: acceleration.y,
+          Z: acceleration.z,
+        },
+        Velocity: {
+          X: velocity.x,
+          Y: velocity.y,
+          Z: velocity.z,
+        },
+        MaxAcceleration: maxAcceleration,
+        MaxBrakingDeceleration: maxBrakingDeceleration,
+      })
+
+      expectClose(runtime.x, reference.X)
+      expectClose(runtime.y, reference.Y)
+    }
+  })
+
+  it(`RefreshPose matches all fields for ${PROPERTY_CASES} seeded and threshold cases`, () => {
     const random = seededRandom(0x0badf00d)
     const edges = [-1, 0, 1e-8, 1, 2, 3, 4]
     for (let index = 0; index < PROPERTY_CASES; index++) {
       const gait = edges[index] ?? range(random, -2, 5)
       const grounded = index === 0
         ? 0
-        : index === 1 ? 1e-8 : range(random, 0, 1)
-      const reference = RefreshPoseReference({
-        PoseGait: gait,
+        : index === 1
+          ? 1e-8
+          : index === 2
+            ? 1.00001e-8
+            : range(random, -0.5, 1.5)
+      const curves = {
         PoseGrounded: grounded,
-      })
-      const runtime = refreshPose(gait)
+        PoseInAir: range(random, -0.5, 1.5),
+        PoseStanding: range(random, -0.5, 1.5),
+        PoseCrouching: range(random, -0.5, 1.5),
+        PoseMoving: range(random, -0.5, 1.5),
+        PoseGait: gait,
+      }
+      const reference = RefreshPoseReference(curves)
+      const runtime = refreshPose(new Map(Object.entries(curves)))
 
+      expectClose(runtime.groundedAmount, reference.GroundedAmount)
+      expectClose(runtime.inAirAmount, reference.InAirAmount)
+      expectClose(runtime.standingAmount, reference.StandingAmount)
+      expectClose(runtime.crouchingAmount, reference.CrouchingAmount)
+      expectClose(runtime.movingAmount, reference.MovingAmount)
       expectClose(runtime.amount, reference.GaitAmount)
       expectClose(runtime.walking, reference.GaitWalkingAmount)
       expectClose(runtime.running, reference.GaitRunningAmount)
       expectClose(runtime.sprinting, reference.GaitSprintingAmount)
+      expectClose(runtime.unweightedAmount, reference.UnweightedGaitAmount)
+      expectClose(
+        runtime.unweightedWalking,
+        reference.UnweightedGaitWalkingAmount,
+      )
+      expectClose(
+        runtime.unweightedRunning,
+        reference.UnweightedGaitRunningAmount,
+      )
+      expectClose(
+        runtime.unweightedSprinting,
+        reference.UnweightedGaitSprintingAmount,
+      )
+    }
+  })
+
+  it(`RefreshGroundedLean matches for ${PROPERTY_CASES} seeded and snap cases`, () => {
+    const random = seededRandom(0x1ea0cafe)
+    const deltaEdges = [0, 1e-8, 1 / 240, 1 / 60, 0.25]
+    const speedEdges = [0, 1e-8, 4, 20]
+    for (let index = 0; index < PROPERTY_CASES; index++) {
+      const runtime = createAlsLeanState()
+      runtime.rightAmount = range(random, -2, 2)
+      runtime.forwardAmount = range(random, -2, 2)
+      const reference = referenceLeanState(runtime)
+      const relativeAccelerationAmount = {
+        x: range(random, -1, 1),
+        y: range(random, -1, 1),
+      }
+      const pendingUpdate = index === 0 || random() < 0.2
+      const deltaTime =
+        deltaEdges[index] ?? range(random, 0, 0.5)
+      const leanInterpolationSpeed =
+        speedEdges[index] ?? range(random, 0, 20)
+
+      refreshGroundedLean(runtime, {
+        relativeAccelerationAmount,
+        pendingUpdate,
+        deltaTime,
+        leanInterpolationSpeed,
+      })
+      RefreshGroundedLean({
+        LeanState: reference,
+        RelativeAccelerationAmount: {
+          X: relativeAccelerationAmount.x,
+          Y: relativeAccelerationAmount.y,
+        },
+        bPendingUpdate: pendingUpdate,
+        DeltaTime: deltaTime,
+        LeanInterpolationSpeed: leanInterpolationSpeed,
+      })
+
+      expectClose(runtime.rightAmount, reference.RightAmount)
+      expectClose(runtime.forwardAmount, reference.ForwardAmount)
+    }
+  })
+
+  it(`RefreshInAirLean matches for ${PROPERTY_CASES} seeded, unit, and snap cases`, () => {
+    const random = seededRandom(0x1ea1cafe)
+    const deltaEdges = [0, 1e-8, 1 / 240, 1 / 60, 0.25]
+    const speedEdges = [0, 1e-8, 4, 20]
+    for (let index = 0; index < PROPERTY_CASES; index++) {
+      const runtime = createAlsLeanState()
+      runtime.rightAmount = range(random, -2, 2)
+      runtime.forwardAmount = range(random, -2, 2)
+      const reference = referenceLeanState(runtime)
+      const relativeVelocity = {
+        x: range(random, -15, 15),
+        y: range(random, -15, 15),
+        z: range(random, -15, 15),
+      }
+      const verticalVelocity = range(random, -15, 15)
+      const leanAmountCurveValue = range(random, -2, 2)
+      const pendingUpdate = index === 0 || random() < 0.2
+      const deltaTime =
+        deltaEdges[index] ?? range(random, 0, 0.5)
+      const leanInterpolationSpeed =
+        speedEdges[index] ?? range(random, 0, 20)
+
+      refreshInAirLean(runtime, {
+        relativeVelocity,
+        verticalVelocity,
+        leanAmountCurve: () => leanAmountCurveValue,
+        pendingUpdate,
+        deltaTime,
+        leanInterpolationSpeed,
+      })
+      RefreshInAirLean({
+        LeanState: reference,
+        RelativeVelocity: {
+          X: relativeVelocity.x * 100,
+          Y: relativeVelocity.y * 100,
+          Z: relativeVelocity.z * 100,
+        },
+        VerticalVelocity: verticalVelocity * 100,
+        LeanAmountCurveValue: leanAmountCurveValue,
+        bPendingUpdate: pendingUpdate,
+        DeltaTime: deltaTime,
+        LeanInterpolationSpeed: leanInterpolationSpeed,
+      })
+
+      expectClose(runtime.rightAmount, reference.RightAmount)
+      expectClose(runtime.forwardAmount, reference.ForwardAmount)
+    }
+  })
+
+  it(`RefreshLook matches for ${PROPERTY_CASES} seeded and angle-edge cases`, () => {
+    const random = seededRandom(0x100cafe)
+    const angleEdges = [-180, -175, -90, 0, 90, 175, 180]
+    const modes = [
+      'VelocityDirection',
+      'ViewDirection',
+      'Aiming',
+    ] as const
+    for (let index = 0; index < PROPERTY_CASES; index++) {
+      const runtime = createAlsLookState()
+      runtime.initializationRequired = index === 0 || random() < 0.2
+      runtime.worldYawAngle =
+        angleEdges[index] ?? range(random, -180, 180)
+      runtime.yawAngle = range(random, -180, 180)
+      runtime.pitchAngle = range(random, -90, 90)
+      runtime.yawForwardAmount = range(random, 0, 1)
+      runtime.yawLeftAmount = range(random, 0, 1)
+      runtime.yawRightAmount = range(random, 0, 1)
+      const reference = referenceLookState(runtime)
+      const input = {
+        rotationMode: modes[index % modes.length],
+        actorYawAngle: range(random, -180, 180),
+        movementBaseHasRelativeRotation: random() < 0.25,
+        movementBaseDeltaRotationYaw: range(random, -180, 180),
+        hasInput: random() < 0.5,
+        inputYawAngle: range(random, -180, 180),
+        targetYawAngle: range(random, -180, 180),
+        viewYawAngle:
+          angleEdges[(index + 2) % angleEdges.length]
+          ?? range(random, -180, 180),
+        viewPitchAngle: range(random, -90, 90),
+        locomotionYawSpeed:
+          index < 3 ? [-1e-8, 0, 1e-8][index] : range(random, -500, 500),
+        deltaTime: index < 4
+          ? [0, 1e-8, 1 / 240, 1 / 60][index]
+          : range(random, 0, 0.5),
+      }
+      const settings = {
+        lookTowardsInputYawAngleInterpolationSpeed:
+          index === 1 ? 0 : range(random, 0, 20),
+        lookTowardsCameraRotationInterpolationSpeed:
+          index === 2 ? 0 : range(random, 0, 20),
+      }
+
+      refreshLook(runtime, input, settings)
+      RefreshLook({
+        LookState: reference,
+        RotationMode: input.rotationMode,
+        ActorYawAngle: input.actorYawAngle,
+        bMovementBaseHasRelativeRotation:
+          input.movementBaseHasRelativeRotation,
+        MovementBaseDeltaRotationYaw: input.movementBaseDeltaRotationYaw,
+        bHasInput: input.hasInput,
+        InputYawAngle: input.inputYawAngle,
+        TargetYawAngle: input.targetYawAngle,
+        ViewYawAngle: input.viewYawAngle,
+        ViewPitchAngle: input.viewPitchAngle,
+        LocomotionYawSpeed: input.locomotionYawSpeed,
+        DeltaTime: input.deltaTime,
+        LookTowardsInputYawAngleInterpolationSpeed:
+          settings.lookTowardsInputYawAngleInterpolationSpeed,
+        LookTowardsCameraRotationInterpolationSpeed:
+          settings.lookTowardsCameraRotationInterpolationSpeed,
+      })
+
+      expect(runtime.initializationRequired)
+        .toBe(reference.bInitializationRequired)
+      expectClose(runtime.worldYawAngle, reference.WorldYawAngle)
+      expectClose(runtime.yawAngle, reference.YawAngle)
+      expectClose(runtime.pitchAngle, reference.PitchAngle)
+      expectClose(runtime.yawForwardAmount, reference.YawForwardAmount)
+      expectClose(runtime.yawLeftAmount, reference.YawLeftAmount)
+      expectClose(runtime.yawRightAmount, reference.YawRightAmount)
+    }
+  })
+
+  it(`RefreshSpine matches for ${PROPERTY_CASES} seeded and weight-edge cases`, () => {
+    const random = seededRandom(0x5a1ecafe)
+    const amountEdges = [0, 1e-5, 1.00001e-5, 0.5, 0.999989, 0.99999, 1]
+    for (let index = 0; index < PROPERTY_CASES; index++) {
+      const runtime = createAlsSpineState()
+      runtime.spineRotationAllowed = random() < 0.5
+      runtime.spineAmount =
+        amountEdges[index] ?? range(random, 0, 1)
+      runtime.spineAmountScale = range(random, 0.1, 4)
+      runtime.spineAmountBias = range(random, -2, 2)
+      runtime.lastYawAngle = range(random, -180, 180)
+      runtime.currentYawAngle = range(random, -180, 180)
+      runtime.yawAngle = range(random, -180, 180)
+      runtime.lastActorYawAngle = range(random, -180, 180)
+      const reference = referenceSpineState(runtime)
+      const input = {
+        spineRotationAllowed: random() < 0.5,
+        spineBlendAmount: range(random, -0.5, 1.5),
+        deltaTime: index < 4
+          ? [0, 1e-8, 1 / 240, 1 / 60][index]
+          : range(random, 0, 0.5),
+        pendingUpdate: random() < 0.2,
+        viewYawAngle: range(random, -180, 180),
+        viewYawSpeed: range(random, -500, 500),
+        actorYawAngle: range(random, -180, 180),
+        movementBaseHasRelativeRotation: random() < 0.25,
+        movementBaseDeltaRotationYaw: range(random, -180, 180),
+      }
+
+      refreshSpine(runtime, input)
+      RefreshSpine({
+        SpineState: reference,
+        bSpineRotationAllowed: input.spineRotationAllowed,
+        SpineBlendAmount: input.spineBlendAmount,
+        DeltaTime: input.deltaTime,
+        bPendingUpdate: input.pendingUpdate,
+        ViewYawAngle: input.viewYawAngle,
+        ViewYawSpeed: input.viewYawSpeed,
+        ActorYawAngle: input.actorYawAngle,
+        bMovementBaseHasRelativeRotation:
+          input.movementBaseHasRelativeRotation,
+        MovementBaseDeltaRotationYaw: input.movementBaseDeltaRotationYaw,
+      })
+
+      expect(runtime.spineRotationAllowed)
+        .toBe(reference.bSpineRotationAllowed)
+      expectClose(runtime.spineAmount, reference.SpineAmount)
+      expectClose(runtime.spineAmountScale, reference.SpineAmountScale)
+      expectClose(runtime.spineAmountBias, reference.SpineAmountBias)
+      expectClose(runtime.lastYawAngle, reference.LastYawAngle)
+      expectClose(runtime.lastActorYawAngle, reference.LastActorYawAngle)
+      expectClose(runtime.currentYawAngle, reference.CurrentYawAngle)
+      expectClose(runtime.yawAngle, reference.YawAngle)
     }
   })
 
@@ -429,31 +776,6 @@ describe('ALS C++ differential oracle', () => {
     expect(runtimeState.activationDelay).toBe(referenceState.ActivationDelay)
   })
 
-  it.skip('UNPORTED SYSTEM cpp-relative-acceleration: GetRelativeAccelerationAmount has no runtime seam', () => {
-    void GetRelativeAccelerationAmount
-  })
-
-  it.skip('UNPORTED SYSTEM cpp-pose-unweighted: raw Pose* and UnweightedGaitAmount fields have no runtime seam', () => {
-    expect(getAlsParityDelta('cpp-pose-unweighted').category)
-      .toBe('unported system')
-  })
-
-  it.skip('UNPORTED SYSTEM cpp-lean: RefreshGroundedLean has no runtime state seam', () => {
-    void RefreshGroundedLean
-  })
-
-  it.skip('UNPORTED SYSTEM cpp-lean: RefreshInAirLean has no runtime state seam', () => {
-    void RefreshInAirLean
-  })
-
-  it.skip('UNPORTED SYSTEM cpp-look: RefreshLook interpolation and direction bias have no runtime seam', () => {
-    void RefreshLook
-  })
-
-  it.skip('UNPORTED SYSTEM cpp-spine: RefreshSpine amount/scale/bias machinery has no runtime seam', () => {
-    void RefreshSpine
-  })
-
   it.skip('UNPORTED SYSTEM cpp-foot-lock: teleport/base-change/latch/decrease/angle-limit state has no runtime seam', () => {
     void ProcessFootLockTeleport
     void ProcessFootLockBaseChange
@@ -476,12 +798,7 @@ describe('ALS C++ differential oracle', () => {
     expect(cppDeltaIds).toEqual([
       'cpp-foot-lock',
       'cpp-ground-prediction',
-      'cpp-lean',
-      'cpp-look',
-      'cpp-pose-unweighted',
       'cpp-quick-stop',
-      'cpp-relative-acceleration',
-      'cpp-spine',
     ])
   })
 })

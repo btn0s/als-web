@@ -1,12 +1,36 @@
 export interface AlsPoseState {
+  groundedAmount: number
+  inAirAmount: number
+  standingAmount: number
+  crouchingAmount: number
+  movingAmount: number
   amount: number
   walking: number
   running: number
   sprinting: number
+  unweightedAmount: number
+  unweightedWalking: number
+  unweightedRunning: number
+  unweightedSprinting: number
 }
 
 export function createAlsPoseState(): AlsPoseState {
-  return { amount: 0, walking: 0, running: 0, sprinting: 0 }
+  // FAlsPoseState defaults, AlsPoseState.h:10-47.
+  return {
+    groundedAmount: 1,
+    inAirAmount: 0,
+    standingAmount: 1,
+    crouchingAmount: 0,
+    movingAmount: 0,
+    amount: 0,
+    walking: 0,
+    running: 0,
+    sprinting: 0,
+    unweightedAmount: 0,
+    unweightedWalking: 0,
+    unweightedRunning: 0,
+    unweightedSprinting: 0,
+  }
 }
 
 export interface AlsStanceTransitionCurveState {

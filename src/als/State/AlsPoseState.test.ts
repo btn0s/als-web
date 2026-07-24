@@ -2,17 +2,68 @@ import { describe, expect, it } from 'vitest'
 import { compileClipCurveSamplers } from '../../engine/curves'
 import { refreshPose } from '../AlsAnimationInstance'
 import {
+  createAlsPoseState,
   createAlsStanceTransitionCurveState,
   refreshStanceTransition,
 } from './AlsPoseState'
 
 describe('ALS pose state', () => {
+  it('uses the exact FAlsPoseState field defaults', () => {
+    expect(createAlsPoseState()).toEqual({
+      groundedAmount: 1,
+      inAirAmount: 0,
+      standingAmount: 1,
+      crouchingAmount: 0,
+      movingAmount: 0,
+      amount: 0,
+      walking: 0,
+      running: 0,
+      sprinting: 0,
+      unweightedAmount: 0,
+      unweightedWalking: 0,
+      unweightedRunning: 0,
+      unweightedSprinting: 0,
+    })
+  })
+
   it('segments PoseGait with walking/running/sprinting overlapping ramps', () => {
-    expect(refreshPose(2.5)).toEqual({
+    expect(refreshPose(new Map([
+      ['PoseGrounded', 0.5],
+      ['PoseInAir', 0.25],
+      ['PoseStanding', 0.75],
+      ['PoseCrouching', 0.25],
+      ['PoseMoving', 0.8],
+      ['PoseGait', 1.25],
+    ]))).toEqual({
+      groundedAmount: 0.5,
+      inAirAmount: 0.25,
+      standingAmount: 0.75,
+      crouchingAmount: 0.25,
+      movingAmount: 0.8,
+      amount: 1.25,
+      walking: 1,
+      running: 0.25,
+      sprinting: 0,
+      unweightedAmount: 2.5,
+      unweightedWalking: 1,
+      unweightedRunning: 1,
+      unweightedSprinting: 0.5,
+    })
+  })
+
+  it('does not divide by PoseGrounded at or below UE_SMALL_NUMBER', () => {
+    expect(refreshPose(new Map([
+      ['PoseGrounded', 1e-8],
+      ['PoseGait', 2.5],
+    ]))).toMatchObject({
       amount: 2.5,
       walking: 1,
       running: 1,
       sprinting: 0.5,
+      unweightedAmount: 2.5,
+      unweightedWalking: 1,
+      unweightedRunning: 1,
+      unweightedSprinting: 0.5,
     })
   })
 })

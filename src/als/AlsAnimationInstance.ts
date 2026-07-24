@@ -76,6 +76,7 @@ import {
   createVelocityBlend,
   stepVelocityBlend,
 } from './State/AlsGroundedState'
+import type { Velocity3 } from './State/AlsGroundedState'
 import {
   createAlsPoseState,
   createAlsStanceTransitionCurveState,
@@ -98,6 +99,10 @@ import {
   FOOT_RIGHT_LOCK_CURVE_NAME,
   POSE_CROUCHING_CURVE_NAME,
   POSE_GAIT_CURVE_NAME,
+  POSE_GROUNDED_CURVE_NAME,
+  POSE_IN_AIR_CURVE_NAME,
+  POSE_MOVING_CURVE_NAME,
+  POSE_STANDING_CURVE_NAME,
   REGION_PREDICATES,
   ROTATION_YAW_SPEED_CURVE_NAME,
 } from './Utility/AlsConstants'
@@ -242,6 +247,7 @@ export interface AlsAnimationInstanceState {
   footLeftLock: number
   footRightLock: number
   rotationYawSpeed: number
+  readonly pose: AlsPoseState
 }
 
 export interface AlsAnimationInstance {
@@ -619,17 +625,18 @@ export function createAlsAnimationInstance(gltf: {
   let rotateClip: RuntimeClip | null = null
   let rotateClipTime = 0
   let rotateBlendWeight = 0
+  const gaitAmounts = createAlsPoseState()
   const state: AlsAnimationInstanceState = {
     crouchingAmount: 0,
     footLeftLock: 0,
     footRightLock: 0,
     rotationYawSpeed: 0,
+    pose: gaitAmounts,
   }
   const velocityBlend = createVelocityBlend()
   const velocityTarget = createVelocityBlend()
   let velocityInitialized = false
   const directionWeights = createSixDirectionWeights()
-  const gaitAmounts = createAlsPoseState()
   const table = createWeightTable()
   const rifleSourceWeights = { poses: 1, runArms: 0, sprintArms: 0 }
   const input: WeightTableInput = {
@@ -991,6 +998,9 @@ export function createAlsAnimationInstance(gltf: {
       },
       gaitAmounts.amount,
     )
+    // #region agent-log
+    normalDebugWeights.locomotionCadence = locomotionCadence
+    // #endregion agent-log
     for (const member of locomotionSyncGroup.members) {
       member.playRate = locomotionCadence * member.duration
     }
@@ -1094,12 +1104,10 @@ export function createAlsAnimationInstance(gltf: {
     state.rotationYawSpeed =
       finalCurves.get(ROTATION_YAW_SPEED_CURVE_NAME)
       ?? graphRotationYawSpeed
-    const gaitAmount = finalCurves.get(POSE_GAIT_CURVE_NAME)
-      ?? fallbackGaitAmount
-    refreshPose(
-      gaitAmount,
-      gaitAmounts,
-    )
+    if (!finalCurves.has(POSE_GAIT_CURVE_NAME)) {
+      finalCurves.set(POSE_GAIT_CURVE_NAME, fallbackGaitAmount)
+    }
+    refreshPose(finalCurves, gaitAmounts)
 
     for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) {
       normalDebugWeights[role] = weights[role]
@@ -1112,11 +1120,22 @@ export function createAlsAnimationInstance(gltf: {
             : 0
       }
     }
-    normalDebugWeights.groundedAmount = weights.groundedAmount
+    normalDebugWeights.groundedAmount = gaitAmounts.groundedAmount
+    normalDebugWeights.inAirAmount = gaitAmounts.inAirAmount
+    normalDebugWeights.standingAmount = gaitAmounts.standingAmount
+    normalDebugWeights.crouchingPoseAmount = gaitAmounts.crouchingAmount
+    normalDebugWeights.movingAmount = gaitAmounts.movingAmount
     normalDebugWeights.gaitAmount = gaitAmounts.amount
     normalDebugWeights.gaitWalkingAmount = gaitAmounts.walking
     normalDebugWeights.gaitRunningAmount = gaitAmounts.running
     normalDebugWeights.gaitSprintingAmount = gaitAmounts.sprinting
+    normalDebugWeights.unweightedGaitAmount = gaitAmounts.unweightedAmount
+    normalDebugWeights.unweightedGaitWalkingAmount =
+      gaitAmounts.unweightedWalking
+    normalDebugWeights.unweightedGaitRunningAmount =
+      gaitAmounts.unweightedRunning
+    normalDebugWeights.unweightedGaitSprintingAmount =
+      gaitAmounts.unweightedSprinting
     normalDebugWeights.locomotionMarkerSync = syncResult.usedMarkerSync ? 1 : 0
     normalDebugWeights[POSE_CROUCHING_CURVE_NAME] = state.crouchingAmount
     normalDebugWeights[FOOT_LEFT_LOCK_CURVE_NAME] = state.footLeftLock
@@ -1155,15 +1174,79 @@ export const refreshTurnInPlace = refreshTurnInPlaceState
 /** ALS `RefreshRotateInPlace`; pure state implementation lives at its mirrored State path. */
 export const refreshRotateInPlace = refreshRotateInPlaceState
 
-/** ALS `RefreshPose` gait ramps (AlsAnimationInstance.cpp:313-351). */
+/**
+ * ALS `GetRelativeAccelerationAmount` (AlsAnimationInstance.cpp:713-733).
+ *
+ * Linear inputs may use any consistent unit. The clamp deliberately includes local Z before the
+ * returned animation state discards it; clamping only XY overstates planar lean while airborne.
+ */
+export function getRelativeAccelerationAmount(input: {
+  readonly actorYaw: number
+  readonly acceleration: Readonly<Velocity3>
+  readonly velocity: Readonly<Velocity3>
+  readonly maxAcceleration: number
+  readonly maxBrakingDeceleration: number
+}): { x: number; y: number } {
+  const dot =
+    input.acceleration.x * input.velocity.x
+    + input.acceleration.y * input.velocity.y
+    + input.acceleration.z * input.velocity.z
+  const maximum = dot >= 0
+    ? input.maxAcceleration
+    : input.maxBrakingDeceleration
+  // UE_KINDA_SMALL_NUMBER, Runtime/Core/Public/Math/UnrealMathUtility.h.
+  if (maximum <= 1e-4) return { x: 0, y: 0 }
+
+  const cosine = Math.cos(input.actorYaw)
+  const sine = Math.sin(input.actorYaw)
+  let x =
+    input.acceleration.x * cosine
+    + input.acceleration.y * sine
+  let y =
+    -input.acceleration.x * sine
+    + input.acceleration.y * cosine
+  const z = input.acceleration.z
+  const scaledLength = Math.hypot(x, y, z) / maximum
+  if (scaledLength > 1) {
+    x /= scaledLength
+    y /= scaledLength
+  }
+  return { x: x / maximum, y: y / maximum }
+}
+
+/** ALS `RefreshPose` exact curve pass-through and gait ramps (cpp:313-351). */
 export function refreshPose(
-  gaitAmount: number,
+  curves: ReadonlyMap<string, number>,
   out: AlsPoseState = createAlsPoseState(),
 ): AlsPoseState {
-  const clamped = Math.max(0, Math.min(3, gaitAmount))
+  const getCurveValue = (name: string) => curves.get(name) ?? 0
+  out.groundedAmount = getCurveValue(POSE_GROUNDED_CURVE_NAME)
+  out.inAirAmount = getCurveValue(POSE_IN_AIR_CURVE_NAME)
+  out.standingAmount = getCurveValue(POSE_STANDING_CURVE_NAME)
+  out.crouchingAmount = getCurveValue(POSE_CROUCHING_CURVE_NAME)
+  out.movingAmount = getCurveValue(POSE_MOVING_CURVE_NAME)
+
+  const clamped = Math.max(
+    0,
+    Math.min(3, getCurveValue(POSE_GAIT_CURVE_NAME)),
+  )
   out.amount = clamped
   out.walking = Math.max(0, Math.min(1, clamped))
   out.running = Math.max(0, Math.min(1, clamped - 1))
   out.sprinting = Math.max(0, Math.min(1, clamped - 2))
+  // UE_SMALL_NUMBER, not KINDA_SMALL_NUMBER: the two thresholds differ by four orders.
+  out.unweightedAmount =
+    out.groundedAmount > 1e-8
+      ? out.amount / out.groundedAmount
+      : out.amount
+  out.unweightedWalking = Math.max(0, Math.min(1, out.unweightedAmount))
+  out.unweightedRunning = Math.max(
+    0,
+    Math.min(1, out.unweightedAmount - 1),
+  )
+  out.unweightedSprinting = Math.max(
+    0,
+    Math.min(1, out.unweightedAmount - 2),
+  )
   return out
 }

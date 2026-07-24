@@ -3,7 +3,11 @@ import * as THREE from 'three';
 /** Framework-free bone predicates shared by extraction utilities and the owned pose evaluator. */
 
 export const POSE_GAIT_CURVE_NAME = 'PoseGait'
+export const POSE_GROUNDED_CURVE_NAME = 'PoseGrounded'
+export const POSE_IN_AIR_CURVE_NAME = 'PoseInAir'
+export const POSE_STANDING_CURVE_NAME = 'PoseStanding'
 export const POSE_CROUCHING_CURVE_NAME = 'PoseCrouching'
+export const POSE_MOVING_CURVE_NAME = 'PoseMoving'
 export const FOOT_LEFT_LOCK_CURVE_NAME = 'FootLeftLock'
 export const FOOT_RIGHT_LOCK_CURVE_NAME = 'FootRightLock'
 export const ROTATION_YAW_SPEED_CURVE_NAME = 'RotationYawSpeed'
