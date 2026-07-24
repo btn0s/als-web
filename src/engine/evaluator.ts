@@ -164,6 +164,11 @@ export interface EvaluatePoseInput {
   readonly linkedLayer?: EvaluatorLinkedLayer
   /** Region alphas applied after the linked Overlay branch and its inertialization node. */
   readonly overlayLayers?: readonly EvaluatorOverlayLayer[]
+  /**
+   * AB_Als node 15, the `PostLocomotion` Slot. This is a distinct sequential Slot after the
+   * locomotion branch (including Grounded's Transition Slot) and before AB_Als_Layering.
+   */
+  readonly postLocomotionMontages?: readonly EvaluatorLayerEntry[]
   readonly montages?: readonly EvaluatorLayerEntry[]
   /**
    * ALS's separate authored nodes after the AB_Als_Grounded state machine and on the linked
@@ -795,6 +800,10 @@ export function evaluatePose(
   if (locomotionInertialization) {
     applyMontageLayersAfterInertialization(evaluator, input.montages)
   }
+  applyMontageLayersAfterInertialization(
+    evaluator,
+    input.postLocomotionMontages,
+  )
   applyAuthoredAdditives(
     evaluator,
     evaluator.outputPose,

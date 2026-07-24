@@ -1,7 +1,11 @@
 import * as THREE from 'three'
 import { describe, expect, it, vi } from 'vitest'
 import { compileClipSampler } from './clipSampler'
-import { createPoseEvaluator, evaluatePose } from './evaluator'
+import {
+  createEvaluatorInertializationStage,
+  createPoseEvaluator,
+  evaluatePose,
+} from './evaluator'
 import { compileBoneMask } from './blend'
 import { accumulateAdditiveCurveValues } from './curves'
 import { createPoseBuffer, resetPoseToReference } from './poseBuffer'
@@ -326,5 +330,49 @@ describe('pose evaluator', () => {
     })
 
     expect(result.pose.positions[0]).toBeCloseTo(12)
+  })
+
+  it('evaluates PostLocomotion as a distinct sequential Slot after Transition', () => {
+    const root = new THREE.Bone()
+    root.name = 'root'
+    const rig = createRigDefinition(root)
+    const evaluator = createPoseEvaluator(rig)
+    const transition = compileClipSampler(
+      constantPositionClip('transition', 20),
+      rig,
+    )
+    const mantle = compileClipSampler(
+      constantPositionClip('mantle', 40),
+      rig,
+    )
+
+    const result = evaluatePose(evaluator, {
+      base: [],
+      locomotionGraph(context) {
+        context.outputPose.positions.fill(0)
+        context.outputPose.positions[0] = 10
+        context.outputPose.rotations.fill(0)
+        context.outputPose.rotations[3] = 1
+        context.outputPose.scales.fill(1)
+        context.outputCurves.clear()
+      },
+      montages: [{
+        sampler: transition,
+        time: 0,
+        weight: 0.5,
+      }],
+      postLocomotionMontages: [{
+        sampler: mantle,
+        time: 0,
+        weight: 0.5,
+      }],
+      stagedInertialization: {
+        locomotion: createEvaluatorInertializationStage(rig.boneCount),
+      },
+    })
+
+    // Transition: lerp(10, 20, .5) = 15. PostLocomotion then receives that Slot output:
+    // lerp(15, 40, .5) = 27.5. Flattening both montages into one node would produce 22.5.
+    expect(result.pose.positions[0]).toBeCloseTo(27.5)
   })
 })
