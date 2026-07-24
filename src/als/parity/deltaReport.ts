@@ -30,15 +30,6 @@ export const ALS_PARITY_DELTA_REPORT: readonly AlsParityDelta[] = [
     reason:
       'Runtime samples FootLock curves for debug state but has no ALS latch/decrease/capture/angle-limit state machine.',
   },
-  {
-    id: 'cpp-ground-prediction',
-    category: 'unported system',
-    oracle: 'C++ differential',
-    source: 'AlsAnimationInstance.cpp:1028-1100',
-    observed: 'No runtime sweep vector or GroundPredictionAmount exists to compare.',
-    reason:
-      'No runtime RefreshGroundPrediction mapping seam exists; Rapier sweep integration is also absent.',
-  },
 ] as const
 
 export function getAlsParityDelta(id: string): AlsParityDelta {

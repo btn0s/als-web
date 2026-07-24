@@ -59,6 +59,10 @@ import {
   refreshSpine,
 } from '../State/AlsSpineState'
 import {
+  createAlsInAirState,
+  refreshGroundPrediction,
+} from '../State/AlsInAirState'
+import {
   ALS_PARITY_DELTA_REPORT,
 } from './deltaReport'
 
@@ -819,8 +823,64 @@ describe('ALS C++ differential oracle', () => {
     }
   })
 
-  it.skip('UNPORTED SYSTEM cpp-ground-prediction: RefreshGroundPrediction mapping and sweep have no runtime seam', () => {
-    void RefreshGroundPrediction
+  it(`RefreshGroundPrediction matches for ${PROPERTY_CASES} seeded metre-boundary cases`, () => {
+    const random = seededRandom(0x6a_72_6f_75)
+    const amountCurve = (hitTime: number) => 0.2 + hitTime * 1.4
+
+    for (let index = 0; index < PROPERTY_CASES; index++) {
+      const verticalVelocity = range(random, -60, 5)
+      const velocity = {
+        x: range(random, -12, 12),
+        y: range(random, -12, 12),
+        z: range(random, -60, 15),
+      }
+      const scale = range(random, 0.2, 3)
+      const blockAmount = range(random, -0.5, 1.5)
+      const groundValid = random() > 0.3
+      const hitTime = range(random, -0.25, 1.25)
+      const state = createAlsInAirState()
+      state.verticalVelocity = verticalVelocity
+
+      const runtime = refreshGroundPrediction(state, {
+        location: {
+          x: range(random, -100, 100),
+          y: range(random, -100, 100),
+          z: range(random, -100, 100),
+        },
+        velocity,
+        scale,
+        capsuleRadius: 0.3,
+        capsuleHalfHeight: 0.9,
+        walkableFloorAngleCos: 0.7,
+        groundPredictionBlockCurveValue: blockAmount,
+        groundPredictionAmountCurve: amountCurve,
+        sweepCapsule: () => groundValid
+          ? {
+              validBlockingHit: true,
+              time: hitTime,
+              impactNormal: { x: 0, y: 0, z: 1 },
+            }
+          : null,
+      })
+      const reference = RefreshGroundPrediction({
+        VerticalVelocity: verticalVelocity * 100,
+        Velocity: {
+          X: velocity.x * 100,
+          Y: velocity.y * 100,
+          Z: velocity.z * 100,
+        },
+        Scale: scale,
+        GroundPredictionBlockCurveValue: blockAmount,
+        bGroundValid: groundValid,
+        HitTime: hitTime,
+        GroundPredictionAmountCurveValue: amountCurve,
+      })
+
+      expectClose(runtime.groundPredictionAmount, reference.GroundPredictionAmount)
+      expectClose(runtime.sweepVector.x * 100, reference.SweepVector.X)
+      expectClose(runtime.sweepVector.y * 100, reference.SweepVector.Y)
+      expectClose(runtime.sweepVector.z * 100, reference.SweepVector.Z)
+    }
   })
 
   it('delta report categorizes every final C++ mismatch and skip', () => {
@@ -830,7 +890,6 @@ describe('ALS C++ differential oracle', () => {
       .sort()
     expect(cppDeltaIds).toEqual([
       'cpp-foot-lock',
-      'cpp-ground-prediction',
     ])
   })
 })
