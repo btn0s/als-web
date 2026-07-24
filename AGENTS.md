@@ -46,6 +46,16 @@ before feature work.
   this file. Never re-derive what a previous session already verified — cite it. If you catch
   yourself re-solving a solved problem, the correct output is the tool/check that makes the
   re-solving impossible, not the solution itself.
+- **Conclusions must be falsifiable by something they didn't author:** a single discovery loop
+  can overcorrect on something it thinks it saw. Every conclusion therefore ships with an
+  independent, cheap, decisive check derived from ground truth (a physical invariant, the
+  authoritative artifact, a known constant) — never from the discovery's own reasoning chain —
+  and lands in a validator/test so it stays checked. Research reports separate VERIFIED (cite
+  the evidence) from HYPOTHESIS (state how to test it); downstream work treats hypotheses as
+  tests to run, not facts to build on. Corrections to working state require reproducing the
+  actual defect first — pattern-matching a known problem is not evidence. (Precedents: winding
+  "fix" reversed by a signed-volume test; mesh location hypothesis corrected by human-scale
+  vertex bounds; stale-dump curve conclusion overturned by reading the shipped GLB.)
 - **Docs philosophy:** code speaks for itself. ROADMAP.md (plan) + this file (orientation) are
   the only standing docs; design rationale lives in code comments at the relevant site. No
   spec/history markdown files.
