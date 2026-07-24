@@ -10,9 +10,12 @@ using Newtonsoft.Json.Linq;
 // Dumps the compiled runtime representation of ALS animation blueprints.
 //
 // Unreal writes each FAnimNode_* instance as a tagged struct property on the
-// generated class default object. FPropertyTag.TagData retains the exact struct
-// name even when CUE4Parse has to expose the value as FStructFallback. The
-// generated class separately stores baked state-machine descriptions.
+// generated class default object. The generated property name is not a reliable
+// discriminator: engine nodes use AnimGraphNode_*, while ALS nodes use
+// both AlsAnimGraphNode_* and AlsAnimationGraphNode_*. FPropertyTag.TagData
+// retains the exact runtime struct and module even when CUE4Parse has to expose
+// the value as FStructFallback. The generated class separately stores baked
+// state-machine descriptions.
 public static class AbpDump
 {
     const string CharacterPath = "/Content/ALS/Character/";
@@ -240,23 +243,18 @@ public static class AbpDump
     static List<NodeRecord> ReadNodes(UObject cdo)
     {
         var nodes = new List<NodeRecord>();
-        foreach (var property in cdo.Properties.Where(
-                     property => property.Name.Text.StartsWith(
-                         "AnimGraphNode_",
-                         StringComparison.Ordinal)))
+        foreach (var property in cdo.Properties.Where(IsAnimNodeProperty))
         {
-            if (property.Tag is null)
-                continue;
-
+            var structProperty = (StructProperty)property.Tag!;
             var tagData = JObject.FromObject(property.TagData!, Serializer);
             var structType = tagData.Value<string>("StructType") ?? "AnimNode_Unknown";
             var module = tagData.Value<string>("Module") ?? "";
-            var parameters = JToken.FromObject(property.Tag, Serializer) as JObject
+            var parameters = JToken.FromObject(structProperty, Serializer) as JObject
                              ?? new JObject
                              {
-                                 ["value"] = JToken.FromObject(property.Tag, Serializer),
+                                 ["value"] = JToken.FromObject(structProperty, Serializer),
                              };
-            var structValue = (property.Tag as StructProperty)?.Value?.StructType;
+            var structValue = structProperty.Value?.StructType;
             nodes.Add(
                 new NodeRecord
                 {
@@ -266,13 +264,25 @@ public static class AbpDump
                     Module = module,
                     Serialization = structValue is FStructFallback
                         ? nameof(FStructFallback)
-                        : structValue?.GetType().Name ?? property.Tag.GetType().Name,
+                        : structValue?.GetType().Name ?? structProperty.GetType().Name,
                     Parameters = parameters,
                     CompiledIndexCandidates = [],
                 });
         }
 
         return nodes;
+    }
+
+    static bool IsAnimNodeProperty(FPropertyTag property)
+    {
+        if (property.Tag is not StructProperty || property.TagData is null)
+            return false;
+
+        var tagData = JObject.FromObject(property.TagData, Serializer);
+        var structType = tagData.Value<string>("StructType");
+        var module = tagData.Value<string>("Module");
+        return structType?.Contains("AnimNode_", StringComparison.Ordinal) == true
+               && module?.StartsWith("/Script/", StringComparison.Ordinal) == true;
     }
 
     static int ReadCompiledNodeCount(UObject? generatedClass, List<NodeRecord> nodes)
@@ -622,6 +632,7 @@ public static class AbpDump
         var validations = new JArray();
         validations.Add(ValidateTargetCoverage(payload));
         validations.Add(ValidateGraphStructure(payload));
+        validations.Add(ValidateAlsCustomAnimNodes(payload));
         validations.Add(ValidateRifleExplicitTimes(payload));
         validations.Add(ValidateLayeringDynamicAdditive(payload));
         validations.Add(ValidateCrouchIdle(payload));
@@ -885,6 +896,174 @@ public static class AbpDump
             {
                 ["assets"] = summaries,
                 ["errors"] = errors,
+            });
+    }
+
+    static JObject ValidateAlsCustomAnimNodes(JObject payload)
+    {
+        var assets = payload["assets"] as JObject ?? new JObject();
+        var customNodes = new JArray();
+        var typeCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var unresolvedAssets = new JArray();
+
+        foreach (var assetProperty in assets.Properties())
+        {
+            if (assetProperty.Value is not JObject asset)
+                continue;
+
+            var unresolved = asset["unresolvedCompiledNodeIndices"]?.Values<int>().ToArray()
+                             ?? [];
+            if (unresolved.Length > 0)
+            {
+                unresolvedAssets.Add(
+                    new JObject
+                    {
+                        ["asset"] = assetProperty.Name,
+                        ["indices"] = new JArray(unresolved),
+                    });
+            }
+
+            foreach (var node in asset["nodes"]?.OfType<JObject>() ?? [])
+            {
+                var type = node.Value<string>("type") ?? "";
+                if (!type.StartsWith("FAlsAnimNode_", StringComparison.Ordinal))
+                    continue;
+
+                typeCounts[type] = typeCounts.GetValueOrDefault(type) + 1;
+                customNodes.Add(
+                    new JObject
+                    {
+                        ["asset"] = assetProperty.Name,
+                        ["compiledIndex"] = node["compiledIndex"],
+                        ["property"] = node["property"],
+                        ["type"] = type,
+                        ["module"] = node["module"],
+                    });
+            }
+        }
+
+        var expectedTypeCounts = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["FAlsAnimNode_CurvesBlend"] = 4,
+            ["FAlsAnimNode_GameplayTagsBlend"] = 18,
+        };
+        var typeInventoryMatches = expectedTypeCounts.Count == typeCounts.Count
+                                   && expectedTypeCounts.All(
+                                       expected => typeCounts.TryGetValue(
+                                           expected.Key,
+                                           out var count)
+                                                   && count == expected.Value);
+        var modulesMatch = customNodes
+            .OfType<JObject>()
+            .All(node => node.Value<string>("module") == "/Script/ALS");
+
+        var standingNodes = ExactIndexMap(GetNodes(payload, "AB_Als_Standing"));
+        var standingCustomNode = standingNodes.GetValueOrDefault(144);
+        var sprintSequence = standingNodes.GetValueOrDefault(129);
+        var sprintAccelerationSequence = standingNodes.GetValueOrDefault(130);
+        var sprintAccelerationBlend = standingNodes.GetValueOrDefault(131);
+        var sprintBlockBlend = standingNodes.GetValueOrDefault(139);
+        var moveForwardBaseA = standingNodes.GetValueOrDefault(140);
+        var moveForwardBaseB = standingNodes.GetValueOrDefault(141);
+
+        static bool NumberEquals(JToken? value, double expected)
+        {
+            return value?.Type is JTokenType.Float or JTokenType.Integer
+                   && Math.Abs(value.Value<double>() - expected) < 1e-6;
+        }
+
+        var standingSprintMatches =
+            standingCustomNode?.Value<string>("property")
+            == "AlsAnimGraphNode_GameplayTagsBlend"
+            && standingCustomNode.Value<string>("type")
+            == "FAlsAnimNode_GameplayTagsBlend"
+            && standingCustomNode.Value<string>("module") == "/Script/ALS"
+            && standingCustomNode.SelectToken("parameters.Tags[0].TagName")?.Value<string>()
+            == "Als.Gait.Sprinting"
+            && standingCustomNode.SelectToken("parameters.BlendPose[0].LinkID")?.Value<int>()
+            == 141
+            && standingCustomNode.SelectToken("parameters.BlendPose[1].LinkID")?.Value<int>()
+            == 131
+            && NumberEquals(
+                standingCustomNode.SelectToken("parameters.BlendTime[0]"),
+                0.3)
+            && NumberEquals(
+                standingCustomNode.SelectToken("parameters.BlendTime[1]"),
+                0.2)
+            && standingCustomNode.SelectToken("parameters.TransitionType")?.Value<string>()
+            == "EBlendListTransitionType::StandardBlend"
+            && standingCustomNode.SelectToken("parameters.BlendType")?.Value<string>()
+            == "EAlphaBlendOption::Cubic"
+            && standingCustomNode.SelectToken("parameters.bResetChildOnActivation")
+                ?.Value<bool>() == false
+            && sprintSequence?.SelectToken("parameters.Sequence.ObjectName")?.Value<string>()
+            == "AnimSequence'A_Als_Sprint'"
+            && NumberEquals(
+                sprintSequence.SelectToken("parameters.StartPosition"),
+                0.166667)
+            && NumberEquals(
+                sprintSequence.SelectToken("parameters.PlayRateBasis"),
+                1.0)
+            && sprintAccelerationSequence?
+                .SelectToken("parameters.Sequence.ObjectName")?.Value<string>()
+            == "AnimSequence'A_Als_Sprint_Acceleration'"
+            && NumberEquals(
+                sprintAccelerationSequence.SelectToken("parameters.StartPosition"),
+                0.166667)
+            && NumberEquals(
+                sprintAccelerationSequence.SelectToken("parameters.PlayRateBasis"),
+                0.833333)
+            && sprintAccelerationBlend?.SelectToken("parameters.A.LinkID")?.Value<int>() == 129
+            && sprintAccelerationBlend.SelectToken("parameters.B.LinkID")?.Value<int>() == 130
+            && sprintAccelerationBlend.SelectToken(
+                    "parameters.AlphaScaleBiasClamp.bMapRange")
+                ?.Value<bool>() == true
+            && sprintAccelerationBlend.SelectToken(
+                    "parameters.AlphaScaleBiasClamp.bInterpResult")
+                ?.Value<bool>() == true
+            && NumberEquals(
+                sprintAccelerationBlend.SelectToken(
+                    "parameters.AlphaScaleBiasClamp.InRange.Max"),
+                0.25)
+            && NumberEquals(
+                sprintAccelerationBlend.SelectToken(
+                    "parameters.AlphaScaleBiasClamp.InterpSpeedIncreasing"),
+                20.0)
+            && NumberEquals(
+                sprintAccelerationBlend.SelectToken(
+                    "parameters.AlphaScaleBiasClamp.InterpSpeedDecreasing"),
+                4.0)
+            && sprintBlockBlend?.SelectToken("parameters.A.LinkID")?.Value<int>() == 144
+            && sprintBlockBlend.SelectToken("parameters.B.LinkID")?.Value<int>() == 140
+            && moveForwardBaseA?.SelectToken("parameters.LinkToCachingNode.LinkID")?.Value<int>()
+            == 137
+            && moveForwardBaseB?.SelectToken("parameters.LinkToCachingNode.LinkID")?.Value<int>()
+            == 137;
+
+        return Validation(
+            "als-custom-anim-node-coverage",
+            typeInventoryMatches
+            && modulesMatch
+            && unresolvedAssets.Count == 0
+            && standingSprintMatches,
+            new JObject
+            {
+                ["expectedTypeCounts"] = JObject.FromObject(
+                    expectedTypeCounts,
+                    Serializer),
+                ["actualTypeCounts"] = JObject.FromObject(typeCounts, Serializer),
+                ["nodes"] = customNodes,
+                ["unresolvedAssets"] = unresolvedAssets,
+                ["standingSprintSubgraph"] = new JObject
+                {
+                    ["gameplayTagsBlendNodeIndex"] = 144,
+                    ["sprintSequenceNodeIndex"] = 129,
+                    ["sprintAccelerationSequenceNodeIndex"] = 130,
+                    ["sprintAccelerationBlendNodeIndex"] = 131,
+                    ["sprintBlockBlendNodeIndex"] = 139,
+                    ["moveForwardBaseNodeIndices"] = new JArray(140, 141),
+                    ["matchesAuthoredMetadata"] = standingSprintMatches,
+                },
             });
     }
 
