@@ -29,6 +29,10 @@ import type {
 } from './State/AlsLocomotionState'
 
 export type AlsLocomotionMode = 'Grounded' | 'InAir'
+export type AlsInAirRotationMode =
+  | 'RotateToVelocityOnJump'
+  | 'KeepRelativeRotation'
+  | 'KeepWorldRotation'
 export type AlsViewMode = 'FirstPerson' | 'ThirdPerson'
 
 /**
@@ -37,6 +41,7 @@ export type AlsViewMode = 'FirstPerson' | 'ThirdPerson'
  */
 export interface AlsCharacterSettings {
   readonly movingSpeedThreshold: number
+  readonly inAirRotationMode: AlsInAirRotationMode
   readonly allowAimingWhenInAir: boolean
   readonly sprintHasPriorityOverAiming: boolean
   readonly rotateToVelocityWhenSprinting: boolean
@@ -47,6 +52,7 @@ export interface AlsCharacterSettings {
 
 export const ALS_CHARACTER_SETTINGS: Readonly<AlsCharacterSettings> = {
   movingSpeedThreshold: ALS_MOVING_SPEED_THRESHOLD,
+  inAirRotationMode: 'RotateToVelocityOnJump',
   allowAimingWhenInAir: true,
   sprintHasPriorityOverAiming: false,
   rotateToVelocityWhenSprinting: false,
@@ -422,6 +428,37 @@ export function setStance(
 ): AlsCharacter {
   character.stance = stance
   setMovementStance(character.movement, stance)
+  return character
+}
+
+/**
+ * AAlsCharacter::SetLocomotionMode() / NotifyLocomotionModeChanged() /
+ * ApplyDesiredStance(), cpp:503-529 and 810-833.
+ *
+ * ALS always uncrouches while InAir and reapplies DesiredStance on Grounded. Ragdolling,
+ * rolling-on-land, and their action-owned side effects are outside this character-core seam.
+ */
+export function setLocomotionMode(
+  character: AlsCharacter,
+  locomotionMode: AlsLocomotionMode,
+): AlsCharacter {
+  if (character.locomotionMode === locomotionMode) return character
+
+  const previousLocomotionMode = character.locomotionMode
+  character.locomotionMode = locomotionMode
+  setStance(
+    character,
+    locomotionMode === 'InAir' ? 'Standing' : character.desiredStance,
+  )
+
+  if (
+    locomotionMode === 'Grounded'
+    && previousLocomotionMode === 'InAir'
+  ) {
+    // NotifyLocomotionModeChanged() blocks the previous input-facing target after an ordinary
+    // landing so the landing animation cannot twist the legs into a spiral.
+    character.locomotionState.rotationTowardsLastInputDirectionBlocked = true
+  }
   return character
 }
 

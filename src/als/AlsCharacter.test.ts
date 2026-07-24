@@ -15,6 +15,7 @@ import {
   refreshLocomotion,
   refreshRotationMode,
   refreshView,
+  setLocomotionMode,
   setStance,
   setTargetYawAngle,
   setViewMode,
@@ -146,6 +147,29 @@ describe('AAlsCharacter input and gait policy', () => {
     expect(character.movement.maxAllowedGait).toBe('Sprinting')
     expect(character.gait).toBe('Sprinting')
     expect(character.rotationMode).toBe('VelocityDirection')
+  })
+
+  it('uncrouches InAir and reapplies DesiredStance on the landing edge', () => {
+    // AlsCharacter.cpp:503-529 and 810-833.
+    const character = createAlsCharacter({
+      desiredStance: 'Crouching',
+    })
+    setStance(character, 'Crouching')
+    character.locomotionState.rotationTowardsLastInputDirectionBlocked = false
+
+    setLocomotionMode(character, 'InAir')
+    expect(character.locomotionMode).toBe('InAir')
+    expect(character.desiredStance).toBe('Crouching')
+    expect(character.stance).toBe('Standing')
+    expect(character.movement.stance).toBe('Standing')
+
+    setLocomotionMode(character, 'Grounded')
+    expect(character.locomotionMode).toBe('Grounded')
+    expect(character.stance).toBe('Crouching')
+    expect(character.movement.stance).toBe('Crouching')
+    expect(
+      character.locomotionState.rotationTowardsLastInputDirectionBlocked,
+    ).toBe(true)
   })
 })
 

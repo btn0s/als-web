@@ -18,6 +18,10 @@ import type { AlsVector3 } from './State/AlsLocomotionState'
 export const ALS_VELOCITY_ANGLE_TO_SPEED_INTERPOLATION_RANGE =
   [100, 125] as const
 
+/** UAlsCharacterMovementComponent constructor, cpp:143 and 148. */
+export const ALS_AIR_CONTROL = 0.15
+export const ALS_MAX_ACCELERATION = 20
+
 /**
  * `bAllowDirectionDependentMovementSpeed` is false in every MS_Als_Normal gait record. Keeping it
  * as an optional ALS-named extension lets a future authored settings asset enable the exact
@@ -43,6 +47,8 @@ export interface AlsCharacterMovementComponent {
   brakingDecelerationWalking: number
   groundFriction: number
   rotationInterpolationSpeed: number
+  airControl: number
+  maxAcceleration: number
   inputBlocked: boolean
   readonly velocity: AlsVector3
 }
@@ -191,6 +197,8 @@ export function createAlsCharacterMovementComponent(
     brakingDecelerationWalking: 0,
     groundFriction: 0,
     rotationInterpolationSpeed: 0,
+    airControl: ALS_AIR_CONTROL,
+    maxAcceleration: ALS_MAX_ACCELERATION,
     inputBlocked: false,
     velocity: {
       x: sourceVelocity.x,
@@ -394,5 +402,57 @@ export function stepGroundedVelocity(
     }
   }
 
+  return component.velocity
+}
+
+/**
+ * Advances horizontal falling velocity and leaves vertical integration to Rapier.
+ *
+ * ALS pins AirControl to 0.15 and the non-grounded MaxAcceleration to 2000 cm/s², then delegates
+ * falling integration to UCharacterMovementComponent::PhysFalling(). This backend seam preserves
+ * those exact policy values, analog input, the inherited lateral speed cap, and zero default
+ * falling friction. Rapier remains responsible for gravity and collision.
+ */
+export function stepInAirVelocity(
+  component: AlsCharacterMovementComponent,
+  inputVector: Readonly<AlsVector3>,
+  deltaTime: number,
+): AlsVector3 {
+  const delta = Math.max(0, deltaTime)
+  if (delta <= 0 || component.inputBlocked) return component.velocity
+
+  let inputX = inputVector.x
+  let inputY = inputVector.y
+  let inputAmount = Math.hypot(inputX, inputY)
+  if (inputAmount <= Number.EPSILON) return component.velocity
+  if (inputAmount > 1) {
+    inputX /= inputAmount
+    inputY /= inputAmount
+    inputAmount = 1
+  }
+
+  const previousSpeed = Math.hypot(
+    component.velocity.x,
+    component.velocity.y,
+  )
+  const acceleration = component.maxAcceleration
+    * component.airControl
+    * delta
+  component.velocity.x += inputX * acceleration
+  component.velocity.y += inputY * acceleration
+
+  const acceleratedSpeed = Math.hypot(
+    component.velocity.x,
+    component.velocity.y,
+  )
+  const speedCap = Math.max(component.maxWalkSpeed, previousSpeed)
+  if (
+    acceleratedSpeed > speedCap
+    && acceleratedSpeed > Number.EPSILON
+  ) {
+    const amount = speedCap / acceleratedSpeed
+    component.velocity.x *= amount
+    component.velocity.y *= amount
+  }
   return component.velocity
 }

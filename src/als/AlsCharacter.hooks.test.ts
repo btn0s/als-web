@@ -1,21 +1,18 @@
-import RAPIER from '@dimforge/rapier3d-compat'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createAlsCharacter, refreshAlsCharacter } from './AlsCharacter'
 import {
   ALS_PHYSICS_TIMESTEP,
-  ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
-  ALS_STANDING_CAPSULE_HALF_HEIGHT,
-  calculateMaintainedMeshBaseOffset,
+  ALS_RAPIER_JUMP_SPEED,
+  consumeAlsJumpInput,
+  handleAlsJumpInput,
   hasTriggeredSprintHold,
+  refreshRapierAlsLocomotionMode,
+  requestAlsJumpInput,
   resolveCameraRelativeInput,
-  setCapsuleHalfHeightMaintainingBase,
   stepGroundedCharacterYaw,
+  stepInAirCharacterYaw,
 } from './AlsCharacter.hooks'
 import { exponentialDecay } from './State/AlsGroundedState'
-
-beforeAll(async () => {
-  await RAPIER.init()
-})
 
 describe('AlsCharacter browser bridge math', () => {
   it('fires the authored 0.1s Sprint Hold on the sixth fixed physics tick', () => {
@@ -42,75 +39,6 @@ describe('AlsCharacter browser bridge math', () => {
     )
     expect(rotated.x).toBeCloseTo(0, 12)
     expect(rotated.y).toBeCloseTo(1, 12)
-  })
-
-  it('replaces the Rapier capsule while maintaining the crouched base location', () => {
-    const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
-    world.timestep = ALS_PHYSICS_TIMESTEP
-    try {
-      const ground = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
-      world.createCollider(
-        RAPIER.ColliderDesc
-          .cuboid(10, 0.05, 10)
-          .setTranslation(0, -0.05, 0),
-        ground,
-      )
-      const body = world.createRigidBody(
-        RAPIER.RigidBodyDesc
-          .dynamic()
-          .setTranslation(0, ALS_STANDING_CAPSULE_HALF_HEIGHT, 0)
-          .lockRotations()
-          .setCanSleep(false),
-      )
-      let collider = setCapsuleHalfHeightMaintainingBase(
-        world,
-        body,
-        null,
-        ALS_STANDING_CAPSULE_HALF_HEIGHT,
-        ALS_STANDING_CAPSULE_HALF_HEIGHT,
-      )
-      for (let step = 0; step < 120; step += 1) world.step()
-      const standingBottom =
-        body.translation().y - ALS_STANDING_CAPSULE_HALF_HEIGHT
-
-      collider = setCapsuleHalfHeightMaintainingBase(
-        world,
-        body,
-        collider,
-        ALS_STANDING_CAPSULE_HALF_HEIGHT,
-        ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
-      )
-      for (let step = 0; step < 60; step += 1) world.step()
-
-      expect(collider.translationWrtParent()?.y).toBe(0)
-      expect(
-        body.translation().y - ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
-      ).toBeCloseTo(standingBottom, 5)
-      expect(body.translation().y).toBeCloseTo(
-        ALS_CROUCHING_CAPSULE_HALF_HEIGHT + standingBottom,
-        5,
-      )
-    } finally {
-      world.free()
-    }
-  })
-
-  it('cancels the one-frame rendered-body interpolation across a crouch teleport', () => {
-    const physicsBodyY = 0.5588623881340027
-    const renderedBodyY = 0.7583373704612587
-    const colliderHalfExtent = ALS_CROUCHING_CAPSULE_HALF_HEIGHT
-    const offset = calculateMaintainedMeshBaseOffset(
-      physicsBodyY,
-      renderedBodyY,
-      0,
-      colliderHalfExtent,
-    )
-
-    expect(renderedBodyY + offset).toBeCloseTo(
-      physicsBodyY - colliderHalfExtent,
-      12,
-    )
-    expect(offset).toBeCloseTo(-0.759474982327256, 12)
   })
 
   it('applies ALS extra-smooth target rotation before actor exponential decay', () => {
@@ -149,5 +77,112 @@ describe('AlsCharacter browser bridge math', () => {
     expect(split.actorYawAngle).toBeGreaterThan(0)
     expect(split.actorYawAngle).toBeLessThan(single.actorYawAngle)
     expect(single.locomotionState.targetYawAngle).toBe(90)
+  })
+
+  it('rotates airborne ViewDirection toward velocity at the authored speed', () => {
+    const character = createAlsCharacter({
+      actorYawAngle: 0,
+      desiredRotationMode: 'ViewDirection',
+      locomotionMode: 'InAir',
+    })
+    refreshAlsCharacter(
+      character,
+      { x: 0, y: 1, z: 0 },
+      { x: 0, y: 2, z: 1 },
+    )
+
+    stepInAirCharacterYaw(character, 1 / 30)
+
+    expect(character.actorYawAngle).toBeCloseTo(
+      90 * exponentialDecay(1 / 30, 5),
+      12,
+    )
+    expect(character.locomotionState.targetYawAngle).toBe(90)
+    expect(character.locomotionState.smoothTargetYawAngle).toBe(90)
+  })
+
+  it('ports KeepRelativeRotation and KeepWorldRotation without substituting a heuristic', () => {
+    const relative = createAlsCharacter({
+      actorYawAngle: 0,
+      viewYawAngle: 90,
+      desiredRotationMode: 'ViewDirection',
+      locomotionMode: 'InAir',
+      settings: { inAirRotationMode: 'KeepRelativeRotation' },
+    })
+    relative.viewYawAngle = 120
+    stepInAirCharacterYaw(relative, 1 / 30)
+    expect(relative.locomotionState.targetYawAngle).toBe(30)
+    expect(relative.actorYawAngle).toBeCloseTo(
+      30 * exponentialDecay(1 / 30, 5),
+      12,
+    )
+
+    const world = createAlsCharacter({
+      actorYawAngle: 37,
+      viewYawAngle: 120,
+      desiredRotationMode: 'ViewDirection',
+      locomotionMode: 'InAir',
+      velocity: { x: 0, y: 2, z: -1 },
+      settings: { inAirRotationMode: 'KeepWorldRotation' },
+    })
+    expect(stepInAirCharacterYaw(world, 1 / 30)).toBe(37)
+    expect(world.locomotionState.targetYawAngle).toBe(37)
+  })
+
+  it('uses the authored airborne Aiming speed and shortest wrapped path', () => {
+    const character = createAlsCharacter({
+      actorYawAngle: 179,
+      viewYawAngle: -179,
+      desiredAiming: true,
+      locomotionMode: 'InAir',
+    })
+
+    stepInAirCharacterYaw(character, 1 / 30)
+
+    expect(character.actorYawAngle).toBeCloseTo(
+      179 + 2 * exponentialDecay(1 / 30, 15),
+      12,
+    )
+    expect(character.locomotionState.aimingYawAngleLimit).toBe(70)
+    expect(character.locomotionState.aimingLimitAppliedThisFrame).toBe(true)
+  })
+
+  it('coalesces the __triggerJump frame edge and consumes it exactly once', () => {
+    const request = { current: false }
+    requestAlsJumpInput(request)
+    requestAlsJumpInput(request)
+    expect(consumeAlsJumpInput(request)).toBe(true)
+    expect(consumeAlsJumpInput(request)).toBe(false)
+  })
+
+  it('uncrouches on the first jump input and jumps only from Grounded Standing', () => {
+    const character = createAlsCharacter({
+      desiredStance: 'Crouching',
+    })
+
+    expect(handleAlsJumpInput(character)).toBe('Uncrouched')
+    expect(character.desiredStance).toBe('Standing')
+    expect(character.stance).toBe('Standing')
+    expect(character.locomotionMode).toBe('Grounded')
+
+    expect(handleAlsJumpInput(character)).toBe('Jumped')
+    expect(character.locomotionMode).toBe('InAir')
+    expect(ALS_RAPIER_JUMP_SPEED).toBe(4.2)
+    expect(handleAlsJumpInput(character)).toBe('Rejected')
+  })
+
+  it('exposes Rapier Walking/Falling as exact ALS locomotion-mode edges', () => {
+    const character = createAlsCharacter()
+
+    expect(refreshRapierAlsLocomotionMode(character, false, 0))
+      .toBe('Grounded')
+    expect(refreshRapierAlsLocomotionMode(character, false, -1e-10))
+      .toBe('Grounded')
+    expect(refreshRapierAlsLocomotionMode(character, false, -0.01))
+      .toBe('InAir')
+    expect(refreshRapierAlsLocomotionMode(character, true, 1))
+      .toBe('InAir')
+    expect(refreshRapierAlsLocomotionMode(character, true, 0))
+      .toBe('Grounded')
   })
 })

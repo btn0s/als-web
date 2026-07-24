@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { AlsMovementGaitSettings } from './Settings/AlsMovementSettings'
 import {
+  ALS_AIR_CONTROL,
+  ALS_MAX_ACCELERATION,
   calculateDirectionDependentGaitSpeeds,
   calculateGaitAmount,
   createAlsCharacterMovementComponent,
@@ -10,6 +12,7 @@ import {
   setMovementStance,
   setMovementVelocity,
   stepGroundedVelocity,
+  stepInAirVelocity,
 } from './AlsCharacterMovementComponent'
 import type { AlsCharacterMovementGaitSettings } from './AlsCharacterMovementComponent'
 
@@ -156,5 +159,49 @@ describe('UAlsCharacterMovementComponent grounded policy', () => {
 
     stepGroundedVelocity(component, { x: 1, y: 0, z: 0 }, 0.05, 0)
     expect(component.velocity.x).toBeCloseTo(0.25, 12)
+  })
+})
+
+describe('UAlsCharacterMovementComponent falling policy', () => {
+  it('uses authored AirControl and MaxAcceleration without grounded friction or braking', () => {
+    const component = createAlsCharacterMovementComponent({
+      velocity: { x: 1, y: 0, z: 4.2 },
+    })
+
+    // 20 m/s² MaxAcceleration × 0.15 AirControl × 0.1 s = 0.3 m/s.
+    stepInAirVelocity(component, { x: 0, y: 1, z: 0 }, 0.1)
+
+    expect(component.airControl).toBe(ALS_AIR_CONTROL)
+    expect(component.maxAcceleration).toBe(ALS_MAX_ACCELERATION)
+    expect(component.velocity.x).toBe(1)
+    expect(component.velocity.y).toBeCloseTo(0.3, 12)
+    expect(component.velocity.z).toBe(4.2)
+  })
+
+  it('normalizes analog input without snapping inherited overspeed', () => {
+    const component = createAlsCharacterMovementComponent({
+      velocity: { x: 6, y: 0, z: -2 },
+    })
+
+    stepInAirVelocity(component, { x: 1, y: 1, z: 0 }, 0.1)
+
+    expect(Math.hypot(component.velocity.x, component.velocity.y))
+      .toBeCloseTo(6, 12)
+    expect(component.velocity.x).toBeGreaterThan(0)
+    expect(component.velocity.y).toBeGreaterThan(0)
+    expect(component.velocity.z).toBe(-2)
+  })
+
+  it('does not brake with no input and honors blocked input', () => {
+    const component = createAlsCharacterMovementComponent({
+      velocity: { x: 2, y: -1, z: 3 },
+    })
+
+    stepInAirVelocity(component, { x: 0, y: 0, z: 0 }, 1)
+    expect(component.velocity).toEqual({ x: 2, y: -1, z: 3 })
+
+    component.inputBlocked = true
+    stepInAirVelocity(component, { x: 1, y: 0, z: 0 }, 1)
+    expect(component.velocity).toEqual({ x: 2, y: -1, z: 3 })
   })
 })

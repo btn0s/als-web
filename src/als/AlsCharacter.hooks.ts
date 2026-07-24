@@ -1,21 +1,22 @@
 import {
   useBeforePhysicsStep,
-  useRapier,
   type RapierCollider,
   type RapierRigidBody,
 } from '@react-three/rapier'
-import { useFrame } from '@react-three/fiber'
-import RAPIER, {
-  type Collider,
-  type RigidBody,
-  type World,
-} from '@dimforge/rapier3d-compat'
 import { folder, useControls } from 'leva'
 import { useEffect, useRef } from 'react'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { LEVA_ROOTS } from '../app/levaRoots'
-import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import {
+  probeRapierAlsGround,
+} from '../engine/rapierAlsCapsuleSweep'
+import type {
+  AlsGroundPredictionCapsuleSweep,
+} from './State/AlsInAirState'
+import {
+  setRapierAlsStanceCapsules,
+} from '../engine/rapierAlsStanceCapsules'
 import {
   threeToUnrealVector,
   unrealToThreeVector,
@@ -25,11 +26,17 @@ import {
   createAlsCharacter,
   refreshAlsCharacter,
   refreshGroundedFacingTarget,
+  setLocomotionMode,
   setStance,
+  setTargetYawAngle,
 } from './AlsCharacter'
-import type { AlsCharacter } from './AlsCharacter'
+import type {
+  AlsCharacter,
+  AlsLocomotionMode,
+} from './AlsCharacter'
 import {
   stepGroundedVelocity,
+  stepInAirVelocity,
 } from './AlsCharacterMovementComponent'
 import { getRelativeAccelerationAmount } from './AlsAnimationInstance'
 import type { AlsAnimationInstanceControls } from './AlsAnimationInstance'
@@ -60,59 +67,22 @@ export const ALS_STANDING_CAPSULE_HALF_HEIGHT = 0.9
 export const ALS_CROUCHING_CAPSULE_HALF_HEIGHT = 0.56
 export const ALS_PHYSICS_TIMESTEP = 1 / 60
 
-/**
- * UCharacterMovementComponent crouches with bCrouchMaintainsBaseLocation: the capsule center
- * moves by the half-height delta while its bottom stays planted. Rapier retains the old contact
- * manifold when a collider shape is mutated in place, so replace the collider atomically instead.
+/*
+ * B_Als_Character serializes no JumpZVelocity or WalkableFloorZ override. These are the UE
+ * CharacterMovement defaults inherited by the sample, expressed in repository metres.
  */
-export function setCapsuleHalfHeightMaintainingBase(
-  world: World,
-  body: RigidBody,
-  collider: Collider | null,
-  previousHalfHeight: number,
-  halfHeight: number,
-): Collider {
-  if (collider && world.getCollider(collider.handle)) {
-    world.removeCollider(collider, true)
-  }
-
-  if (previousHalfHeight !== halfHeight) {
-    const translation = body.translation()
-    body.setTranslation({
-      x: translation.x,
-      y: translation.y + halfHeight - previousHalfHeight,
-      z: translation.z,
-    }, true)
-  }
-
-  return world.createCollider(
-    RAPIER.ColliderDesc
-      .capsule(halfHeight - ALS_CAPSULE_RADIUS, ALS_CAPSULE_RADIUS)
-      .setFriction(0),
-    body,
-  )
-}
-
-/**
- * Keeps the rendered mesh on the physics capsule base while react-three-rapier interpolates a
- * fixed-step body between its pre-crouch and post-crouch centers. Unreal's
- * bCrouchMaintainsBaseLocation changes the capsule center without smoothing that delta into the
- * locally controlled mesh.
- */
-export function calculateMaintainedMeshBaseOffset(
-  physicsBodyY: number,
-  renderedBodyY: number,
-  colliderLocalY: number,
-  colliderHalfExtent: number,
-) {
-  return physicsBodyY + colliderLocalY - colliderHalfExtent - renderedBodyY
-}
+export const ALS_RAPIER_JUMP_SPEED = 4.2
+export const ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS = 0.71
 
 // Unreal Enhanced Input's default radial dead-zone lower threshold. The authored IMC mapping
 // dump owns buttons/axes; this engine-level normalization only suppresses browser gamepad drift.
 const GAMEPAD_DEAD_ZONE = 0.2
 const COUNTER_CLOCKWISE_ROTATION_ANGLE_THRESHOLD = 5
 const SPRINT_HOLD_TIME_THRESHOLD = 0.1
+const IN_AIR_ROTATION_INTERPOLATION_SPEED = 5
+const IN_AIR_AIMING_ROTATION_INTERPOLATION_SPEED = 15
+const MIN_AIMING_YAW_ANGLE_LIMIT = 70
+const UE_KINDA_SMALL_NUMBER = 1e-4
 
 /** Enhanced Input `UInputTriggerHold` threshold check for IMC_Als_Default's Sprint mapping. */
 export function hasTriggeredSprintHold(heldTime: number): boolean {
@@ -125,6 +95,7 @@ interface InputAxes {
 }
 
 interface GamepadInput extends InputAxes {
+  jump: boolean
   sprint: boolean
   walk: boolean
   crouch: boolean
@@ -148,8 +119,45 @@ interface CharacterControlValues {
 
 export interface AlsCharacterBridge {
   readonly character: MutableRefObject<AlsCharacter>
-  readonly animationControls: MutableRefObject<AlsAnimationInstanceControls>
+  readonly animationControls:
+    MutableRefObject<AlsCharacterAnimationControls>
+  /**
+   * The evaluator installs UAlsAnimationInstance::Jump() here. The character invokes it only
+   * after the movement backend accepts the jump, matching OnJumpedNetworked().
+   */
+  readonly onJumped: MutableRefObject<(() => void) | null>
   readonly overlayMode: AlsOverlayMode
+}
+
+/**
+ * Character-owned fields passed across the animation update boundary. They remain an
+ * intersection until AlsAnimationInstance lands the matching live InAir evaluator.
+ */
+export interface AlsCharacterAnimationControls
+  extends AlsAnimationInstanceControls {
+  locomotionMode: AlsLocomotionMode
+  scale: number
+  location: Readonly<AlsVector3>
+  velocity: Readonly<AlsVector3>
+  capsuleRadius: number
+  capsuleHalfHeight: number
+  walkableFloorAngleCos: number
+}
+
+interface AlsJumpRequestRef {
+  current: boolean
+}
+
+/** Queues one jump input for the next fixed character update. */
+export function requestAlsJumpInput(request: AlsJumpRequestRef): void {
+  request.current = true
+}
+
+/** Consumes a queued jump exactly once at the fixed character-update boundary. */
+export function consumeAlsJumpInput(request: AlsJumpRequestRef): boolean {
+  const requested = request.current
+  request.current = false
+  return requested
 }
 
 function clampMagnitude(axes: InputAxes): InputAxes {
@@ -180,6 +188,7 @@ function applyRadialDeadZone(axes: InputAxes): InputAxes {
 function sampleGamepad(out: GamepadInput): GamepadInput {
   out.right = 0
   out.forward = 0
+  out.jump = false
   out.sprint = false
   out.walk = false
   out.crouch = false
@@ -195,7 +204,8 @@ function sampleGamepad(out: GamepadInput): GamepadInput {
   out.right = gamepad.axes[0] ?? 0
   out.forward = -(gamepad.axes[1] ?? 0)
   applyRadialDeadZone(out)
-  // IMC_Als_Default: FaceButtonRight, RightShoulder, LeftThumbstick, LeftShoulder, DPadLeft.
+  // IMC_Als_Default: FaceButtonBottom/Right, RightShoulder, LeftThumbstick, LeftShoulder, DPadLeft.
+  out.jump = gamepad.buttons[0]?.pressed ?? false
   out.sprint = gamepad.buttons[1]?.pressed ?? false
   out.walk = gamepad.buttons[5]?.pressed ?? false
   out.crouch = gamepad.buttons[10]?.pressed ?? false
@@ -282,6 +292,175 @@ export function stepGroundedCharacterYaw(
   return character.actorYawAngle
 }
 
+function refreshTargetYawAngleUsingActorRotation(
+  character: AlsCharacter,
+): void {
+  setTargetYawAngle(character, character.actorYawAngle)
+}
+
+function setRotationSmooth(
+  character: AlsCharacter,
+  targetYawAngle: number,
+  deltaTime: number,
+  interpolationSpeed: number,
+): void {
+  setTargetYawAngle(character, targetYawAngle)
+  character.actorYawAngle = lerpAngle(
+    character.actorYawAngle,
+    character.locomotionState.smoothTargetYawAngle,
+    exponentialDecay(deltaTime, interpolationSpeed),
+  )
+}
+
+/**
+ * AAlsCharacter::RefreshInAirRotation(), cpp:1812-1879.
+ *
+ * This includes all three authored EAlsInAirRotationMode branches even though the shipped
+ * UAlsCharacterSettings default is RotateToVelocityOnJump.
+ */
+export function stepInAirCharacterYaw(
+  character: AlsCharacter,
+  deltaTime: number,
+): number {
+  if (character.locomotionMode !== 'InAir') {
+    return character.actorYawAngle
+  }
+
+  const state = character.locomotionState
+  if (character.rotationMode === 'Aiming') {
+    setRotationSmooth(
+      character,
+      character.viewYawAngle,
+      deltaTime,
+      IN_AIR_AIMING_ROTATION_INTERPOLATION_SPEED,
+    )
+
+    // ConstrainAimingRotation() with its default false secondary-constraint argument.
+    state.aimingLimitAppliedThisFrame = true
+    if (state.resetAimingLimit) state.aimingYawAngleLimit = 180
+
+    let viewRelativeAngle = unwindDegrees(
+      character.viewYawAngle - character.actorYawAngle,
+    )
+    if (
+      Math.abs(viewRelativeAngle)
+      <= MIN_AIMING_YAW_ANGLE_LIMIT + UE_KINDA_SMALL_NUMBER
+    ) {
+      state.aimingYawAngleLimit = MIN_AIMING_YAW_ANGLE_LIMIT
+    } else {
+      viewRelativeAngle = remapCounterClockwise(viewRelativeAngle)
+      if (
+        Math.abs(viewRelativeAngle)
+        > state.aimingYawAngleLimit + UE_KINDA_SMALL_NUMBER
+      ) {
+        viewRelativeAngle = THREE.MathUtils.clamp(
+          viewRelativeAngle,
+          -state.aimingYawAngleLimit,
+          state.aimingYawAngleLimit,
+        )
+      } else {
+        state.aimingYawAngleLimit = Math.max(
+          Math.abs(viewRelativeAngle),
+          MIN_AIMING_YAW_ANGLE_LIMIT,
+        )
+      }
+      character.actorYawAngle = unwindDegrees(
+        character.viewYawAngle - viewRelativeAngle,
+      )
+    }
+    state.resetAimingLimit = false
+    return character.actorYawAngle
+  }
+
+  state.aimingLimitAppliedThisFrame = false
+  state.resetAimingLimit = true
+
+  if (
+    character.rotationMode !== 'VelocityDirection'
+    && character.rotationMode !== 'ViewDirection'
+  ) {
+    refreshTargetYawAngleUsingActorRotation(character)
+    return character.actorYawAngle
+  }
+
+  if (
+    character.settings.inAirRotationMode === 'RotateToVelocityOnJump'
+    && state.moving
+  ) {
+    setRotationSmooth(
+      character,
+      state.velocityYawAngle,
+      deltaTime,
+      IN_AIR_ROTATION_INTERPOLATION_SPEED,
+    )
+  } else if (
+    character.settings.inAirRotationMode === 'KeepRelativeRotation'
+  ) {
+    setRotationSmooth(
+      character,
+      character.viewYawAngle - state.viewRelativeTargetYawAngle,
+      deltaTime,
+      IN_AIR_ROTATION_INTERPOLATION_SPEED,
+    )
+  } else {
+    refreshTargetYawAngleUsingActorRotation(character)
+  }
+
+  return character.actorYawAngle
+}
+
+export type AlsJumpInputResult = 'Rejected' | 'Uncrouched' | 'Jumped'
+
+/**
+ * AAlsCharacterExample::Input_OnJump() plus AAlsCharacter::Jump().
+ * Action systems own the preceding ragdoll/mantle branches. The movement backend applies the
+ * inherited UE vertical speed only after this policy returns Jumped.
+ */
+export function handleAlsJumpInput(
+  character: AlsCharacter,
+): AlsJumpInputResult {
+  if (character.stance === 'Crouching') {
+    character.desiredStance = 'Standing'
+    setStance(character, 'Standing')
+    return 'Uncrouched'
+  }
+  if (
+    character.stance !== 'Standing'
+    || character.locomotionMode !== 'Grounded'
+  ) {
+    return 'Rejected'
+  }
+
+  setLocomotionMode(character, 'InAir')
+  return 'Jumped'
+}
+
+/**
+ * Adapts Rapier ground state to AAlsCharacter::OnMovementModeChanged() Walking/Falling tags.
+ */
+export function refreshRapierAlsLocomotionMode(
+  character: AlsCharacter,
+  groundValid: boolean,
+  verticalVelocity: number,
+): AlsLocomotionMode {
+  if (
+    character.locomotionMode === 'InAir'
+    && verticalVelocity <= 0
+    && groundValid
+  ) {
+    setLocomotionMode(character, 'Grounded')
+  } else if (
+    character.locomotionMode === 'Grounded'
+    // Resting Rapier contacts can oscillate by floating-point ulps; match UE's
+    // KINDA_SMALL_NUMBER tolerance before exposing Falling to ALS.
+    && verticalVelocity < -UE_KINDA_SMALL_NUMBER
+    && !groundValid
+  ) {
+    setLocomotionMode(character, 'InAir')
+  }
+  return character.locomotionMode
+}
+
 function isTextEntryTarget(target: EventTarget | null) {
   return target instanceof HTMLInputElement
     || target instanceof HTMLTextAreaElement
@@ -294,11 +473,12 @@ function isTextEntryTarget(target: EventTarget | null) {
  */
 export function useAlsCharacter(
   rigidBody: MutableRefObject<RapierRigidBody | null>,
-  capsule: MutableRefObject<RapierCollider | null>,
+  standingCapsule: MutableRefObject<RapierCollider | null>,
+  crouchingCapsule: MutableRefObject<RapierCollider | null>,
   characterRoot: MutableRefObject<THREE.Group | null>,
   poseSample: MutableRefObject<CharacterPoseSample>,
+  sweepCapsule?: AlsGroundPredictionCapsuleSweep,
 ): AlsCharacterBridge {
-  const { world } = useRapier()
   const [{
     desiredGait,
     desiredStance,
@@ -385,17 +565,17 @@ export function useAlsCharacter(
       poseSample.current.ownerRigidBody = null
     }
   }, [poseSample])
-  useEffect(() => () => {
-    const collider = capsule.current
-    if (collider && world.getCollider(collider.handle)) {
-      world.removeCollider(collider, true)
-    }
-    capsule.current = null
-  }, [capsule, world])
-  const animationControls = useRef<AlsAnimationInstanceControls>({
+  const animationControls = useRef<AlsCharacterAnimationControls>({
     gait: 'Walking',
     moving: false,
     movingSmooth: false,
+    locomotionMode: 'Grounded',
+    scale: 1,
+    location: { x: 0, y: 0, z: 0 },
+    velocity: { x: 0, y: 0, z: 0 },
+    capsuleRadius: ALS_CAPSULE_RADIUS,
+    capsuleHalfHeight: ALS_STANDING_CAPSULE_HALF_HEIGHT,
+    walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
     stance: 'Standing',
     rotationMode: 'ViewDirection',
     overlayMode: 'Default',
@@ -438,6 +618,7 @@ export function useAlsCharacter(
   const gamepadInput = useRef<GamepadInput>({
     right: 0,
     forward: 0,
+    jump: false,
     sprint: false,
     walk: false,
     crouch: false,
@@ -445,23 +626,26 @@ export function useAlsCharacter(
     rotationMode: false,
   })
   const previousGamepadInput = useRef({
+    jump: false,
     walk: false,
     crouch: false,
     rotationMode: false,
   })
   const sprintHoldTime = useRef(0)
   const sprintActionActive = useRef(false)
+  const jumpRequested = useRef(false)
+  const onJumped = useRef<(() => void) | null>(null)
   const inputAxes = useRef<InputAxes>({ right: 0, forward: 0 })
   const inputDirection = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const actualVelocity = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const actorLocation = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const capsuleLocation = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const acceleration = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const desiredVelocity = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const renderedVelocity = useRef({ x: 0, y: 0, z: 0 })
   const debugViewYawWorld = useRef(0)
   const previousStance = useRef<AlsStance>('Standing')
-  const capsuleHalfHeight = useRef(ALS_STANDING_CAPSULE_HALF_HEIGHT)
-  const maintainRenderedMeshBase = useRef(false)
-  const renderedBodyPosition = useRef(new THREE.Vector3())
+  const capsulesInitialized = useRef(false)
 
   useEffect(() => {
     if (viewYawOverride) {
@@ -508,6 +692,8 @@ export function useAlsCharacter(
             ? 'ViewDirection'
             : 'VelocityDirection'
         setControls({ desiredRotationMode: rotationMode })
+      } else if (event.code === 'Space') {
+        requestAlsJumpInput(jumpRequested)
       }
     }
     const onKeyUp = (event: KeyboardEvent) => {
@@ -516,6 +702,7 @@ export function useAlsCharacter(
     const clearInputs = () => {
       pressedKeys.current.clear()
       aimingWithPointer.current = false
+      jumpRequested.current = false
     }
     const onPointerDown = (event: PointerEvent) => {
       if (event.button === 2) aimingWithPointer.current = true
@@ -566,6 +753,9 @@ export function useAlsCharacter(
     window.__setMovementOverride = (enabled: boolean) => {
       setControls({ movementOverride: enabled })
     }
+    window.__triggerJump = () => {
+      requestAlsJumpInput(jumpRequested)
+    }
     return () => {
       delete window.__setSpeed
       delete window.__setGait
@@ -574,47 +764,21 @@ export function useAlsCharacter(
       delete window.__setOverlayMode
       delete window.__setViewYaw
       delete window.__setMovementOverride
+      delete window.__triggerJump
     }
   }, [setControls])
-
-  useFrame(() => {
-    if (!maintainRenderedMeshBase.current) return
-
-    const body = rigidBody.current
-    const collider = capsule.current
-    const root = characterRoot.current
-    const renderedBody = root?.parent
-    if (!body || !collider || !root || !renderedBody) return
-
-    renderedBody.getWorldPosition(renderedBodyPosition.current)
-    const physicsBodyY = body.translation().y
-    const colliderLocalY = collider.translationWrtParent()?.y ?? 0
-    const colliderHalfExtent = collider.halfHeight() + collider.radius()
-    root.position.y = calculateMaintainedMeshBaseOffset(
-      physicsBodyY,
-      renderedBodyPosition.current.y,
-      colliderLocalY,
-      colliderHalfExtent,
-    )
-  }, ALS_FRAME_PRIORITY.MeshBase)
 
   useBeforePhysicsStep(() => {
     const body = rigidBody.current
     if (!body) return
-    if (maintainRenderedMeshBase.current) {
-      // react-three-rapier captured the post-crouch body as this substep's previous state before
-      // invoking us, so the old center can no longer leak through fixed-step interpolation.
-      const root = characterRoot.current
-      if (root) root.position.y = -capsuleHalfHeight.current
-      maintainRenderedMeshBase.current = false
+    if (!capsulesInitialized.current) {
+      setRapierAlsStanceCapsules(
+        standingCapsule.current,
+        crouchingCapsule.current,
+        'Standing',
+      )
+      capsulesInitialized.current = true
     }
-    capsule.current ??= setCapsuleHalfHeightMaintainingBase(
-      world,
-      body,
-      null,
-      capsuleHalfHeight.current,
-      capsuleHalfHeight.current,
-    )
 
     const controls = values.current
     const current = character.current
@@ -623,6 +787,9 @@ export function useAlsCharacter(
     const keys = pressedKeys.current
     const gamepad = sampleGamepad(gamepadInput.current)
     const previousGamepad = previousGamepadInput.current
+    if (gamepad.jump && !previousGamepad.jump) {
+      requestAlsJumpInput(jumpRequested)
+    }
     if (gamepad.walk && !previousGamepad.walk) {
       setControls({
         desiredGait:
@@ -643,6 +810,7 @@ export function useAlsCharacter(
             : 'VelocityDirection',
       })
     }
+    previousGamepad.jump = gamepad.jump
     previousGamepad.walk = gamepad.walk
     previousGamepad.crouch = gamepad.crouch
     previousGamepad.rotationMode = gamepad.rotationMode
@@ -679,7 +847,12 @@ export function useAlsCharacter(
     current.desiredRotationMode = controls.desiredRotationMode
     current.desiredAiming =
       controls.desiredAiming || aimingWithPointer.current || gamepad.aim
-    setStance(current, current.desiredStance)
+    setStance(
+      current,
+      current.locomotionMode === 'InAir'
+        ? 'Standing'
+        : current.desiredStance,
+    )
 
     if (controls.viewYawOverride) {
       current.viewYawAngle = debugViewYawWorld.current
@@ -697,6 +870,39 @@ export function useAlsCharacter(
     desiredVelocity.current.z = current.movement.velocity.z
     const linearVelocity = body.linvel()
     threeToUnrealVector(linearVelocity, actualVelocity.current)
+    threeToUnrealVector(body.translation(), actorLocation.current)
+    const queryCapsuleHalfHeight = current.stance === 'Crouching'
+      ? ALS_CROUCHING_CAPSULE_HALF_HEIGHT
+      : ALS_STANDING_CAPSULE_HALF_HEIGHT
+    const queryLocation = capsuleLocation.current
+    queryLocation.x = actorLocation.current.x
+    queryLocation.y = actorLocation.current.y
+    queryLocation.z = actorLocation.current.z
+      + queryCapsuleHalfHeight
+      - ALS_STANDING_CAPSULE_HALF_HEIGHT
+    if (sweepCapsule) {
+      const ground = probeRapierAlsGround(sweepCapsule, {
+        location: queryLocation,
+        capsuleRadius: ALS_CAPSULE_RADIUS,
+        capsuleHalfHeight: queryCapsuleHalfHeight,
+        walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
+      })
+      refreshRapierAlsLocomotionMode(
+        current,
+        ground !== null,
+        actualVelocity.current.z,
+      )
+    }
+    if (consumeAlsJumpInput(jumpRequested)) {
+      const jumpResult = handleAlsJumpInput(current)
+      if (jumpResult === 'Uncrouched') {
+        values.current.desiredStance = 'Standing'
+        setControls({ desiredStance: 'Standing' })
+      } else if (jumpResult === 'Jumped') {
+        actualVelocity.current.z = ALS_RAPIER_JUMP_SPEED
+        onJumped.current?.()
+      }
+    }
     const previousVelocityX = current.locomotionState.velocity.x
     const previousVelocityY = current.locomotionState.velocity.y
     const previousVelocityZ = current.locomotionState.velocity.z
@@ -716,16 +922,28 @@ export function useAlsCharacter(
     acceleration.current.z =
       (current.locomotionState.velocity.z - previousVelocityZ)
       / ALS_PHYSICS_TIMESTEP
-    stepGroundedVelocity(
-      current.movement,
-      inputDirection.current,
-      ALS_PHYSICS_TIMESTEP,
-      current.viewYawAngle,
-    )
+    if (current.locomotionMode === 'InAir') {
+      stepInAirVelocity(
+        current.movement,
+        inputDirection.current,
+        ALS_PHYSICS_TIMESTEP,
+      )
+    } else {
+      stepGroundedVelocity(
+        current.movement,
+        inputDirection.current,
+        ALS_PHYSICS_TIMESTEP,
+        current.viewYawAngle,
+      )
+    }
     unrealToThreeVector(current.movement.velocity, renderedVelocity.current)
     body.setLinvel(renderedVelocity.current, true)
 
-    stepGroundedCharacterYaw(current, ALS_PHYSICS_TIMESTEP)
+    if (current.locomotionMode === 'InAir') {
+      stepInAirCharacterYaw(current, ALS_PHYSICS_TIMESTEP)
+    } else {
+      stepGroundedCharacterYaw(current, ALS_PHYSICS_TIMESTEP)
+    }
     const animationViewYawAngle = unwindDegrees(
       current.viewYawAngle - current.actorYawAngle,
     )
@@ -738,19 +956,11 @@ export function useAlsCharacter(
 
     if (current.stance !== previousStance.current) {
       previousStance.current = current.stance
-      const halfHeight = current.stance === 'Crouching'
-        ? ALS_CROUCHING_CAPSULE_HALF_HEIGHT
-        : ALS_STANDING_CAPSULE_HALF_HEIGHT
-      capsule.current = setCapsuleHalfHeightMaintainingBase(
-        world,
-        body,
-        capsule.current,
-        capsuleHalfHeight.current,
-        halfHeight,
+      setRapierAlsStanceCapsules(
+        standingCapsule.current,
+        crouchingCapsule.current,
+        current.stance,
       )
-      capsuleHalfHeight.current = halfHeight
-      if (root) root.position.y = -halfHeight
-      maintainRenderedMeshBase.current = true
     }
 
     const state = current.locomotionState
@@ -764,6 +974,21 @@ export function useAlsCharacter(
     frame.movingSmooth = controls.movementOverride
       ? controls.speed > 0
       : calculateMovingSmooth(state)
+    frame.locomotionMode = current.locomotionMode
+    frame.scale = 1
+    const activeCapsuleHalfHeight = current.stance === 'Crouching'
+      ? ALS_CROUCHING_CAPSULE_HALF_HEIGHT
+      : ALS_STANDING_CAPSULE_HALF_HEIGHT
+    queryLocation.x = actorLocation.current.x
+    queryLocation.y = actorLocation.current.y
+    queryLocation.z = actorLocation.current.z
+      + activeCapsuleHalfHeight
+      - ALS_STANDING_CAPSULE_HALF_HEIGHT
+    frame.location = queryLocation
+    frame.velocity = state.velocity
+    frame.capsuleRadius = ALS_CAPSULE_RADIUS
+    frame.capsuleHalfHeight = activeCapsuleHalfHeight
+    frame.walkableFloorAngleCos = ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS
     frame.stance = current.stance
     frame.rotationMode = current.rotationMode
     frame.overlayMode = controls.overlayMode
@@ -791,20 +1016,26 @@ export function useAlsCharacter(
     frame.viewYawAngle = animationViewYawAngle
     frame.viewYawSpeed = current.viewYawSpeed
 
-    const activeCollider = capsule.current
-    const colliderTranslation = activeCollider.translationWrtParent()
+    const activeCollider = current.stance === 'Crouching'
+      ? crouchingCapsule.current
+      : standingCapsule.current
+    const colliderTranslation = activeCollider?.translationWrtParent()
     const bodyTranslation = body.translation()
     const colliderHalfExtent =
-      activeCollider.halfHeight() + activeCollider.radius()
+      activeCollider
+        ? activeCollider.halfHeight() + activeCollider.radius()
+        : activeCapsuleHalfHeight
     const colliderBottomY = bodyTranslation.y
       + (colliderTranslation?.y ?? 0)
       - colliderHalfExtent
     window.__alsCharacterState = {
       actorYawAngle: current.actorYawAngle,
       desiredGait: current.desiredGait,
+      desiredStance: current.desiredStance,
       gait: current.gait,
       stance: current.stance,
       rotationMode: current.rotationMode,
+      locomotionMode: current.locomotionMode,
       speed: state.speed,
       direction: frame.direction,
       moving: state.moving,
@@ -814,12 +1045,14 @@ export function useAlsCharacter(
         characterRoot.current?.position.y ?? Number.NaN,
       position: bodyTranslation,
       velocity: body.linvel(),
+      verticalVelocity: state.velocity.z,
     }
   })
 
   return {
     character,
     animationControls,
+    onJumped,
     overlayMode: overlayMode as AlsOverlayMode,
   }
 }

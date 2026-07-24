@@ -1,7 +1,9 @@
 import { useFrame } from '@react-three/fiber'
 import { Html, useGLTF } from '@react-three/drei'
 import {
+  CapsuleCollider,
   RigidBody,
+  useRapier,
   type RapierCollider,
   type RapierRigidBody,
 } from '@react-three/rapier'
@@ -19,10 +21,13 @@ import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { useAlsAnimationInstance } from '../als/AlsAnimationInstance.hooks'
 import {
+  ALS_CAPSULE_RADIUS,
+  ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
   ALS_STANDING_CAPSULE_HALF_HEIGHT,
   useAlsCharacter,
 } from '../als/AlsCharacter.hooks'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import { createRapierAlsCapsuleSweep } from '../engine/rapierAlsCapsuleSweep'
 import type { CharacterPoseSample } from './CharacterPoseSample'
 import {
   ALS_RIFLE_OVERLAY_OBJECT_URL,
@@ -182,9 +187,20 @@ function LoadedCharacter({
   onSizeChange: CharacterProps['onSizeChange']
   poseSample: CharacterProps['poseSample']
 }) {
+  const { rapier, world } = useRapier()
+  const RapierCapsule = rapier.Capsule
   const characterGroup = useRef<THREE.Group>(null)
   const rigidBody = useRef<RapierRigidBody>(null)
-  const capsule = useRef<RapierCollider>(null)
+  const standingCapsule = useRef<RapierCollider>(null)
+  const crouchingCapsule = useRef<RapierCollider>(null)
+  const capsuleSweep = useMemo(
+    () => createRapierAlsCapsuleSweep({
+      world,
+      Capsule: RapierCapsule,
+      resolveExcludeRigidBody: () => rigidBody.current,
+    }),
+    [RapierCapsule, world],
+  )
   const poseBones = useMemo(
     () => ({
       head: gltf.scene.getObjectByName('head') ?? gltf.scene.getObjectByName('Head'),
@@ -215,9 +231,11 @@ function LoadedCharacter({
 
   const character = useAlsCharacter(
     rigidBody,
-    capsule,
+    standingCapsule,
+    crouchingCapsule,
     characterGroup,
     poseSample,
+    capsuleSweep,
   )
   // The hook owns clip sampling, pose-space composition, and the one skeleton write per frame.
   // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
@@ -258,6 +276,28 @@ function LoadedCharacter({
       linearDamping={0}
       angularDamping={0}
     >
+      <CapsuleCollider
+        ref={standingCapsule}
+        args={[
+          ALS_STANDING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS,
+          ALS_CAPSULE_RADIUS,
+        ]}
+        friction={0}
+      />
+      <CapsuleCollider
+        ref={crouchingCapsule}
+        args={[
+          ALS_CROUCHING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS,
+          ALS_CAPSULE_RADIUS,
+        ]}
+        position={[
+          0,
+          ALS_CROUCHING_CAPSULE_HALF_HEIGHT
+            - ALS_STANDING_CAPSULE_HALF_HEIGHT,
+          0,
+        ]}
+        friction={0}
+      />
       <group
         ref={characterGroup}
         position={[0, -ALS_STANDING_CAPSULE_HALF_HEIGHT, 0]}

@@ -1,5 +1,8 @@
 import type { AlsOverlayMode } from '../als/AnimGraph/overlayMode'
-import type { AlsViewMode } from '../als/AlsCharacter'
+import type {
+  AlsLocomotionMode,
+  AlsViewMode,
+} from '../als/AlsCharacter'
 import type { AnimationFrameCaptureReport } from '../engine/animationFrameCapture'
 import type {
   AlsGait,
@@ -27,6 +30,8 @@ declare global {
     __setViewYaw?: (viewYaw: number) => void
     /** Play a named source clip solo, or pass null to resume the ALS graph. */
     __playClip?: (name: string | null) => boolean
+    /** Queue ALS's authored Jump input for the next fixed character update. */
+    __triggerJump?: () => void
     /**
      * Capture the current baseline plus subsequent evaluated animation frames. The report names
      * the largest per-bone delta on every edge and traces key bones in local and world space.
@@ -38,9 +43,11 @@ declare global {
     __alsCharacterState?: {
       actorYawAngle: number
       desiredGait: AlsGait
+      desiredStance: AlsStance
       gait: AlsGait
       stance: AlsStance
       rotationMode: AlsRotationMode
+      locomotionMode: AlsLocomotionMode
       speed: number
       direction: number
       moving: boolean
@@ -49,6 +56,7 @@ declare global {
       meshBaseOffsetY: number
       position: { x: number; y: number; z: number }
       velocity: { x: number; y: number; z: number }
+      verticalVelocity: number
     }
     __alsCameraState?: {
       activated: boolean
