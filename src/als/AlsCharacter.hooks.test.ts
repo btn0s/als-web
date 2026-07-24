@@ -103,6 +103,7 @@ describe('AlsCharacter browser bridge math', () => {
       actorYawAngle: 0,
       desiredRotationMode: 'ViewDirection',
       locomotionMode: 'InAir',
+      settings: { inAirRotationMode: 'RotateToVelocityOnJump' },
     })
     refreshAlsCharacter(
       character,

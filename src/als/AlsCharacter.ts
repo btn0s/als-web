@@ -18,7 +18,13 @@ import type {
   AlsStance,
 } from './Settings/AlsMovementSettings'
 import {
-  ALS_MOVING_SPEED_THRESHOLD,
+  ALS_CHARACTER_SETTINGS,
+} from './Settings/AlsCharacterSettings'
+import type {
+  AlsCharacterSettings,
+  AlsInAirRotationMode,
+} from './Settings/AlsCharacterSettings'
+import {
   createAlsLocomotionState,
   directionToAngleXY,
   refreshLocomotionState,
@@ -30,36 +36,10 @@ import type {
 } from './State/AlsLocomotionState'
 
 export type AlsLocomotionMode = 'Grounded' | 'InAir'
-export type AlsInAirRotationMode =
-  | 'RotateToVelocityOnJump'
-  | 'KeepRelativeRotation'
-  | 'KeepWorldRotation'
 export type AlsViewMode = 'FirstPerson' | 'ThirdPerson'
 
-/**
- * Character-level values used by this pure core. Names and defaults mirror
- * UAlsCharacterSettings (AlsCharacterSettings.h:20-47).
- */
-export interface AlsCharacterSettings {
-  readonly movingSpeedThreshold: number
-  readonly inAirRotationMode: AlsInAirRotationMode
-  readonly allowAimingWhenInAir: boolean
-  readonly sprintHasPriorityOverAiming: boolean
-  readonly rotateToVelocityWhenSprinting: boolean
-  readonly rotateTowardsDesiredVelocityInVelocityDirectionRotationMode: boolean
-  readonly autoRotateOnAnyInputWhileNotMovingInViewDirectionRotationMode:
-    boolean
-}
-
-export const ALS_CHARACTER_SETTINGS: Readonly<AlsCharacterSettings> = {
-  movingSpeedThreshold: ALS_MOVING_SPEED_THRESHOLD,
-  inAirRotationMode: 'RotateToVelocityOnJump',
-  allowAimingWhenInAir: true,
-  sprintHasPriorityOverAiming: false,
-  rotateToVelocityWhenSprinting: false,
-  rotateTowardsDesiredVelocityInVelocityDirectionRotationMode: true,
-  autoRotateOnAnyInputWhileNotMovingInViewDirectionRotationMode: true,
-}
+export { ALS_CHARACTER_SETTINGS }
+export type { AlsCharacterSettings, AlsInAirRotationMode }
 
 export interface AlsCharacter {
   desiredAiming: boolean

@@ -367,6 +367,22 @@ dotnet run -- validate-movement-settings movement-settings.json
   values/weights for all 32 keys. Its validator pins the 3 modes, 6 gait rows, 4 referenced
   assets, 8 channels, key times, and authored key values.
 
+## Character settings
+
+Run:
+
+```sh
+dotnet run -- dump-character-settings "$ALS_WORK/stage" character-settings.json
+dotnet run -- validate-character-settings character-settings.json
+```
+
+- **VERIFIED — `CS_Als_Default` overrides three behaviorally significant class defaults.**
+  `bSprintHasPriorityOverAiming` and `bRotateToVelocityWhenSprinting` are true, and
+  `InAirRotationMode` is `KeepRelativeRotation`. The absent teleport and moving-speed
+  thresholds inherit their 50 cm and 50 cm/s initializers from `AlsCharacterSettings.h`.
+  `character-settings.json` freezes the effective values and the original tagged overrides;
+  runtime converts the two linear values to metres at the data boundary.
+
 ## Animation instance settings and rich curves
 
 Run:

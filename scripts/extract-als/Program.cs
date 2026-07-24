@@ -12,6 +12,10 @@ if (args.Length == 3 && args[0] == "dump-movement-settings")
     return MovementSettingsDump.Run(args[1], args[2]);
 if (args.Length == 2 && args[0] == "validate-movement-settings")
     return MovementSettingsDump.Validate(args[1]);
+if (args.Length == 3 && args[0] == "dump-character-settings")
+    return CharacterSettingsDump.Run(args[1], args[2]);
+if (args.Length == 2 && args[0] == "validate-character-settings")
+    return CharacterSettingsDump.Validate(args[1]);
 if (args.Length == 3 && args[0] == "dump-animation-settings")
     return AnimationInstanceSettingsDump.Run(args[1], args[2]);
 if (args.Length == 2 && args[0] == "validate-animation-settings")
@@ -47,6 +51,10 @@ Console.Error.WriteLine(
     "       dotnet run -- dump-movement-settings <stage-dir> <movement-settings.json>");
 Console.Error.WriteLine(
     "       dotnet run -- validate-movement-settings <movement-settings.json>");
+Console.Error.WriteLine(
+    "       dotnet run -- dump-character-settings <stage-dir> <character-settings.json>");
+Console.Error.WriteLine(
+    "       dotnet run -- validate-character-settings <character-settings.json>");
 Console.Error.WriteLine(
     "       dotnet run -- dump-animation-settings <stage-dir> <animation-settings.json>");
 Console.Error.WriteLine(

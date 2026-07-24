@@ -52,6 +52,7 @@ describe('AAlsCharacter input and gait policy', () => {
       desiredGait: 'Sprinting',
       desiredRotationMode: 'ViewDirection',
       viewYawAngle: 0,
+      settings: { rotateToVelocityWhenSprinting: false },
     })
 
     refreshInput(character, {
@@ -87,6 +88,7 @@ describe('AAlsCharacter input and gait policy', () => {
       desiredGait: 'Sprinting',
       desiredAiming: true,
       viewYawAngle: 0,
+      settings: { sprintHasPriorityOverAiming: false },
     })
     refreshInput(character, { x: 1, y: 0, z: 0 })
     expect(canSprint(character)).toBe(false)

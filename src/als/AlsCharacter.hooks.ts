@@ -328,8 +328,8 @@ function setRotationSmooth(
 /**
  * AAlsCharacter::RefreshInAirRotation(), cpp:1812-1879.
  *
- * This includes all three authored EAlsInAirRotationMode branches even though the shipped
- * UAlsCharacterSettings default is RotateToVelocityOnJump.
+ * This includes all three authored EAlsInAirRotationMode branches. The C++ class default is
+ * RotateToVelocityOnJump; CS_Als_Default overrides it to KeepRelativeRotation.
  */
 export function stepInAirCharacterYaw(
   character: AlsCharacter,

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "engineVersion": "UE5.5",
+    "referenceRelease": "ALS Refactored 4.15",
+    "settingsAssetPath": "ALS/Content/ALS/Data/Character/CS_Als_Default.uasset",
+    "cppDefaults": "Source/ALS/Public/Settings/AlsCharacterSettings.h",
+    "consumer": "Source/ALS/Private/AlsCharacter.cpp"
+  },
+  "settings": {
+    "TeleportDistanceThreshold": 50.0,
+    "MovingSpeedThreshold": 50.0,
+    "InAirRotationMode": "KeepRelativeRotation",
+    "bAllowAimingWhenInAir": true,
+    "bSprintHasPriorityOverAiming": true,
+    "bRotateToVelocityWhenSprinting": true,
+    "bInheritMovementBaseRotationInVelocityDirectionRotationMode": false,
+    "bRotateTowardsDesiredVelocityInVelocityDirectionRotationMode": true,
+    "bAutoRotateOnAnyInputWhileNotMovingInViewDirectionRotationMode": true
+  },
+  "serializedOverrides": {
+    "bSprintHasPriorityOverAiming": true,
+    "bRotateToVelocityWhenSprinting": true,
+    "InAirRotationMode": "EAlsInAirRotationMode::KeepRelativeRotation",
+    "Mantling": {
+      "GroundedTrace": {
+        "bDrawFailedTraces": true
+      }
+    },
+    "Ragdolling": {
+      "GetUpFrontMontage": {
+        "ObjectName": "AnimMontage'AM_Als_GetUp_Front'",
+        "ObjectPath": "/ALS/ALS/Animations/Actions/GetUp/AM_Als_GetUp_Front"
+      },
+      "GetUpBackMontage": {
+        "ObjectName": "AnimMontage'AM_Als_GetUp_Back'",
+        "ObjectPath": "/ALS/ALS/Animations/Actions/GetUp/AM_Als_GetUp_Back"
+      }
+    },
+    "Rolling": {
+      "Montage": {
+        "ObjectName": "AnimMontage'AM_Als_Roll'",
+        "ObjectPath": "/ALS/ALS/Animations/Actions/Roll/AM_Als_Roll"
+      },
+      "bInterruptRollingWhenInAir": false
+    }
+  },
+  "validations": [
+    {
+      "id": "cs-als-default-character-policy",
+      "passed": true,
+      "values": {
+        "settingCount": 9,
+        "serializedOverrideCount": 6,
+        "errors": []
+      }
+    }
+  ]
+}
