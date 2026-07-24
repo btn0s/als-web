@@ -6,10 +6,10 @@ ALS** (scope sharpened 2026-07-23) — a reference repo / template whose deliver
 locomotion on the web, full stop. Gameplay layers are downstream projects that
 fork this, not milestones here.
 
-**Operating principles (inherited):** code speaks for itself — this file plus a lean CLAUDE.md are
-the only docs; design rationale lives in code comments. Fix quality bar applies (land at the seam,
-in-idiom, no reward hacks, name the trades). Burn debt on a system before the feature wave that
-touches it.
+**Operating principles (inherited):** code speaks for itself — this plan plus `AGENTS.md` are the
+standing orientation; extracted ALS reference data lives beside its subject and design rationale
+lives in code comments. Fix quality bar applies (land at the seam, in-idiom, no reward hacks,
+name the trades). Burn debt on a system before the feature wave that touches it.
 
 ---
 
@@ -40,16 +40,18 @@ UE5-native clip packs would need a scripted retarget — deferred out with the s
 - [x] `blendspace` · `actionSequence` · `actionArbiter` · `slotMontage` · `scrubbedPose` ·
       `proceduralPose` · `footIk` + `ikChain` — landed with tests green *(2026-07-23)*
 - [x] `locomotionProfile` on ALS authored constants (`AlsMovementSettings.h` / `MS_Als_Normal`:
-      walk 1.75, run 3.75, sprint 6.5 m/s, crouch 1.5/2.0; stride = speed × duration) *(2026-07-23)*
+      Walking 1.75, Running 3.75, Sprinting 6.5 m/s, crouched Walking/Running 1.5/2.0);
+      the live controller now evaluates the authored acceleration, braking, friction, and
+      rotation-interpolation rich curves rather than tuning replacements *(2026-07-23)*
 - [ ] Pose-based camera (poseHeight publish + self-calibrating pivot) and the reticle-true zoom
 - [ ] Dev tooling: test hooks (`__triggerJump`, `__playClip`; `__setSpeed` + `__weightTable`
       landed with the M1 proof), capture scripts, Leva root taxonomy
       (Camera / Movement / Animation / Sandbox / Debug)
 
 **Exit:** transplanted test suite green; character walks under the weight table with one region
-rule active as proof. *(Proof landed 2026-07-23: Leva-driven speed crossfades idle/walk/jog per
-the blendspace, sprint-arms region rule rides the jog — verified via `__weightTable` in-browser.
-Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of dev tooling.)*
+rule active as proof. *(Proof landed 2026-07-23: the debug speed override crossfades
+Idle/Walking/Running and the Sprinting-arms region rule rides Running — verified through
+`__weightTable`. Remaining for M1 close: reticle-true camera zoom and the rest of dev tooling.)*
 
 ---
 
@@ -60,12 +62,15 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
       anims (glTF or psk/psa/ueformat → Blender batch import → GLB). One command per pack.
       If CUE4Parse lags the plugin's engine target (4.17 → UE 5.7), pin an older plugin release
       (e.g. 4.15 → UE 5.5) — the content is identical for our purposes.
-- [x] **ALS Refactored's animation set** extracted — 67 curated clips via clips.manifest
+- [x] **ALS Refactored's complete referenced animation set** extracted — the union of every
+      direct ABP sequence and every authored BlendSpace sample/preview base is 109 clips, pinned
+      by `clips.manifest` and the cross-oracle validator
       *(2026-07-23; licensing settled: the repo's
       blanket MIT names the full author lineage — Sixze, Longmire, Yanıkoğlu — and covers its
       assets; upstream notice ships as `LICENSE-ALS-Refactored.md` beside ported assets)*
-- [x] **Animation float curves extracted** — 161 curves across 53/67 clips as glTF animation
-      extras, +25KB *(2026-07-23)*. (Architecture review: ALS's runtime is
+- [x] **Animation metadata extracted** — 333 float curves across 74/109 clips, 60 authored sync
+      markers across 30 clips, and 150 notifies across 57 clips as glTF animation extras
+      *(2026-07-23)*. (Architecture review: ALS's runtime is
       curve-driven — `AlsConstants.h` names them all: `FootLeft/RightLock`/`Ik`, `RotationYawSpeed`
       (turn-in-place timing), `AllowTransitions`, `SprintBlock`, `Pose*`, per-region `Layer*`
       alphas (incl. `Additive`/`LocalSpace` variants). They live in the same AnimDataModel Dump.cs
@@ -82,7 +87,8 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
       standalone port builds UE4-mannequin-native (SK_Als), period. The UE5 retarget/re-rig
       decision and any non-ALS clip packs leave this repo — they belong to downstream forks
 - [x] `scripts/build-player-anims.mjs` equivalent — `run.sh` + `clips.manifest` + assembler IS
-      the curated merge (single GLB, mesh + 67 clips + curves, root tracks preserved) *(2026-07-23)*
+      the curated merge (single GLB, mesh + 109 clips + curves/markers/notifies, root tracks
+      preserved) *(2026-07-23)*
 - [x] Clip audit doc-comment: `clips.manifest`, one line per clip keyed to M3 items *(2026-07-23)*
 
 - [x] **ABP AnimGraph dumper (2026-07-23)**: the
@@ -98,9 +104,16 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
 - [x] **Movement content oracle (2026-07-23):** `MS_Als_Normal`'s 3 rotation modes × 2 stances
       plus all referenced acceleration/braking/friction and rotation-interpolation rich curves
       dump deterministically with their authored interpolation and tangent metadata
+- [x] **BlendSpace content oracle (2026-07-23):** all nine ABP-referenced BlendSpaces dump their
+      authored axes, interpolation parameters, samples, segments/triangles, and grid topology;
+      the validator proves the 33 unique sample/preview-base sequences are in the GLB
+- [x] **Input content oracle (2026-07-23):** `IMC_Als` dumps all 31 mappings / 13 actions with
+      exact key, modifier order, and trigger metadata; the live bridge consumes that contract
+      for the implemented controller actions
 
-**Exit (revised):** one curated GLB (met 2026-07-23: 7.4MB, real mesh, 67 clips, 161 curves; every
-clip binds by bone name; strides from authored speeds) + the ABP graph dump alongside it.
+**Exit (revised):** one curated GLB (met 2026-07-23: 10,038,916 bytes / 9.57 MiB, real mesh,
+109 clips, 333 curves, 60 markers, 150 notifies; every clip binds by bone name) plus the ABP,
+BlendSpace, movement-settings, and input-mapping dumps alongside it.
 
 ---
 
@@ -108,23 +121,24 @@ clip binds by bone name; strides from authored speeds) + the ABP graph dump alon
 
 ALS Refactored's taxonomy as the checklist, replicated as closely as the web stack allows —
 data on the M1 substrate (weight-table entries, region rules, arbiter records), not new systems.
-**Every item derives from ALS source/content ONLY**: the plugin C++ (formulas/constants per the
-extracted math spec in session memory), the authored clips, and their curves. No constant without
-a citation; spec gaps resolve from ALS content first, original design second (flagged) — never
-from another project's implementation:
+**Every item derives from ALS source/content ONLY**: the plugin C++ (formulas/constants frozen in
+`src/als/AlsAnimationInstance.reference.md`), the authored clips/curves, and the extracted content
+oracles. No constant without a citation; spec gaps resolve from ALS content first, original design
+second (flagged) — never from another project's implementation:
 
-- [ ] **Owned pose-buffer animation runtime FIRST** (decision 2026-07-23 — no building M3 on the
+- [x] **Owned pose-buffer animation runtime FIRST** (landed 2026-07-23 — no M3 system rests on the
       mixer): sample clips into typed-array local-pose buffers → blend in pose space (lerp/slerp
       with quaternion neighborhood, per-bone masked, additive local-space, mesh-space capable) →
-      write skeleton once + root-motion delta. ggez (`vibe-stack/ggez` anim-core/anim-runtime,
-      MIT) is the pattern REFERENCE, not a dependency — the math is small and we own it. The pure
-      modules (weightTable, regionOverlays, blendspace, arbiter) are the graph description and
-      drive the new applier unchanged; `useLocomotionRig` re-points; mixer-era machinery
-      (`filterClipToBones` as applier, bind-pose coverage as a hard invariant) retires — coverage
-      stays as a debug assertion, not a survival constraint. This LIFTS the mesh-space arm-layering
-      approximation recorded below.
-- [ ] Gaits: walk / run / sprint with authored speeds; stride warping if the clips demand it
-- [x] Stances: Standing / Crouching with authored StandToCrouch/CrouchToStand transitions following their own PoseCrouching curves *(2026-07-23; prone/crawl deferred to downstream forks)*
+      write the skeleton once. Per-bone masks, local/mesh-space additives, authored curve
+      evaluation, marker sync, and output inertialization are evaluator operations; normalized
+      under-coverage warns in development. Authored root-motion delta consumption remains tracked
+      with action montage semantics, not as a mixer-era limitation.
+- [ ] Gaits: Walking / Running / Sprinting through the exact six-state grounded graph. Authored
+      movement speeds and all nine BlendSpace topologies evaluate today; graph state selection,
+      transition profiles, pivots, and sprint state wiring remain open
+- [x] Stances: Standing / Crouching with authored StandToCrouch/CrouchToStand transitions
+      following their own PoseCrouching curves *(2026-07-23; non-ALS stance additions stay in
+      downstream forks)*
 - [ ] **Parity harness (added 2026-07-23 — before more systems build on unverified semantics)**:
       two oracles the implementation didn't author. (a) C++ DIFFERENTIAL: test-only, line-mirroring
       transliteration of AlsAnimationInstance's Refresh* functions; property sweeps assert our
@@ -134,13 +148,14 @@ from another project's implementation:
       content-semantics failure class the unit suite structurally cannot (the shipped rifle-overlay
       defects were all this class). Implementation tests remain as regression pins, not equivalence
       evidence
-- [ ] **Character controller (`AlsCharacter` + movement component analog)**: WASD/gamepad input →
+- [x] **Character controller (`AlsCharacter` + movement component analog)**: WASD/gamepad input →
       acceleration/braking → velocity on a rapier capsule, feeding the existing VelocityBlend/
-      gait inputs (today's Leva sliders become the debug override, not the source). All constants
+      gait inputs (Leva/debug hooks are overrides, not the source). All policy constants
       from ALS source/content: `MS_Als_Normal` gait speeds + `AlsMovementSettings` accel/braking/
       direction-dependent speeds; actor yaw consumes the `RotationYawSpeed` curve while
-      grounded-and-not-moving (AlsCharacter.cpp:1798). Prereq for rotation modes + turn-in-place
-      feeling real
+      grounded-and-not-moving (`AlsCharacter.cpp:1798`). The numerical velocity integrator is
+      explicitly ORIGINAL because ALS delegates it to UE; source-backed policy and live input
+      lifecycle are covered by unit and Playwright gates *(2026-07-23)*
 - [ ] Rotation modes: VelocityDirection / ViewDirection / Aiming — real 8-way blendspaces
       from authored directional clips (not cardinal-blend approximation)
 - [x] Turn-in-place + rotate-in-place per spec constants, RotationYawSpeed drives yaw *(2026-07-23)*; start/stop/pivot transitions still open (quick-stop math transliterated, unwired)
@@ -150,8 +165,9 @@ from another project's implementation:
       pose-buffer runtime above makes it implementable; do it if parity footage demands it)
 - [ ] In-air: jump/fall with land recovery (`Land_Light`/`LandRoll` by fall speed)
 - [ ] Mantle/vault through the arbiter (one clock: warp + montage share normalized progress)
-- [x] **Engine features**: sync groups on authored Left/Right markers + inertialization landed
-      *(2026-07-23)*; montage blend semantics per the ABP dump still open
+- [ ] **Engine features**: sync groups on authored Left/Right markers, final named-curve
+      composition, and UE-style output inertialization landed *(2026-07-23)*; montage/slot blend
+      semantics and authored root-motion handoff remain open
 - [ ] Foot IK with pelvis adaptation (ALS's Control Rig stage: ground trace + spring-damped Z offset + slope alignment — constants in the math spec; the pelvis-combine formula is graph-side and flagged original-design)
 - [ ] CUT for now: ragdoll, rolling physics blend, debug-camera parity — revisit on demand
 
@@ -186,8 +202,8 @@ this repo is the standalone web port of ALS, and M4 is its final milestone.
   audio payload (streaming bulk exists only in cooked builds) — footstep SFX must be sourced
   independently if ever wanted. Uncooked StaticMesh geometry needs a new custom bulk-data parser
   (real unstarted work — budget before scoping env props). OverlayObjects skeletal meshes parse
-  via the existing probe-based shim, no changes expected. Full decision tree in session memory
-  (uasset-serialization-playbook).
+  via the existing probe-based shim, no changes expected. Full decision tree is frozen in
+  `scripts/extract-als/PLAYBOOK.md`.
 
 - **Never ship Epic-published content** (Manny/Quinn mannequin packs, MetaHumans, and other
   Epic-designated UE-only assets). Local experiments with Epic content stay local.
@@ -206,4 +222,4 @@ this repo is the standalone web port of ALS, and M4 is its final milestone.
 ## Maintenance rules
 
 - Check items off as they land; stamp milestones with date + commit on close.
-- New debt goes in a TECH-DEBT.md when it earns one; this file only schedules.
+- New debt is scheduled here or named at its code seam; no parallel decision-log document.
