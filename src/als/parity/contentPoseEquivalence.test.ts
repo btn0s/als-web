@@ -4,7 +4,11 @@ import { readFileSync } from 'node:fs'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { applyPose, createPoseApplicator } from '../../engine/applyPose'
+import { compileClipSampler, sampleClip } from '../../engine/clipSampler'
 import { compileClipCurveSamplers } from '../../engine/curves'
+import { createPoseBuffer } from '../../engine/poseBuffer'
+import { createRigDefinition } from '../../engine/rig'
 import {
   RIFLE_OVERLAY_CLIPS,
 } from '../AnimGraph/overlayMode'
@@ -28,6 +32,40 @@ import {
 const CURVE_EPSILON = 1e-5
 const YAW_INTEGRAL_EPSILON = 1e-3
 const WEIGHT_EPSILON = 1e-6
+const SOURCE_POSE_POSITION_EPSILON_METERS = 2e-6
+const SOURCE_MESH_CONTACT_EPSILON_METERS = 2e-6
+
+/**
+ * Extracted from ALS Refactored 4.15 commit b3cbf4305358606746f47778f1c2753cd8e3a35a,
+ * Content/ALS/Animations/Base/A_Als_Crouch_Pose.uasset. These are named component-space
+ * positions from its AnimDataModel raw tracks after the exact UE-cm/Z-up to glTF-m/Y-up basis
+ * conversion. The source pose deliberately plants the right knee and raises the right heel.
+ */
+const ALS_4_15_CROUCH_POSE_COMPONENT_POSITIONS = {
+  pelvis: [0.020789826, 0.4235864, -0.15575754],
+  thigh_l: [0.103712985, 0.409078887, -0.120234404],
+  calf_l: [0.130257361, 0.531134575, 0.284621168],
+  foot_l: [0.14076321, 0.134653483, 0.219278324],
+  ball_l: [0.139961304, 0.030118119, 0.385058762],
+  thigh_r: [-0.065705809, 0.409080753, -0.181382522],
+  calf_r: [-0.286446921, 0.056300693, -0.098038535],
+  foot_r: [-0.012380614, 0.198906433, -0.35519464],
+  ball_r: [0.053417679, 0.030216078, -0.430197056],
+} as const
+
+/**
+ * Source pose applied to the shipped rigid SKM_Als geometry. The right `foot_r` section is the
+ * raised heel; `ball_r` is its grounded toe section. Standing is retained as an independent
+ * same-mesh floor reference.
+ */
+const ALS_4_15_CROUCH_POSE_CONTACT_Y_METERS = {
+  mesh: -0.001400218,
+  foot_l: -0.001400218,
+  ball_l: 0.001127739,
+  foot_r: 0.016329523,
+  ball_r: 0.001227183,
+  standingMesh: -0.001400179,
+} as const
 
 interface RawAlsCurve {
   readonly name: string
@@ -273,6 +311,41 @@ function clamp01(value: number) {
   return Math.max(0, Math.min(1, value))
 }
 
+function posedMeshFloor(scene: THREE.Object3D) {
+  let mesh = Number.POSITIVE_INFINITY
+  const byBone = new Map<string, number>()
+  const vertex = new THREE.Vector3()
+
+  scene.updateMatrixWorld(true)
+  scene.traverse((object) => {
+    if (!(object instanceof THREE.SkinnedMesh)) return
+    const positions = object.geometry.getAttribute('position')
+    const skinIndices = object.geometry.getAttribute('skinIndex')
+    if (!positions || !skinIndices) {
+      throw new Error(`${object.name} is missing skinned position data`)
+    }
+
+    for (let index = 0; index < positions.count; index++) {
+      vertex.fromBufferAttribute(positions, index)
+      object.applyBoneTransform(index, vertex)
+      vertex.applyMatrix4(object.matrixWorld)
+      mesh = Math.min(mesh, vertex.y)
+
+      const bone = object.skeleton.bones[skinIndices.getX(index)]
+      if (!bone) {
+        throw new Error(`${object.name} vertex ${index} targets a missing bone`)
+      }
+      byBone.set(
+        bone.name,
+        Math.min(byBone.get(bone.name) ?? Number.POSITIVE_INFINITY, vertex.y),
+      )
+    }
+  })
+
+  if (!Number.isFinite(mesh)) throw new Error('SKM_Als has no skinned vertices')
+  return { mesh, byBone }
+}
+
 beforeAll(async () => {
   gltf = await loadAlsGltf()
 })
@@ -407,6 +480,88 @@ describe('ALS ABP content oracle: AB_Als_Rifle Relaxed topology', () => {
       expect(() => clip(selection.clipName)).not.toThrow()
     },
   )
+})
+
+describe('ALS content oracle: authored crouching idle pose', () => {
+  it('preserves the one-knee component pose and its exact grounded contacts', () => {
+    const crouchingSelection = graphStanceBaseSelections.Crouching
+    const standingSelection = graphStanceBaseSelections.Standing
+    const rig = createRigDefinition(gltf.scene)
+    const applicator = createPoseApplicator(gltf.scene, rig)
+    const crouchingClip = clip(crouchingSelection.clipName)
+    const crouchingSampler = compileClipSampler(crouchingClip, rig)
+    const crouchingPose = sampleClip(
+      crouchingSampler,
+      rig,
+      crouchingSelection.explicitTime,
+      createPoseBuffer(rig.boneCount),
+      false,
+    )
+
+    expect(rig.boneCount).toBe(68)
+    expect(crouchingClip.tracks).toHaveLength(136)
+    expect(crouchingSampler.bindings).toHaveLength(136)
+    applyPose(applicator, crouchingPose)
+    gltf.scene.updateMatrixWorld(true)
+    const componentPositions = new Map<string, THREE.Vector3>()
+    for (const [boneName, expectedPosition] of Object.entries(
+      ALS_4_15_CROUCH_POSE_COMPONENT_POSITIONS,
+    )) {
+      const bone = gltf.scene.getObjectByName(boneName)
+      if (!(bone instanceof THREE.Bone)) {
+        throw new Error(`Missing ALS crouch-pose bone ${boneName}`)
+      }
+      const componentPosition = bone.getWorldPosition(new THREE.Vector3())
+      componentPositions.set(boneName, componentPosition)
+      expect(
+        componentPosition.distanceTo(new THREE.Vector3(...expectedPosition)),
+        `${boneName} component-space position`,
+      ).toBeLessThanOrEqual(SOURCE_POSE_POSITION_EPSILON_METERS)
+    }
+
+    // This relationship is the visible authored design, not an extraction accident: the right
+    // knee is nearly on the floor while the left knee remains above the planted left foot.
+    const calfLeft = componentPositions.get('calf_l')!
+    const calfRight = componentPositions.get('calf_r')!
+    expect(calfLeft.y - calfRight.y).toBeGreaterThan(0.47)
+
+    const crouchingFloor = posedMeshFloor(gltf.scene)
+    const standingClip = clip(standingSelection.clipName)
+    applyPose(
+      applicator,
+      sampleClip(
+        compileClipSampler(standingClip, rig),
+        rig,
+        standingSelection.explicitTime,
+        createPoseBuffer(rig.boneCount),
+        false,
+      ),
+    )
+    const standingFloor = posedMeshFloor(gltf.scene)
+
+    expect(Math.abs(
+      crouchingFloor.mesh - ALS_4_15_CROUCH_POSE_CONTACT_Y_METERS.mesh,
+    )).toBeLessThanOrEqual(SOURCE_MESH_CONTACT_EPSILON_METERS)
+    expect(Math.abs(
+      standingFloor.mesh
+        - ALS_4_15_CROUCH_POSE_CONTACT_Y_METERS.standingMesh,
+    )).toBeLessThanOrEqual(SOURCE_MESH_CONTACT_EPSILON_METERS)
+    expect(Math.abs(crouchingFloor.mesh - standingFloor.mesh))
+      .toBeLessThanOrEqual(SOURCE_MESH_CONTACT_EPSILON_METERS)
+    for (const boneName of ['foot_l', 'ball_l', 'foot_r', 'ball_r'] as const) {
+      expect(
+        Math.abs(
+          crouchingFloor.byBone.get(boneName)!
+            - ALS_4_15_CROUCH_POSE_CONTACT_Y_METERS[boneName],
+        ),
+        `${boneName} skinned-section floor contact`,
+      ).toBeLessThanOrEqual(SOURCE_MESH_CONTACT_EPSILON_METERS)
+    }
+    expect(crouchingFloor.byBone.get('foot_r'))
+      .toBeGreaterThan(0.015)
+    expect(crouchingFloor.byBone.get('ball_r'))
+      .toBeLessThan(0.002)
+  })
 })
 
 describe('ALS content oracle: stance-transition PoseCrouching', () => {
