@@ -10,7 +10,9 @@ before feature work.
 
 - **ALS is the single source of truth:** every system derives from ALS Refactored's own source
   and content — the plugin C++ (clone at `~/.cache/als-extract/ALS-Refactored-4.15`), its authored
-  clips/curves/data assets, and the extracted math spec in session memory. When the C++ has no
+  clips/curves/data assets, and the extracted references IN THIS REPO:
+  `src/als/AlsAnimationInstance.reference.md` (per-frame math, formulas/constants/curves) and
+  `scripts/extract-als/PLAYBOOK.md` (uasset serialization decision tree). When the C++ has no
   constant, the answer is almost always in CONTENT (transition clips, Pose*/Layer* curves, data
   assets) — look there first. Referencing any other local project's implementation is prohibited.
   If ALS genuinely has no answer, design from first principles and flag it as original. When a
@@ -42,8 +44,12 @@ before feature work.
   actual defect first. Ordinary code changes are covered by the test gates — this rule is for
   discovery and fixes, not ceremony.
 - **Docs philosophy:** code speaks for itself. ROADMAP.md (plan) + this file (orientation) are
-  the only standing docs; design rationale lives in code comments at the relevant site. No
-  spec/history markdown files.
+  the only standing PROSE docs; design rationale lives in code comments at the relevant site.
+  One carve-out (user 2026-07-23): EXTRACTED REFERENCE data from ALS source/recon lives in-repo
+  next to its subject (`AlsAnimationInstance.reference.md`, `extract-als/PLAYBOOK.md`,
+  `clips.manifest`, `props.manifest`) — fresh sessions and sandboxed agents have no session
+  memory, so load-bearing verified knowledge persists in the repo or it doesn't exist. No
+  history/decision-log markdown.
 - **Fix quality bar:** land fixes at the existing architectural seam, in the codebase's idiom.
   No reward hacks (no test special-casing, no symptom suppression). Deliberately scoped tactical
   patches are fine when the real fix is scheduled — say so and name the trade.
