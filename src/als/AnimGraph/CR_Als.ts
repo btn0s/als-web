@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { LocalPoseBuffer } from '../../engine/poseBuffer'
 import type { RigDefinition } from '../../engine/rig'
+import { unrealYawDegreesToThreeRadians } from '../../engine/unrealCoordinateSpace'
 
 const SMALL_NUMBER = 1e-8
 const KINDA_SMALL_NUMBER = 1e-4
@@ -11,6 +12,7 @@ const CENTIMETERS_TO_METERS = 0.01
 const POSITION_KINDA_SMALL_NUMBER = KINDA_SMALL_NUMBER * CENTIMETERS_TO_METERS
 const POSITION_SMALL_NUMBER_SQUARED =
   SMALL_NUMBER * CENTIMETERS_TO_METERS * CENTIMETERS_TO_METERS
+const RUNTIME_UP = new THREE.Vector3(0, 1, 0)
 
 export type AlsControlRigFootSide = 'left' | 'right'
 
@@ -152,6 +154,16 @@ export interface AlsControlRigFootIkInputState {
   readonly footLeftRotation: THREE.Quaternion
   readonly footRightLocation: THREE.Vector3
   readonly footRightRotation: THREE.Quaternion
+}
+
+/** FAlsControlRigInput fields consumed by CR_Als's complete Forward Solve chain. */
+export interface AlsControlRigInputState
+  extends AlsControlRigFootIkInputState {
+  readonly bUseHandIkBones: boolean
+  readonly bUseFootIkBones: boolean
+  readonly velocityBlendForwardAmount: number
+  readonly velocityBlendBackwardAmount: number
+  readonly spineYawAngle: number
 }
 
 export interface EvaluateAlsControlRigFootIkInput {
@@ -2410,58 +2422,243 @@ export function evaluateAlsControlRigFootIk(
   return input.pose
 }
 
-/**
- * The contiguous IK tail of CR_Als's authored forward-solve graph.
- *
- * RefreshDiagonalScaling and RefreshSpineRotation precede this sequence in the uasset but do not
- * have pose-buffer evaluators yet. Keeping this tail explicit prevents a live owner from running
- * the already-landed hand solve before the foot/pelvis solve.
- */
-export const ALS_CONTROL_RIG_IK_FORWARD_SOLVE = {
+/** CR_Als's IsGameWorld-gated Forward Solve, in authored RigVM execution-link order. */
+export const ALS_CONTROL_RIG_FORWARD_SOLVE = {
+  gate: {
+    function: 'FAlsRigVMFunction_IsGameWorld',
+    block: 'True',
+  },
   executionOrder: [
+    'RefreshDiagonalScaling',
+    'RefreshSpineRotation',
     'RefreshFootOffset',
     'RefreshPelvisOffset',
     'RefreshFootIk',
     'RefreshHandIk',
   ],
+  diagonalScaling: {
+    footRootBoneWhenUsingFootIkBones: 'ik_foot_root',
+    footRootBoneOtherwise: 'VB foot_root',
+    curveName: 'PoseMoving',
+    /** Authored Unreal scale axes. Runtime C-basis axes are (0.4, 0, 0.4). */
+    scaleOffset: [0.4, 0.4, 0] as const,
+  },
+  /** Default__CR_Als_C.SpineRotationBones, preserving authored array order. */
+  spineRotationBones: [
+    'pelvis',
+    'spine_01',
+    'spine_02',
+    'spine_03',
+  ],
 } as const
 
-export interface AlsControlRigIkForwardSolveRuntime {
+export interface AlsControlRigForwardSolveRuntime {
   readonly footIk: AlsControlRigFootIkRuntime
   readonly handIk: AlsControlRigHandIkRuntime
+  readonly footRootBoneWhenUsingFootIkBonesIndex: number
+  readonly footRootBoneOtherwiseIndex: number
+  readonly spineRotationBoneIndices: readonly number[]
+  readonly spineTargetRotation: THREE.Quaternion
+  readonly spineDeltaRotation: THREE.Quaternion
+  diagonalScalingFactor: number
+  spineRotationApplied: boolean
+  executed: boolean
 }
 
-export interface EvaluateAlsControlRigIkForwardSolveInput
-  extends EvaluateAlsControlRigFootIkInput {
-  /** FAlsGeneralAnimationSettings::bUseHandIkBones. The authored default is true. */
-  readonly useHandIkBones?: boolean
+export interface EvaluateAlsControlRigForwardSolveInput
+  extends Omit<EvaluateAlsControlRigFootIkInput, 'rigInput'> {
+  readonly isGameWorld: boolean
+  readonly rigInput: AlsControlRigInputState
 }
 
-export function createAlsControlRigIkForwardSolveRuntime(
+function requireForwardSolveBoneIndex(
   rig: RigDefinition,
-): AlsControlRigIkForwardSolveRuntime {
+  boneName: string,
+) {
+  const index = rig.boneNames.indexOf(boneName)
+  if (index < 0) {
+    throw new Error(
+      `CR_Als Forward Solve requires bone "${boneName}"`,
+    )
+  }
+  return index
+}
+
+export function createAlsControlRigForwardSolveRuntime(
+  rig: RigDefinition,
+): AlsControlRigForwardSolveRuntime {
+  const diagonalScaling = ALS_CONTROL_RIG_FORWARD_SOLVE.diagonalScaling
   return {
     footIk: createAlsControlRigFootIkRuntime(rig),
     handIk: createAlsControlRigHandIkRuntime(rig),
+    footRootBoneWhenUsingFootIkBonesIndex:
+      requireForwardSolveBoneIndex(
+        rig,
+        diagonalScaling.footRootBoneWhenUsingFootIkBones,
+      ),
+    footRootBoneOtherwiseIndex: requireForwardSolveBoneIndex(
+      rig,
+      diagonalScaling.footRootBoneOtherwise,
+    ),
+    spineRotationBoneIndices:
+      ALS_CONTROL_RIG_FORWARD_SOLVE.spineRotationBones.map(
+        (boneName) => requireForwardSolveBoneIndex(rig, boneName),
+      ),
+    spineTargetRotation: new THREE.Quaternion(),
+    spineDeltaRotation: new THREE.Quaternion(),
+    diagonalScalingFactor: 0,
+    spineRotationApplied: false,
+    executed: false,
   }
 }
 
 /**
- * Runs CR_Als's implemented IK forward-solve tail against one final pose and curve buffer.
- *
- * The caller must supply the same-frame final AnimGraph curves plus FAlsControlRigInput. In UE,
- * the foot locations/rotations in that input come from FAlsFeetState::Final* values refreshed
- * from the prior published skeletal frame.
+ * Exact scalar graph upstream of RefreshDiagonalScaling's authored (0.4, 0.4, 0) scale offset.
  */
-export function evaluateAlsControlRigIkForwardSolve(
-  runtime: AlsControlRigIkForwardSolveRuntime,
-  input: EvaluateAlsControlRigIkForwardSolveInput,
+export function calculateAlsControlRigDiagonalScalingFactor(
+  velocityBlendForwardAmount: number,
+  velocityBlendBackwardAmount: number,
+): number {
+  return 1 - Math.abs(
+    2 * (
+      velocityBlendForwardAmount
+      + velocityBlendBackwardAmount
+      - 0.5
+    ),
+  )
+}
+
+/**
+ * RefreshDiagonalScaling. GetTransform and SetScale both use the current local transform;
+ * SetScale is weighted directly by PoseMoving and propagates to children.
+ */
+function refreshDiagonalScaling(
+  runtime: AlsControlRigForwardSolveRuntime,
+  input: EvaluateAlsControlRigForwardSolveInput,
+) {
+  runtime.diagonalScalingFactor =
+    calculateAlsControlRigDiagonalScalingFactor(
+      input.rigInput.velocityBlendForwardAmount,
+      input.rigInput.velocityBlendBackwardAmount,
+    )
+  const weight = curveValue(
+    input.curves,
+    ALS_CONTROL_RIG_FORWARD_SOLVE.diagonalScaling.curveName,
+  )
+  if (weight < SMALL_NUMBER) return
+
+  // FRigUnit_SetTransform blends only the partial-weight range; a full-or-higher weight writes
+  // the complete target. CR_Als connects PoseMoving directly and has no Clamp01 node.
+  const writeWeight = weight < 1 - SMALL_NUMBER ? weight : 1
+  const footRootBoneIndex = input.rigInput.bUseFootIkBones
+    ? runtime.footRootBoneWhenUsingFootIkBonesIndex
+    : runtime.footRootBoneOtherwiseIndex
+  const scaleOffset = footRootBoneIndex * 3
+  const scaledFactor = runtime.diagonalScalingFactor * writeWeight
+  input.pose.scales[scaleOffset] += 0.4 * scaledFactor
+  input.pose.scales[scaleOffset + 2] += 0.4 * scaledFactor
+  refreshComponentTransforms(runtime.footIk, input.pose)
+}
+
+function isAlsIdentityQuaternion(
+  rotation: Readonly<THREE.Quaternion>,
+  tolerance: number,
+) {
+  return Math.abs(rotation.x) <= tolerance
+    && Math.abs(rotation.y) <= tolerance
+    && Math.abs(rotation.z) <= tolerance
+    && (
+      Math.abs(rotation.w - 1) <= tolerance
+      || Math.abs(rotation.w + 1) <= tolerance
+    )
+}
+
+/**
+ * RefreshSpineRotation plus FAlsRigUnit_DistributeRotationSimple. The unit premultiplies the
+ * same 1/N global delta in array order, with SetGlobalTransform's default child propagation.
+ */
+function refreshSpineRotation(
+  runtime: AlsControlRigForwardSolveRuntime,
+  input: EvaluateAlsControlRigForwardSolveInput,
+) {
+  runtime.spineRotationApplied = false
+  const itemCount = runtime.spineRotationBoneIndices.length
+  if (itemCount <= 0) return
+
+  runtime.spineTargetRotation.setFromAxisAngle(
+    RUNTIME_UP,
+    unrealYawDegreesToThreeRadians(input.rigInput.spineYawAngle),
+  )
+  if (
+    isAlsIdentityQuaternion(
+      runtime.spineTargetRotation,
+      KINDA_SMALL_NUMBER,
+    )
+  ) {
+    return
+  }
+
+  runtime.spineDeltaRotation.identity().slerp(
+    runtime.spineTargetRotation,
+    1 / itemCount,
+  )
+  if (
+    isAlsIdentityQuaternion(
+      runtime.spineDeltaRotation,
+      KINDA_SMALL_NUMBER,
+    )
+  ) {
+    return
+  }
+
+  for (const itemIndex of runtime.spineRotationBoneIndices) {
+    loadComponentTransform(
+      runtime.footIk,
+      itemIndex,
+      runtime.footIk.scratch.transformC,
+    )
+    runtime.footIk.scratch.transformC.rotation
+      .premultiply(runtime.spineDeltaRotation)
+      .normalize()
+    writeGlobalTransform(
+      runtime.footIk,
+      input.pose,
+      itemIndex,
+      runtime.footIk.scratch.transformC,
+    )
+    refreshComponentTransforms(runtime.footIk, input.pose)
+  }
+  runtime.spineRotationApplied = true
+}
+
+/**
+ * Runs all six stages of CR_Als's Forward Solve against one final pose and curve buffer.
+ *
+ * The caller supplies the same-frame final AnimGraph curves plus FAlsControlRigInput. In UE, the
+ * foot locations/rotations come from FAlsFeetState::Final* values refreshed from the prior
+ * published skeletal frame.
+ */
+export function evaluateAlsControlRigForwardSolve(
+  runtime: AlsControlRigForwardSolveRuntime,
+  input: EvaluateAlsControlRigForwardSolveInput,
 ): LocalPoseBuffer {
+  if (input.pose.boneCount !== runtime.footIk.rig.boneCount) {
+    throw new Error(
+      'CR_Als Forward Solve pose has an incompatible bone count',
+    )
+  }
+  runtime.executed = false
+  if (!input.isGameWorld) return input.pose
+
+  refreshComponentTransforms(runtime.footIk, input.pose)
+  refreshDiagonalScaling(runtime, input)
+  refreshSpineRotation(runtime, input)
   evaluateAlsControlRigFootIk(runtime.footIk, input)
   evaluateAlsControlRigHandIk(runtime.handIk, {
     pose: input.pose,
     curves: input.curves,
-    useHandIkBones: input.useHandIkBones,
+    useHandIkBones: input.rigInput.bUseHandIkBones,
   })
+  runtime.executed = true
   return input.pose
 }

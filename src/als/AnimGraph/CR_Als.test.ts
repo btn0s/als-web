@@ -10,15 +10,16 @@ import {
 } from '../../engine/poseBuffer'
 import type { RigDefinition } from '../../engine/rig'
 import {
+  ALS_CONTROL_RIG_FORWARD_SOLVE,
   ALS_CONTROL_RIG_FOOT_IK,
   ALS_CONTROL_RIG_HAND_IK,
-  ALS_CONTROL_RIG_IK_FORWARD_SOLVE,
+  calculateAlsControlRigDiagonalScalingFactor,
+  createAlsControlRigForwardSolveRuntime,
   createAlsControlRigFootIkRuntime,
   createAlsControlRigHandIkRuntime,
-  createAlsControlRigIkForwardSolveRuntime,
+  evaluateAlsControlRigForwardSolve,
   evaluateAlsControlRigFootIk,
   evaluateAlsControlRigHandIk,
-  evaluateAlsControlRigIkForwardSolve,
   resolveAlsControlRigHandIkWeight,
   type AlsControlRigFootOffsetTrace,
 } from './CR_Als'
@@ -65,6 +66,12 @@ const oracle = JSON.parse(readFileSync(
 )) as HandIkOracle
 
 interface ControlRigGraphOracle {
+  readonly defaults: {
+    readonly spineRotationBones: readonly {
+      readonly type: string
+      readonly name: string
+    }[]
+  }
   readonly graphs: readonly {
     readonly path: string
     readonly nodes: readonly {
@@ -315,30 +322,112 @@ function createFootTestRig() {
 }
 
 function createIkForwardSolveTestRig() {
-  const footBoneCount = FOOT_BONE_NAMES.length
   const boneNames = [
-    ...FOOT_BONE_NAMES,
-    ...BONE_NAMES.slice(1),
+    'root',
+    'pelvis',
+    'spine_01',
+    'spine_02',
+    'spine_03',
+    'thigh_l',
+    'calf_l',
+    'foot_l',
+    'ball_l',
+    'thigh_r',
+    'calf_r',
+    'foot_r',
+    'ball_r',
+    'ik_foot_root',
+    'ik_foot_l',
+    'ik_foot_r',
+    'upperarm_l',
+    'lowerarm_l',
+    'hand_l',
+    'finger_l',
+    'upperarm_r',
+    'lowerarm_r',
+    'hand_r',
+    'finger_r',
+    'VB foot_root',
+    'VB foot_l',
+    'VB foot_r',
+    'VB ik_hand_l',
+    'VB hand_l',
+    'VB ik_hand_r',
+    'VB hand_r',
+  ] as const
+  const parentIndices = new Int16Array([
+    -1,
+    0,
+    1,
+    2,
+    3,
+    1,
+    5,
+    6,
+    7,
+    1,
+    9,
+    10,
+    11,
+    0,
+    13,
+    13,
+    4,
+    16,
+    17,
+    18,
+    4,
+    20,
+    21,
+    22,
+    0,
+    24,
+    24,
+    22,
+    22,
+    18,
+    18,
+  ])
+  const localPositions: readonly Vector3Tuple[] = [
+    [0, 0, 0],
+    [0, 1, 0],
+    [0, 0.2, 0],
+    [0, 0.2, 0],
+    [0, 0.2, 0],
+    [0, -0.1, 0.12],
+    [0, -0.4, 0],
+    [0, -0.4, 0],
+    [0.12, -0.04, 0],
+    [0, -0.1, -0.12],
+    [0, -0.4, 0],
+    [0, -0.4, 0],
+    [0.12, -0.04, 0],
+    [0, 0, 0],
+    [0.2, 0, 0.3],
+    [-0.2, 0, -0.3],
+    [0, 0.2, 0],
+    [1, 0, 0],
+    [1, 0, 0],
+    [0.25, 0, 0],
+    [0, -0.2, 0],
+    [-1, 0, 0],
+    [-1, 0, 0],
+    [-0.25, 0, 0],
+    [0, 0, 0],
+    [0.2, 0, 0.3],
+    [-0.2, 0, -0.3],
+    [3, 0.4, 0],
+    [3, 0.4, 0.5],
+    [-3, -0.4, 0],
+    [-3, -0.4, 0.5],
   ]
   const boneCount = boneNames.length
-  const parentIndices = new Int16Array(boneCount)
-  parentIndices.set(FOOT_PARENT_INDICES)
   const referencePositions = new Float32Array(boneCount * 3)
   const referenceRotations = new Float32Array(boneCount * 4)
   const referenceScales = new Float32Array(boneCount * 3)
 
-  for (let bone = 0; bone < footBoneCount; bone++) {
-    referencePositions.set(FOOT_LOCAL_POSITIONS[bone], bone * 3)
-  }
-  for (let sourceBone = 1; sourceBone < BONE_NAMES.length; sourceBone++) {
-    const bone = footBoneCount + sourceBone - 1
-    const sourceParent = PARENT_INDICES[sourceBone]
-    parentIndices[bone] = sourceParent === 0
-      ? 0
-      : footBoneCount + sourceParent - 1
-    referencePositions.set(LOCAL_POSITIONS[sourceBone], bone * 3)
-  }
   for (let bone = 0; bone < boneCount; bone++) {
+    referencePositions.set(localPositions[bone], bone * 3)
     referenceRotations[bone * 4 + 3] = 1
     referenceScales.set([1, 1, 1], bone * 3)
   }
@@ -358,21 +447,34 @@ function footTestInput(
   curves: ReadonlyMap<string, number>,
   trace: AlsControlRigFootOffsetTrace,
   overrides: Partial<{
+    isGameWorld: boolean
     deltaTime: number
     bFootOffsetAllowed: boolean
     footLeftLocation: THREE.Vector3
     footLeftRotation: THREE.Quaternion
     footRightLocation: THREE.Vector3
     footRightRotation: THREE.Quaternion
+    bUseHandIkBones: boolean
+    bUseFootIkBones: boolean
+    velocityBlendForwardAmount: number
+    velocityBlendBackwardAmount: number
+    spineYawAngle: number
   }> = {},
 ) {
   return {
     pose,
     curves,
+    isGameWorld: overrides.isGameWorld ?? true,
     deltaTime: overrides.deltaTime ?? 1 / 60,
     trace,
     rigInput: {
+      bUseHandIkBones: overrides.bUseHandIkBones ?? true,
+      bUseFootIkBones: overrides.bUseFootIkBones ?? true,
       bFootOffsetAllowed: overrides.bFootOffsetAllowed ?? true,
+      velocityBlendForwardAmount:
+        overrides.velocityBlendForwardAmount ?? 0,
+      velocityBlendBackwardAmount:
+        overrides.velocityBlendBackwardAmount ?? 0,
       footLeftLocation:
         overrides.footLeftLocation
         ?? new THREE.Vector3(0, 0.1, 0.12),
@@ -385,6 +487,7 @@ function footTestInput(
       footRightRotation:
         overrides.footRightRotation
         ?? new THREE.Quaternion(),
+      spineYawAngle: overrides.spineYawAngle ?? 0,
     },
   }
 }
@@ -1205,14 +1308,42 @@ describe('CR_Als pure foot offset and pelvis stage', () => {
   })
 })
 
-describe('CR_Als IK forward-solve tail', () => {
-  it('pins the contiguous foot, pelvis, foot IK, then hand IK graph order', () => {
-    expect(ALS_CONTROL_RIG_IK_FORWARD_SOLVE.executionOrder).toEqual([
+describe('CR_Als authored Forward Solve', () => {
+  it('pins the IsGameWorld gate and all six execution links', () => {
+    expect(ALS_CONTROL_RIG_FORWARD_SOLVE.gate).toEqual({
+      function: 'FAlsRigVMFunction_IsGameWorld',
+      block: 'True',
+    })
+    expect(ALS_CONTROL_RIG_FORWARD_SOLVE.executionOrder).toEqual([
+      'RefreshDiagonalScaling',
+      'RefreshSpineRotation',
       'RefreshFootOffset',
       'RefreshPelvisOffset',
       'RefreshFootIk',
       'RefreshHandIk',
     ])
+    expect(controlRigGraph('RigVMModel').nodes).toContainEqual(
+      expect.objectContaining({
+        path: 'AlsRigVMFunction_IsGameWorld',
+        resolvedFunctionName:
+          'FAlsRigVMFunction_IsGameWorld::Execute',
+      }),
+    )
+    expectControlRigLink(
+      'RigVMModel',
+      'AlsRigVMFunction_IsGameWorld.True',
+      'RefreshDiagonalScaling.Input',
+    )
+    expectControlRigLink(
+      'RigVMModel',
+      'RefreshDiagonalScaling.Input',
+      'RefreshSpineRotation.Input',
+    )
+    expectControlRigLink(
+      'RigVMModel',
+      'RefreshSpineRotation.Input',
+      'RefreshFootOffset.Input',
+    )
     expectControlRigLink(
       'RigVMModel',
       'RefreshFootOffset.Input',
@@ -1230,10 +1361,359 @@ describe('CR_Als IK forward-solve tail', () => {
     )
   })
 
-  it('runs both foot traces before mutating the arms for hand IK', () => {
+  it('pins RefreshDiagonalScaling values, spaces, propagation, and dataflow', () => {
+    const graph =
+      'RigVMFunctionLibrary/RefreshDiagonalScaling/ContainedGraph'
+    const diagonalScaling =
+      ALS_CONTROL_RIG_FORWARD_SOLVE.diagonalScaling
+
+    expect(controlRigPinDefault(
+      'RigVMModel',
+      'If_2/True/Name',
+    )).toBe(diagonalScaling.footRootBoneWhenUsingFootIkBones)
+    expect(controlRigPinDefault(
+      'RigVMModel',
+      'If_2/False/Name',
+    )).toBe(diagonalScaling.footRootBoneOtherwise)
+    expectControlRigLink(
+      'RigVMModel',
+      'VariableNode_8.Value.bUseFootIkBones',
+      'If_2.Condition',
+    )
+    expectControlRigLink(
+      'RigVMModel',
+      'If_2.Result',
+      'VariableNode_7.Value',
+    )
+
+    expect(controlRigPinDefault(
+      graph,
+      'GetCurveValue_3_1_1/Curve',
+    )).toBe(diagonalScaling.curveName)
+    expect(Number(controlRigPinDefault(
+      graph,
+      'MathVectorScale/Value/X',
+    ))).toBe(diagonalScaling.scaleOffset[0])
+    expect(Number(controlRigPinDefault(
+      graph,
+      'MathVectorScale/Value/Y',
+    ))).toBe(diagonalScaling.scaleOffset[1])
+    expect(Number(controlRigPinDefault(
+      graph,
+      'MathVectorScale/Value/Z',
+    ))).toBe(diagonalScaling.scaleOffset[2])
+    expect(Number(controlRigPinDefault(
+      graph,
+      'Subtract/B',
+    ))).toBe(0.5)
+    expect(Number(controlRigPinDefault(
+      graph,
+      'Multiply/B',
+    ))).toBe(2)
+    expect(Number(controlRigPinDefault(
+      graph,
+      'Subtract_1/A',
+    ))).toBe(1)
+    expect(controlRigPinDefault(
+      graph,
+      'GetTransform_2_2/Space',
+    )).toBe('LocalSpace')
+    expect(controlRigPinDefault(
+      graph,
+      'GetTransform_2_2/bInitial',
+    )).toBeUndefined()
+    expect(controlRigPinDefault(
+      graph,
+      'SetScale/Space',
+    )).toBe('LocalSpace')
+    expect(controlRigPinDefault(
+      graph,
+      'SetScale/bInitial',
+    )).toBeUndefined()
+    expect(controlRigPinDefault(
+      graph,
+      'SetScale/bPropagateToChildren',
+    )).toBe('True')
+    expect(controlRigPinDefault(
+      graph,
+      'GetTransform_2_2/Item/RigVMInjectionInfo_0/VariableNode/Variable',
+    )).toBe('FootRootBone')
+    expect(controlRigPinDefault(
+      graph,
+      'SetScale/Item/RigVMInjectionInfo_0/VariableNode_1/Variable',
+    )).toBe('FootRootBone')
+
+    for (const [source, target] of [
+      [
+        'VariableNode_8.Value.VelocityBlendForwardAmount',
+        'MathFloatAdd_1_1.A',
+      ],
+      [
+        'VariableNode_8.Value.VelocityBlendBackwardAmount',
+        'MathFloatAdd_1_1.B',
+      ],
+      ['MathFloatAdd_1_1.Result', 'Subtract.A'],
+      ['Subtract.Result', 'Multiply.A'],
+      ['Multiply.Result', 'Absolute.Value'],
+      ['Absolute.Result', 'Subtract_1.B'],
+      ['Subtract_1.Result', 'MathVectorScale.Factor'],
+      ['GetTransform_2_2.Transform.Scale3D', 'MathVectorAdd_1.A'],
+      ['MathVectorScale.Result', 'MathVectorAdd_1.B'],
+      ['MathVectorAdd_1.Result', 'SetScale.Scale'],
+      ['GetCurveValue_3_1_1.Value', 'SetScale.Weight'],
+      ['Entry.Input', 'SetScale.ExecuteContext'],
+      ['SetScale.ExecuteContext', 'Return.Input'],
+    ] as const) {
+      expectControlRigLink(graph, source, target)
+    }
+  })
+
+  it('pins RefreshSpineRotation to SpineYawAngle and the CDO item order', () => {
+    const graphPath =
+      'RigVMFunctionLibrary/RefreshSpineRotation/ContainedGraph'
+    const graph = controlRigGraph(graphPath)
+    expect(controlRigOracle.defaults.spineRotationBones).toEqual(
+      ALS_CONTROL_RIG_FORWARD_SOLVE.spineRotationBones.map(
+        (name) => ({
+          type: 'ERigElementType::Bone',
+          name,
+        }),
+      ),
+    )
+    expect(graph.nodes).toContainEqual(expect.objectContaining({
+      path: 'AlsRigUnit_DistributeRotationSimple',
+      resolvedFunctionName:
+        'FAlsRigUnit_DistributeRotationSimple::Execute',
+    }))
+    expect(graph.nodes).toContainEqual(expect.objectContaining({
+      path: 'Cast',
+      resolvedFunctionName:
+        'FRigVMFunction_MathQuaternionFromRotatorV2::Execute',
+    }))
+    expect(controlRigPinDefault(
+      graphPath,
+      'AlsRigUnit_DistributeRotationSimple/Items/RigVMInjectionInfo_0/VariableNode_1_1_1_1_1/Variable',
+    )).toBe('SpineRotationBones')
+    expect(Number(controlRigPinDefault(
+      graphPath,
+      'Cast/Value/Pitch',
+    ))).toBe(0)
+    expect(Number(controlRigPinDefault(
+      graphPath,
+      'Cast/Value/Roll',
+    ))).toBe(0)
+    expectControlRigLink(
+      graphPath,
+      'VariableNode_8.Value.SpineYawAngle',
+      'Cast.Value.Yaw',
+    )
+    expectControlRigLink(
+      graphPath,
+      'Cast.Result',
+      'AlsRigUnit_DistributeRotationSimple.Rotation',
+    )
+    expectControlRigLink(
+      graphPath,
+      'Entry.Input',
+      'AlsRigUnit_DistributeRotationSimple.ExecuteContext',
+    )
+    expectControlRigLink(
+      graphPath,
+      'AlsRigUnit_DistributeRotationSimple.ExecuteContext',
+      'Return.Input',
+    )
+  })
+
+  it('leaves the pose untouched outside a game world', () => {
     const rig = createIkForwardSolveTestRig()
-    const runtime = createAlsControlRigIkForwardSolveRuntime(rig)
+    const runtime = createAlsControlRigForwardSolveRuntime(rig)
     const pose = createTestPose(rig)
+    const before = pose.data.slice()
+    const result = evaluateAlsControlRigForwardSolve(
+      runtime,
+      footTestInput(
+        pose,
+        new Map([
+          ['PoseMoving', 1],
+          ['FootLeftIk', 1],
+          ['FootRightIk', 1],
+          ...allHandIkCurves(),
+        ]),
+        () => {
+          throw new Error('IsGameWorld false must not trace')
+        },
+        {
+          isGameWorld: false,
+          velocityBlendForwardAmount: 0.25,
+          velocityBlendBackwardAmount: 0.25,
+          spineYawAngle: 80,
+        },
+      ),
+    )
+    expect(result).toBe(pose)
+    expect(pose.data).toEqual(before)
+    expect(runtime.executed).toBe(false)
+  })
+
+  it('ports the unclamped diagonal factor and weighted current-local scale', () => {
+    expect(calculateAlsControlRigDiagonalScalingFactor(0, 0)).toBe(0)
+    expect(
+      calculateAlsControlRigDiagonalScalingFactor(0.25, 0.25),
+    ).toBe(1)
+    expect(calculateAlsControlRigDiagonalScalingFactor(1.5, 0))
+      .toBe(-1)
+
+    const rig = createIkForwardSolveTestRig()
+    const runtime = createAlsControlRigForwardSolveRuntime(rig)
+    const pose = createTestPose(rig)
+    const footRoot = index(rig, 'ik_foot_root')
+    const footChild = index(rig, 'ik_foot_l')
+    const otherFootRoot = index(rig, 'VB foot_root')
+    pose.scales[footRoot * 3] = 2
+    pose.scales[footRoot * 3 + 2] = 3
+
+    evaluateAlsControlRigForwardSolve(
+      runtime,
+      footTestInput(
+        pose,
+        new Map([['PoseMoving', 0.5]]),
+        () => null,
+        {
+          velocityBlendForwardAmount: 0.25,
+          velocityBlendBackwardAmount: 0.25,
+        },
+      ),
+    )
+
+    expect(runtime.diagonalScalingFactor).toBe(1)
+    expect(pose.scales[footRoot * 3]).toBeCloseTo(2.2, 6)
+    expect(pose.scales[footRoot * 3 + 1]).toBe(1)
+    expect(pose.scales[footRoot * 3 + 2]).toBeCloseTo(3.2, 6)
+    expect(pose.scales[otherFootRoot * 3]).toBe(1)
+    const transforms = componentTransforms(rig, pose)
+    expect(transforms[footChild].scale.x).toBeCloseTo(2.2, 6)
+    expect(transforms[footChild].scale.y).toBe(1)
+    expect(transforms[footChild].scale.z).toBeCloseTo(3.2, 6)
+  })
+
+  it('selects VB foot_root when bUseFootIkBones is false', () => {
+    const rig = createIkForwardSolveTestRig()
+    const pose = createTestPose(rig)
+    evaluateAlsControlRigForwardSolve(
+      createAlsControlRigForwardSolveRuntime(rig),
+      footTestInput(
+        pose,
+        new Map([['PoseMoving', 1]]),
+        () => null,
+        {
+          bUseFootIkBones: false,
+          velocityBlendForwardAmount: 0.25,
+          velocityBlendBackwardAmount: 0.25,
+        },
+      ),
+    )
+    const footRoot = index(rig, 'ik_foot_root')
+    const virtualFootRoot = index(rig, 'VB foot_root')
+    expect(pose.scales[footRoot * 3]).toBe(1)
+    expect(pose.scales[virtualFootRoot * 3]).toBeCloseTo(1.4, 6)
+    expect(pose.scales[virtualFootRoot * 3 + 1]).toBe(1)
+    expect(pose.scales[virtualFootRoot * 3 + 2])
+      .toBeCloseTo(1.4, 6)
+  })
+
+  it('treats a near-identity spine quaternion as no rotation', () => {
+    const rig = createIkForwardSolveTestRig()
+    const runtime = createAlsControlRigForwardSolveRuntime(rig)
+    const pose = createTestPose(rig)
+    const before = pose.data.slice()
+    evaluateAlsControlRigForwardSolve(
+      runtime,
+      footTestInput(
+        pose,
+        new Map(),
+        () => null,
+        { spineYawAngle: 0.005 },
+      ),
+    )
+    expect(pose.data).toEqual(before)
+    expect(runtime.spineRotationApplied).toBe(false)
+  })
+
+  it('distributes global yaw cumulatively through the CDO spine chain', () => {
+    const rig = createIkForwardSolveTestRig()
+    const runtime = createAlsControlRigForwardSolveRuntime(rig)
+    const pose = createTestPose(rig)
+    evaluateAlsControlRigForwardSolve(
+      runtime,
+      footTestInput(
+        pose,
+        new Map(),
+        () => null,
+        { spineYawAngle: 80 },
+      ),
+    )
+
+    const transforms = componentTransforms(rig, pose)
+    for (const [boneName, yaw] of [
+      ['pelvis', -20],
+      ['spine_01', -40],
+      ['spine_02', -60],
+      ['spine_03', -80],
+    ] as const) {
+      const expected = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        THREE.MathUtils.degToRad(yaw),
+      )
+      expect(
+        transforms[index(rig, boneName)].rotation.angleTo(expected),
+      ).toBeLessThan(1e-5)
+    }
+    expect(runtime.spineRotationApplied).toBe(true)
+  })
+
+  it('premultiplies the global delta before a noncommuting source rotation', () => {
+    const rig = createIkForwardSolveTestRig()
+    const pose = createTestPose(rig)
+    const pelvis = index(rig, 'pelvis')
+    new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(1, 0, 0),
+      THREE.MathUtils.degToRad(30),
+    ).toArray(pose.rotations, pelvis * 4)
+
+    evaluateAlsControlRigForwardSolve(
+      createAlsControlRigForwardSolveRuntime(rig),
+      footTestInput(
+        pose,
+        new Map(),
+        () => null,
+        { spineYawAngle: 80 },
+      ),
+    )
+
+    const yaw = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      THREE.MathUtils.degToRad(-80),
+    )
+    const source = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(1, 0, 0),
+      THREE.MathUtils.degToRad(30),
+    )
+    const expected = yaw.clone().multiply(source)
+    const reversed = source.clone().multiply(yaw)
+    const actual = componentTransforms(
+      rig,
+      pose,
+    )[index(rig, 'spine_03')].rotation
+    expect(actual.angleTo(expected)).toBeLessThan(1e-4)
+    expect(actual.angleTo(reversed)).toBeGreaterThan(0.1)
+  })
+
+  it('runs both prefix stages before traces and hand IK after traces', () => {
+    const rig = createIkForwardSolveTestRig()
+    const runtime = createAlsControlRigForwardSolveRuntime(rig)
+    const pose = createTestPose(rig)
+    const footRoot = index(rig, 'ik_foot_root')
+    const spine03 = index(rig, 'spine_03')
     const upperArmLeft = index(rig, 'upperarm_l')
     const upperArmRight = index(rig, 'upperarm_r')
     const armRotationsBefore = [
@@ -1248,6 +1728,7 @@ describe('CR_Als IK forward-solve tail', () => {
     ]
     const tracedSides: string[] = []
     const curves = new Map([
+      ['PoseMoving', 1],
       ['FootLeftIk', 1],
       ['FootRightIk', 1],
       ...allHandIkCurves(),
@@ -1267,6 +1748,17 @@ describe('CR_Als IK forward-solve tail', () => {
             upperArmRight * 4 + 4,
           ),
         ]).toEqual(armRotationsBefore)
+        expect(pose.scales[footRoot * 3]).toBeCloseTo(1.4, 6)
+        const expectedSpineRotation =
+          new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            THREE.MathUtils.degToRad(-80),
+          )
+        expect(
+          componentTransforms(rig, pose)[spine03].rotation.angleTo(
+            expectedSpineRotation,
+          ),
+        ).toBeLessThan(1e-5)
         return {
           impactPoint: new THREE.Vector3(
             traceRequest.start.x,
@@ -1276,10 +1768,16 @@ describe('CR_Als IK forward-solve tail', () => {
           impactNormal: new THREE.Vector3(0, 1, 0),
         }
       },
+      {
+        velocityBlendForwardAmount: 0.25,
+        velocityBlendBackwardAmount: 0.25,
+        spineYawAngle: 80,
+      },
     )
 
-    expect(evaluateAlsControlRigIkForwardSolve(runtime, input))
+    expect(evaluateAlsControlRigForwardSolve(runtime, input))
       .toBe(pose)
+    expect(runtime.executed).toBe(true)
     expect(tracedSides).toEqual(['left', 'right'])
     expect([
       ...pose.rotations.slice(

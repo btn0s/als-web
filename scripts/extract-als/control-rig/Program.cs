@@ -13,6 +13,7 @@ var graphPaths = new[]
 {
     "RigVMModel",
     "RigVMFunctionLibrary/RefreshDiagonalScaling/ContainedGraph",
+    "RigVMFunctionLibrary/RefreshSpineRotation/ContainedGraph",
     "RigVMFunctionLibrary/TraceFootOffset/New Function_ContainedGraph",
     "RigVMFunctionLibrary/RefreshFootOffset/New Function_ContainedGraph",
     "RigVMFunctionLibrary/RefreshPelvisOffset/ContainedGraph",
@@ -157,6 +158,10 @@ static JObject Extract(string assetPath, IReadOnlyList<string> graphPaths)
             NearestGraphPath(index)))
         .ToArray();
 
+    var defaults = ExtractControlRigDefaults(
+        exportRecords.Single(record =>
+            record.Path == "Default__CR_Als_C").Export);
+
     var extractedGraphs = new JArray();
     foreach (var graphPath in graphPaths)
     {
@@ -220,8 +225,54 @@ static JObject Extract(string assetPath, IReadOnlyList<string> graphPaths)
             SHA256.HashData(File.ReadAllBytes(assetPath))).ToLowerInvariant(),
         ["engineVersion"] = "UE5_5",
         ["scope"] = "foot-placement",
+        ["defaults"] = defaults,
         ["graphs"] = extractedGraphs,
     };
+}
+
+static JObject ExtractControlRigDefaults(JObject defaultObject)
+{
+    var properties = defaultObject["Data"] as JArray
+        ?? throw new InvalidDataException("CR_Als default object has no properties");
+    var spineRotationBonesProperty = properties
+        .OfType<JObject>()
+        .SingleOrDefault(property =>
+            (string?)property["Name"] == "SpineRotationBones")
+        ?? throw new InvalidDataException(
+            "CR_Als default object has no SpineRotationBones");
+    var serializedItems = spineRotationBonesProperty["Value"] as JArray
+        ?? throw new InvalidDataException(
+            "CR_Als SpineRotationBones is not an array");
+    var spineRotationBones = new JArray();
+    foreach (var serializedItem in serializedItems.OfType<JObject>())
+    {
+        var fields = serializedItem["Value"] as JArray
+            ?? throw new InvalidDataException(
+                "CR_Als SpineRotationBones item has no fields");
+        spineRotationBones.Add(new JObject
+        {
+            ["type"] = RequireSerializedPropertyValue(fields, "Type"),
+            ["name"] = RequireSerializedPropertyValue(fields, "Name"),
+        });
+    }
+
+    return new JObject
+    {
+        ["spineRotationBones"] = spineRotationBones,
+    };
+}
+
+static string RequireSerializedPropertyValue(
+    JArray properties,
+    string propertyName)
+{
+    return properties
+               .OfType<JObject>()
+               .SingleOrDefault(property =>
+                   (string?)property["Name"] == propertyName)?["Value"]
+               ?.Value<string>()
+           ?? throw new InvalidDataException(
+               $"serialized property {propertyName} is missing");
 }
 
 static JObject ExtractNode(ExportRecord record, string graphPath)
@@ -354,6 +405,33 @@ static void Validate(JObject artifact, IReadOnlyList<string> graphPaths)
     {
         throw new InvalidDataException("sourceSha256 is not a lowercase SHA-256 digest");
     }
+    var defaults = artifact["defaults"] as JObject
+        ?? throw new InvalidDataException("artifact has no defaults object");
+    var spineRotationBones = defaults["spineRotationBones"] as JArray
+        ?? throw new InvalidDataException(
+            "artifact has no SpineRotationBones defaults");
+    var expectedSpineRotationBones = new[]
+    {
+        "pelvis",
+        "spine_01",
+        "spine_02",
+        "spine_03",
+    };
+    var actualSpineRotationBones = spineRotationBones
+        .OfType<JObject>()
+        .Select(item =>
+        {
+            RequireValue(item, "type", "ERigElementType::Bone");
+            return RequireString(item, "name");
+        })
+        .ToArray();
+    if (!actualSpineRotationBones.SequenceEqual(
+            expectedSpineRotationBones,
+            StringComparer.Ordinal))
+    {
+        throw new InvalidDataException(
+            "SpineRotationBones do not match the authored CR_Als CDO order");
+    }
 
     var graphs = artifact["graphs"] as JArray
         ?? throw new InvalidDataException("artifact has no graphs array");
@@ -387,6 +465,10 @@ static void Validate(JObject artifact, IReadOnlyList<string> graphPaths)
         Graph(
             artifact,
             "RigVMFunctionLibrary/RefreshDiagonalScaling/ContainedGraph"));
+    ValidateSpineRotation(
+        Graph(
+            artifact,
+            "RigVMFunctionLibrary/RefreshSpineRotation/ContainedGraph"));
     ValidateTrace(
         Graph(
             artifact,
@@ -495,6 +577,40 @@ static void ValidateDiagonalScaling(JObject graph)
     RequireLink(graph, "Absolute.Result", "Subtract_1.B");
     RequireLink(graph, "Subtract_1.Result", "MathVectorScale.Factor");
     RequireLink(graph, "GetCurveValue_3_1_1.Value", "SetScale.Weight");
+}
+
+static void ValidateSpineRotation(JObject graph)
+{
+    RequireNode(
+        graph,
+        "AlsRigUnit_DistributeRotationSimple",
+        "RigVMUnitNode",
+        "FAlsRigUnit_DistributeRotationSimple::Execute");
+    RequireNode(
+        graph,
+        "Cast",
+        "RigVMUnitNode",
+        "FRigVMFunction_MathQuaternionFromRotatorV2::Execute");
+    RequirePinDefault(
+        graph,
+        "AlsRigUnit_DistributeRotationSimple/Items/RigVMInjectionInfo_0/VariableNode_1_1_1_1_1/Variable",
+        "SpineRotationBones");
+    RequireLink(
+        graph,
+        "VariableNode_8.Value.SpineYawAngle",
+        "Cast.Value.Yaw");
+    RequireLink(
+        graph,
+        "Cast.Result",
+        "AlsRigUnit_DistributeRotationSimple.Rotation");
+    RequireLink(
+        graph,
+        "Entry.Input",
+        "AlsRigUnit_DistributeRotationSimple.ExecuteContext");
+    RequireLink(
+        graph,
+        "AlsRigUnit_DistributeRotationSimple.ExecuteContext",
+        "Return.Input");
 }
 
 static void ValidateTrace(JObject graph)

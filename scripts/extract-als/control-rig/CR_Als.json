@@ -5,6 +5,26 @@
   "sourceSha256": "23995a05cfcbf90294eaf4bdd48d2ad4519532a2dd695c670332499a478becb7",
   "engineVersion": "UE5_5",
   "scope": "foot-placement",
+  "defaults": {
+    "spineRotationBones": [
+      {
+        "type": "ERigElementType::Bone",
+        "name": "pelvis"
+      },
+      {
+        "type": "ERigElementType::Bone",
+        "name": "spine_01"
+      },
+      {
+        "type": "ERigElementType::Bone",
+        "name": "spine_02"
+      },
+      {
+        "type": "ERigElementType::Bone",
+        "name": "spine_03"
+      }
+    ]
+  },
   "graphs": [
     {
       "path": "RigVMModel",
@@ -1946,6 +1966,247 @@
         {
           "source": "VariableNode_8.Value.VelocityBlendForwardAmount",
           "target": "MathFloatAdd_1_1.A"
+        }
+      ]
+    },
+    {
+      "path": "RigVMFunctionLibrary/RefreshSpineRotation/ContainedGraph",
+      "nodes": [
+        {
+          "path": "AlsRigUnit_DistributeRotationSimple",
+          "class": "RigVMUnitNode",
+          "resolvedFunctionName": "FAlsRigUnit_DistributeRotationSimple::Execute"
+        },
+        {
+          "path": "AlsRigUnit_DistributeRotationSimple/Items/RigVMInjectionInfo_0/VariableNode_1_1_1_1_1",
+          "class": "RigVMVariableNode"
+        },
+        {
+          "path": "Cast",
+          "class": "RigVMUnitNode",
+          "resolvedFunctionName": "FRigVMFunction_MathQuaternionFromRotatorV2::Execute",
+          "templateNotation": "Cast::Execute(in Value,out Result)"
+        },
+        {
+          "path": "Entry",
+          "class": "RigVMFunctionEntryNode",
+          "templateNotation": "RefreshSpineRotation(io Input)"
+        },
+        {
+          "path": "Return",
+          "class": "RigVMFunctionReturnNode",
+          "templateNotation": "RefreshSpineRotation(io Input)"
+        },
+        {
+          "path": "VariableNode_8",
+          "class": "RigVMVariableNode"
+        }
+      ],
+      "pins": [
+        {
+          "path": "AlsRigUnit_DistributeRotationSimple/CachedItems",
+          "direction": "ERigVMPinDirection::Hidden",
+          "cppType": "TArray<FCachedRigElement>"
+        },
+        {
+          "path": "AlsRigUnit_DistributeRotationSimple/ExecuteContext",
+          "direction": "ERigVMPinDirection::IO",
+          "cppType": "FRigVMExecuteContext"
+        },
+        {
+          "path": "AlsRigUnit_DistributeRotationSimple/Items",
+          "direction": "ERigVMPinDirection::Input",
+          "cppType": "TArray<FRigElementKey>"
+        },
+        {
+          "path": "AlsRigUnit_DistributeRotationSimple/Items/RigVMInjectionInfo_0/VariableNode_1_1_1_1_1/Value",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "TArray<FRigElementKey>"
+        },
+        {
+          "path": "AlsRigUnit_DistributeRotationSimple/Items/RigVMInjectionInfo_0/VariableNode_1_1_1_1_1/Variable",
+          "direction": "ERigVMPinDirection::Hidden",
+          "cppType": "FName",
+          "defaultValue": "SpineRotationBones",
+          "customWidgetName": "VariableName"
+        },
+        {
+          "path": "AlsRigUnit_DistributeRotationSimple/Rotation",
+          "direction": "ERigVMPinDirection::Input",
+          "cppType": "FQuat",
+          "defaultValue": "(X=0.000000,Y=0.000000,Z=0.000000,W=0.000000)"
+        },
+        {
+          "path": "Cast/Result",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "FQuat",
+          "defaultValue": "(X=0.000000,Y=0.000000,Z=0.000000,W=1.000000)"
+        },
+        {
+          "path": "Cast/Value",
+          "direction": "ERigVMPinDirection::Input",
+          "cppType": "FRotator"
+        },
+        {
+          "path": "Cast/Value/Pitch",
+          "direction": "ERigVMPinDirection::Input",
+          "cppType": "double",
+          "defaultValue": "0.000000"
+        },
+        {
+          "path": "Cast/Value/Roll",
+          "direction": "ERigVMPinDirection::Input",
+          "cppType": "double",
+          "defaultValue": "0.000000"
+        },
+        {
+          "path": "Cast/Value/Yaw",
+          "direction": "ERigVMPinDirection::Input",
+          "cppType": "double",
+          "defaultValue": "0.000000"
+        },
+        {
+          "path": "Entry/Input",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "FRigVMExecuteContext",
+          "defaultValue": "()"
+        },
+        {
+          "path": "Return/Input",
+          "direction": "ERigVMPinDirection::Input",
+          "cppType": "FRigVMExecuteContext",
+          "defaultValue": "()"
+        },
+        {
+          "path": "VariableNode_8/Value",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "FAlsControlRigInput",
+          "defaultValue": "(bUseHandIkBones=False,bUseFootIkBones=False,bFootOffsetAllowed=False,VelocityBlendForwardAmount=0.000000,VelocityBlendBackwardAmount=0.000000,FootLeftLocation=(X=0.000000,Y=0.000000,Z=0.000000),FootLeftRotation=(X=0.000000,Y=0.000000,Z=0.000000,W=1.000000),FootRightLocation=(X=0.000000,Y=0.000000,Z=0.000000),FootRightRotation=(X=0.000000,Y=0.000000,Z=0.000000,W=1.000000),SpineYawAngle=0.000000,WalkableFloorAngle=90.000000)"
+        },
+        {
+          "path": "VariableNode_8/Value/FootLeftLocation",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "FVector",
+          "defaultValue": "(X=0.000000,Y=0.000000,Z=0.000000)"
+        },
+        {
+          "path": "VariableNode_8/Value/FootLeftLocation/X",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "double",
+          "defaultValue": "0.000000"
+        },
+        {
+          "path": "VariableNode_8/Value/FootLeftLocation/Y",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "double",
+          "defaultValue": "0.000000"
+        },
+        {
+          "path": "VariableNode_8/Value/FootLeftLocation/Z",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "double",
+          "defaultValue": "0.000000"
+        },
+        {
+          "path": "VariableNode_8/Value/FootLeftRotation",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "FQuat",
+          "defaultValue": "(X=0.000000,Y=0.000000,Z=0.000000,W=1.000000)"
+        },
+        {
+          "path": "VariableNode_8/Value/FootRightLocation",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "FVector",
+          "defaultValue": "(X=0.000000,Y=0.000000,Z=0.000000)"
+        },
+        {
+          "path": "VariableNode_8/Value/FootRightLocation/X",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "double",
+          "defaultValue": "0.000000"
+        },
+        {
+          "path": "VariableNode_8/Value/FootRightLocation/Y",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "double",
+          "defaultValue": "0.000000"
+        },
+        {
+          "path": "VariableNode_8/Value/FootRightLocation/Z",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "double",
+          "defaultValue": "0.000000"
+        },
+        {
+          "path": "VariableNode_8/Value/FootRightRotation",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "FQuat",
+          "defaultValue": "(X=0.000000,Y=0.000000,Z=0.000000,W=1.000000)"
+        },
+        {
+          "path": "VariableNode_8/Value/SpineYawAngle",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "float",
+          "defaultValue": "0.000000"
+        },
+        {
+          "path": "VariableNode_8/Value/VelocityBlendBackwardAmount",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "float",
+          "defaultValue": "0.000000"
+        },
+        {
+          "path": "VariableNode_8/Value/VelocityBlendForwardAmount",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "float",
+          "defaultValue": "0.000000"
+        },
+        {
+          "path": "VariableNode_8/Value/bFootOffsetAllowed",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "bool",
+          "defaultValue": "False"
+        },
+        {
+          "path": "VariableNode_8/Value/bUseFootIkBones",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "bool",
+          "defaultValue": "False"
+        },
+        {
+          "path": "VariableNode_8/Value/bUseHandIkBones",
+          "direction": "ERigVMPinDirection::Output",
+          "cppType": "bool",
+          "defaultValue": "False"
+        },
+        {
+          "path": "VariableNode_8/Variable",
+          "direction": "ERigVMPinDirection::Hidden",
+          "cppType": "FName",
+          "defaultValue": "RigInput",
+          "customWidgetName": "VariableName"
+        }
+      ],
+      "links": [
+        {
+          "source": "AlsRigUnit_DistributeRotationSimple.ExecuteContext",
+          "target": "Return.Input"
+        },
+        {
+          "source": "Cast.Result",
+          "target": "AlsRigUnit_DistributeRotationSimple.Rotation"
+        },
+        {
+          "source": "Entry.Input",
+          "target": "AlsRigUnit_DistributeRotationSimple.ExecuteContext"
+        },
+        {
+          "source": "VariableNode_1_1_1_1_1.Value",
+          "target": "AlsRigUnit_DistributeRotationSimple.Items"
+        },
+        {
+          "source": "VariableNode_8.Value.SpineYawAngle",
+          "target": "Cast.Value.Yaw"
         }
       ]
     },
