@@ -1,4 +1,8 @@
 import { alphaToBlendOption } from '../../engine/alphaBlend'
+import {
+  fInterpTo,
+  mapRangeUnclamped,
+} from '../../engine/inputScaleBiasClamp'
 import type { AlsGait } from '../Settings/AlsMovementSettings'
 
 /*
@@ -55,31 +59,6 @@ const SPRINT_TIME_THRESHOLD = 0.5
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value))
-}
-
-function mapRangeUnclamped(
-  value: number,
-  inputMinimum: number,
-  inputMaximum: number,
-  outputMinimum: number,
-  outputMaximum: number,
-) {
-  if (inputMaximum === inputMinimum) return outputMinimum
-  const amount = (value - inputMinimum) / (inputMaximum - inputMinimum)
-  return outputMinimum + (outputMaximum - outputMinimum) * amount
-}
-
-/** UE FMath::FInterpTo(), including its non-negative delta and delta*speed clamp. */
-function interpolateTo(
-  current: number,
-  target: number,
-  deltaTime: number,
-  interpolationSpeed: number,
-) {
-  if (interpolationSpeed <= 0) return target
-  const distance = target - current
-  if (distance * distance < 1e-8) return target
-  return current + distance * clamp01(Math.max(0, deltaTime) * interpolationSpeed)
 }
 
 export interface AlsStandingSprintState {
@@ -214,7 +193,7 @@ export function refreshStandingSprint(
           mappedAcceleration > state.sprintAccelerationBlendAmount
             ? settings.interpolationSpeedIncreasing
             : settings.interpolationSpeedDecreasing
-        state.sprintAccelerationBlendAmount = interpolateTo(
+        state.sprintAccelerationBlendAmount = fInterpTo(
           state.sprintAccelerationBlendAmount,
           mappedAcceleration,
           deltaTime,
