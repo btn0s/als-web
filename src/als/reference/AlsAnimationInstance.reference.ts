@@ -2,7 +2,7 @@
  * Test-only C++ oracle.
  *
  * Reviewable against ALS/Private/AlsAnimationInstance.cpp:25-81, 313-351, 386-487,
- * 494-581, 708-803, 1028-1126, 1239-1414, and 1631-1830; never imported by runtime code.
+ * 494-581, 708-803, 1028-1126, 1179-1414, and 1631-1830; never imported by runtime code.
  *
  * This file is deliberately a direct, unidiomatic transliteration. Names, statement order, and
  * inline constants stay close to the upstream C++ so review can proceed line by line.
@@ -240,17 +240,25 @@ function Dot(A: FVector3f, B: FVector3f): number {
 }
 
 function NormalizeVector(Value: FVector3f): FVector3f {
-  const Size = Math.hypot(Value.X, Value.Y, Value.Z)
-  return Size > UE_SMALL_NUMBER
-    ? Vector(Value.X / Size, Value.Y / Size, Value.Z / Size)
+  const SizeSquared = Dot(Value, Value)
+  return SizeSquared > UE_SMALL_NUMBER
+    ? MultiplyVector(Value, 1.0 / Math.sqrt(SizeSquared))
     : Vector()
 }
 
 function NormalizeQuaternion(Value: FQuat4f): FQuat4f {
-  const Size = Math.hypot(Value.X, Value.Y, Value.Z, Value.W)
-  return Size > UE_SMALL_NUMBER
-    ? Quaternion(Value.X / Size, Value.Y / Size, Value.Z / Size, Value.W / Size)
-    : Quaternion()
+  const SizeSquared =
+    Value.X * Value.X + Value.Y * Value.Y + Value.Z * Value.Z + Value.W * Value.W
+  if (SizeSquared <= UE_SMALL_NUMBER) {
+    return Quaternion()
+  }
+  const Scale = 1.0 / Math.sqrt(SizeSquared)
+  return Quaternion(
+    Value.X * Scale,
+    Value.Y * Scale,
+    Value.Z * Scale,
+    Value.W * Scale,
+  )
 }
 
 function InverseQuaternion(Value: FQuat4f): FQuat4f {
@@ -263,6 +271,17 @@ function MultiplyQuaternion(A: FQuat4f, B: FQuat4f): FQuat4f {
     A.W * B.Y - A.X * B.Z + A.Y * B.W + A.Z * B.X,
     A.W * B.Z + A.X * B.Y - A.Y * B.X + A.Z * B.W,
     A.W * B.W - A.X * B.X - A.Y * B.Y - A.Z * B.Z,
+  )
+}
+
+function FastLerpQuaternion(A: FQuat4f, B: FQuat4f, Alpha: number): FQuat4f {
+  const DotResult = A.X * B.X + A.Y * B.Y + A.Z * B.Z + A.W * B.W
+  const Bias = DotResult >= 0.0 ? 1.0 : -1.0
+  return Quaternion(
+    B.X * Alpha + A.X * Bias * (1.0 - Alpha),
+    B.Y * Alpha + A.Y * Bias * (1.0 - Alpha),
+    B.Z * Alpha + A.Z * Bias * (1.0 - Alpha),
+    B.W * Alpha + A.W * Bias * (1.0 - Alpha),
   )
 }
 
@@ -312,9 +331,21 @@ function ClampMagnitude01(Value: FVector3f): FVector3f {
 }
 
 function AngleBetweenSignedXY(From: FVector3f, To: FVector3f): number {
-  const CrossZ = From.X * To.Y - From.Y * To.X
-  const DotXY = From.X * To.X + From.Y * To.Y
-  return Math.atan2(CrossZ, DotXY) * 180.0 / Math.PI
+  const FromSizeSquared = From.X * From.X + From.Y * From.Y
+  const ToSizeSquared = To.X * To.X + To.Y * To.Y
+  const FromScale = FromSizeSquared > UE_SMALL_NUMBER
+    ? 1.0 / Math.sqrt(FromSizeSquared)
+    : 0.0
+  const ToScale = ToSizeSquared > UE_SMALL_NUMBER
+    ? 1.0 / Math.sqrt(ToSizeSquared)
+    : 0.0
+  const FromX = From.X * FromScale
+  const FromY = From.Y * FromScale
+  const ToX = To.X * ToScale
+  const ToY = To.Y * ToScale
+  const Cross = FromX * ToY - FromY * ToX
+  const Dot = Clamp(FromX * ToX + FromY * ToY, -1.0, 1.0)
+  return Math.acos(Dot) * 180.0 / Math.PI * Math.sign(Cross)
 }
 
 function YawQuaternion(YawDegrees: number): FQuat4f {
@@ -902,6 +933,97 @@ export function GetThighAxis(Input: {
   ))
 }
 
+/** AlsAnimationInstance.cpp:1179-1204. */
+export function ProcessFootLockTeleport(Input: {
+  IkAmount: number
+  FootState: FAlsFootState
+  bPendingUpdate: boolean
+  TimeSinceTeleported: number
+  ComponentTransform: FTransform3f
+  MovementBase: FAlsMovementBaseState
+}): FAlsFootState {
+  const FootState = Input.FootState
+  if (
+    Input.bPendingUpdate
+    || Input.TimeSinceTeleported > 0.2
+    || !IsRelevant(Input.IkAmount * FootState.LockAmount)
+  ) {
+    return FootState
+  }
+
+  FootState.LockLocation = TransformPosition(
+    Input.ComponentTransform,
+    FootState.LockComponentRelativeLocation,
+  )
+  FootState.LockRotation = TransformRotation(
+    Input.ComponentTransform,
+    FootState.LockComponentRelativeRotation,
+  )
+
+  if (Input.MovementBase.bHasRelativeLocation) {
+    FootState.LockMovementBaseRelativeLocation = UnrotateVector(
+      Input.MovementBase.Rotation,
+      Subtract(FootState.LockLocation, Input.MovementBase.Location),
+    )
+    FootState.LockMovementBaseRelativeRotation = NormalizeQuaternion(
+      MultiplyQuaternion(
+        InverseQuaternion(Input.MovementBase.Rotation),
+        FootState.LockRotation,
+      ),
+    )
+  }
+  return FootState
+}
+
+/** AlsAnimationInstance.cpp:1206-1237. */
+export function ProcessFootLockBaseChange(Input: {
+  IkAmount: number
+  FootState: FAlsFootState
+  bPendingUpdate: boolean
+  bBaseChanged: boolean
+  ComponentTransform: FTransform3f
+  MovementBase: FAlsMovementBaseState
+}): FAlsFootState {
+  const FootState = Input.FootState
+  if (
+    (!Input.bPendingUpdate && !Input.bBaseChanged)
+    || !IsRelevant(Input.IkAmount * FootState.LockAmount)
+  ) {
+    return FootState
+  }
+
+  if (Input.bPendingUpdate) {
+    FootState.LockLocation = { ...FootState.TargetLocation }
+    FootState.LockRotation = { ...FootState.TargetRotation }
+  }
+
+  FootState.LockComponentRelativeLocation = InverseTransformPosition(
+    Input.ComponentTransform,
+    FootState.LockLocation,
+  )
+  FootState.LockComponentRelativeRotation = InverseTransformRotation(
+    Input.ComponentTransform,
+    FootState.LockRotation,
+  )
+
+  if (Input.MovementBase.bHasRelativeLocation) {
+    FootState.LockMovementBaseRelativeLocation = UnrotateVector(
+      Input.MovementBase.Rotation,
+      Subtract(FootState.LockLocation, Input.MovementBase.Location),
+    )
+    FootState.LockMovementBaseRelativeRotation = NormalizeQuaternion(
+      MultiplyQuaternion(
+        InverseQuaternion(Input.MovementBase.Rotation),
+        FootState.LockRotation,
+      ),
+    )
+  } else {
+    FootState.LockMovementBaseRelativeLocation = Vector()
+    FootState.LockMovementBaseRelativeRotation = Quaternion()
+  }
+  return FootState
+}
+
 /** AlsAnimationInstance.cpp:1239-1376. */
 export function RefreshFootLock(Input: {
   IkAmount: number
@@ -1080,11 +1202,10 @@ export function RefreshFootLock(Input: {
     Lerp(FootState.TargetLocation.Y, FootState.LockLocation.Y, FootState.LockAmount),
     Lerp(FootState.TargetLocation.Z, FootState.LockLocation.Z, FootState.LockAmount),
   )
-  let FinalRotation = Quaternion(
-    Lerp(FootState.TargetRotation.X, FootState.LockRotation.X, FootState.LockAmount),
-    Lerp(FootState.TargetRotation.Y, FootState.LockRotation.Y, FootState.LockAmount),
-    Lerp(FootState.TargetRotation.Z, FootState.LockRotation.Z, FootState.LockAmount),
-    Lerp(FootState.TargetRotation.W, FootState.LockRotation.W, FootState.LockAmount),
+  let FinalRotation = FastLerpQuaternion(
+    FootState.TargetRotation,
+    FootState.LockRotation,
+    FootState.LockAmount,
   )
   FinalRotation = NormalizeQuaternion(FinalRotation)
 
