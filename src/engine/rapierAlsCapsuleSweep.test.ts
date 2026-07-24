@@ -4,6 +4,7 @@ import {
   ALS_RAPIER_GROUND_PROBE_DISTANCE,
   createRapierAlsCapsuleSweep,
   probeRapierAlsGround,
+  rapierAlsCameraMovementBase,
   rapierAlsMovementBase,
 } from './rapierAlsCapsuleSweep'
 
@@ -265,6 +266,41 @@ describe('Rapier ALS capsule sweep', () => {
       rotation: { x: 0, y: 0, z: -0.25, w: 0.9682458 },
     })
     expect(rapierAlsMovementBase(null).primitive).toBeNull()
+  })
+
+  it('publishes the exact based-movement subset consumed by ALSCamera', () => {
+    const dynamicBody = {
+      handle: 27,
+      translation: () => ({ x: 1, y: 2, z: 3 }),
+      rotation: () => ({ x: 0.1, y: 0.2, z: 0.3, w: 0.9 }),
+      isFixed: () => false,
+    }
+    const collider = {
+      handle: 28,
+      translation: () => ({ x: 100, y: 200, z: 300 }),
+      rotation: () => ({ x: 0, y: 0, z: 0, w: 1 }),
+      parent: () => dynamicBody,
+    }
+    const hit = {
+      validBlockingHit: true,
+      time: 0,
+      impactNormal: { x: 0, y: 0, z: 1 },
+      collider,
+      rigidBody: dynamicBody,
+    }
+
+    expect(rapierAlsCameraMovementBase(hit)).toEqual({
+      key: dynamicBody,
+      boneName: '',
+      hasRelativeRotation: false,
+      location: { x: 1, y: 3, z: 2 },
+      rotation: { x: -0.1, y: -0.3, z: -0.2, w: 0.9 },
+    })
+    expect(rapierAlsCameraMovementBase(hit, true)).toMatchObject({
+      key: dynamicBody,
+      hasRelativeRotation: true,
+    })
+    expect(rapierAlsCameraMovementBase(null)).toBeNull()
   })
 
   it('retains real Rapier standalone-collider and parent-body identities', () => {

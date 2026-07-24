@@ -12,6 +12,9 @@ import {
 import type {
   AlsBasedMovement,
 } from '../als/State/AlsMovementBaseState'
+import type {
+  AlsCameraMovementBase,
+} from '../als/AlsCamera/AlsCameraComponent'
 
 export interface RapierVector {
   x: number
@@ -249,5 +252,30 @@ export function rapierAlsMovementBase(
     relativeRotation: hasRelativeLocation && relativeRotation,
     location: toAlsLocation(primitive.translation()),
     rotation: toAlsRotation(primitive.rotation()),
+  }
+}
+
+/**
+ * Publishes the same `FBasedMovementInfo` snapshot consumed directly by
+ * `UAlsCameraComponent::TickCamera()` (`AlsCameraComponent.cpp:180-207`).
+ *
+ * The camera retains even a static primitive's identity, but only reads the primitive transform
+ * when `HasRelativeRotation()` is true. Keeping that distinction here prevents the render bridge
+ * from inventing a second movement-base policy.
+ */
+export function rapierAlsCameraMovementBase(
+  hit: Readonly<RapierAlsCapsuleSweepHit> | null,
+  relativeRotation = false,
+): AlsCameraMovementBase | null {
+  const basedMovement = rapierAlsMovementBase(hit, relativeRotation)
+  if (basedMovement.primitive === null) return null
+
+  return {
+    key: basedMovement.primitive as AlsCameraMovementBase['key'],
+    boneName: basedMovement.boneName,
+    hasRelativeRotation:
+      basedMovement.hasRelativeLocation && basedMovement.relativeRotation,
+    location: basedMovement.location,
+    rotation: basedMovement.rotation,
   }
 }
