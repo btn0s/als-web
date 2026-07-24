@@ -361,6 +361,7 @@ function normalizeTransitionPoseMask(
 function advanceClip(clip: RuntimeClip, delta: number) {
   const duration = clip.sampler.clip.duration
   clip.time = duration > 0 ? (clip.time + delta) % duration : 0
+  clip.entry.time = clip.time
 }
 
 function moveToward(current: number, target: number, maximumDelta: number) {
@@ -894,6 +895,7 @@ export function createAlsAnimationInstance(gltf: {
       )
     }
     clip.time = 0
+    clip.entry.time = 0
     soloEntries[0] = clip.entry
     soloClip = clip
     if (rootMotion) resetRootMotionExtractor(rootMotion)

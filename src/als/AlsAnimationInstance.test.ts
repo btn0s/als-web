@@ -141,6 +141,39 @@ describe('AlsAnimationInstance playback regression', () => {
     )
   })
 
+  it('advances and repeats the authored standing idle on the normal path', async () => {
+    const gltf = await loadAlsGltf()
+    const idle = gltf.animations.find(
+      (clip) => clip.name === 'A_Als_Idle',
+    )
+    if (!idle) throw new Error('Missing A_Als_Idle')
+    const instance = createAlsAnimationInstance(gltf)
+    const idleControls: AlsAnimationInstanceControls = {
+      ...controls,
+      gait: 'Walking',
+      moving: false,
+      speed: 0,
+    }
+
+    instance.refresh(0, idleControls)
+    const start = localRotation(gltf.scene, 'spine_03')
+    instance.refresh(0.3, idleControls)
+    const moved = localRotation(gltf.scene, 'spine_03')
+    expect(window.__weightTable?.idle).toBe(1)
+    expect(window.__weightTable?.['clipTime.idle']).toBeCloseTo(0.3, 8)
+    expect(
+      start.angleTo(moved),
+      'A_Als_Idle must animate the upper spine instead of freezing its first frame',
+    ).toBeGreaterThan(0.01)
+
+    instance.refresh(idle.duration * 2 - 0.3, idleControls)
+    expect(window.__weightTable?.['clipTime.idle']).toBeCloseTo(0, 8)
+    expect(
+      start.angleTo(localRotation(gltf.scene, 'spine_03')),
+      'A_Als_Idle must repeat after two full cycles',
+    ).toBeLessThan(0.003)
+  })
+
   it('requests inertialization once per actual mode change, never again on stable frames', async () => {
     const gltf = await loadAlsGltf()
     const instance = createAlsAnimationInstance(gltf)
