@@ -13,6 +13,7 @@
 # CameraContentDump.cs (camera defaults + scalar graph + authored transition curves) →
 # GridLevelContentDump.cs (L_Als_Grid floor/sky/post-process external actors) →
 # MantlingContentDump.cs (character/mantling settings + montage clocks + correction curves) →
+# ActionContentDump.cs (Rolling/GettingUp settings + montage/notify/root-motion clocks) →
 # copy distributable assets
 # with the upstream MIT notice.
 # clips.manifest is the audited M3 animation allowlist.
@@ -64,6 +65,8 @@ dotnet run -- dump-grid-level-content "$WORK/stage" "$WORK/grid-level-content.js
 dotnet run -- validate-grid-level-content "$WORK/grid-level-content.json"
 dotnet run -- dump-mantling-content "$WORK/stage" "$WORK/mantling-content.json"
 dotnet run -- validate-mantling-content "$WORK/mantling-content.json"
+dotnet run -- dump-action-content "$WORK/stage" "$WORK/action-content.json"
+dotnet run -- validate-action-content "$WORK/action-content.json"
 [ -d node_modules ] || pnpm install
 node assemble-glb.mjs "$WORK/als-dump.json" "$WORK/skm-als.glb"
 node assemble-glb.mjs "$WORK/als-rifle-dump.json" "$WORK/skm-als-rifle.glb"
@@ -94,6 +97,7 @@ cp "$WORK/input-mappings.json" "$REPO_ROOT/scripts/extract-als/input-mappings.js
 cp "$WORK/camera-content.json" "$REPO_ROOT/scripts/extract-als/camera-content.json"
 cp "$WORK/grid-level-content.json" "$REPO_ROOT/scripts/extract-als/grid-level-content.json"
 cp "$WORK/mantling-content.json" "$REPO_ROOT/scripts/extract-als/mantling-content.json"
+cp "$WORK/action-content.json" "$REPO_ROOT/scripts/extract-als/action-content.json"
 echo "done: public/assets/skm-als.glb + skm-als-rifle.glb + LICENSE-ALS-Refactored.md"
 echo "done: $ABP_GRAPH_DESTINATION ($ABP_GRAPH_SIZE bytes)"
-echo "done: scripts/extract-als/{movement-settings,character-settings,animation-settings,skeleton-profiles,blend-spaces,input-mappings,camera-content,grid-level-content,mantling-content}.json"
+echo "done: scripts/extract-als/{movement-settings,character-settings,animation-settings,skeleton-profiles,blend-spaces,input-mappings,camera-content,grid-level-content,mantling-content,action-content}.json"

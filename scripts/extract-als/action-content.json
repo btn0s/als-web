@@ -1,0 +1,1829 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "engineVersion": "UE5.5",
+    "referenceRelease": "ALS Refactored 4.15",
+    "characterSettingsAssetPath": "ALS/Content/ALS/Data/Character/CS_Als_Default.uasset",
+    "cppDefaults": [
+      "Source/ALS/Public/Settings/AlsRollingSettings.h",
+      "Source/ALS/Public/Settings/AlsRagdollingSettings.h"
+    ],
+    "consumer": "Source/ALS/Private/AlsCharacter_Actions.cpp"
+  },
+  "cppDefaults": {
+    "Rolling": {
+      "Montage": null,
+      "bCrouchOnStart": true,
+      "bRotateToInputOnStart": true,
+      "RotationInterpolationSpeed": 10.0,
+      "bStartRollingOnLand": true,
+      "RollingOnLandSpeedThreshold": 700.0,
+      "bInterruptRollingWhenInAir": true
+    },
+    "Ragdolling": {
+      "bStartRagdollingOnLand": true,
+      "RagdollingOnLandSpeedThreshold": 1000.0,
+      "bLimitInitialRagdollSpeed": true,
+      "GetUpFrontMontage": null,
+      "GetUpBackMontage": null
+    }
+  },
+  "serializedOverrides": {
+    "Rolling": {
+      "Montage": {
+        "ObjectName": "AnimMontage'AM_Als_Roll'",
+        "ObjectPath": "/ALS/ALS/Animations/Actions/Roll/AM_Als_Roll"
+      },
+      "bInterruptRollingWhenInAir": false
+    },
+    "Ragdolling": {
+      "GetUpFrontMontage": {
+        "ObjectName": "AnimMontage'AM_Als_GetUp_Front'",
+        "ObjectPath": "/ALS/ALS/Animations/Actions/GetUp/AM_Als_GetUp_Front"
+      },
+      "GetUpBackMontage": {
+        "ObjectName": "AnimMontage'AM_Als_GetUp_Back'",
+        "ObjectPath": "/ALS/ALS/Animations/Actions/GetUp/AM_Als_GetUp_Back"
+      }
+    }
+  },
+  "settings": {
+    "nativeSpeedUnit": "cm/s",
+    "nativeAngleUnit": "deg",
+    "Rolling": {
+      "Montage": "AM_Als_Roll",
+      "bCrouchOnStart": true,
+      "bRotateToInputOnStart": true,
+      "RotationInterpolationSpeed": 10.0,
+      "bStartRollingOnLand": true,
+      "RollingOnLandSpeedThreshold": 700.0,
+      "bInterruptRollingWhenInAir": false
+    },
+    "Ragdolling": {
+      "bStartRagdollingOnLand": true,
+      "RagdollingOnLandSpeedThreshold": 1000.0,
+      "bLimitInitialRagdollSpeed": true,
+      "GetUpFrontMontage": "AM_Als_GetUp_Front",
+      "GetUpBackMontage": "AM_Als_GetUp_Back"
+    }
+  },
+  "montages": {
+    "AM_Als_Roll": {
+      "asset": "AM_Als_Roll",
+      "assetPath": "ALS/Content/ALS/Animations/Actions/Roll/AM_Als_Roll.uasset",
+      "SequenceLength": 1.5,
+      "RateScale": 1.0,
+      "effectiveDurationSecondsAtPlayRateOne": 1.5,
+      "SamplingFrameRate": {
+        "Numerator": 30,
+        "Denominator": 1
+      },
+      "BlendIn": {
+        "BlendTime": 0.10000000149011612,
+        "BlendOption": "HermiteCubic",
+        "serializedBlendOption": true
+      },
+      "BlendOut": {
+        "BlendTime": 0.30000001192092896,
+        "BlendOption": "HermiteCubic",
+        "serializedBlendOption": true
+      },
+      "BlendOutTriggerTime": -1.0,
+      "section": {
+        "SectionName": "Default",
+        "NextSectionName": "None",
+        "SlotIndex": 0,
+        "SegmentIndex": 0,
+        "LinkMethod": "Absolute",
+        "SegmentBeginTime": 0.0,
+        "SegmentLength": 1.5,
+        "LinkValue": 0.0
+      },
+      "slot": {
+        "SlotName": "PostLocomotion",
+        "sequence": "A_Als_Roll",
+        "StartPos": 0.0,
+        "AnimStartTime": 0.0,
+        "AnimEndTime": 1.5,
+        "AnimPlayRate": 1.0,
+        "LoopingCount": 1
+      },
+      "notifies": [
+        {
+          "NotifyName": "BMNotifyStateMovementAction",
+          "startTime": 0.0,
+          "duration": 0.9333329796791077,
+          "endTime": 0.9333329796791077,
+          "TriggerTimeOffset": 9.999999747378752E-05,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 9.999999747378752E-06,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": true,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 0,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "NotifyStateClass",
+            "name": "BMNotifyStateMovementAction_0",
+            "type": "AlsAnimNotifyState_SetLocomotionAction",
+            "properties": {
+              "LocomotionAction": {
+                "TagName": "Als.LocomotionAction.Rolling"
+              }
+            }
+          }
+        }
+      ],
+      "branchingPointMarkers": [
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": 9.999999747378752E-05,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": 0.9334329962730408,
+          "NotifyEventType": "End"
+        }
+      ],
+      "branchingPointStateNotifyIndices": [
+        0
+      ],
+      "serializedDefaults": {
+        "RateScale": false,
+        "BlendOutTriggerTime": false,
+        "CommonTargetFrameRate": false
+      }
+    },
+    "AM_Als_GetUp_Front": {
+      "asset": "AM_Als_GetUp_Front",
+      "assetPath": "ALS/Content/ALS/Animations/Actions/GetUp/AM_Als_GetUp_Front.uasset",
+      "SequenceLength": 1.5,
+      "RateScale": 1.2000000476837158,
+      "effectiveDurationSecondsAtPlayRateOne": 1.2499999503294648,
+      "SamplingFrameRate": {
+        "Numerator": 30,
+        "Denominator": 1
+      },
+      "BlendIn": {
+        "BlendTime": 0.0,
+        "BlendOption": "Linear",
+        "serializedBlendOption": false
+      },
+      "BlendOut": {
+        "BlendTime": 0.30000001192092896,
+        "BlendOption": "Cubic",
+        "serializedBlendOption": true
+      },
+      "BlendOutTriggerTime": -1.0,
+      "section": {
+        "SectionName": "Default",
+        "NextSectionName": "None",
+        "SlotIndex": 0,
+        "SegmentIndex": 0,
+        "LinkMethod": "Absolute",
+        "SegmentBeginTime": 0.0,
+        "SegmentLength": 1.5,
+        "LinkValue": 0.0
+      },
+      "slot": {
+        "SlotName": "PostLocomotion",
+        "sequence": "A_Als_GetUp_Front",
+        "StartPos": 0.0,
+        "AnimStartTime": 0.0,
+        "AnimEndTime": 1.5,
+        "AnimPlayRate": 1.0,
+        "LoopingCount": 1
+      },
+      "notifies": [
+        {
+          "NotifyName": "BMNotifyStateMovementAction",
+          "startTime": 0.0,
+          "duration": 1.1666666269302368,
+          "endTime": 1.1666666269302368,
+          "TriggerTimeOffset": -9.999999747378752E-05,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 9.999999747378752E-06,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": true,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 0,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "NotifyStateClass",
+            "name": "BMNotifyStateMovementAction_0",
+            "type": "AlsAnimNotifyState_SetLocomotionAction",
+            "properties": {
+              "LocomotionAction": {
+                "TagName": "Als.LocomotionAction.GettingUp"
+              }
+            }
+          }
+        }
+      ],
+      "branchingPointMarkers": [
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": -9.999999747378752E-05,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": 1.1665666103363037,
+          "NotifyEventType": "End"
+        }
+      ],
+      "branchingPointStateNotifyIndices": [
+        0
+      ],
+      "serializedDefaults": {
+        "RateScale": true,
+        "BlendOutTriggerTime": false,
+        "CommonTargetFrameRate": false
+      }
+    },
+    "AM_Als_GetUp_Back": {
+      "asset": "AM_Als_GetUp_Back",
+      "assetPath": "ALS/Content/ALS/Animations/Actions/GetUp/AM_Als_GetUp_Back.uasset",
+      "SequenceLength": 1.5,
+      "RateScale": 1.2000000476837158,
+      "effectiveDurationSecondsAtPlayRateOne": 1.2499999503294648,
+      "SamplingFrameRate": {
+        "Numerator": 30,
+        "Denominator": 1
+      },
+      "BlendIn": {
+        "BlendTime": 0.0,
+        "BlendOption": "Linear",
+        "serializedBlendOption": false
+      },
+      "BlendOut": {
+        "BlendTime": 0.30000001192092896,
+        "BlendOption": "Cubic",
+        "serializedBlendOption": true
+      },
+      "BlendOutTriggerTime": -1.0,
+      "section": {
+        "SectionName": "Default",
+        "NextSectionName": "None",
+        "SlotIndex": 0,
+        "SegmentIndex": 0,
+        "LinkMethod": "Absolute",
+        "SegmentBeginTime": 0.0,
+        "SegmentLength": 1.5,
+        "LinkValue": 0.0
+      },
+      "slot": {
+        "SlotName": "PostLocomotion",
+        "sequence": "A_Als_GetUp_Back",
+        "StartPos": 0.0,
+        "AnimStartTime": 0.0,
+        "AnimEndTime": 1.5,
+        "AnimPlayRate": 1.0,
+        "LoopingCount": 1
+      },
+      "notifies": [
+        {
+          "NotifyName": "BMNotifyStateMovementAction",
+          "startTime": 0.0,
+          "duration": 1.1666666269302368,
+          "endTime": 1.1666666269302368,
+          "TriggerTimeOffset": -9.999999747378752E-05,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 9.999999747378752E-06,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": true,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 0,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "NotifyStateClass",
+            "name": "BMNotifyStateMovementAction_0",
+            "type": "AlsAnimNotifyState_SetLocomotionAction",
+            "properties": {
+              "LocomotionAction": {
+                "TagName": "Als.LocomotionAction.GettingUp"
+              }
+            }
+          }
+        }
+      ],
+      "branchingPointMarkers": [
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": -9.999999747378752E-05,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": 1.1665666103363037,
+          "NotifyEventType": "End"
+        }
+      ],
+      "branchingPointStateNotifyIndices": [
+        0
+      ],
+      "serializedDefaults": {
+        "RateScale": true,
+        "BlendOutTriggerTime": false,
+        "CommonTargetFrameRate": false
+      }
+    }
+  },
+  "sequences": {
+    "A_Als_Roll": {
+      "asset": "A_Als_Roll",
+      "assetPath": "ALS/Content/ALS/Animations/Actions/Roll/A_Als_Roll.uasset",
+      "SequenceLength": 1.5,
+      "RateScale": 1.0,
+      "effectiveDurationSecondsAtPlayRateOne": 1.5,
+      "SamplingFrameRate": {
+        "Numerator": 30,
+        "Denominator": 1
+      },
+      "NumFrames": 46,
+      "NumberOfKeys": 46,
+      "rootMotion": {
+        "bEnableRootMotion": true,
+        "bForceRootLock": true,
+        "RootMotionRootLock": "RefPose"
+      },
+      "notifies": [
+        {
+          "NotifyName": "AlsRootMotionScale",
+          "startTime": 0.0,
+          "duration": 1.5,
+          "endTime": 1.5,
+          "TriggerTimeOffset": 9.999999747378752E-05,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 9.999999747378752E-06,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": true,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 1,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "NotifyStateClass",
+            "name": "AlsAnimNotifyState_RootMotionScale_0",
+            "type": "AlsAnimNotifyState_SetRootMotionScale",
+            "properties": {
+              "TranslationScale": 1.3
+            }
+          }
+        },
+        {
+          "NotifyName": "AlsCameraShake",
+          "startTime": 0.10000000894069672,
+          "duration": 0.0,
+          "endTime": 0.10000000894069672,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 9.999999747378752E-06,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": false,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 3,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "Notify",
+            "name": "AlsAnimNotify_CameraShake_0",
+            "type": "AlsAnimNotify_CameraShake",
+            "properties": {
+              "CameraShakeClass": {
+                "ObjectName": "BlueprintGeneratedClass'B_Als_CameraShake_Sprint_C'",
+                "ObjectPath": "/ALS/ALSCamera/Data/B_Als_CameraShake_Sprint"
+              }
+            }
+          }
+        },
+        {
+          "NotifyName": "AlsCameraShake",
+          "startTime": 0.46666669845581055,
+          "duration": 0.0,
+          "endTime": 0.46666669845581055,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 9.999999747378752E-06,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": false,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 3,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "Notify",
+            "name": "AlsAnimNotify_CameraShake_1",
+            "type": "AlsAnimNotify_CameraShake",
+            "properties": {
+              "CameraShakeClass": {
+                "ObjectName": "BlueprintGeneratedClass'B_Als_CameraShake_Sprint_C'",
+                "ObjectPath": "/ALS/ALSCamera/Data/B_Als_CameraShake_Sprint"
+              },
+              "CameraShakeScale": 2.0
+            }
+          }
+        },
+        {
+          "NotifyName": "AlsSetGroundedEntryMode",
+          "startTime": 0.9333333373069763,
+          "duration": 0.0,
+          "endTime": 0.9333333373069763,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 9.999999747378752E-06,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": true,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 0,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "Notify",
+            "name": "AlsAnimNotify_SetGroundedEntryMode_0",
+            "type": "AlsAnimNotify_SetGroundedEntryMode",
+            "properties": {
+              "GroundedEntryMode": {
+                "TagName": "Als.GroundedEntryMode.FromRoll"
+              }
+            }
+          }
+        },
+        {
+          "NotifyName": "AlsFootstepEffects",
+          "startTime": 0.9333333969116211,
+          "duration": 0.0,
+          "endTime": 0.9333333969116211,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 0.5,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": false,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 2,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "Notify",
+            "name": "AlsAnimNotify_FootstepEffects_0",
+            "type": "AlsAnimNotify_FootstepEffects",
+            "properties": {
+              "FootstepEffectsSettings": {
+                "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+              },
+              "FootBone": "EAlsFootBone::Right",
+              "bSkipEffectsWhenInAir": true,
+              "SoundVolumeMultiplier": 0.6,
+              "bSpawnDecal": false,
+              "bSpawnParticleSystem": false
+            }
+          }
+        },
+        {
+          "NotifyName": "AlsFootstepEffects",
+          "startTime": 1.0,
+          "duration": 0.0,
+          "endTime": 1.0,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 0.5,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": false,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 2,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "Notify",
+            "name": "AlsAnimNotify_FootstepEffects_2",
+            "type": "AlsAnimNotify_FootstepEffects",
+            "properties": {
+              "FootstepEffectsSettings": {
+                "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+              },
+              "FootBone": "EAlsFootBone::Right",
+              "bSkipEffectsWhenInAir": true,
+              "bSpawnSound": false
+            }
+          }
+        },
+        {
+          "NotifyName": "AlsFootstepEffects",
+          "startTime": 1.2333333492279053,
+          "duration": 0.0,
+          "endTime": 1.2333333492279053,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 0.5,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": false,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 2,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "Notify",
+            "name": "AlsAnimNotify_FootstepEffects_1",
+            "type": "AlsAnimNotify_FootstepEffects",
+            "properties": {
+              "FootstepEffectsSettings": {
+                "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+              },
+              "bSkipEffectsWhenInAir": true,
+              "bSpawnSound": false
+            }
+          }
+        }
+      ],
+      "serializedDefaults": {
+        "RateScale": false,
+        "RootMotionRootLock": false
+      }
+    },
+    "A_Als_GetUp_Front": {
+      "asset": "A_Als_GetUp_Front",
+      "assetPath": "ALS/Content/ALS/Animations/Actions/GetUp/A_Als_GetUp_Front.uasset",
+      "SequenceLength": 1.5,
+      "RateScale": 1.0,
+      "effectiveDurationSecondsAtPlayRateOne": 1.5,
+      "SamplingFrameRate": {
+        "Numerator": 30,
+        "Denominator": 1
+      },
+      "NumFrames": 46,
+      "NumberOfKeys": 46,
+      "rootMotion": {
+        "bEnableRootMotion": false,
+        "bForceRootLock": false,
+        "RootMotionRootLock": "RefPose"
+      },
+      "notifies": [
+        {
+          "NotifyName": "BMAnimNotifyFootstep",
+          "startTime": 0.8000000715255737,
+          "duration": 0.0,
+          "endTime": 0.8000000715255737,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 0.5,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": false,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 0,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "Notify",
+            "name": "BMAnimNotifyFootstep_0",
+            "type": "AlsAnimNotify_FootstepEffects",
+            "properties": {
+              "FootstepEffectsSettings": {
+                "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+              },
+              "FootBone": "EAlsFootBone::Right",
+              "bSpawnSound": false,
+              "SoundVolumeMultiplier": 0.35,
+              "bSpawnDecal": false,
+              "bSpawnParticleSystem": false
+            }
+          }
+        },
+        {
+          "NotifyName": "BMAnimNotifyFootstep",
+          "startTime": 1.2333333492279053,
+          "duration": 0.0,
+          "endTime": 1.2333333492279053,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 0.5,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": false,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 0,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "Notify",
+            "name": "BMAnimNotifyFootstep_1",
+            "type": "AlsAnimNotify_FootstepEffects",
+            "properties": {
+              "FootstepEffectsSettings": {
+                "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+              },
+              "SoundVolumeMultiplier": 0.35
+            }
+          }
+        }
+      ],
+      "serializedDefaults": {
+        "RateScale": false,
+        "RootMotionRootLock": false
+      }
+    },
+    "A_Als_GetUp_Back": {
+      "asset": "A_Als_GetUp_Back",
+      "assetPath": "ALS/Content/ALS/Animations/Actions/GetUp/A_Als_GetUp_Back.uasset",
+      "SequenceLength": 1.5,
+      "RateScale": 1.0,
+      "effectiveDurationSecondsAtPlayRateOne": 1.5,
+      "SamplingFrameRate": {
+        "Numerator": 30,
+        "Denominator": 1
+      },
+      "NumFrames": 46,
+      "NumberOfKeys": 46,
+      "rootMotion": {
+        "bEnableRootMotion": false,
+        "bForceRootLock": false,
+        "RootMotionRootLock": "RefPose"
+      },
+      "notifies": [
+        {
+          "NotifyName": "BMAnimNotifyFootstep",
+          "startTime": 0.5,
+          "duration": 0.0,
+          "endTime": 0.5,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 0.5,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": false,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 0,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "Notify",
+            "name": "BMAnimNotifyFootstep_0",
+            "type": "AlsAnimNotify_FootstepEffects",
+            "properties": {
+              "FootstepEffectsSettings": {
+                "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+              },
+              "SoundVolumeMultiplier": 0.35
+            }
+          }
+        },
+        {
+          "NotifyName": "BMAnimNotifyFootstep",
+          "startTime": 1.0666667222976685,
+          "duration": 0.0,
+          "endTime": 1.0666667222976685,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": 0.0,
+          "TriggerWeightThreshold": 0.5,
+          "MontageTickType": "Queued",
+          "NotifyTriggerChance": 1.0,
+          "NotifyFilterType": "NoFiltering",
+          "NotifyFilterLOD": 0,
+          "bTriggerOnDedicatedServer": false,
+          "bTriggerOnFollower": false,
+          "TrackIndex": 0,
+          "LinkMethod": "Absolute",
+          "SlotIndex": 0,
+          "SegmentIndex": 0,
+          "linkedClass": {
+            "kind": "Notify",
+            "name": "BMAnimNotifyFootstep_1",
+            "type": "AlsAnimNotify_FootstepEffects",
+            "properties": {
+              "FootstepEffectsSettings": {
+                "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+              },
+              "FootBone": "EAlsFootBone::Right",
+              "SoundVolumeMultiplier": 0.35,
+              "bSpawnDecal": false,
+              "bSpawnParticleSystem": false
+            }
+          }
+        }
+      ],
+      "serializedDefaults": {
+        "RateScale": false,
+        "RootMotionRootLock": false
+      }
+    }
+  },
+  "validations": [
+    {
+      "name": "action-content-exact-inventory",
+      "pass": true,
+      "details": {
+        "montages": [
+          "AM_Als_GetUp_Back",
+          "AM_Als_GetUp_Front",
+          "AM_Als_Roll"
+        ],
+        "sequences": [
+          "A_Als_GetUp_Back",
+          "A_Als_GetUp_Front",
+          "A_Als_Roll"
+        ]
+      }
+    },
+    {
+      "name": "CS_Als_Default-effective-action-settings",
+      "pass": true,
+      "details": {
+        "Rolling": {
+          "Montage": "AM_Als_Roll",
+          "bCrouchOnStart": true,
+          "bRotateToInputOnStart": true,
+          "RotationInterpolationSpeed": 10.0,
+          "bStartRollingOnLand": true,
+          "RollingOnLandSpeedThreshold": 700.0,
+          "bInterruptRollingWhenInAir": false
+        },
+        "Ragdolling": {
+          "bStartRagdollingOnLand": true,
+          "RagdollingOnLandSpeedThreshold": 1000.0,
+          "bLimitInitialRagdollSpeed": true,
+          "GetUpFrontMontage": "AM_Als_GetUp_Front",
+          "GetUpBackMontage": "AM_Als_GetUp_Back"
+        }
+      }
+    },
+    {
+      "name": "CS_Als_Default-action-overrides-only",
+      "pass": true,
+      "details": {
+        "Rolling": {
+          "Montage": {
+            "ObjectName": "AnimMontage'AM_Als_Roll'",
+            "ObjectPath": "/ALS/ALS/Animations/Actions/Roll/AM_Als_Roll"
+          },
+          "bInterruptRollingWhenInAir": false
+        },
+        "Ragdolling": {
+          "GetUpFrontMontage": {
+            "ObjectName": "AnimMontage'AM_Als_GetUp_Front'",
+            "ObjectPath": "/ALS/ALS/Animations/Actions/GetUp/AM_Als_GetUp_Front"
+          },
+          "GetUpBackMontage": {
+            "ObjectName": "AnimMontage'AM_Als_GetUp_Back'",
+            "ObjectPath": "/ALS/ALS/Animations/Actions/GetUp/AM_Als_GetUp_Back"
+          }
+        }
+      }
+    },
+    {
+      "name": "action-montage-clocks-and-PostLocomotion-slot",
+      "pass": true,
+      "details": {
+        "errors": [],
+        "montages": {
+          "AM_Als_Roll": {
+            "asset": "AM_Als_Roll",
+            "assetPath": "ALS/Content/ALS/Animations/Actions/Roll/AM_Als_Roll.uasset",
+            "SequenceLength": 1.5,
+            "RateScale": 1.0,
+            "effectiveDurationSecondsAtPlayRateOne": 1.5,
+            "SamplingFrameRate": {
+              "Numerator": 30,
+              "Denominator": 1
+            },
+            "BlendIn": {
+              "BlendTime": 0.10000000149011612,
+              "BlendOption": "HermiteCubic",
+              "serializedBlendOption": true
+            },
+            "BlendOut": {
+              "BlendTime": 0.30000001192092896,
+              "BlendOption": "HermiteCubic",
+              "serializedBlendOption": true
+            },
+            "BlendOutTriggerTime": -1.0,
+            "section": {
+              "SectionName": "Default",
+              "NextSectionName": "None",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "LinkMethod": "Absolute",
+              "SegmentBeginTime": 0.0,
+              "SegmentLength": 1.5,
+              "LinkValue": 0.0
+            },
+            "slot": {
+              "SlotName": "PostLocomotion",
+              "sequence": "A_Als_Roll",
+              "StartPos": 0.0,
+              "AnimStartTime": 0.0,
+              "AnimEndTime": 1.5,
+              "AnimPlayRate": 1.0,
+              "LoopingCount": 1
+            },
+            "notifies": [
+              {
+                "NotifyName": "BMNotifyStateMovementAction",
+                "startTime": 0.0,
+                "duration": 0.9333329796791077,
+                "endTime": 0.9333329796791077,
+                "TriggerTimeOffset": 9.999999747378752E-05,
+                "EndTriggerTimeOffset": 0.0,
+                "TriggerWeightThreshold": 9.999999747378752E-06,
+                "MontageTickType": "Queued",
+                "NotifyTriggerChance": 1.0,
+                "NotifyFilterType": "NoFiltering",
+                "NotifyFilterLOD": 0,
+                "bTriggerOnDedicatedServer": true,
+                "bTriggerOnFollower": false,
+                "TrackIndex": 0,
+                "LinkMethod": "Absolute",
+                "SlotIndex": 0,
+                "SegmentIndex": 0,
+                "linkedClass": {
+                  "kind": "NotifyStateClass",
+                  "name": "BMNotifyStateMovementAction_0",
+                  "type": "AlsAnimNotifyState_SetLocomotionAction",
+                  "properties": {
+                    "LocomotionAction": {
+                      "TagName": "Als.LocomotionAction.Rolling"
+                    }
+                  }
+                }
+              }
+            ],
+            "branchingPointMarkers": [
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 9.999999747378752E-05,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 0.9334329962730408,
+                "NotifyEventType": "End"
+              }
+            ],
+            "branchingPointStateNotifyIndices": [
+              0
+            ],
+            "serializedDefaults": {
+              "RateScale": false,
+              "BlendOutTriggerTime": false,
+              "CommonTargetFrameRate": false
+            }
+          },
+          "AM_Als_GetUp_Front": {
+            "asset": "AM_Als_GetUp_Front",
+            "assetPath": "ALS/Content/ALS/Animations/Actions/GetUp/AM_Als_GetUp_Front.uasset",
+            "SequenceLength": 1.5,
+            "RateScale": 1.2000000476837158,
+            "effectiveDurationSecondsAtPlayRateOne": 1.2499999503294648,
+            "SamplingFrameRate": {
+              "Numerator": 30,
+              "Denominator": 1
+            },
+            "BlendIn": {
+              "BlendTime": 0.0,
+              "BlendOption": "Linear",
+              "serializedBlendOption": false
+            },
+            "BlendOut": {
+              "BlendTime": 0.30000001192092896,
+              "BlendOption": "Cubic",
+              "serializedBlendOption": true
+            },
+            "BlendOutTriggerTime": -1.0,
+            "section": {
+              "SectionName": "Default",
+              "NextSectionName": "None",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "LinkMethod": "Absolute",
+              "SegmentBeginTime": 0.0,
+              "SegmentLength": 1.5,
+              "LinkValue": 0.0
+            },
+            "slot": {
+              "SlotName": "PostLocomotion",
+              "sequence": "A_Als_GetUp_Front",
+              "StartPos": 0.0,
+              "AnimStartTime": 0.0,
+              "AnimEndTime": 1.5,
+              "AnimPlayRate": 1.0,
+              "LoopingCount": 1
+            },
+            "notifies": [
+              {
+                "NotifyName": "BMNotifyStateMovementAction",
+                "startTime": 0.0,
+                "duration": 1.1666666269302368,
+                "endTime": 1.1666666269302368,
+                "TriggerTimeOffset": -9.999999747378752E-05,
+                "EndTriggerTimeOffset": 0.0,
+                "TriggerWeightThreshold": 9.999999747378752E-06,
+                "MontageTickType": "Queued",
+                "NotifyTriggerChance": 1.0,
+                "NotifyFilterType": "NoFiltering",
+                "NotifyFilterLOD": 0,
+                "bTriggerOnDedicatedServer": true,
+                "bTriggerOnFollower": false,
+                "TrackIndex": 0,
+                "LinkMethod": "Absolute",
+                "SlotIndex": 0,
+                "SegmentIndex": 0,
+                "linkedClass": {
+                  "kind": "NotifyStateClass",
+                  "name": "BMNotifyStateMovementAction_0",
+                  "type": "AlsAnimNotifyState_SetLocomotionAction",
+                  "properties": {
+                    "LocomotionAction": {
+                      "TagName": "Als.LocomotionAction.GettingUp"
+                    }
+                  }
+                }
+              }
+            ],
+            "branchingPointMarkers": [
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": -9.999999747378752E-05,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 1.1665666103363037,
+                "NotifyEventType": "End"
+              }
+            ],
+            "branchingPointStateNotifyIndices": [
+              0
+            ],
+            "serializedDefaults": {
+              "RateScale": true,
+              "BlendOutTriggerTime": false,
+              "CommonTargetFrameRate": false
+            }
+          },
+          "AM_Als_GetUp_Back": {
+            "asset": "AM_Als_GetUp_Back",
+            "assetPath": "ALS/Content/ALS/Animations/Actions/GetUp/AM_Als_GetUp_Back.uasset",
+            "SequenceLength": 1.5,
+            "RateScale": 1.2000000476837158,
+            "effectiveDurationSecondsAtPlayRateOne": 1.2499999503294648,
+            "SamplingFrameRate": {
+              "Numerator": 30,
+              "Denominator": 1
+            },
+            "BlendIn": {
+              "BlendTime": 0.0,
+              "BlendOption": "Linear",
+              "serializedBlendOption": false
+            },
+            "BlendOut": {
+              "BlendTime": 0.30000001192092896,
+              "BlendOption": "Cubic",
+              "serializedBlendOption": true
+            },
+            "BlendOutTriggerTime": -1.0,
+            "section": {
+              "SectionName": "Default",
+              "NextSectionName": "None",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "LinkMethod": "Absolute",
+              "SegmentBeginTime": 0.0,
+              "SegmentLength": 1.5,
+              "LinkValue": 0.0
+            },
+            "slot": {
+              "SlotName": "PostLocomotion",
+              "sequence": "A_Als_GetUp_Back",
+              "StartPos": 0.0,
+              "AnimStartTime": 0.0,
+              "AnimEndTime": 1.5,
+              "AnimPlayRate": 1.0,
+              "LoopingCount": 1
+            },
+            "notifies": [
+              {
+                "NotifyName": "BMNotifyStateMovementAction",
+                "startTime": 0.0,
+                "duration": 1.1666666269302368,
+                "endTime": 1.1666666269302368,
+                "TriggerTimeOffset": -9.999999747378752E-05,
+                "EndTriggerTimeOffset": 0.0,
+                "TriggerWeightThreshold": 9.999999747378752E-06,
+                "MontageTickType": "Queued",
+                "NotifyTriggerChance": 1.0,
+                "NotifyFilterType": "NoFiltering",
+                "NotifyFilterLOD": 0,
+                "bTriggerOnDedicatedServer": true,
+                "bTriggerOnFollower": false,
+                "TrackIndex": 0,
+                "LinkMethod": "Absolute",
+                "SlotIndex": 0,
+                "SegmentIndex": 0,
+                "linkedClass": {
+                  "kind": "NotifyStateClass",
+                  "name": "BMNotifyStateMovementAction_0",
+                  "type": "AlsAnimNotifyState_SetLocomotionAction",
+                  "properties": {
+                    "LocomotionAction": {
+                      "TagName": "Als.LocomotionAction.GettingUp"
+                    }
+                  }
+                }
+              }
+            ],
+            "branchingPointMarkers": [
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": -9.999999747378752E-05,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 1.1665666103363037,
+                "NotifyEventType": "End"
+              }
+            ],
+            "branchingPointStateNotifyIndices": [
+              0
+            ],
+            "serializedDefaults": {
+              "RateScale": true,
+              "BlendOutTriggerTime": false,
+              "CommonTargetFrameRate": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "action-notify-state-endpoints-and-branch-markers",
+      "pass": true,
+      "details": {
+        "errors": [],
+        "montages": {
+          "AM_Als_Roll": {
+            "asset": "AM_Als_Roll",
+            "assetPath": "ALS/Content/ALS/Animations/Actions/Roll/AM_Als_Roll.uasset",
+            "SequenceLength": 1.5,
+            "RateScale": 1.0,
+            "effectiveDurationSecondsAtPlayRateOne": 1.5,
+            "SamplingFrameRate": {
+              "Numerator": 30,
+              "Denominator": 1
+            },
+            "BlendIn": {
+              "BlendTime": 0.10000000149011612,
+              "BlendOption": "HermiteCubic",
+              "serializedBlendOption": true
+            },
+            "BlendOut": {
+              "BlendTime": 0.30000001192092896,
+              "BlendOption": "HermiteCubic",
+              "serializedBlendOption": true
+            },
+            "BlendOutTriggerTime": -1.0,
+            "section": {
+              "SectionName": "Default",
+              "NextSectionName": "None",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "LinkMethod": "Absolute",
+              "SegmentBeginTime": 0.0,
+              "SegmentLength": 1.5,
+              "LinkValue": 0.0
+            },
+            "slot": {
+              "SlotName": "PostLocomotion",
+              "sequence": "A_Als_Roll",
+              "StartPos": 0.0,
+              "AnimStartTime": 0.0,
+              "AnimEndTime": 1.5,
+              "AnimPlayRate": 1.0,
+              "LoopingCount": 1
+            },
+            "notifies": [
+              {
+                "NotifyName": "BMNotifyStateMovementAction",
+                "startTime": 0.0,
+                "duration": 0.9333329796791077,
+                "endTime": 0.9333329796791077,
+                "TriggerTimeOffset": 9.999999747378752E-05,
+                "EndTriggerTimeOffset": 0.0,
+                "TriggerWeightThreshold": 9.999999747378752E-06,
+                "MontageTickType": "Queued",
+                "NotifyTriggerChance": 1.0,
+                "NotifyFilterType": "NoFiltering",
+                "NotifyFilterLOD": 0,
+                "bTriggerOnDedicatedServer": true,
+                "bTriggerOnFollower": false,
+                "TrackIndex": 0,
+                "LinkMethod": "Absolute",
+                "SlotIndex": 0,
+                "SegmentIndex": 0,
+                "linkedClass": {
+                  "kind": "NotifyStateClass",
+                  "name": "BMNotifyStateMovementAction_0",
+                  "type": "AlsAnimNotifyState_SetLocomotionAction",
+                  "properties": {
+                    "LocomotionAction": {
+                      "TagName": "Als.LocomotionAction.Rolling"
+                    }
+                  }
+                }
+              }
+            ],
+            "branchingPointMarkers": [
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 9.999999747378752E-05,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 0.9334329962730408,
+                "NotifyEventType": "End"
+              }
+            ],
+            "branchingPointStateNotifyIndices": [
+              0
+            ],
+            "serializedDefaults": {
+              "RateScale": false,
+              "BlendOutTriggerTime": false,
+              "CommonTargetFrameRate": false
+            }
+          },
+          "AM_Als_GetUp_Front": {
+            "asset": "AM_Als_GetUp_Front",
+            "assetPath": "ALS/Content/ALS/Animations/Actions/GetUp/AM_Als_GetUp_Front.uasset",
+            "SequenceLength": 1.5,
+            "RateScale": 1.2000000476837158,
+            "effectiveDurationSecondsAtPlayRateOne": 1.2499999503294648,
+            "SamplingFrameRate": {
+              "Numerator": 30,
+              "Denominator": 1
+            },
+            "BlendIn": {
+              "BlendTime": 0.0,
+              "BlendOption": "Linear",
+              "serializedBlendOption": false
+            },
+            "BlendOut": {
+              "BlendTime": 0.30000001192092896,
+              "BlendOption": "Cubic",
+              "serializedBlendOption": true
+            },
+            "BlendOutTriggerTime": -1.0,
+            "section": {
+              "SectionName": "Default",
+              "NextSectionName": "None",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "LinkMethod": "Absolute",
+              "SegmentBeginTime": 0.0,
+              "SegmentLength": 1.5,
+              "LinkValue": 0.0
+            },
+            "slot": {
+              "SlotName": "PostLocomotion",
+              "sequence": "A_Als_GetUp_Front",
+              "StartPos": 0.0,
+              "AnimStartTime": 0.0,
+              "AnimEndTime": 1.5,
+              "AnimPlayRate": 1.0,
+              "LoopingCount": 1
+            },
+            "notifies": [
+              {
+                "NotifyName": "BMNotifyStateMovementAction",
+                "startTime": 0.0,
+                "duration": 1.1666666269302368,
+                "endTime": 1.1666666269302368,
+                "TriggerTimeOffset": -9.999999747378752E-05,
+                "EndTriggerTimeOffset": 0.0,
+                "TriggerWeightThreshold": 9.999999747378752E-06,
+                "MontageTickType": "Queued",
+                "NotifyTriggerChance": 1.0,
+                "NotifyFilterType": "NoFiltering",
+                "NotifyFilterLOD": 0,
+                "bTriggerOnDedicatedServer": true,
+                "bTriggerOnFollower": false,
+                "TrackIndex": 0,
+                "LinkMethod": "Absolute",
+                "SlotIndex": 0,
+                "SegmentIndex": 0,
+                "linkedClass": {
+                  "kind": "NotifyStateClass",
+                  "name": "BMNotifyStateMovementAction_0",
+                  "type": "AlsAnimNotifyState_SetLocomotionAction",
+                  "properties": {
+                    "LocomotionAction": {
+                      "TagName": "Als.LocomotionAction.GettingUp"
+                    }
+                  }
+                }
+              }
+            ],
+            "branchingPointMarkers": [
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": -9.999999747378752E-05,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 1.1665666103363037,
+                "NotifyEventType": "End"
+              }
+            ],
+            "branchingPointStateNotifyIndices": [
+              0
+            ],
+            "serializedDefaults": {
+              "RateScale": true,
+              "BlendOutTriggerTime": false,
+              "CommonTargetFrameRate": false
+            }
+          },
+          "AM_Als_GetUp_Back": {
+            "asset": "AM_Als_GetUp_Back",
+            "assetPath": "ALS/Content/ALS/Animations/Actions/GetUp/AM_Als_GetUp_Back.uasset",
+            "SequenceLength": 1.5,
+            "RateScale": 1.2000000476837158,
+            "effectiveDurationSecondsAtPlayRateOne": 1.2499999503294648,
+            "SamplingFrameRate": {
+              "Numerator": 30,
+              "Denominator": 1
+            },
+            "BlendIn": {
+              "BlendTime": 0.0,
+              "BlendOption": "Linear",
+              "serializedBlendOption": false
+            },
+            "BlendOut": {
+              "BlendTime": 0.30000001192092896,
+              "BlendOption": "Cubic",
+              "serializedBlendOption": true
+            },
+            "BlendOutTriggerTime": -1.0,
+            "section": {
+              "SectionName": "Default",
+              "NextSectionName": "None",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "LinkMethod": "Absolute",
+              "SegmentBeginTime": 0.0,
+              "SegmentLength": 1.5,
+              "LinkValue": 0.0
+            },
+            "slot": {
+              "SlotName": "PostLocomotion",
+              "sequence": "A_Als_GetUp_Back",
+              "StartPos": 0.0,
+              "AnimStartTime": 0.0,
+              "AnimEndTime": 1.5,
+              "AnimPlayRate": 1.0,
+              "LoopingCount": 1
+            },
+            "notifies": [
+              {
+                "NotifyName": "BMNotifyStateMovementAction",
+                "startTime": 0.0,
+                "duration": 1.1666666269302368,
+                "endTime": 1.1666666269302368,
+                "TriggerTimeOffset": -9.999999747378752E-05,
+                "EndTriggerTimeOffset": 0.0,
+                "TriggerWeightThreshold": 9.999999747378752E-06,
+                "MontageTickType": "Queued",
+                "NotifyTriggerChance": 1.0,
+                "NotifyFilterType": "NoFiltering",
+                "NotifyFilterLOD": 0,
+                "bTriggerOnDedicatedServer": true,
+                "bTriggerOnFollower": false,
+                "TrackIndex": 0,
+                "LinkMethod": "Absolute",
+                "SlotIndex": 0,
+                "SegmentIndex": 0,
+                "linkedClass": {
+                  "kind": "NotifyStateClass",
+                  "name": "BMNotifyStateMovementAction_0",
+                  "type": "AlsAnimNotifyState_SetLocomotionAction",
+                  "properties": {
+                    "LocomotionAction": {
+                      "TagName": "Als.LocomotionAction.GettingUp"
+                    }
+                  }
+                }
+              }
+            ],
+            "branchingPointMarkers": [
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": -9.999999747378752E-05,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 1.1665666103363037,
+                "NotifyEventType": "End"
+              }
+            ],
+            "branchingPointStateNotifyIndices": [
+              0
+            ],
+            "serializedDefaults": {
+              "RateScale": true,
+              "BlendOutTriggerTime": false,
+              "CommonTargetFrameRate": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "roll-root-motion-scale-FromRoll-and-get-up-sequences",
+      "pass": true,
+      "details": {
+        "roll": {
+          "asset": "A_Als_Roll",
+          "assetPath": "ALS/Content/ALS/Animations/Actions/Roll/A_Als_Roll.uasset",
+          "SequenceLength": 1.5,
+          "RateScale": 1.0,
+          "effectiveDurationSecondsAtPlayRateOne": 1.5,
+          "SamplingFrameRate": {
+            "Numerator": 30,
+            "Denominator": 1
+          },
+          "NumFrames": 46,
+          "NumberOfKeys": 46,
+          "rootMotion": {
+            "bEnableRootMotion": true,
+            "bForceRootLock": true,
+            "RootMotionRootLock": "RefPose"
+          },
+          "notifies": [
+            {
+              "NotifyName": "AlsRootMotionScale",
+              "startTime": 0.0,
+              "duration": 1.5,
+              "endTime": 1.5,
+              "TriggerTimeOffset": 9.999999747378752E-05,
+              "EndTriggerTimeOffset": 0.0,
+              "TriggerWeightThreshold": 9.999999747378752E-06,
+              "MontageTickType": "Queued",
+              "NotifyTriggerChance": 1.0,
+              "NotifyFilterType": "NoFiltering",
+              "NotifyFilterLOD": 0,
+              "bTriggerOnDedicatedServer": true,
+              "bTriggerOnFollower": false,
+              "TrackIndex": 1,
+              "LinkMethod": "Absolute",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "linkedClass": {
+                "kind": "NotifyStateClass",
+                "name": "AlsAnimNotifyState_RootMotionScale_0",
+                "type": "AlsAnimNotifyState_SetRootMotionScale",
+                "properties": {
+                  "TranslationScale": 1.3
+                }
+              }
+            },
+            {
+              "NotifyName": "AlsCameraShake",
+              "startTime": 0.10000000894069672,
+              "duration": 0.0,
+              "endTime": 0.10000000894069672,
+              "TriggerTimeOffset": 0.0,
+              "EndTriggerTimeOffset": 0.0,
+              "TriggerWeightThreshold": 9.999999747378752E-06,
+              "MontageTickType": "Queued",
+              "NotifyTriggerChance": 1.0,
+              "NotifyFilterType": "NoFiltering",
+              "NotifyFilterLOD": 0,
+              "bTriggerOnDedicatedServer": false,
+              "bTriggerOnFollower": false,
+              "TrackIndex": 3,
+              "LinkMethod": "Absolute",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "linkedClass": {
+                "kind": "Notify",
+                "name": "AlsAnimNotify_CameraShake_0",
+                "type": "AlsAnimNotify_CameraShake",
+                "properties": {
+                  "CameraShakeClass": {
+                    "ObjectName": "BlueprintGeneratedClass'B_Als_CameraShake_Sprint_C'",
+                    "ObjectPath": "/ALS/ALSCamera/Data/B_Als_CameraShake_Sprint"
+                  }
+                }
+              }
+            },
+            {
+              "NotifyName": "AlsCameraShake",
+              "startTime": 0.46666669845581055,
+              "duration": 0.0,
+              "endTime": 0.46666669845581055,
+              "TriggerTimeOffset": 0.0,
+              "EndTriggerTimeOffset": 0.0,
+              "TriggerWeightThreshold": 9.999999747378752E-06,
+              "MontageTickType": "Queued",
+              "NotifyTriggerChance": 1.0,
+              "NotifyFilterType": "NoFiltering",
+              "NotifyFilterLOD": 0,
+              "bTriggerOnDedicatedServer": false,
+              "bTriggerOnFollower": false,
+              "TrackIndex": 3,
+              "LinkMethod": "Absolute",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "linkedClass": {
+                "kind": "Notify",
+                "name": "AlsAnimNotify_CameraShake_1",
+                "type": "AlsAnimNotify_CameraShake",
+                "properties": {
+                  "CameraShakeClass": {
+                    "ObjectName": "BlueprintGeneratedClass'B_Als_CameraShake_Sprint_C'",
+                    "ObjectPath": "/ALS/ALSCamera/Data/B_Als_CameraShake_Sprint"
+                  },
+                  "CameraShakeScale": 2.0
+                }
+              }
+            },
+            {
+              "NotifyName": "AlsSetGroundedEntryMode",
+              "startTime": 0.9333333373069763,
+              "duration": 0.0,
+              "endTime": 0.9333333373069763,
+              "TriggerTimeOffset": 0.0,
+              "EndTriggerTimeOffset": 0.0,
+              "TriggerWeightThreshold": 9.999999747378752E-06,
+              "MontageTickType": "Queued",
+              "NotifyTriggerChance": 1.0,
+              "NotifyFilterType": "NoFiltering",
+              "NotifyFilterLOD": 0,
+              "bTriggerOnDedicatedServer": true,
+              "bTriggerOnFollower": false,
+              "TrackIndex": 0,
+              "LinkMethod": "Absolute",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "linkedClass": {
+                "kind": "Notify",
+                "name": "AlsAnimNotify_SetGroundedEntryMode_0",
+                "type": "AlsAnimNotify_SetGroundedEntryMode",
+                "properties": {
+                  "GroundedEntryMode": {
+                    "TagName": "Als.GroundedEntryMode.FromRoll"
+                  }
+                }
+              }
+            },
+            {
+              "NotifyName": "AlsFootstepEffects",
+              "startTime": 0.9333333969116211,
+              "duration": 0.0,
+              "endTime": 0.9333333969116211,
+              "TriggerTimeOffset": 0.0,
+              "EndTriggerTimeOffset": 0.0,
+              "TriggerWeightThreshold": 0.5,
+              "MontageTickType": "Queued",
+              "NotifyTriggerChance": 1.0,
+              "NotifyFilterType": "NoFiltering",
+              "NotifyFilterLOD": 0,
+              "bTriggerOnDedicatedServer": false,
+              "bTriggerOnFollower": false,
+              "TrackIndex": 2,
+              "LinkMethod": "Absolute",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "linkedClass": {
+                "kind": "Notify",
+                "name": "AlsAnimNotify_FootstepEffects_0",
+                "type": "AlsAnimNotify_FootstepEffects",
+                "properties": {
+                  "FootstepEffectsSettings": {
+                    "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                    "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+                  },
+                  "FootBone": "EAlsFootBone::Right",
+                  "bSkipEffectsWhenInAir": true,
+                  "SoundVolumeMultiplier": 0.6,
+                  "bSpawnDecal": false,
+                  "bSpawnParticleSystem": false
+                }
+              }
+            },
+            {
+              "NotifyName": "AlsFootstepEffects",
+              "startTime": 1.0,
+              "duration": 0.0,
+              "endTime": 1.0,
+              "TriggerTimeOffset": 0.0,
+              "EndTriggerTimeOffset": 0.0,
+              "TriggerWeightThreshold": 0.5,
+              "MontageTickType": "Queued",
+              "NotifyTriggerChance": 1.0,
+              "NotifyFilterType": "NoFiltering",
+              "NotifyFilterLOD": 0,
+              "bTriggerOnDedicatedServer": false,
+              "bTriggerOnFollower": false,
+              "TrackIndex": 2,
+              "LinkMethod": "Absolute",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "linkedClass": {
+                "kind": "Notify",
+                "name": "AlsAnimNotify_FootstepEffects_2",
+                "type": "AlsAnimNotify_FootstepEffects",
+                "properties": {
+                  "FootstepEffectsSettings": {
+                    "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                    "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+                  },
+                  "FootBone": "EAlsFootBone::Right",
+                  "bSkipEffectsWhenInAir": true,
+                  "bSpawnSound": false
+                }
+              }
+            },
+            {
+              "NotifyName": "AlsFootstepEffects",
+              "startTime": 1.2333333492279053,
+              "duration": 0.0,
+              "endTime": 1.2333333492279053,
+              "TriggerTimeOffset": 0.0,
+              "EndTriggerTimeOffset": 0.0,
+              "TriggerWeightThreshold": 0.5,
+              "MontageTickType": "Queued",
+              "NotifyTriggerChance": 1.0,
+              "NotifyFilterType": "NoFiltering",
+              "NotifyFilterLOD": 0,
+              "bTriggerOnDedicatedServer": false,
+              "bTriggerOnFollower": false,
+              "TrackIndex": 2,
+              "LinkMethod": "Absolute",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "linkedClass": {
+                "kind": "Notify",
+                "name": "AlsAnimNotify_FootstepEffects_1",
+                "type": "AlsAnimNotify_FootstepEffects",
+                "properties": {
+                  "FootstepEffectsSettings": {
+                    "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                    "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+                  },
+                  "bSkipEffectsWhenInAir": true,
+                  "bSpawnSound": false
+                }
+              }
+            }
+          ],
+          "serializedDefaults": {
+            "RateScale": false,
+            "RootMotionRootLock": false
+          }
+        },
+        "getUpFront": {
+          "asset": "A_Als_GetUp_Front",
+          "assetPath": "ALS/Content/ALS/Animations/Actions/GetUp/A_Als_GetUp_Front.uasset",
+          "SequenceLength": 1.5,
+          "RateScale": 1.0,
+          "effectiveDurationSecondsAtPlayRateOne": 1.5,
+          "SamplingFrameRate": {
+            "Numerator": 30,
+            "Denominator": 1
+          },
+          "NumFrames": 46,
+          "NumberOfKeys": 46,
+          "rootMotion": {
+            "bEnableRootMotion": false,
+            "bForceRootLock": false,
+            "RootMotionRootLock": "RefPose"
+          },
+          "notifies": [
+            {
+              "NotifyName": "BMAnimNotifyFootstep",
+              "startTime": 0.8000000715255737,
+              "duration": 0.0,
+              "endTime": 0.8000000715255737,
+              "TriggerTimeOffset": 0.0,
+              "EndTriggerTimeOffset": 0.0,
+              "TriggerWeightThreshold": 0.5,
+              "MontageTickType": "Queued",
+              "NotifyTriggerChance": 1.0,
+              "NotifyFilterType": "NoFiltering",
+              "NotifyFilterLOD": 0,
+              "bTriggerOnDedicatedServer": false,
+              "bTriggerOnFollower": false,
+              "TrackIndex": 0,
+              "LinkMethod": "Absolute",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "linkedClass": {
+                "kind": "Notify",
+                "name": "BMAnimNotifyFootstep_0",
+                "type": "AlsAnimNotify_FootstepEffects",
+                "properties": {
+                  "FootstepEffectsSettings": {
+                    "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                    "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+                  },
+                  "FootBone": "EAlsFootBone::Right",
+                  "bSpawnSound": false,
+                  "SoundVolumeMultiplier": 0.35,
+                  "bSpawnDecal": false,
+                  "bSpawnParticleSystem": false
+                }
+              }
+            },
+            {
+              "NotifyName": "BMAnimNotifyFootstep",
+              "startTime": 1.2333333492279053,
+              "duration": 0.0,
+              "endTime": 1.2333333492279053,
+              "TriggerTimeOffset": 0.0,
+              "EndTriggerTimeOffset": 0.0,
+              "TriggerWeightThreshold": 0.5,
+              "MontageTickType": "Queued",
+              "NotifyTriggerChance": 1.0,
+              "NotifyFilterType": "NoFiltering",
+              "NotifyFilterLOD": 0,
+              "bTriggerOnDedicatedServer": false,
+              "bTriggerOnFollower": false,
+              "TrackIndex": 0,
+              "LinkMethod": "Absolute",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "linkedClass": {
+                "kind": "Notify",
+                "name": "BMAnimNotifyFootstep_1",
+                "type": "AlsAnimNotify_FootstepEffects",
+                "properties": {
+                  "FootstepEffectsSettings": {
+                    "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                    "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+                  },
+                  "SoundVolumeMultiplier": 0.35
+                }
+              }
+            }
+          ],
+          "serializedDefaults": {
+            "RateScale": false,
+            "RootMotionRootLock": false
+          }
+        },
+        "getUpBack": {
+          "asset": "A_Als_GetUp_Back",
+          "assetPath": "ALS/Content/ALS/Animations/Actions/GetUp/A_Als_GetUp_Back.uasset",
+          "SequenceLength": 1.5,
+          "RateScale": 1.0,
+          "effectiveDurationSecondsAtPlayRateOne": 1.5,
+          "SamplingFrameRate": {
+            "Numerator": 30,
+            "Denominator": 1
+          },
+          "NumFrames": 46,
+          "NumberOfKeys": 46,
+          "rootMotion": {
+            "bEnableRootMotion": false,
+            "bForceRootLock": false,
+            "RootMotionRootLock": "RefPose"
+          },
+          "notifies": [
+            {
+              "NotifyName": "BMAnimNotifyFootstep",
+              "startTime": 0.5,
+              "duration": 0.0,
+              "endTime": 0.5,
+              "TriggerTimeOffset": 0.0,
+              "EndTriggerTimeOffset": 0.0,
+              "TriggerWeightThreshold": 0.5,
+              "MontageTickType": "Queued",
+              "NotifyTriggerChance": 1.0,
+              "NotifyFilterType": "NoFiltering",
+              "NotifyFilterLOD": 0,
+              "bTriggerOnDedicatedServer": false,
+              "bTriggerOnFollower": false,
+              "TrackIndex": 0,
+              "LinkMethod": "Absolute",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "linkedClass": {
+                "kind": "Notify",
+                "name": "BMAnimNotifyFootstep_0",
+                "type": "AlsAnimNotify_FootstepEffects",
+                "properties": {
+                  "FootstepEffectsSettings": {
+                    "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                    "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+                  },
+                  "SoundVolumeMultiplier": 0.35
+                }
+              }
+            },
+            {
+              "NotifyName": "BMAnimNotifyFootstep",
+              "startTime": 1.0666667222976685,
+              "duration": 0.0,
+              "endTime": 1.0666667222976685,
+              "TriggerTimeOffset": 0.0,
+              "EndTriggerTimeOffset": 0.0,
+              "TriggerWeightThreshold": 0.5,
+              "MontageTickType": "Queued",
+              "NotifyTriggerChance": 1.0,
+              "NotifyFilterType": "NoFiltering",
+              "NotifyFilterLOD": 0,
+              "bTriggerOnDedicatedServer": false,
+              "bTriggerOnFollower": false,
+              "TrackIndex": 0,
+              "LinkMethod": "Absolute",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "linkedClass": {
+                "kind": "Notify",
+                "name": "BMAnimNotifyFootstep_1",
+                "type": "AlsAnimNotify_FootstepEffects",
+                "properties": {
+                  "FootstepEffectsSettings": {
+                    "ObjectName": "AlsFootstepEffectsSettings'FES_Als_Default'",
+                    "ObjectPath": "/ALS/ALS/Data/Footstep/FES_Als_Default"
+                  },
+                  "FootBone": "EAlsFootBone::Right",
+                  "SoundVolumeMultiplier": 0.35,
+                  "bSpawnDecal": false,
+                  "bSpawnParticleSystem": false
+                }
+              }
+            }
+          ],
+          "serializedDefaults": {
+            "RateScale": false,
+            "RootMotionRootLock": false
+          }
+        }
+      }
+    }
+  ]
+}

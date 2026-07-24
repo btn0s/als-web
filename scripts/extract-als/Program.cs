@@ -44,6 +44,10 @@ if (args.Length == 3 && args[0] == "dump-mantling-content")
     return MantlingContentDump.Run(args[1], args[2]);
 if (args.Length == 2 && args[0] == "validate-mantling-content")
     return MantlingContentDump.Validate(args[1]);
+if (args.Length == 3 && args[0] == "dump-action-content")
+    return ActionContentDump.Run(args[1], args[2]);
+if (args.Length == 2 && args[0] == "validate-action-content")
+    return ActionContentDump.Validate(args[1]);
 if (args.Length == 4 && args[0] == "inspect") return Inspect.Run(args[1], args[2], args[3]);
 Console.Error.WriteLine(
     "usage: dotnet run -- dump <stage-dir> <out.json> <SkeletonName> <MeshName> " +
@@ -87,4 +91,8 @@ Console.Error.WriteLine(
     "       dotnet run -- dump-mantling-content <stage-dir> <mantling-content.json>");
 Console.Error.WriteLine(
     "       dotnet run -- validate-mantling-content <mantling-content.json>");
+Console.Error.WriteLine(
+    "       dotnet run -- dump-action-content <stage-dir> <action-content.json>");
+Console.Error.WriteLine(
+    "       dotnet run -- validate-action-content <action-content.json>");
 return 1;

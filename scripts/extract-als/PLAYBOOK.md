@@ -489,6 +489,40 @@ dotnet run -- validate-mantling-content mantling-content.json
   `(0.1,0)→(0.4,1)`, and Low vertical `(0.3,0)→(0.6,1)`, with every interpolation/tangent field
   retained in the generated oracle.
 
+## Rolling and GettingUp action content
+
+Run:
+
+```sh
+dotnet run -- dump-action-content "$ALS_WORK/stage" action-content.json
+dotnet run -- validate-action-content action-content.json
+```
+
+- **VERIFIED — effective action settings require both C++ defaults and `CS_Als_Default`.**
+  The asset binds `AM_Als_Roll`, both GetUp montages, and overrides only
+  `bInterruptRollingWhenInAir=false`. Every other value is inherited from
+  `FAlsRollingSettings` / `FAlsRagdollingSettings`: crouch and rotate-to-input on roll start,
+  rotation interpolation speed `10`, land thresholds `700` / `1000` cm/s, both land actions
+  enabled, and initial ragdoll speed limiting enabled. The generated oracle retains the C++
+  defaults, raw serialized overrides, and merged effective values separately.
+
+- **VERIFIED — all three action montages are single-segment `PostLocomotion` montages.**
+  Roll is a `1.5` second clock at default `RateScale=1`, with `0.1` Hermite-cubic blend-in and
+  `0.3` Hermite-cubic blend-out. Front and Back GetUp are `1.5` second clocks at
+  `RateScale=1.2` (effective `1.25` seconds at play rate one), with zero-time linear blend-in
+  and `0.3` cubic blend-out. Their omitted `BlendOutTriggerTime` is Unreal's `-1` default.
+  The validator pins the exact montage/sequence inventory, slots, sections, segment ranges,
+  loop/play rates, action notify windows, branching-point indices, and trigger offsets.
+
+- **VERIFIED — the sequence-side Roll contract is independently authored.** `A_Als_Roll`
+  enables root motion and forced root lock (default `RefPose` lock mode), runs
+  `AlsAnimNotifyState_SetRootMotionScale` at translation scale `1.3` for its complete
+  `0..1.5` second interval, and emits `Als.GroundedEntryMode.FromRoll` at
+  `0.93333334`. The montage's Rolling action state ends at `0.93333298`; both GetUp montage
+  action states end at `1.16666663` and carry `Als.LocomotionAction.GettingUp`.
+  `action-content.json` also preserves every linked notify object's tagged properties rather
+  than hand-authoring the runtime-relevant subset.
+
 ## Enhanced Input mappings
 
 Run:
