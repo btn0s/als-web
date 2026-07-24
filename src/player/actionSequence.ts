@@ -1,6 +1,6 @@
 /**
  * Pure, framework-free timing primitive for "animation + timing + synced world action" — the shape
- * every anticipation/traversal move shares: run a windup of some duration, expose `progress` (0..1)
+ * every anticipation/traversal move shares: run for some duration, expose `progress` (0..1)
  * for an animation layer to render (see scrubbedPose.ts), and fire gameplay/physics actions at
  * normalized phases (the jump impulse at progress 1; a mantle's body-warp reads progress each frame;
  * a roll's i-frames could toggle at 0.2..0.7; a strike's hitbox at 0.4). Consumers own WHAT fires;
@@ -18,7 +18,7 @@ export interface SequenceCue {
 
 export interface ActionSequenceConfig {
   /** Duration in seconds. A function is resolved at each `start()`, so live-tuned values (e.g. a
-   * Leva windup time) take effect on the next trigger. <= 0 completes instantly on the first update. */
+   * Leva action time) take effect on the next trigger. <= 0 completes instantly on the first update. */
   duration: number | (() => number)
   /** World actions fired at normalized times as the sequence plays. */
   cues?: SequenceCue[]

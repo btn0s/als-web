@@ -69,20 +69,8 @@ export function updateLocomotionTargets(
  * blended gait clips. Cadence (cycles/sec) is `groundSpeed / strideLength`, so a planted foot
  * moves exactly with the ground at ANY speed — no sliding, and never the "authored 1× regardless
  * of movement" that made walk look slow. The effective stride is the weight-blend of the active
- * gaits, cross-faded between stand and crouch by `posture`, then into crawl by `crawlBlend`.
- * Phase freezes while stationary.
- *
- * The trailing crawl arguments deliberately default to zero so the pre-TD-2.2 Operative call
- * remains source-compatible until wave 2 wires the measured clip stride in. That integration is
- * one call-site addition after `crawlFwd` has been resolved:
- *
- * `..., strides, crawlFwd ? measureGait(crawlFwd.getClip()).stride : 0,
- * crawlMoveWeight.current, crawlBlend.current)`
- *
- * `crawlMoveWeight` belongs in the stride blend for the same reason `crouchMoveWeight` does: an
- * idle clip contributes no travelling cycle. Crawl ground speed (currently crouch-walk speed ×
- * Player's 0.5 multiplier) remains a controller/call-site concern; this pure cadence seam needs
- * only the measured metres-per-cycle stride and the already-computed blend weights.
+ * gaits, cross-faded between ALS's Standing and Crouching pose amounts. Phase freezes while
+ * stationary.
  */
 export function advanceLocomotionPhase(
   phase: number,
@@ -90,11 +78,8 @@ export function advanceLocomotionPhase(
   speed: number,
   standWeights: number[],
   crouchMoveWeight: number,
-  posture: number,
+  crouchingAmount: number,
   strides: GaitStrides,
-  crawlStride = 0,
-  crawlMoveWeight = 0,
-  crawlBlend = 0,
   poseGaitAmount?: number,
 ): number {
   let standStride =
@@ -112,9 +97,7 @@ export function advanceLocomotionPhase(
     standStride = lerp(standStride, strides.sprint, sprinting);
   }
   const crouchStride = crouchMoveWeight * strides.crouchWalk;
-  const uprightStride = lerp(standStride, crouchStride, posture);
-  const effectiveCrawlStride = crawlMoveWeight * crawlStride;
-  const effStride = lerp(uprightStride, effectiveCrawlStride, crawlBlend);
+  const effStride = lerp(standStride, crouchStride, crouchingAmount);
 
   const cadence = effStride > 1e-4 ? speed / effStride : 0;
   return speed > IDLE_EPS ? (phase + dt * cadence) % 1 : phase;

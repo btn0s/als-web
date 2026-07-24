@@ -100,43 +100,16 @@ describe('advanceLocomotionPhase', () => {
       0,
       0,
       STRIDES,
-      0,
-      0,
-      0,
       2.5,
     );
     expect(phase).toBeCloseTo(0.1, 6);
   });
 
-  it('blends stand and crouch stride by posture', () => {
-    // standStride = 1 (walk), crouchStride = 0.75 (crouchWalk), posture 0.5 => effStride 0.875
+  it('blends Standing and Crouching strides by crouchingAmount', () => {
+    // standStride 1 and crouchStride 0.75 at crouchingAmount 0.5 yield 0.875.
     // speed 1, dt 1 => cadence 1/0.875 => %1
     const phase = advanceLocomotionPhase(0, 1, 1, WALKING, 1, 0.5, STRIDES);
     expect(phase).toBeCloseTo((1 / 0.875) % 1, 6);
-  });
-
-  it('uses the measured crawl stride when crawl is fully blended in', () => {
-    // Crawl owns cadence completely: stride 0.5, speed 1, dt 0.1 => +0.2 phase.
-    const phase = advanceLocomotionPhase(0, 0.1, 1, WALKING, 1, 1, STRIDES, 0.5, 1, 1);
-    expect(phase).toBeCloseTo(0.2, 6);
-  });
-
-  it('blends the upright and crawl strides during the stance transition', () => {
-    // Upright crouch stride = 0.75; moving crawl stride = 0.25; half crawl => 0.5 effective.
-    const phase = advanceLocomotionPhase(0, 0.1, 1, WALKING, 1, 1, STRIDES, 0.25, 1, 0.5);
-    expect(phase).toBeCloseTo(0.2, 6);
-  });
-
-  it('keeps a crawl-idle phase frozen inside the ground-speed deadzone', () => {
-    expect(
-      advanceLocomotionPhase(0.37, 1, IDLE_EPS, WALKING, 1, 1, STRIDES, 0.5, 0, 1),
-    ).toBe(0.37);
-  });
-
-  it('does not advance when the active crawl clip has a degenerate zero stride', () => {
-    expect(
-      advanceLocomotionPhase(0.37, 1, 0.5, WALKING, 1, 1, STRIDES, 0, 1, 1),
-    ).toBe(0.37);
   });
 
   it('wraps around 1', () => {

@@ -16,8 +16,8 @@ const NOOP: ScrubbedPose = { set() {} }
 /**
  * Reusable time-scrubbed pose. Turns any clip into a frozen action whose playhead and weight you
  * drive by hand each frame — the general form of "hold a clip at an authored frame and blend it in":
- * anticipation preloads (jump windup = Jump_Land reversed), landing recovery, aim in/out, turn-in-
- * place, ledge reaches. Consumers just call `set(t01, weight)`; nobody re-implements the action
+ * anticipation preloads, landing recovery, aim in/out, turn-in-place, and ledge reaches. Consumers
+ * just call `set(t01, weight)`; nobody re-implements the action
  * plumbing.
  *
  * The action is PAUSED (so the mixer never advances it — the playhead is authoritative) and set to

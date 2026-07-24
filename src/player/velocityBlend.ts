@@ -12,14 +12,14 @@ export interface Velocity3 {
 }
 
 export interface VelocityBlend {
-  forward: number
-  backward: number
-  left: number
-  right: number
+  forwardAmount: number
+  backwardAmount: number
+  leftAmount: number
+  rightAmount: number
 }
 
 export function createVelocityBlend(): VelocityBlend {
-  return { forward: 0, backward: 0, left: 0, right: 0 }
+  return { forwardAmount: 0, backwardAmount: 0, leftAmount: 0, rightAmount: 0 }
 }
 
 /**
@@ -38,10 +38,10 @@ export function velocityBlendTarget(
   const length = Math.hypot(localX, localY, velocity.z)
 
   if (length <= Number.EPSILON) {
-    out.forward = 0
-    out.backward = 0
-    out.left = 0
-    out.right = 0
+    out.forwardAmount = 0
+    out.backwardAmount = 0
+    out.leftAmount = 0
+    out.rightAmount = 0
     return out
   }
 
@@ -52,10 +52,10 @@ export function velocityBlendTarget(
   const x = l1 > Number.EPSILON ? normalizedX / l1 : 0
   const y = l1 > Number.EPSILON ? normalizedY / l1 : 0
 
-  out.forward = Math.max(0, Math.min(1, x))
-  out.backward = Math.abs(Math.max(-1, Math.min(0, x)))
-  out.left = Math.abs(Math.max(-1, Math.min(0, y)))
-  out.right = Math.max(0, Math.min(1, y))
+  out.forwardAmount = Math.max(0, Math.min(1, x))
+  out.backwardAmount = Math.abs(Math.max(-1, Math.min(0, x)))
+  out.leftAmount = Math.abs(Math.max(-1, Math.min(0, y)))
+  out.rightAmount = Math.max(0, Math.min(1, y))
   return out
 }
 
@@ -76,9 +76,9 @@ export function stepVelocityBlend(
     ? 1
     : 1 - Math.exp(-VELOCITY_BLEND_DAMP_RATE * Math.max(0, deltaTime))
 
-  current.forward += (target.forward - current.forward) * alpha
-  current.backward += (target.backward - current.backward) * alpha
-  current.left += (target.left - current.left) * alpha
-  current.right += (target.right - current.right) * alpha
+  current.forwardAmount += (target.forwardAmount - current.forwardAmount) * alpha
+  current.backwardAmount += (target.backwardAmount - current.backwardAmount) * alpha
+  current.leftAmount += (target.leftAmount - current.leftAmount) * alpha
+  current.rightAmount += (target.rightAmount - current.rightAmount) * alpha
   return current
 }

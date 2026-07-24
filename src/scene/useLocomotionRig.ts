@@ -106,9 +106,8 @@ const ROLE_GAIT_AMOUNT: Record<ClipRole, number> = {
 }
 
 const GAIT_DAMP_RATE = 8
-// The ALS C++ spec does not own stance transition timing. This is the sibling repo's posture
-// rate (Player.tsx POSTURE_DAMP), retained for the shared stand↔crouch feel.
-const POSTURE_DAMP_RATE = 10
+// ALS does not prescribe the Stance transition rate in C++; this preserves the existing feel.
+const CROUCHING_AMOUNT_DAMP_RATE = 10
 
 interface RuntimeClip {
   readonly sampler: CompiledClipSampler
@@ -181,9 +180,9 @@ export function useLocomotionRig(gltf: {
         label: 'direction (deg)',
       },
       stance: {
-        value: 'stand',
-        options: ['stand', 'crouch'],
-        label: 'stance',
+        value: 'Standing',
+        options: ['Standing', 'Crouching'],
+        label: 'Stance',
       },
     }),
     { order: 1 },
@@ -231,7 +230,7 @@ export function useLocomotionRig(gltf: {
     const soloEntries: EvaluatorLayerEntry[] = fallbackClip ? [fallbackClip.entry] : []
     const overlayRules = overlays.map((overlay) => overlay.rule)
     const normalDebugWeights: Record<string, number> = {
-      stanceAlpha: 0,
+      groundedAmount: 0,
       gaitAmount: 0,
       gaitWalkingAmount: 0,
       gaitRunningAmount: 0,
@@ -316,7 +315,7 @@ export function useLocomotionRig(gltf: {
   const standTargets = useRef([1, 0, 0, 0])
   const standWeights = useRef([1, 0, 0, 0])
   const crouchMoveWeight = useRef(0)
-  const posture = useRef(0)
+  const crouchingAmount = useRef(0)
   const velocityBlend = useRef(createVelocityBlend())
   const velocityTarget = useRef(createVelocityBlend())
   const velocityInitialized = useRef(false)
@@ -335,24 +334,17 @@ export function useLocomotionRig(gltf: {
     walkShare: 0,
     runShare: 0,
     sprintShare: 0,
-    sneak: 0,
-    posture: 0,
-    crawlBlend: 0,
-    jumpBlend: 0,
+    crouchingAmount: 0,
+    inAirAmount: 0,
   })
-  const overlayAlphas = useRef({ stance: 1, airborne: 0 })
+  const overlayAlphas = useRef({ groundedAmount: 1, inAirAmount: 0 })
   const input = useRef<WeightTableInput>({
     standWeights: standWeights.current,
     crouchMoveWeight: 0,
-    posture: 0,
-    crawlBlend: 0,
-    crawlMoveWeight: 0,
-    tuckCrawl: 0,
-    jumpBlend: 0,
+    crouchingAmount: 0,
+    inAirAmount: 0,
     montageGate: 0,
-    windup: 0,
     velocityBlend: velocityBlend.current,
-    crouchTint: 0,
   })
 
   useFrame((_, delta) => {
@@ -379,15 +371,20 @@ export function useLocomotionRig(gltf: {
     }
 
     const rawSpeed = Math.max(0, controls.current.speed)
-    const crouched = controls.current.stance === 'crouch'
+    const crouching = controls.current.stance === 'Crouching'
     // Deliberate M3 staging trade: StandToCrouch/CrouchToStand clips are present, but until the
-    // transition arbiter owns them this posture crossfade is the single non-popping stance path.
-    posture.current = damp(posture.current, crouched ? 1 : 0, POSTURE_DAMP_RATE, delta)
+    // transition arbiter owns them, this is the single non-popping Stance path.
+    crouchingAmount.current = damp(
+      crouchingAmount.current,
+      crouching ? 1 : 0,
+      CROUCHING_AMOUNT_DAMP_RATE,
+      delta,
+    )
     // ALS exposes crouch walk/run maxima of 1.5/2.0m/s. The pack has one crouch walk cycle, so
     // speeds above walk cadence-scale that cycle up to the authored crouch-run movement cap.
     const crouchLimitedSpeed = Math.min(rawSpeed, ALS_AUTHORED_GAIT_SPEEDS.crouching.run)
     const locomotionSpeed =
-      rawSpeed + (crouchLimitedSpeed - rawSpeed) * posture.current
+      rawSpeed + (crouchLimitedSpeed - rawSpeed) * crouchingAmount.current
     const crouchTarget = updateLocomotionTargets(
       locomotionSpeed,
       standTargets.current,
@@ -426,7 +423,7 @@ export function useLocomotionRig(gltf: {
 
     const weightInput = input.current
     weightInput.crouchMoveWeight = crouchMoveWeight.current
-    weightInput.posture = posture.current
+    weightInput.crouchingAmount = crouchingAmount.current
     const weights = computeWeightTable(
       weightInput,
       table.current,
@@ -445,9 +442,9 @@ export function useLocomotionRig(gltf: {
     context.walkShare = standWeights.current[STAND.WALK]
     context.runShare = standWeights.current[STAND.RUN]
     context.sprintShare = standWeights.current[STAND.SPRINT]
-    context.posture = posture.current
-    overlayAlphas.current.stance = weights.stanceAlpha
-    overlayAlphas.current.airborne = weights.jumpArms
+    context.crouchingAmount = crouchingAmount.current
+    overlayAlphas.current.groundedAmount = weights.groundedAmount
+    overlayAlphas.current.inAirAmount = weights.jumpArms
     evaluateRegionOverlays(
       runtime.overlayRules,
       context,
@@ -472,8 +469,8 @@ export function useLocomotionRig(gltf: {
       (standWeights.current[STAND.WALK]
         + standWeights.current[STAND.RUN] * 2
         + standWeights.current[STAND.SPRINT] * 3)
-        * (1 - posture.current)
-      + crouchMoveWeight.current * posture.current
+        * (1 - crouchingAmount.current)
+      + crouchMoveWeight.current * crouchingAmount.current
     const gaitAmount = blendCurveValue(
       result.curves,
       'PoseGait',
@@ -488,23 +485,20 @@ export function useLocomotionRig(gltf: {
       locomotionSpeed,
       standWeights.current,
       crouchMoveWeight.current,
-      posture.current,
+      crouchingAmount.current,
       {
         walk: runtime.profile.walk.stride,
         run: runtime.profile.run.stride,
         sprint: runtime.profile.sprint.stride,
         crouchWalk: runtime.profile.crouchWalk.stride,
       },
-      0,
-      0,
-      0,
       gaitAmounts.current.amount,
     )
 
     for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) {
       runtime.normalDebugWeights[role] = weights[role]
     }
-    runtime.normalDebugWeights.stanceAlpha = weights.stanceAlpha
+    runtime.normalDebugWeights.groundedAmount = weights.groundedAmount
     runtime.normalDebugWeights.gaitAmount = gaitAmounts.current.amount
     runtime.normalDebugWeights.gaitWalkingAmount = gaitAmounts.current.walking
     runtime.normalDebugWeights.gaitRunningAmount = gaitAmounts.current.running

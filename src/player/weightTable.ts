@@ -11,11 +11,7 @@
  *   toward bind pose, but coverage remains a useful graph-description assertion. A montage
  *   supplies the complementary `montageGate` share, so `regionCoverage + montageGate >= ~1`.
  *
- *   Known, deliberate deviations (asserted in weightTable.test.ts rather than "fixed"):
- *   - Launch transient: while windup unloads and jumpBlend rises, coverage briefly EXCEEDS 1.
- *     The pose accumulator normalizes overweight, so the invariant is a floor, not an equality.
- *   - Tucked pipe crawl adds `baseWeight * tuckCrawl` of crawl-set weight while airborne — again
- *     overweight-by-design (see Operative's tuckCrawl doc).
+ *   Known, deliberate deviation (asserted in weightTable.test.ts rather than "fixed"):
  *   - FINGERS are deliberately under-covered during the jump: jumpArms is masked to the arm chain
  *     WITHOUT fingers so they relax toward the rig's rest hand in flight (see jumpSplitClips in
  *     Operative). Finger coverage is therefore NOT asserted.
@@ -32,29 +28,14 @@ export interface WeightTableInput {
   standWeights: readonly number[];
   /** 0 = crouch idle, 1 = full crouch-walk (damped). */
   crouchMoveWeight: number;
-  /** 0 = standing, 1 = crouched. */
-  posture: number;
-  /** Crawl stance blend, 0..1 (damped from stance === 'Crawling'). */
-  crawlBlend: number;
-  /** Crawl's own idle<->move split, 0..1 (damped). */
-  crawlMoveWeight: number;
-  /** Inverted pipe-tuck crawl, 0..1 (damped) — airborne crawl pose on the rod. */
-  tuckCrawl: number;
-  /** 0 grounded .. 1 airborne (damped). */
-  jumpBlend: number;
+  /** ALS pose-state stance blend: 0 = Standing, 1 = Crouching. */
+  crouchingAmount: number;
+  /** ALS pose-state in-air blend: 0 = Grounded, 1 = InAir. */
+  inAirAmount: number;
   /** Slot-montage gate, 0..1 — every base weight scales by its complement (see slotMontage.ts). */
   montageGate: number;
-  /** Jump-anticipation windup, 0..1 (damped) — drives the Jump_Land-reversed preload pose. */
-  windup: number;
   /** ALS's damped actor-local Forward/Backward/Left/Right velocity blend. */
   velocityBlend: Readonly<VelocityBlend>;
-  /**
-   * Crouch tint, 0..1 (damped): shifts this fraction of the STAND gait share onto the crouch
-   * counterpart clips (idle->crouch-idle, walk/run->crouch-walk) for a subtle hunched readiness
-   * while sneaking/jogging. Tiny values (~0.1) read as posture flavor, not a stance change; the
-   * crouch clips are phase-locked to the same footfall phase so the mix is slide-free.
-   */
-  crouchTint: number;
 }
 
 /** Effective weights for every base-layer action, by clip role. All values >= 0. */
@@ -80,23 +61,15 @@ export interface WeightTable {
   crouchRightFwd: number;
   crouchLeftBwd: number;
   crouchRightBwd: number;
-  crawlIdle: number;
-  crawlFwd: number;
-  crawlBwd: number;
-  crawlLeft: number;
-  crawlRight: number;
   /** Jump_Loop masked to !arm bones (legs/torso/head) — see Operative's jumpSplitClips. */
   jumpBody: number;
   /** Idle masked to arm-chain-minus-fingers — the arms' airborne base. */
   jumpArms: number;
-  /** Jump_Land-reversed windup preload (full-body scrubbed pose, see useScrubbedPose). */
-  windupPose: number;
   /**
-   * NOT a clip weight: the grounded-locomotion alpha (baseWeight x not-jump x not-crawl x
-   * not-windup), exposed so the region-overlay layer (regionOverlays.ts) can scale its rule
-   * weights by the same fade the base clips get — overlays ride the base, so they share its alpha.
+   * NOT a clip weight: ALS's grounded pose amount after the montage complement, exposed so the
+   * region-overlay layer can scale its rule weights by the same fade the base clips receive.
    */
-  stanceAlpha: number;
+  groundedAmount: number;
 }
 
 /** Allocation-free: callers reuse one table object per consumer (`createWeightTable()` once). */
@@ -111,12 +84,9 @@ export function createWeightTable(): WeightTable {
     crouchIdle: 0,
     crouchFwd: 0, crouchBwd: 0,
     crouchLeftFwd: 0, crouchRightFwd: 0, crouchLeftBwd: 0, crouchRightBwd: 0,
-    crawlIdle: 0,
-    crawlFwd: 0, crawlBwd: 0, crawlLeft: 0, crawlRight: 0,
     jumpBody: 0,
     jumpArms: 0,
-    windupPose: 0,
-    stanceAlpha: 0,
+    groundedAmount: 0,
   };
 }
 
@@ -151,10 +121,10 @@ export function mapVelocityBlendToSixDirections(
   blend: Readonly<VelocityBlend>,
   out: SixDirectionWeights = createSixDirectionWeights(),
 ): SixDirectionWeights {
-  const rawForward = Math.max(0, blend.forward)
-  const rawBackward = Math.max(0, blend.backward)
-  const rawLeft = Math.max(0, blend.left)
-  const rawRight = Math.max(0, blend.right)
+  const rawForward = Math.max(0, blend.forwardAmount)
+  const rawBackward = Math.max(0, blend.backwardAmount)
+  const rawLeft = Math.max(0, blend.leftAmount)
+  const rawRight = Math.max(0, blend.rightAmount)
   const rawTotal = rawForward + rawBackward + rawLeft + rawRight
   if (rawTotal <= Number.EPSILON) {
     out.forward = 1
@@ -213,36 +183,25 @@ export function computeWeightTable(
   directions: SixDirectionWeights = createSixDirectionWeights(),
 ): WeightTable {
   const {
-    standWeights, crouchMoveWeight, posture, crawlBlend, crawlMoveWeight, tuckCrawl,
-    jumpBlend, montageGate, windup, velocityBlend, crouchTint,
+    standWeights, crouchMoveWeight, crouchingAmount, inAirAmount, montageGate, velocityBlend,
   } = input;
 
-  // Crouch tint folds into an EFFECTIVE posture: the tinted share routes through the exact same
-  // stand/crouch split below, so the invariants are untouched (p substitutes for posture).
-  const p = posture + (1 - posture) * crouchTint;
-  const stand = 1 - p;
+  const standingAmount = 1 - crouchingAmount;
   // Montage complement: the single gate is the montage's sole weight source; every base weight
   // gets exactly the complementary share (the anti-T-pose rule for montages).
   const baseWeight = 1 - montageGate;
-  // Airborne complement: locomotion fades by (1 - jumpBlend); the jump split takes the remainder.
-  const groundAlpha = baseWeight * (1 - jumpBlend);
-  // Crawl fades the whole stand/crouch locomotion out (stanceAlpha) and the crawl set in
-  // (crawlAlpha); the windup pose fades locomotion out by (1 - windup) as Jump_Land-reversed
-  // takes over the body.
-  const stanceAlpha = groundAlpha * (1 - crawlBlend) * (1 - windup);
-  // Ground crawl rides groundAlpha; the pipe tuck adds an airborne path off baseWeight
-  // (groundAlpha is ~0 while hanging), so the inverted crawl pose still shows on the rod.
-  const crawlAlpha = groundAlpha * crawlBlend * (1 - windup) + baseWeight * tuckCrawl;
+  // ALS pose-state complement: grounded locomotion and the retained in-air split share baseWeight.
+  const groundedAmount = baseWeight * (1 - inAirAmount);
 
   mapVelocityBlendToSixDirections(velocityBlend, directions)
 
-  out.idle = stand * standWeights[0] * stanceAlpha;
-  out.crouchIdle = p * (1 - crouchMoveWeight) * stanceAlpha;
+  out.idle = standingAmount * standWeights[0] * groundedAmount;
+  out.crouchIdle = crouchingAmount * (1 - crouchMoveWeight) * groundedAmount;
 
-  const walkW = stand * standWeights[1] * stanceAlpha;
-  const runW = stand * standWeights[2] * stanceAlpha;
-  const sprintW = stand * standWeights[3] * stanceAlpha;
-  const crouchWalkW = p * crouchMoveWeight * stanceAlpha;
+  const walkW = standingAmount * standWeights[1] * groundedAmount;
+  const runW = standingAmount * standWeights[2] * groundedAmount;
+  const sprintW = standingAmount * standWeights[3] * groundedAmount;
+  const crouchWalkW = crouchingAmount * crouchMoveWeight * groundedAmount;
   out.walkFwd = walkW * directions.forward;
   out.walkBwd = walkW * directions.backward;
   out.walkLeftFwd = walkW * directions.leftForward;
@@ -264,36 +223,9 @@ export function computeWeightTable(
   out.crouchLeftBwd = crouchWalkW * directions.leftBackward;
   out.crouchRightBwd = crouchWalkW * directions.rightBackward;
 
-  // Crawl stance: idle<->move split by crawlMoveWeight, move split 4-way by the same direction.
-  const crawlIdleW = crawlAlpha * (1 - crawlMoveWeight);
-  const crawlMoveW = crawlAlpha * crawlMoveWeight;
-  out.crawlIdle = crawlIdleW;
-  const crawlFwd = Math.max(0, velocityBlend.forward);
-  const crawlBwd = Math.max(0, velocityBlend.backward);
-  const crawlLeft = Math.max(0, velocityBlend.left);
-  const crawlRight = Math.max(0, velocityBlend.right);
-  const cardinalTotal = crawlFwd + crawlBwd + crawlLeft + crawlRight;
-  if (cardinalTotal > Number.EPSILON) {
-    out.crawlFwd = crawlMoveW * crawlFwd / cardinalTotal;
-    out.crawlBwd = crawlMoveW * crawlBwd / cardinalTotal;
-    out.crawlLeft = crawlMoveW * crawlLeft / cardinalTotal;
-    out.crawlRight = crawlMoveW * crawlRight / cardinalTotal;
-  } else {
-    out.crawlFwd = crawlMoveW;
-    out.crawlBwd = 0;
-    out.crawlLeft = 0;
-    out.crawlRight = 0;
-  }
-
-  // Jump split rides jumpBlend like the old full Jump_Loop; the tucked pipe crawl owns the whole
-  // body, so the airborne split fades out under it.
-  const notTuck = 1 - tuckCrawl;
-  out.jumpBody = jumpBlend * baseWeight * notTuck;
-  out.jumpArms = jumpBlend * baseWeight * notTuck;
-
-  // Windup load pose fades in by windup while its complement fades locomotion out (stanceAlpha).
-  out.windupPose = windup * baseWeight;
-  out.stanceAlpha = stanceAlpha;
+  out.jumpBody = inAirAmount * baseWeight;
+  out.jumpArms = inAirAmount * baseWeight;
+  out.groundedAmount = groundedAmount;
 
   return out;
 }
@@ -311,8 +243,7 @@ export function legRegionWeight(t: WeightTable): number {
     t.runLeftFwd + t.runRightFwd + t.runLeftBwd + t.runRightBwd + t.sprint +
     t.crouchIdle + t.crouchFwd + t.crouchBwd +
     t.crouchLeftFwd + t.crouchRightFwd + t.crouchLeftBwd + t.crouchRightBwd +
-    t.crawlIdle + t.crawlFwd + t.crawlBwd + t.crawlLeft + t.crawlRight +
-    t.jumpBody + t.windupPose
+    t.jumpBody
   );
 }
 
@@ -329,7 +260,6 @@ export function armRegionWeight(t: WeightTable): number {
     t.runLeftFwd + t.runRightFwd + t.runLeftBwd + t.runRightBwd + t.sprint +
     t.crouchIdle + t.crouchFwd + t.crouchBwd +
     t.crouchLeftFwd + t.crouchRightFwd + t.crouchLeftBwd + t.crouchRightBwd +
-    t.crawlIdle + t.crawlFwd + t.crawlBwd + t.crawlLeft + t.crawlRight +
-    t.jumpArms + t.windupPose
+    t.jumpArms
   );
 }

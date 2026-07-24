@@ -17,9 +17,9 @@ interface PoseOrbitCameraProps {
 /**
  * OrbitControls with a pose-driven target, using ALS's exact pivot formula
  * (AlsCameraComponent::GetThirdPersonPivotLocation): the pivot is the MIDPOINT of the root bone
- * and the head bone, sampled from the animated skeleton — crouch/crawl/get-up reframe themselves
- * with no calibration and no per-stance offsets. The damp below is our stand-in for ALS's
- * LocationLag curves; M3's aim/crouch framing shifts become a state→offset table (the web
+ * and the head bone, sampled from the animated skeleton, so stance and action changes reframe
+ * themselves with no calibration and no per-stance offsets. The damp below is our stand-in for
+ * ALS's LocationLag curves; M3's aim/crouch framing shifts become a state→offset table (the web
  * equivalent of ALS's camera-rig curves: PivotOffset/CameraOffset/FovOffset), not a camera ABP.
  *
  * Reticle-true zoom from the sibling camera is deferred until this repo has an aiming/reticle

@@ -104,7 +104,7 @@ export function useSlotMontage(
         // so a scrubbed montage might never observe the final tick. A disappeared clock on a
         // still-active scrubbed montage IS completion: close the gate (the paused action's
         // 'finished' event can never do it). Without this, the montage clamps its last scrubbed
-        // frame at full weight forever — the "stuck mid-stride after a mantle" bug.
+        // frame at full weight forever — the "frozen mid-stride after a mantle" bug.
         gateTarget.current = 0
       }
       gate.current = THREE.MathUtils.damp(gate.current, gateTarget.current, MONTAGE_GATE_DAMP, dt)

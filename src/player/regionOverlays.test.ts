@@ -12,15 +12,17 @@ function makeCtx(overrides: Partial<OverlayContext> = {}): OverlayContext {
     walkShare: 0,
     runShare: 0,
     sprintShare: 0,
-    sneak: 0,
-    posture: 0,
-    crawlBlend: 0,
-    jumpBlend: 0,
+    crouchingAmount: 0,
+    inAirAmount: 0,
     ...overrides,
   };
 }
 
-const weightOf = (id: string, ctx: OverlayContext, alphas = { stance: 1, airborne: 1 }) => {
+const weightOf = (
+  id: string,
+  ctx: OverlayContext,
+  alphas = { groundedAmount: 1, inAirAmount: 1 },
+) => {
   const out = new Array(REGION_OVERLAY_RULES.length).fill(-1);
   evaluateRegionOverlays(REGION_OVERLAY_RULES, ctx, alphas, out);
   const i = REGION_OVERLAY_RULES.findIndex((r) => r.id === id);
@@ -42,35 +44,47 @@ describe('region overlay rules', () => {
 
   it('all rules are silent in plain grounded idle', () => {
     const out = new Array(REGION_OVERLAY_RULES.length).fill(-1);
-    // Grounded idle: stance alpha 1, airborne base 0 (jump-split arms carry no weight on the ground).
-    evaluateRegionOverlays(REGION_OVERLAY_RULES, makeCtx(), { stance: 1, airborne: 0 }, out);
+    evaluateRegionOverlays(
+      REGION_OVERLAY_RULES,
+      makeCtx(),
+      { groundedAmount: 1, inAirAmount: 0 },
+      out,
+    );
     for (const w of out) expect(w).toBeCloseTo(0, 6);
   });
 
   it('ride alpha scales every rule (montage/jump fade overlays with their base)', () => {
     const ctx = makeCtx({ runShare: 0.5, sprintShare: 0.5 });
-    expect(weightOf('jog-sprint-arms', ctx, { stance: 0.5, airborne: 0 })).toBeCloseTo(
-      weightOf('jog-sprint-arms', ctx, { stance: 1, airborne: 0 }) * 0.5,
+    expect(weightOf(
+      'run-sprint-arms',
+      ctx,
+      { groundedAmount: 0.5, inAirAmount: 0 },
+    )).toBeCloseTo(
+      weightOf(
+        'run-sprint-arms',
+        ctx,
+        { groundedAmount: 1, inAirAmount: 0 },
+      ) * 0.5,
       6,
     );
   });
 
-  it('jog-sprint-arms only rides the run→sprint crossfade', () => {
+  it('run-sprint-arms only rides the run→sprint crossfade', () => {
     expect(weightOf(
-      'jog-sprint-arms',
+      'run-sprint-arms',
       makeCtx({ runShare: 0.5, sprintShare: 0.5 }),
     )).toBeCloseTo(0.6, 6);
-    expect(weightOf('jog-sprint-arms', makeCtx({ runShare: 1 }))).toBeCloseTo(0, 6);
-    expect(weightOf('jog-sprint-arms', makeCtx({ sprintShare: 1 }))).toBeCloseTo(0, 6);
-    expect(weightOf('jog-sprint-arms', makeCtx({ walkShare: 1 }))).toBeCloseTo(0, 6);
+    expect(weightOf('run-sprint-arms', makeCtx({ runShare: 1 }))).toBeCloseTo(0, 6);
+    expect(weightOf('run-sprint-arms', makeCtx({ sprintShare: 1 }))).toBeCloseTo(0, 6);
+    expect(weightOf('run-sprint-arms', makeCtx({ walkShare: 1 }))).toBeCloseTo(0, 6);
   });
 
   it('never emits negative weights', () => {
     const out = new Array(REGION_OVERLAY_RULES.length).fill(-1);
     evaluateRegionOverlays(
       REGION_OVERLAY_RULES,
-      makeCtx({ sneak: -5, runShare: -3, sprintShare: -2, walkShare: -1 }),
-      { stance: 1, airborne: 1 },
+      makeCtx({ runShare: -3, sprintShare: -2, walkShare: -1 }),
+      { groundedAmount: 1, inAirAmount: 1 },
       out,
     );
     for (const w of out) expect(w).toBeGreaterThanOrEqual(0);

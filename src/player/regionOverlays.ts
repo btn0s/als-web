@@ -11,8 +11,8 @@ import type { RegionName } from './trackMask';
  *    The pose accumulator normalizes, so a rule at weight v over a ~1-weight base shows the base at
  *    1/(1+v) on that region — dominance units, same math as the stance overlays. Rules can never
  *    cause bind-pose bleed (only base UNDER-coverage does; rules only add).
- *  - Every rule's weight is scaled by the frame's stanceAlpha, so montages/jumps/crawl fade the
- *    overlay with the base it rides on and the damping RATIO holds.
+ *  - Every rule's weight is scaled by the frame's groundedAmount or inAirAmount, so montages and
+ *    locomotion-mode changes fade the overlay with the base it rides on and the damping RATIO holds.
  *  - `phaseLock: true` rides the shared locomotion phase (footfall-synced clips, e.g. a moving
  *    gait's arms); `false` plays on its own mixer clock (idles/holds).
  *
@@ -26,14 +26,10 @@ export interface OverlayContext {
   walkShare: number;
   runShare: number;
   sprintShare: number;
-  /** Sneak blend 0..1 (slow-walk mode, upright, grounded, moving). */
-  sneak: number;
-  /** Crouch posture 0..1 (damped). */
-  posture: number;
-  /** Crawl stance blend 0..1 (damped). */
-  crawlBlend: number;
-  /** 0 grounded .. 1 airborne (damped). */
-  jumpBlend: number;
+  /** ALS pose-state stance blend: 0 = Standing, 1 = Crouching. */
+  crouchingAmount: number;
+  /** ALS pose-state locomotion-mode blend: 0 = Grounded, 1 = InAir. */
+  inAirAmount: number;
 }
 
 export interface RegionOverlayRule {
@@ -54,14 +50,11 @@ export interface RegionOverlayRule {
   /**
    * Which base layer this overlay rides — its weight scales with THAT base's alpha so the
    * dominance ratio holds as the base fades:
-   *  - 'stance' (default): the grounded locomotion base (stanceAlpha). Correct for gait
-   *    overlays (sneak arms, run arms) — but ~0 while airborne.
-   *  - 'airborne': the jump-split arms base (jumpBlend-scaled). Correct for in-air overlays —
-   *    a 'stance' rule gated on jumpBlend would multiply jumpBlend x (1 - jumpBlend) and peak
-   *    at a useless 0.3 mid-crossfade, zero at the apex (the frame-dump-diagnosed arms-down bug).
+   *  - 'grounded' (default): the grounded locomotion base. Correct for gait overlays.
+   *  - 'inAir': the jump-split arms base. Correct for in-air overlays.
    */
-  ride?: 'stance' | 'airborne';
-  /** Dominance-unit weight for this frame; applier multiplies by stanceAlpha. Keep it pure. */
+  ride?: 'grounded' | 'inAir';
+  /** Dominance-unit weight for this frame; applier multiplies by the selected base amount. */
   weight: (ctx: OverlayContext) => number;
 }
 
@@ -74,7 +67,7 @@ export const REGION_OVERLAY_RULES: RegionOverlayRule[] = [
     // Sprint is now a full gait. The old permanent "sprint arms over run" look is only useful in
     // the run↔sprint crossfade, so the cross-term is zero at either pure endpoint and peaks at
     // 0.6 dominance in the middle of the hand-off.
-    id: 'jog-sprint-arms',
+    id: 'run-sprint-arms',
     clip: 'A_Als_Sprint',
     region: 'armsNoFingers',
     phaseLock: true,
@@ -84,10 +77,10 @@ export const REGION_OVERLAY_RULES: RegionOverlayRule[] = [
 
 /** Per-frame base alphas a rule can ride (see RegionOverlayRule.ride). */
 export interface OverlayAlphas {
-  /** Grounded locomotion base (weightTable's stanceAlpha). */
-  stance: number;
+  /** Grounded locomotion base (weightTable's groundedAmount). */
+  groundedAmount: number;
   /** Airborne jump-split arms base (weightTable's jumpArms weight). */
-  airborne: number;
+  inAirAmount: number;
 }
 
 /**
@@ -102,7 +95,7 @@ export function evaluateRegionOverlays(
   out: number[],
 ): number[] {
   for (let i = 0; i < rules.length; i++) {
-    const alpha = rules[i].ride === 'airborne' ? alphas.airborne : alphas.stance;
+    const alpha = rules[i].ride === 'inAir' ? alphas.inAirAmount : alphas.groundedAmount;
     out[i] = Math.max(0, rules[i].weight(ctx)) * alpha;
   }
   return out;
