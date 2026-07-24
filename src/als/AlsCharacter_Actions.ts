@@ -14,6 +14,9 @@ import {
   setLocomotionMode,
   setRotationInstant,
 } from './AlsCharacter'
+import {
+  setMovementVelocity,
+} from './AlsCharacterMovementComponent'
 import type {
   AlsCharacter,
   AlsLocomotionAction,
@@ -57,6 +60,9 @@ import type {
 import type {
   AlsQuaternion,
 } from './State/AlsFeetState'
+import {
+  exponentialDecay,
+} from './State/AlsGroundedState'
 import {
   unwindDegrees,
 } from './State/AlsLocomotionState'
@@ -189,6 +195,80 @@ export function startRolling(
     TargetYawAngle,
     Animation,
   )
+}
+
+export interface AlsRollingPhysicsAdapter {
+  GetUpdatedComponentRotation(): Readonly<AlsRotator>
+  MoveUpdatedComponent(
+    Delta: Readonly<AlsVector3>,
+    NewRotation: Readonly<AlsRotator>,
+    bSweep: false,
+    Teleport: 'None' | 'TeleportPhysics',
+  ): void
+}
+
+function exponentialDecayRollingYawAngle(
+  Current: number,
+  Target: number,
+  DeltaTime: number,
+  Lambda: number,
+): number {
+  if (Lambda <= 0) return Target
+  let Delta = unwindDegrees(Target - Current)
+  // UAlsRotation remaps (175, 180] to (-185, -180] so an exact
+  // back-facing turn consistently rotates counterclockwise.
+  if (Delta > 175) Delta -= 360
+  return unwindDegrees(
+    Current + Delta * exponentialDecay(DeltaTime, Lambda),
+  )
+}
+
+/**
+ * `AAlsCharacter::RefreshRollingPhysics()`, lines 115-141.
+ *
+ * The snap branch retains its `TeleportPhysics` move while interpolated
+ * movement uses the normal non-swept overload. The updated-component rotator,
+ * rather than cached actor yaw, is the interpolation source.
+ */
+export function refreshRollingPhysics(
+  Character: AlsCharacter,
+  DeltaTime: number,
+  Physics: AlsRollingPhysicsAdapter,
+): boolean {
+  if (Character.locomotionAction !== 'Rolling') return false
+
+  const UpdatedComponentRotation =
+    Physics.GetUpdatedComponentRotation()
+  const TargetRotation: AlsRotator = {
+    Pitch: UpdatedComponentRotation.Pitch,
+    Yaw: UpdatedComponentRotation.Yaw,
+    Roll: UpdatedComponentRotation.Roll,
+  }
+  const RotationInterpolationSpeed =
+    Character.settings.Rolling.RotationInterpolationSpeed
+  let Teleport: 'None' | 'TeleportPhysics'
+  if (RotationInterpolationSpeed <= 0) {
+    TargetRotation.Yaw =
+      Character.rollingState.TargetYawAngle
+    Teleport = 'TeleportPhysics'
+  } else {
+    TargetRotation.Yaw = exponentialDecayRollingYawAngle(
+      unwindDegrees(TargetRotation.Yaw),
+      Character.rollingState.TargetYawAngle,
+      DeltaTime,
+      RotationInterpolationSpeed,
+    )
+    Teleport = 'None'
+  }
+
+  Physics.MoveUpdatedComponent(
+    { x: 0, y: 0, z: 0 },
+    TargetRotation,
+    false,
+    Teleport,
+  )
+  Character.actorYawAngle = unwindDegrees(TargetRotation.Yaw)
+  return true
 }
 
 /**
@@ -1267,4 +1347,806 @@ export function refreshAlsMantlingNotifyRuntime(
     input.Character,
     input.MantlingMontage,
   )
+}
+
+export const ALS_RAGDOLLING_PELVIS_BONE_NAME = 'pelvis'
+export const ALS_RAGDOLLING_SPINE_03_BONE_NAME = 'spine_03'
+export const ALS_RAGDOLLING_MONTAGE_BLEND_OUT_DURATION = 0.2
+export const ALS_RAGDOLLING_MIN_SPEED_LIMIT = 2
+export const ALS_RAGDOLLING_SPEED_LIMIT_FRAME_COUNT = 8
+export const ALS_RAGDOLLING_PULL_FORCE = 750
+export const ALS_RAGDOLLING_PULL_FORCE_INTERPOLATION_SPEED = 0.6
+export const ALS_RAGDOLLING_PULL_FORCE_SPINE_SPEED = 3
+export const ALS_RAGDOLLING_MIN_PULL_FORCE_DISTANCE = 0.05
+export const ALS_RAGDOLLING_MAX_PULL_FORCE_DISTANCE = 0.5
+export const ALS_RAGDOLLING_REFERENCE_SPEED = 10
+export const ALS_RAGDOLLING_STIFFNESS = 25_000
+
+export type AlsRagdollingCollisionEnabled =
+  | 'NoCollision'
+  | 'QueryOnly'
+  | 'QueryAndPhysics'
+
+export type AlsRagdollingCollisionObjectType =
+  | 'Pawn'
+  | 'PhysicsBody'
+
+export type AlsRagdollingMovementMode =
+  | 'None'
+  | 'Walking'
+  | 'Falling'
+
+export interface AlsRagdollingBodyState {
+  readonly Location: Readonly<AlsVector3>
+  readonly LinearVelocity: Readonly<AlsVector3>
+}
+
+export interface AlsRagdollingGroundQueryParameters {
+  readonly TraceTag: 'RagdollTraceGround'
+  readonly bTraceComplex: false
+  readonly bIgnoreOwningActor: true
+}
+
+export interface AlsRagdollingGroundSweep {
+  readonly Start: Readonly<AlsVector3>
+  readonly End: Readonly<AlsVector3>
+  readonly Rotation: Readonly<AlsQuaternion>
+  readonly Radius: number
+  readonly CollisionChannel: unknown
+  readonly QueryParameters:
+    Readonly<AlsRagdollingGroundQueryParameters>
+  readonly CollisionResponses: unknown
+}
+
+export interface AlsRagdollingGroundSweepHit {
+  readonly Location: Readonly<AlsVector3>
+}
+
+/**
+ * Engine operations owned by `AAlsCharacter`'s ragdoll lifecycle.
+ *
+ * Body locations and velocities cross this seam in repository metres. Native
+ * physical-animation stiffness and pull-force values remain unchanged; the
+ * physics implementation owns their solver-specific interpretation.
+ *
+ * `RefreshUpdateRateOptimizationsAfterRagdolling()` is one atomic engine
+ * handoff: when URO is active it must disable URO now and restore it on the
+ * next engine tick, matching ALS. This module never approximates that engine
+ * behavior with a wall-clock timer.
+ */
+export interface AlsRagdollingLifecycleAdapter {
+  GetBodyInstance(BoneName: string): unknown | null
+  ReadBodyState(Body: unknown): AlsRagdollingBodyState
+  IsRigidBody(Body: unknown): boolean
+  GetBodyLocation(Body: unknown): Readonly<AlsVector3>
+  AddForce(
+    Body: unknown,
+    Force: Readonly<AlsVector3>,
+    bAccelChange: true,
+    bAutoWake: true,
+  ): void
+  SetBodyLinearVelocity(
+    Body: unknown,
+    Velocity: Readonly<AlsVector3>,
+  ): void
+  ForEachBodyBelow(
+    BoneName: null,
+    bIncludeSelf: true,
+    bSkipCustomPhysicsType: false,
+    Visitor: (Body: unknown) => void,
+  ): void
+
+  SetUpdateJointsFromAnimation(bEnabled: boolean): void
+  IsRunningParallelEvaluation(): boolean
+  GetBoneSpaceTransformCount(): number
+  UpdateRBJointMotors(): void
+  Montage_Stop(BlendOutDuration: number): void
+  Montage_Play(Montage: string): number
+  SetNetworkSmoothingMode(mode: AlsNetworkSmoothingMode): void
+  SetIgnoreClientMovementErrorChecksAndCorrection(
+    bIgnored: boolean,
+  ): void
+  DetachMeshKeepWorld(): void
+  AttachMeshToCapsuleKeepWorld(): void
+  SetCapsuleCollisionEnabled(
+    CollisionEnabled: AlsRagdollingCollisionEnabled,
+  ): void
+  SetMeshCollisionObjectType(
+    CollisionObjectType: AlsRagdollingCollisionObjectType,
+  ): void
+  SetMeshCollisionEnabled(
+    CollisionEnabled: AlsRagdollingCollisionEnabled,
+  ): void
+  SetMeshSimulatePhysics(bSimulatePhysics: boolean): void
+  SetAllMotorsAngularDriveParams(
+    AngularSpring: number,
+    AngularDamping: 0,
+    ForceLimit: 0,
+  ): void
+
+  GetRagdollTargetLocation(): Readonly<AlsVector3>
+  SetRagdollTargetLocation(
+    NewTargetLocation: Readonly<AlsVector3>,
+  ): void
+  ServerSetRagdollTargetLocation(
+    NewTargetLocation: Readonly<AlsVector3>,
+  ): void
+
+  GetActorLocation(): Readonly<AlsVector3>
+  GetActorRotation(): Readonly<AlsRotator>
+  SetActorLocationTeleport(
+    NewActorLocation: Readonly<AlsVector3>,
+  ): void
+  SetActorLocationAndRotationTeleport(
+    NewActorLocation: Readonly<AlsVector3>,
+    NewActorRotation: Readonly<AlsRotator>,
+  ): void
+  GetScaledCapsuleRadius(): number
+  GetScaledCapsuleHalfHeight(): number
+  GetMovementCollisionObjectType(): unknown
+  InitCollisionParams(
+    QueryParameters:
+      Readonly<AlsRagdollingGroundQueryParameters>,
+  ): unknown
+  SweepSingleByChannel(
+    Sweep: Readonly<AlsRagdollingGroundSweep>,
+  ): AlsRagdollingGroundSweepHit | null
+  SetMovementMode(MovementMode: AlsRagdollingMovementMode): void
+  SetMovementModeLocked(bLocked: boolean): void
+
+  SnapshotFinalRagdollPose(): unknown
+  GetPelvisSocketTransform(): unknown
+  GetTransformRotation(Transform: unknown): Readonly<AlsRotator>
+  RestoreMeshWorldTransformFromActorBaseOffsets(): void
+  RefreshUpdateRateOptimizationsAfterRagdolling(): void
+  RestoreFinalRagdollPosePelvisTransform(
+    FinalRagdollPose: unknown,
+    PelvisTransform: unknown,
+  ): void
+
+  FlushServerMoves(): void
+  ServerStartRagdolling(): void
+  MulticastStartRagdolling(): void
+  ServerStopRagdolling(): void
+  MulticastStopRagdolling(): void
+  ForceNetUpdate(): void
+  OnRagdollingStarted(): void
+  OnRagdollingEnded(): void
+}
+
+export interface AlsRagdollingRoleState {
+  readonly LocalRole: AlsCharacterLocalRole
+  readonly bIsLocallyControlled: boolean
+  readonly bHasValidController: boolean
+}
+
+export interface AlsRagdollingInput
+  extends AlsRagdollingRoleState {
+  readonly Character: AlsCharacter
+  readonly Lifecycle: AlsRagdollingLifecycleAdapter
+}
+
+function isRoleAboveSimulatedProxy(
+  LocalRole: AlsCharacterLocalRole,
+): boolean {
+  return LocalRole === 'AutonomousProxy'
+    || LocalRole === 'Authority'
+}
+
+function vectorEquals(
+  a: Readonly<AlsVector3>,
+  b: Readonly<AlsVector3>,
+): boolean {
+  return a.x === b.x && a.y === b.y && a.z === b.z
+}
+
+function vectorIsZero(value: Readonly<AlsVector3>): boolean {
+  return value.x === 0 && value.y === 0 && value.z === 0
+}
+
+function copyVector(
+  value: Readonly<AlsVector3>,
+): AlsVector3 {
+  return {
+    x: value.x,
+    y: value.y,
+    z: value.z,
+  }
+}
+
+function vectorSizeSquared(
+  value: Readonly<AlsVector3>,
+): number {
+  return value.x * value.x
+    + value.y * value.y
+    + value.z * value.z
+}
+
+function setRagdollingVelocity(
+  Character: AlsCharacter,
+  Velocity: Readonly<AlsVector3>,
+): void {
+  Character.ragdollingState.Velocity.x = Velocity.x
+  Character.ragdollingState.Velocity.y = Velocity.y
+  Character.ragdollingState.Velocity.z = Velocity.z
+}
+
+function requiredRagdollBody(
+  Lifecycle: AlsRagdollingLifecycleAdapter,
+  BoneName: string,
+): unknown {
+  const Body = Lifecycle.GetBodyInstance(BoneName)
+  if (Body === null) {
+    throw new Error(
+      `ALS ragdoll invariant failed: missing ${BoneName} body`,
+    )
+  }
+  return Body
+}
+
+/**
+ * `AAlsCharacter::IsRagdollingAllowedToStart()`, lines 680-687.
+ *
+ * The body queries deliberately short-circuit in source order.
+ */
+export function isRagdollingAllowedToStart(
+  Character: Readonly<AlsCharacter>,
+  Lifecycle: AlsRagdollingLifecycleAdapter,
+): boolean {
+  return Character.locomotionAction !== 'Ragdolling'
+    && Lifecycle.GetBodyInstance(
+      ALS_RAGDOLLING_PELVIS_BONE_NAME,
+    ) !== null
+    && Lifecycle.GetBodyInstance(
+      ALS_RAGDOLLING_SPINE_03_BONE_NAME,
+    ) !== null
+}
+
+/** `AAlsCharacter::StartRagdolling()`, lines 689-709. */
+export function startRagdolling(
+  input: Readonly<AlsRagdollingInput>,
+): boolean {
+  if (
+    !isRoleAboveSimulatedProxy(input.LocalRole)
+    || !isRagdollingAllowedToStart(
+      input.Character,
+      input.Lifecycle,
+    )
+  ) {
+    return false
+  }
+
+  if (input.LocalRole === 'Authority') {
+    input.Lifecycle.MulticastStartRagdolling()
+  } else {
+    input.Lifecycle.FlushServerMoves()
+    input.Lifecycle.ServerStartRagdolling()
+  }
+  return true
+}
+
+/** `AAlsCharacter::ServerStartRagdolling_Implementation()`. */
+export function serverStartRagdolling(
+  input: Readonly<AlsRagdollingInput>,
+): boolean {
+  if (!isRagdollingAllowedToStart(
+    input.Character,
+    input.Lifecycle,
+  )) {
+    return false
+  }
+
+  input.Lifecycle.MulticastStartRagdolling()
+  input.Lifecycle.ForceNetUpdate()
+  return true
+}
+
+/**
+ * `AAlsCharacter::SetRagdollTargetLocation()`, lines 798-814.
+ *
+ * The adapter's setter owns replicated-property dirtiness. Only an autonomous
+ * proxy forwards its changed value through ALS's unreliable server RPC.
+ */
+export function setRagdollTargetLocation(
+  input: Readonly<AlsRagdollingInput>,
+  NewTargetLocation: Readonly<AlsVector3>,
+): boolean {
+  if (vectorEquals(
+    input.Lifecycle.GetRagdollTargetLocation(),
+    NewTargetLocation,
+  )) {
+    return false
+  }
+
+  const TargetLocation = copyVector(NewTargetLocation)
+  input.Lifecycle.SetRagdollTargetLocation(TargetLocation)
+  if (input.LocalRole === 'AutonomousProxy') {
+    input.Lifecycle.ServerSetRagdollTargetLocation(
+      TargetLocation,
+    )
+  }
+  return true
+}
+
+/** `AAlsCharacter::ServerSetRagdollTargetLocation_Implementation()`. */
+export function serverSetRagdollTargetLocation(
+  input: Readonly<AlsRagdollingInput>,
+  NewTargetLocation: Readonly<AlsVector3>,
+): boolean {
+  return setRagdollTargetLocation(input, NewTargetLocation)
+}
+
+/**
+ * `AAlsCharacter::StartRagdollingImplementation()`, lines 726-792.
+ *
+ * Every movement, mesh, physics, replication, and event side effect stays in
+ * native source order. Multicast delivery calls this on every network role;
+ * role filtering belongs only to `startRagdolling()`.
+ */
+export function startRagdollingImplementation(
+  input: Readonly<AlsRagdollingInput>,
+): boolean {
+  const Character = input.Character
+  const Lifecycle = input.Lifecycle
+  if (!isRagdollingAllowedToStart(Character, Lifecycle)) {
+    return false
+  }
+
+  Lifecycle.SetUpdateJointsFromAnimation(true)
+  if (
+    !Lifecycle.IsRunningParallelEvaluation()
+    && Lifecycle.GetBoneSpaceTransformCount() > 0
+  ) {
+    Lifecycle.UpdateRBJointMotors()
+  }
+
+  Lifecycle.Montage_Stop(
+    ALS_RAGDOLLING_MONTAGE_BLEND_OUT_DURATION,
+  )
+  Lifecycle.SetNetworkSmoothingMode('Disabled')
+  Lifecycle.SetIgnoreClientMovementErrorChecksAndCorrection(true)
+  Lifecycle.DetachMeshKeepWorld()
+  Lifecycle.SetCapsuleCollisionEnabled('NoCollision')
+  Lifecycle.SetMeshCollisionObjectType('PhysicsBody')
+  Lifecycle.SetMeshCollisionEnabled('QueryAndPhysics')
+  Lifecycle.SetMeshSimulatePhysics(true)
+
+  const PelvisBody = requiredRagdollBody(
+    Lifecycle,
+    ALS_RAGDOLLING_PELVIS_BONE_NAME,
+  )
+  const PelvisState = Lifecycle.ReadBodyState(PelvisBody)
+  const PelvisLocation = copyVector(PelvisState.Location)
+  setRagdollingVelocity(Character, PelvisState.LinearVelocity)
+  Character.ragdollingState.PullForce = 0
+
+  if (Character.settings.Ragdolling.bLimitInitialRagdollSpeed) {
+    Character.ragdollingState.SpeedLimitFrameTimeRemaining =
+      ALS_RAGDOLLING_SPEED_LIMIT_FRAME_COUNT
+    Character.ragdollingState.SpeedLimit = Math.max(
+      ALS_RAGDOLLING_MIN_SPEED_LIMIT,
+      Math.hypot(
+        Character.locomotionState.velocity.x,
+        Character.locomotionState.velocity.y,
+        Character.locomotionState.velocity.z,
+      ),
+    )
+    constraintRagdollSpeed(Character, Lifecycle)
+  }
+
+  if (input.LocalRole === 'Authority') {
+    setRagdollTargetLocation(input, { x: 0, y: 0, z: 0 })
+  }
+  if (
+    input.bIsLocallyControlled
+    || (
+      input.LocalRole === 'Authority'
+      && !input.bHasValidController
+    )
+  ) {
+    setRagdollTargetLocation(input, PelvisLocation)
+  }
+
+  Lifecycle.SetMovementMode('None')
+  setLocomotionMode(Character, null)
+  Lifecycle.SetMovementModeLocked(true)
+  setLocomotionAction(Character, 'Ragdolling')
+  Lifecycle.OnRagdollingStarted()
+  return true
+}
+
+/** `AAlsCharacter::MulticastStartRagdolling_Implementation()`. */
+export function multicastStartRagdolling(
+  input: Readonly<AlsRagdollingInput>,
+): boolean {
+  return startRagdollingImplementation(input)
+}
+
+function interpTo(
+  Current: number,
+  Target: number,
+  DeltaTime: number,
+  InterpolationSpeed: number,
+): number {
+  if (InterpolationSpeed <= 0) return Target
+  const Distance = Target - Current
+  if (Distance * Distance < UE_SMALL_NUMBER) return Target
+  return Current + Distance * Math.min(
+    Math.max(DeltaTime * InterpolationSpeed, 0),
+    1,
+  )
+}
+
+/**
+ * `AAlsCharacter::RagdollTraceGround()`, lines 915-957.
+ */
+export function ragdollTraceGround(
+  input: Readonly<AlsRagdollingInput>,
+): {
+  readonly bGrounded: boolean
+  readonly Location: AlsVector3
+} {
+  const Lifecycle = input.Lifecycle
+  const TargetLocation = Lifecycle.GetRagdollTargetLocation()
+  const RagdollLocation = copyVector(
+    !vectorIsZero(TargetLocation)
+      ? TargetLocation
+      : Lifecycle.GetActorLocation(),
+  )
+  const CapsuleRadius = Lifecycle.GetScaledCapsuleRadius()
+  const CapsuleHalfHeight =
+    Lifecycle.GetScaledCapsuleHalfHeight()
+  const Start = {
+    x: RagdollLocation.x,
+    y: RagdollLocation.y,
+    z: RagdollLocation.z + 2 * CapsuleRadius,
+  }
+  const End = {
+    x: RagdollLocation.x,
+    y: RagdollLocation.y,
+    z: (
+      RagdollLocation.z
+      - CapsuleHalfHeight
+      + CapsuleRadius
+    ),
+  }
+  const CollisionChannel =
+    Lifecycle.GetMovementCollisionObjectType()
+  const QueryParameters = {
+    TraceTag: 'RagdollTraceGround',
+    bTraceComplex: false,
+    bIgnoreOwningActor: true,
+  } as const
+  const CollisionResponses =
+    Lifecycle.InitCollisionParams(QueryParameters)
+  const Hit = Lifecycle.SweepSingleByChannel({
+    Start,
+    End,
+    Rotation: { x: 0, y: 0, z: 0, w: 1 },
+    Radius: CapsuleRadius,
+    CollisionChannel,
+    QueryParameters,
+    CollisionResponses,
+  })
+  const bGrounded = Hit !== null
+
+  return {
+    bGrounded,
+    Location: {
+      x: RagdollLocation.x,
+      y: RagdollLocation.y,
+      z: bGrounded
+        ? (
+            Hit.Location.z
+            + CapsuleHalfHeight
+            - CapsuleRadius
+            + UE_CHARACTER_MOVEMENT_MIN_FLOOR_DISTANCE
+          )
+        : RagdollLocation.z,
+    },
+  }
+}
+
+/**
+ * `AAlsCharacter::ConstraintRagdollSpeed()`, lines 959-983.
+ */
+export function constraintRagdollSpeed(
+  Character: Readonly<AlsCharacter>,
+  Lifecycle: AlsRagdollingLifecycleAdapter,
+): void {
+  const SpeedLimit = Character.ragdollingState.SpeedLimit
+  Lifecycle.ForEachBodyBelow(
+    null,
+    true,
+    false,
+    (Body) => {
+      if (!Lifecycle.IsRigidBody(Body)) return
+
+      const Velocity = Lifecycle.ReadBodyState(Body).LinearVelocity
+      const SpeedSquared = vectorSizeSquared(Velocity)
+      if (SpeedSquared <= SpeedLimit * SpeedLimit) return
+
+      const Speed = Math.sqrt(SpeedSquared)
+      Lifecycle.SetBodyLinearVelocity(Body, {
+        x: Velocity.x / Speed * SpeedLimit,
+        y: Velocity.y / Speed * SpeedLimit,
+        z: Velocity.z / Speed * SpeedLimit,
+      })
+    },
+  )
+}
+
+/**
+ * `AAlsCharacter::RefreshRagdolling()`, lines 821-913.
+ */
+export function refreshRagdolling(
+  input: Readonly<AlsRagdollingInput> & {
+    readonly DeltaTime: number
+  },
+): boolean {
+  const Character = input.Character
+  const Lifecycle = input.Lifecycle
+  if (Character.locomotionAction !== 'Ragdolling') return false
+
+  const PelvisBody = requiredRagdollBody(
+    Lifecycle,
+    ALS_RAGDOLLING_PELVIS_BONE_NAME,
+  )
+  const PelvisState = Lifecycle.ReadBodyState(PelvisBody)
+  const PelvisLocation = copyVector(PelvisState.Location)
+  setRagdollingVelocity(Character, PelvisState.LinearVelocity)
+
+  const bLocallyControlled = input.bIsLocallyControlled
+    || (
+      input.LocalRole === 'Authority'
+      && !input.bHasValidController
+    )
+  if (bLocallyControlled) {
+    setRagdollTargetLocation(input, PelvisLocation)
+  }
+
+  const GroundTrace = ragdollTraceGround(input)
+  Lifecycle.SetActorLocationTeleport(GroundTrace.Location)
+
+  const TargetLocation = Lifecycle.GetRagdollTargetLocation()
+  if (!bLocallyControlled && !vectorIsZero(TargetLocation)) {
+    Character.ragdollingState.PullForce = interpTo(
+      Character.ragdollingState.PullForce,
+      ALS_RAGDOLLING_PULL_FORCE,
+      input.DeltaTime,
+      ALS_RAGDOLLING_PULL_FORCE_INTERPOLATION_SPEED,
+    )
+
+    const HorizontalSpeedSquared = (
+      Character.ragdollingState.Velocity.x
+        * Character.ragdollingState.Velocity.x
+      + Character.ragdollingState.Velocity.y
+        * Character.ragdollingState.Velocity.y
+    )
+    const PullForceBoneName = (
+      HorizontalSpeedSquared
+        > ALS_RAGDOLLING_PULL_FORCE_SPINE_SPEED
+          * ALS_RAGDOLLING_PULL_FORCE_SPINE_SPEED
+        ? ALS_RAGDOLLING_SPINE_03_BONE_NAME
+        : ALS_RAGDOLLING_PELVIS_BONE_NAME
+    )
+    const PullForceBody = requiredRagdollBody(
+      Lifecycle,
+      PullForceBoneName,
+    )
+    if (Lifecycle.IsRigidBody(PullForceBody)) {
+      const BodyLocation =
+        Lifecycle.GetBodyLocation(PullForceBody)
+      const PullForceVector = {
+        x: TargetLocation.x - BodyLocation.x,
+        y: TargetLocation.y - BodyLocation.y,
+        z: TargetLocation.z - BodyLocation.z,
+      }
+      const DistanceSquared =
+        vectorSizeSquared(PullForceVector)
+      if (
+        DistanceSquared
+          > ALS_RAGDOLLING_MIN_PULL_FORCE_DISTANCE
+            * ALS_RAGDOLLING_MIN_PULL_FORCE_DISTANCE
+      ) {
+        const Distance = Math.sqrt(DistanceSquared)
+        const DistanceScale = (
+          Distance > ALS_RAGDOLLING_MAX_PULL_FORCE_DISTANCE
+            ? ALS_RAGDOLLING_MAX_PULL_FORCE_DISTANCE / Distance
+            : 1
+        )
+        Lifecycle.AddForce(
+          PullForceBody,
+          {
+            x: PullForceVector.x
+              * DistanceScale
+              * Character.ragdollingState.PullForce,
+            y: PullForceVector.y
+              * DistanceScale
+              * Character.ragdollingState.PullForce,
+            z: PullForceVector.z
+              * DistanceScale
+              * Character.ragdollingState.PullForce,
+          },
+          true,
+          true,
+        )
+      }
+    }
+  }
+
+  const SpeedAmount = Math.min(Math.max(
+    Math.hypot(
+      Character.ragdollingState.Velocity.x,
+      Character.ragdollingState.Velocity.y,
+      Character.ragdollingState.Velocity.z,
+    ) / ALS_RAGDOLLING_REFERENCE_SPEED,
+    0,
+  ), 1)
+  Lifecycle.SetAllMotorsAngularDriveParams(
+    SpeedAmount * ALS_RAGDOLLING_STIFFNESS,
+    0,
+    0,
+  )
+
+  if (
+    Character.ragdollingState
+      .SpeedLimitFrameTimeRemaining > 0
+  ) {
+    Character.ragdollingState
+      .SpeedLimitFrameTimeRemaining -= 1
+    constraintRagdollSpeed(Character, Lifecycle)
+  }
+  return true
+}
+
+/** `AAlsCharacter::IsRagdollingAllowedToStop()`. */
+export function isRagdollingAllowedToStop(
+  Character: Readonly<AlsCharacter>,
+): boolean {
+  return Character.locomotionAction === 'Ragdolling'
+}
+
+/** `AAlsCharacter::StopRagdolling()`, lines 990-1010. */
+export function stopRagdolling(
+  input: Readonly<AlsRagdollingInput>,
+): boolean {
+  if (
+    !isRoleAboveSimulatedProxy(input.LocalRole)
+    || !isRagdollingAllowedToStop(input.Character)
+  ) {
+    return false
+  }
+
+  if (input.LocalRole === 'Authority') {
+    input.Lifecycle.MulticastStopRagdolling()
+  } else {
+    input.Lifecycle.ServerStopRagdolling()
+  }
+  return true
+}
+
+/** `AAlsCharacter::ServerStopRagdolling_Implementation()`. */
+export function serverStopRagdolling(
+  input: Readonly<AlsRagdollingInput>,
+): boolean {
+  if (!isRagdollingAllowedToStop(input.Character)) {
+    return false
+  }
+
+  input.Lifecycle.MulticastStopRagdolling()
+  input.Lifecycle.ForceNetUpdate()
+  return true
+}
+
+/** `AAlsCharacter::SelectGetUpMontage_Implementation()`. */
+export function selectGetUpMontage(
+  Character: Readonly<AlsCharacter>,
+  bRagdollFacingUpward: boolean,
+): string {
+  return bRagdollFacingUpward
+    ? Character.settings.Ragdolling.GetUpBackMontage
+    : Character.settings.Ragdolling.GetUpFrontMontage
+}
+
+export interface StopAlsRagdollingImplementationResult {
+  readonly bGrounded: boolean
+  readonly bRagdollFacingUpward: boolean
+  readonly bStartedGettingUp: boolean
+}
+
+/**
+ * `AAlsCharacter::StopRagdollingImplementation()`, lines 1027-1119.
+ *
+ * The two opaque pose calls preserve the engine ownership boundary exactly:
+ * snapshot before changing physics/transforms, then replace the snapshot's
+ * pelvis local transform after mesh reattachment. No animation pose is
+ * sampled or guessed in character policy.
+ */
+export function stopRagdollingImplementation(
+  input: Readonly<AlsRagdollingInput>,
+): StopAlsRagdollingImplementationResult | null {
+  const Character = input.Character
+  const Lifecycle = input.Lifecycle
+  if (!isRagdollingAllowedToStop(Character)) return null
+
+  const FinalRagdollPose =
+    Lifecycle.SnapshotFinalRagdollPose()
+  const PelvisTransform =
+    Lifecycle.GetPelvisSocketTransform()
+  const PelvisRotation =
+    Lifecycle.GetTransformRotation(PelvisTransform)
+
+  Lifecycle.SetUpdateJointsFromAnimation(false)
+  Lifecycle.SetMeshSimulatePhysics(false)
+  Lifecycle.SetMeshCollisionEnabled('QueryOnly')
+  Lifecycle.SetMeshCollisionObjectType('Pawn')
+  Lifecycle.SetCapsuleCollisionEnabled('QueryAndPhysics')
+  Lifecycle.SetNetworkSmoothingMode('Exponential')
+  Lifecycle.SetIgnoreClientMovementErrorChecksAndCorrection(false)
+
+  const GroundTrace = ragdollTraceGround(input)
+  const bRagdollFacingUpward =
+    unwindDegrees(PelvisRotation.Roll) <= 0
+  const ActorRotation = Lifecycle.GetActorRotation()
+  const NewActorRotation = {
+    Pitch: ActorRotation.Pitch,
+    Yaw: bRagdollFacingUpward
+      ? PelvisRotation.Yaw - 180
+      : PelvisRotation.Yaw,
+    Roll: ActorRotation.Roll,
+  }
+  Lifecycle.SetActorLocationAndRotationTeleport(
+    GroundTrace.Location,
+    NewActorRotation,
+  )
+  Lifecycle.RestoreMeshWorldTransformFromActorBaseOffsets()
+  Lifecycle.AttachMeshToCapsuleKeepWorld()
+  Lifecycle.RefreshUpdateRateOptimizationsAfterRagdolling()
+  Lifecycle.RestoreFinalRagdollPosePelvisTransform(
+    FinalRagdollPose,
+    PelvisTransform,
+  )
+
+  Lifecycle.SetMovementModeLocked(false)
+  if (GroundTrace.bGrounded) {
+    Lifecycle.SetMovementMode('Walking')
+    setLocomotionMode(Character, 'Grounded')
+  } else {
+    Lifecycle.SetMovementMode('Falling')
+    setLocomotionMode(Character, 'InAir')
+    setMovementVelocity(
+      Character.movement,
+      Character.ragdollingState.Velocity,
+    )
+  }
+
+  setLocomotionAction(Character, null)
+  Lifecycle.OnRagdollingEnded()
+
+  let bStartedGettingUp = false
+  if (
+    GroundTrace.bGrounded
+    && Lifecycle.Montage_Play(selectGetUpMontage(
+      Character,
+      bRagdollFacingUpward,
+    )) > 0
+  ) {
+    Character.movement.inputBlocked = true
+    setLocomotionAction(Character, 'GettingUp')
+    bStartedGettingUp = true
+  }
+
+  return {
+    bGrounded: GroundTrace.bGrounded,
+    bRagdollFacingUpward,
+    bStartedGettingUp,
+  }
+}
+
+/** `AAlsCharacter::MulticastStopRagdolling_Implementation()`. */
+export function multicastStopRagdolling(
+  input: Readonly<AlsRagdollingInput>,
+): StopAlsRagdollingImplementationResult | null {
+  return stopRagdollingImplementation(input)
 }

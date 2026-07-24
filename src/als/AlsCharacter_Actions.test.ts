@@ -5,18 +5,34 @@ import type {
   AlsMantlingLifecycleAdapter,
   AlsMantlingNotifyRuntime,
   AlsMantlingSweepHit,
+  AlsRagdollingGroundSweep,
+  AlsRagdollingLifecycleAdapter,
+  AlsRollingPhysicsAdapter,
   AlsRollingMontageBridge,
   AlsStartMantlingCharacterState,
   StartAlsMantlingInput,
 } from './AlsCharacter_Actions'
 import {
+  ALS_RAGDOLLING_PELVIS_BONE_NAME,
+  ALS_RAGDOLLING_SPINE_03_BONE_NAME,
   compileAlsMantlingEarlyBlendOutNotify,
   compileAlsMantlingLocomotionActionNotify,
+  constraintRagdollSpeed,
   createAlsMantlingNotifyRuntime,
+  isRagdollingAllowedToStart,
+  isRagdollingAllowedToStop,
   isRollingAllowedToStart,
   prepareCharacterMantling,
   refreshAlsMantlingNotifyRuntime,
   refreshMantling,
+  refreshRagdolling,
+  refreshRollingPhysics,
+  ragdollTraceGround,
+  serverStartRagdolling,
+  serverStopRagdolling,
+  setRagdollTargetLocation,
+  startRagdolling,
+  startRagdollingImplementation,
   startRolling,
   startRollingImplementation,
   startMantling,
@@ -24,6 +40,8 @@ import {
   startMantlingImplementation,
   startMantlingInAir,
   stopMantling,
+  stopRagdolling,
+  stopRagdollingImplementation,
 } from './AlsCharacter_Actions'
 import {
   ALS_CHARACTER_SETTINGS,
@@ -55,6 +73,8 @@ import type {
 import {
   notifyAlsAnimNotifyStateSetLocomotionActionEnd,
 } from './Notifies/AlsAnimNotifyState_SetLocomotionAction'
+import physicsAssetSource
+  from '../../scripts/extract-als/physics-asset.json?raw'
 
 // ALS Refactored 4.15:
 // Source/ALS/Private/AlsCharacter_Actions.cpp:22-100.
@@ -267,6 +287,99 @@ describe('AAlsCharacter rolling lifecycle', () => {
     })
     expect(Character.locomotionAction).toBeNull()
     expect(Character.stance).toBe('Standing')
+  })
+
+  it('moves UpdatedComponent with ALS roll interpolation and overload flags', () => {
+    const Character = createAlsCharacter({ actorYawAngle: 25 })
+    Character.rollingState.TargetYawAngle = -170
+    setLocomotionAction(Character, 'Rolling')
+    const Events: unknown[] = []
+    const Physics: AlsRollingPhysicsAdapter = {
+      GetUpdatedComponentRotation() {
+        Events.push('GetUpdatedComponentRotation')
+        return { Pitch: 3, Yaw: 170, Roll: 4 }
+      },
+      MoveUpdatedComponent(
+        Delta,
+        NewRotation,
+        bSweep,
+        Teleport,
+      ) {
+        Events.push([
+          'MoveUpdatedComponent',
+          Delta,
+          NewRotation,
+          bSweep,
+          Teleport,
+        ])
+      },
+    }
+
+    expect(refreshRollingPhysics(
+      Character,
+      0.1,
+      Physics,
+    )).toBe(true)
+    expect(Character.actorYawAngle)
+      .toBeCloseTo(-177.3664825, 6)
+    expect(Events).toEqual([
+      'GetUpdatedComponentRotation',
+      [
+        'MoveUpdatedComponent',
+        { x: 0, y: 0, z: 0 },
+        {
+          Pitch: 3,
+          Yaw: Character.actorYawAngle,
+          Roll: 4,
+        },
+        false,
+        'None',
+      ],
+    ])
+  })
+
+  it('uses TeleportPhysics only for the non-interpolated roll branch', () => {
+    const Character = createAlsCharacter({
+      settings: {
+        Rolling: {
+          ...ALS_CHARACTER_SETTINGS.Rolling,
+          RotationInterpolationSpeed: 0,
+        },
+      },
+    })
+    Character.rollingState.TargetYawAngle = 270
+    setLocomotionAction(Character, 'Rolling')
+    const MoveUpdatedComponent = vi.fn()
+    const Physics: AlsRollingPhysicsAdapter = {
+      GetUpdatedComponentRotation: () => ({
+        Pitch: 1,
+        Yaw: -25,
+        Roll: 2,
+      }),
+      MoveUpdatedComponent,
+    }
+
+    expect(refreshRollingPhysics(
+      Character,
+      1 / 60,
+      Physics,
+    )).toBe(true)
+    expect(MoveUpdatedComponent).toHaveBeenCalledWith(
+      { x: 0, y: 0, z: 0 },
+      { Pitch: 1, Yaw: 270, Roll: 2 },
+      false,
+      'TeleportPhysics',
+    )
+    expect(Character.actorYawAngle).toBe(-90)
+
+    setLocomotionAction(Character, null)
+    MoveUpdatedComponent.mockClear()
+    expect(refreshRollingPhysics(
+      Character,
+      1 / 60,
+      Physics,
+    )).toBe(false)
+    expect(MoveUpdatedComponent).not.toHaveBeenCalled()
   })
 })
 
@@ -1488,5 +1601,1070 @@ describe('ALS mantling branching-point runtime', () => {
       0.35,
       true,
     ]])
+  })
+})
+
+interface RagdollTestBody {
+  readonly BoneName: string
+  Location: { x: number; y: number; z: number }
+  LinearVelocity: { x: number; y: number; z: number }
+  bRigidBody: boolean
+}
+
+interface RagdollLifecycleHarness {
+  readonly Events: unknown[]
+  readonly Bodies: Map<string, RagdollTestBody>
+  readonly Sweeps: AlsRagdollingGroundSweep[]
+  readonly Lifecycle: AlsRagdollingLifecycleAdapter
+  TargetLocation: { x: number; y: number; z: number }
+  ActorLocation: { x: number; y: number; z: number }
+  ActorRotation: { Pitch: number; Yaw: number; Roll: number }
+  GroundHit: { Location: { x: number; y: number; z: number } } | null
+  MontagePlayResult: number
+}
+
+function ragdollTestBody(Body: unknown): RagdollTestBody {
+  return Body as RagdollTestBody
+}
+
+function copyTestVector(
+  Vector: Readonly<{ x: number; y: number; z: number }>,
+) {
+  return { x: Vector.x, y: Vector.y, z: Vector.z }
+}
+
+function ragdollLifecycle(
+  Character: AlsCharacter,
+  options: {
+    readonly PelvisLocation?: Readonly<{
+      x: number
+      y: number
+      z: number
+    }>
+    readonly PelvisVelocity?: Readonly<{
+      x: number
+      y: number
+      z: number
+    }>
+    readonly SpineLocation?: Readonly<{
+      x: number
+      y: number
+      z: number
+    }>
+    readonly SpineVelocity?: Readonly<{
+      x: number
+      y: number
+      z: number
+    }>
+    readonly TargetLocation?: Readonly<{
+      x: number
+      y: number
+      z: number
+    }>
+    readonly GroundHitLocation?: Readonly<{
+      x: number
+      y: number
+      z: number
+    }> | null
+    readonly PelvisRotation?: Readonly<{
+      Pitch: number
+      Yaw: number
+      Roll: number
+    }>
+    readonly MontagePlayResult?: number
+    readonly bParallelEvaluation?: boolean
+    readonly BoneSpaceTransformCount?: number
+  } = {},
+): RagdollLifecycleHarness {
+  const Events: unknown[] = []
+  const Bodies = new Map<string, RagdollTestBody>([
+    [ALS_RAGDOLLING_PELVIS_BONE_NAME, {
+      BoneName: ALS_RAGDOLLING_PELVIS_BONE_NAME,
+      Location: copyTestVector(
+        options.PelvisLocation ?? { x: 1, y: 2, z: 3 },
+      ),
+      LinearVelocity: copyTestVector(
+        options.PelvisVelocity ?? { x: 0, y: 0, z: 0 },
+      ),
+      bRigidBody: true,
+    }],
+    [ALS_RAGDOLLING_SPINE_03_BONE_NAME, {
+      BoneName: ALS_RAGDOLLING_SPINE_03_BONE_NAME,
+      Location: copyTestVector(
+        options.SpineLocation ?? { x: 1, y: 2, z: 3.5 },
+      ),
+      LinearVelocity: copyTestVector(
+        options.SpineVelocity ?? { x: 0, y: 0, z: 0 },
+      ),
+      bRigidBody: true,
+    }],
+  ])
+  const Sweeps: AlsRagdollingGroundSweep[] = []
+  const FinalRagdollPose = { Name: 'FinalRagdollPose' }
+  const PelvisTransform = {
+    Name: 'PelvisTransform',
+    Rotation: {
+      Pitch: options.PelvisRotation?.Pitch ?? 0,
+      Yaw: options.PelvisRotation?.Yaw ?? 0,
+      Roll: options.PelvisRotation?.Roll ?? 0,
+    },
+  }
+  const CollisionResponses = { Name: 'CollisionResponses' }
+  let harness: RagdollLifecycleHarness
+  const Lifecycle: AlsRagdollingLifecycleAdapter = {
+    GetBodyInstance(BoneName) {
+      Events.push(['GetBodyInstance', BoneName])
+      return Bodies.get(BoneName) ?? null
+    },
+    ReadBodyState(Body) {
+      const body = ragdollTestBody(Body)
+      Events.push(['ReadBodyState', body.BoneName])
+      return {
+        Location: copyTestVector(body.Location),
+        LinearVelocity: copyTestVector(body.LinearVelocity),
+      }
+    },
+    IsRigidBody(Body) {
+      const body = ragdollTestBody(Body)
+      Events.push(['IsRigidBody', body.BoneName])
+      return body.bRigidBody
+    },
+    GetBodyLocation(Body) {
+      const body = ragdollTestBody(Body)
+      Events.push(['GetBodyLocation', body.BoneName])
+      return copyTestVector(body.Location)
+    },
+    AddForce(Body, Force, bAccelChange, bAutoWake) {
+      Events.push([
+        'AddForce',
+        ragdollTestBody(Body).BoneName,
+        copyTestVector(Force),
+        bAccelChange,
+        bAutoWake,
+      ])
+    },
+    SetBodyLinearVelocity(Body, Velocity) {
+      const body = ragdollTestBody(Body)
+      body.LinearVelocity = copyTestVector(Velocity)
+      Events.push([
+        'SetBodyLinearVelocity',
+        body.BoneName,
+        copyTestVector(Velocity),
+      ])
+    },
+    ForEachBodyBelow(
+      BoneName,
+      bIncludeSelf,
+      bSkipCustomPhysicsType,
+      Visitor,
+    ) {
+      Events.push([
+        'ForEachBodyBelow',
+        BoneName,
+        bIncludeSelf,
+        bSkipCustomPhysicsType,
+      ])
+      for (const Body of Bodies.values()) Visitor(Body)
+    },
+    SetUpdateJointsFromAnimation(bEnabled) {
+      Events.push(['SetUpdateJointsFromAnimation', bEnabled])
+    },
+    IsRunningParallelEvaluation() {
+      Events.push('IsRunningParallelEvaluation')
+      return options.bParallelEvaluation ?? false
+    },
+    GetBoneSpaceTransformCount() {
+      Events.push('GetBoneSpaceTransformCount')
+      return options.BoneSpaceTransformCount ?? 1
+    },
+    UpdateRBJointMotors() {
+      Events.push('UpdateRBJointMotors')
+    },
+    Montage_Stop(BlendOutDuration) {
+      Events.push(['Montage_Stop', BlendOutDuration])
+    },
+    Montage_Play(Montage) {
+      Events.push([
+        'Montage_Play',
+        Montage,
+        Character.locomotionAction,
+        Character.movement.inputBlocked,
+      ])
+      return harness.MontagePlayResult
+    },
+    SetNetworkSmoothingMode(mode) {
+      Events.push(['SetNetworkSmoothingMode', mode])
+    },
+    SetIgnoreClientMovementErrorChecksAndCorrection(bIgnored) {
+      Events.push([
+        'SetIgnoreClientMovementErrorChecksAndCorrection',
+        bIgnored,
+      ])
+    },
+    DetachMeshKeepWorld() {
+      Events.push('DetachMeshKeepWorld')
+    },
+    AttachMeshToCapsuleKeepWorld() {
+      Events.push('AttachMeshToCapsuleKeepWorld')
+    },
+    SetCapsuleCollisionEnabled(CollisionEnabled) {
+      Events.push([
+        'SetCapsuleCollisionEnabled',
+        CollisionEnabled,
+      ])
+    },
+    SetMeshCollisionObjectType(CollisionObjectType) {
+      Events.push([
+        'SetMeshCollisionObjectType',
+        CollisionObjectType,
+      ])
+    },
+    SetMeshCollisionEnabled(CollisionEnabled) {
+      Events.push([
+        'SetMeshCollisionEnabled',
+        CollisionEnabled,
+      ])
+    },
+    SetMeshSimulatePhysics(bSimulatePhysics) {
+      Events.push([
+        'SetMeshSimulatePhysics',
+        bSimulatePhysics,
+      ])
+    },
+    SetAllMotorsAngularDriveParams(
+      AngularSpring,
+      AngularDamping,
+      ForceLimit,
+    ) {
+      Events.push([
+        'SetAllMotorsAngularDriveParams',
+        AngularSpring,
+        AngularDamping,
+        ForceLimit,
+      ])
+    },
+    GetRagdollTargetLocation() {
+      return copyTestVector(harness.TargetLocation)
+    },
+    SetRagdollTargetLocation(NewTargetLocation) {
+      harness.TargetLocation = copyTestVector(NewTargetLocation)
+      Events.push([
+        'SetRagdollTargetLocation',
+        copyTestVector(NewTargetLocation),
+      ])
+    },
+    ServerSetRagdollTargetLocation(NewTargetLocation) {
+      Events.push([
+        'ServerSetRagdollTargetLocation',
+        copyTestVector(NewTargetLocation),
+      ])
+    },
+    GetActorLocation() {
+      Events.push('GetActorLocation')
+      return copyTestVector(harness.ActorLocation)
+    },
+    GetActorRotation() {
+      Events.push('GetActorRotation')
+      return { ...harness.ActorRotation }
+    },
+    SetActorLocationTeleport(NewActorLocation) {
+      harness.ActorLocation = copyTestVector(NewActorLocation)
+      Events.push([
+        'SetActorLocationTeleport',
+        copyTestVector(NewActorLocation),
+      ])
+    },
+    SetActorLocationAndRotationTeleport(
+      NewActorLocation,
+      NewActorRotation,
+    ) {
+      harness.ActorLocation = copyTestVector(NewActorLocation)
+      harness.ActorRotation = { ...NewActorRotation }
+      Events.push([
+        'SetActorLocationAndRotationTeleport',
+        copyTestVector(NewActorLocation),
+        { ...NewActorRotation },
+      ])
+    },
+    GetScaledCapsuleRadius() {
+      Events.push('GetScaledCapsuleRadius')
+      return 0.5
+    },
+    GetScaledCapsuleHalfHeight() {
+      Events.push('GetScaledCapsuleHalfHeight')
+      return 1
+    },
+    GetMovementCollisionObjectType() {
+      Events.push('GetMovementCollisionObjectType')
+      return 'PawnChannel'
+    },
+    InitCollisionParams(QueryParameters) {
+      Events.push(['InitCollisionParams', QueryParameters])
+      return CollisionResponses
+    },
+    SweepSingleByChannel(Sweep) {
+      Sweeps.push(Sweep)
+      Events.push('SweepSingleByChannel')
+      return harness.GroundHit
+    },
+    SetMovementMode(MovementMode) {
+      Events.push([
+        'SetMovementMode',
+        MovementMode,
+        Character.locomotionMode,
+        Character.locomotionAction,
+      ])
+    },
+    SetMovementModeLocked(bLocked) {
+      Events.push([
+        'SetMovementModeLocked',
+        bLocked,
+        Character.locomotionMode,
+        Character.locomotionAction,
+      ])
+    },
+    SnapshotFinalRagdollPose() {
+      Events.push('SnapshotFinalRagdollPose')
+      return FinalRagdollPose
+    },
+    GetPelvisSocketTransform() {
+      Events.push('GetPelvisSocketTransform')
+      return PelvisTransform
+    },
+    GetTransformRotation(Transform) {
+      Events.push('GetTransformRotation')
+      return (Transform as typeof PelvisTransform).Rotation
+    },
+    RestoreMeshWorldTransformFromActorBaseOffsets() {
+      Events.push(
+        'RestoreMeshWorldTransformFromActorBaseOffsets',
+      )
+    },
+    RefreshUpdateRateOptimizationsAfterRagdolling() {
+      Events.push(
+        'RefreshUpdateRateOptimizationsAfterRagdolling',
+      )
+    },
+    RestoreFinalRagdollPosePelvisTransform(
+      Pose,
+      Transform,
+    ) {
+      Events.push([
+        'RestoreFinalRagdollPosePelvisTransform',
+        Pose === FinalRagdollPose,
+        Transform === PelvisTransform,
+      ])
+    },
+    FlushServerMoves() {
+      Events.push('FlushServerMoves')
+    },
+    ServerStartRagdolling() {
+      Events.push('ServerStartRagdolling')
+    },
+    MulticastStartRagdolling() {
+      Events.push('MulticastStartRagdolling')
+    },
+    ServerStopRagdolling() {
+      Events.push('ServerStopRagdolling')
+    },
+    MulticastStopRagdolling() {
+      Events.push('MulticastStopRagdolling')
+    },
+    ForceNetUpdate() {
+      Events.push('ForceNetUpdate')
+    },
+    OnRagdollingStarted() {
+      Events.push([
+        'OnRagdollingStarted',
+        Character.locomotionMode,
+        Character.locomotionAction,
+      ])
+    },
+    OnRagdollingEnded() {
+      Events.push([
+        'OnRagdollingEnded',
+        Character.locomotionMode,
+        Character.locomotionAction,
+        Character.movement.inputBlocked,
+      ])
+    },
+  }
+  harness = {
+    Events,
+    Bodies,
+    Sweeps,
+    Lifecycle,
+    TargetLocation: copyTestVector(
+      options.TargetLocation ?? { x: 0, y: 0, z: 0 },
+    ),
+    ActorLocation: { x: 10, y: 20, z: 30 },
+    ActorRotation: { Pitch: 7, Yaw: 11, Roll: 9 },
+    GroundHit: options.GroundHitLocation === null
+      ? null
+      : {
+          Location: copyTestVector(
+            options.GroundHitLocation ?? { x: 0, y: 0, z: 0 },
+          ),
+        },
+    MontagePlayResult: options.MontagePlayResult ?? 1,
+  }
+  return harness
+}
+
+function ragdollInput(
+  Character: AlsCharacter,
+  harness: RagdollLifecycleHarness,
+  options: {
+    readonly LocalRole?: 'None'
+      | 'SimulatedProxy'
+      | 'AutonomousProxy'
+      | 'Authority'
+    readonly bIsLocallyControlled?: boolean
+    readonly bHasValidController?: boolean
+  } = {},
+) {
+  return {
+    Character,
+    Lifecycle: harness.Lifecycle,
+    LocalRole: options.LocalRole ?? 'Authority',
+    bIsLocallyControlled:
+      options.bIsLocallyControlled ?? false,
+    bHasValidController:
+      options.bHasValidController ?? true,
+  } as const
+}
+
+interface PhysicsAssetOracle {
+  readonly schemaVersion: number
+  readonly bodies: readonly {
+    readonly boneName: string
+  }[]
+  readonly asset?: {
+    readonly bodies?: readonly unknown[]
+  }
+}
+
+// ALS Refactored 4.15:
+// Source/ALS/Private/AlsCharacter_Actions.cpp:680-1126.
+describe('AAlsCharacter ragdoll lifecycle', () => {
+  it('uses PA_Als body names and preserves local RPC role routing', () => {
+    const oracle = JSON.parse(
+      physicsAssetSource,
+    ) as PhysicsAssetOracle
+    const bodies = (
+      oracle.bodies
+      ?? oracle.asset?.bodies
+      ?? []
+    ) as readonly { readonly boneName: string }[]
+    expect(oracle.schemaVersion).toBe(1)
+    expect(bodies).toHaveLength(21)
+    expect(bodies.map(({ boneName }) => boneName)).toEqual(
+      expect.arrayContaining([
+        ALS_RAGDOLLING_PELVIS_BONE_NAME,
+        ALS_RAGDOLLING_SPINE_03_BONE_NAME,
+      ]),
+    )
+
+    const Character = createAlsCharacter()
+    const authority = ragdollLifecycle(Character)
+    expect(startRagdolling(ragdollInput(
+      Character,
+      authority,
+    ))).toBe(true)
+    expect(authority.Events).toEqual([
+      ['GetBodyInstance', 'pelvis'],
+      ['GetBodyInstance', 'spine_03'],
+      'MulticastStartRagdolling',
+    ])
+
+    const autonomous = ragdollLifecycle(Character)
+    expect(startRagdolling(ragdollInput(
+      Character,
+      autonomous,
+      { LocalRole: 'AutonomousProxy' },
+    ))).toBe(true)
+    expect(autonomous.Events).toEqual([
+      ['GetBodyInstance', 'pelvis'],
+      ['GetBodyInstance', 'spine_03'],
+      'FlushServerMoves',
+      'ServerStartRagdolling',
+    ])
+
+    const simulated = ragdollLifecycle(Character)
+    expect(startRagdolling(ragdollInput(
+      Character,
+      simulated,
+      { LocalRole: 'SimulatedProxy' },
+    ))).toBe(false)
+    expect(simulated.Events).toEqual([])
+
+    const missing = ragdollLifecycle(Character)
+    missing.Bodies.delete('spine_03')
+    expect(isRagdollingAllowedToStart(
+      Character,
+      missing.Lifecycle,
+    )).toBe(false)
+    expect(missing.Events).toEqual([
+      ['GetBodyInstance', 'pelvis'],
+      ['GetBodyInstance', 'spine_03'],
+    ])
+  })
+
+  it('starts physics in ALS order and installs the eight-frame speed limit', () => {
+    const Character = createAlsCharacter({
+      locomotionMode: 'InAir',
+      velocity: { x: 3, y: 4, z: 0 },
+    })
+    const harness = ragdollLifecycle(Character, {
+      PelvisVelocity: { x: 0, y: 0, z: 12 },
+      TargetLocation: { x: 9, y: 9, z: 9 },
+    })
+
+    expect(startRagdollingImplementation(ragdollInput(
+      Character,
+      harness,
+    ))).toBe(true)
+    expect(Character.ragdollingState).toEqual({
+      Velocity: { x: 0, y: 0, z: 12 },
+      PullForce: 0,
+      SpeedLimitFrameTimeRemaining: 8,
+      SpeedLimit: 5,
+    })
+    expect(
+      harness.Bodies.get('pelvis')?.LinearVelocity,
+    ).toEqual({ x: 0, y: 0, z: 5 })
+    expect(Character.locomotionMode).toBeNull()
+    expect(Character.locomotionAction).toBe('Ragdolling')
+    expect(harness.Events).toEqual([
+      ['GetBodyInstance', 'pelvis'],
+      ['GetBodyInstance', 'spine_03'],
+      ['SetUpdateJointsFromAnimation', true],
+      'IsRunningParallelEvaluation',
+      'GetBoneSpaceTransformCount',
+      'UpdateRBJointMotors',
+      ['Montage_Stop', 0.2],
+      ['SetNetworkSmoothingMode', 'Disabled'],
+      [
+        'SetIgnoreClientMovementErrorChecksAndCorrection',
+        true,
+      ],
+      'DetachMeshKeepWorld',
+      ['SetCapsuleCollisionEnabled', 'NoCollision'],
+      ['SetMeshCollisionObjectType', 'PhysicsBody'],
+      ['SetMeshCollisionEnabled', 'QueryAndPhysics'],
+      ['SetMeshSimulatePhysics', true],
+      ['GetBodyInstance', 'pelvis'],
+      ['ReadBodyState', 'pelvis'],
+      ['ForEachBodyBelow', null, true, false],
+      ['IsRigidBody', 'pelvis'],
+      ['ReadBodyState', 'pelvis'],
+      [
+        'SetBodyLinearVelocity',
+        'pelvis',
+        { x: 0, y: 0, z: 5 },
+      ],
+      ['IsRigidBody', 'spine_03'],
+      ['ReadBodyState', 'spine_03'],
+      [
+        'SetRagdollTargetLocation',
+        { x: 0, y: 0, z: 0 },
+      ],
+      ['SetMovementMode', 'None', 'InAir', null],
+      ['SetMovementModeLocked', true, null, null],
+      [
+        'OnRagdollingStarted',
+        null,
+        'Ragdolling',
+      ],
+    ])
+
+    const stopped = createAlsCharacter()
+    const stoppedHarness = ragdollLifecycle(stopped)
+    startRagdollingImplementation(ragdollInput(
+      stopped,
+      stoppedHarness,
+    ))
+    expect(stopped.ragdollingState.SpeedLimit).toBe(2)
+  })
+
+  it('assigns target ownership to authority, owner, and proxy exactly', () => {
+    const controlledAuthority = createAlsCharacter()
+    const controlledHarness = ragdollLifecycle(
+      controlledAuthority,
+      {
+        PelvisLocation: { x: 4, y: 5, z: 6 },
+        TargetLocation: { x: 8, y: 8, z: 8 },
+      },
+    )
+    startRagdollingImplementation(ragdollInput(
+      controlledAuthority,
+      controlledHarness,
+    ))
+    expect(controlledHarness.Events.filter(
+      (event) => Array.isArray(event)
+        && event[0] === 'SetRagdollTargetLocation',
+    )).toEqual([[
+      'SetRagdollTargetLocation',
+      { x: 0, y: 0, z: 0 },
+    ]])
+
+    const listenServer = createAlsCharacter()
+    const listenHarness = ragdollLifecycle(listenServer, {
+      PelvisLocation: { x: 4, y: 5, z: 6 },
+      TargetLocation: { x: 8, y: 8, z: 8 },
+    })
+    startRagdollingImplementation(ragdollInput(
+      listenServer,
+      listenHarness,
+      { bHasValidController: false },
+    ))
+    expect(listenHarness.Events.filter(
+      (event) => Array.isArray(event)
+        && event[0] === 'SetRagdollTargetLocation',
+    )).toEqual([
+      [
+        'SetRagdollTargetLocation',
+        { x: 0, y: 0, z: 0 },
+      ],
+      [
+        'SetRagdollTargetLocation',
+        { x: 4, y: 5, z: 6 },
+      ],
+    ])
+
+    const owner = createAlsCharacter()
+    const ownerHarness = ragdollLifecycle(owner, {
+      PelvisLocation: { x: 4, y: 5, z: 6 },
+    })
+    startRagdollingImplementation(ragdollInput(
+      owner,
+      ownerHarness,
+      {
+        LocalRole: 'AutonomousProxy',
+        bIsLocallyControlled: true,
+      },
+    ))
+    expect(ownerHarness.Events.filter(
+      (event) => Array.isArray(event)
+        && (
+          event[0] === 'SetRagdollTargetLocation'
+          || event[0] === 'ServerSetRagdollTargetLocation'
+        ),
+    )).toEqual([
+      [
+        'SetRagdollTargetLocation',
+        { x: 4, y: 5, z: 6 },
+      ],
+      [
+        'ServerSetRagdollTargetLocation',
+        { x: 4, y: 5, z: 6 },
+      ],
+    ])
+
+    const simulated = createAlsCharacter()
+    const simulatedHarness = ragdollLifecycle(simulated, {
+      TargetLocation: { x: 7, y: 8, z: 9 },
+    })
+    startRagdollingImplementation(ragdollInput(
+      simulated,
+      simulatedHarness,
+      { LocalRole: 'SimulatedProxy' },
+    ))
+    expect(simulatedHarness.TargetLocation).toEqual({
+      x: 7,
+      y: 8,
+      z: 9,
+    })
+  })
+
+  it('selects, interpolates, and clamps remote correction force', () => {
+    const Character = createAlsCharacter()
+    setLocomotionAction(Character, 'Ragdolling')
+    const harness = ragdollLifecycle(Character, {
+      PelvisVelocity: { x: 4, y: 0, z: 0 },
+      SpineLocation: { x: 0, y: 0, z: 0 },
+      TargetLocation: { x: 2, y: 0, z: 0 },
+      GroundHitLocation: null,
+    })
+
+    expect(refreshRagdolling({
+      ...ragdollInput(
+        Character,
+        harness,
+        { LocalRole: 'SimulatedProxy' },
+      ),
+      DeltaTime: 0.5,
+    })).toBe(true)
+    expect(Character.ragdollingState.PullForce).toBe(225)
+    expect(harness.Events).toContainEqual([
+      'AddForce',
+      'spine_03',
+      { x: 112.5, y: 0, z: 0 },
+      true,
+      true,
+    ])
+    expect(harness.Events).toContainEqual([
+      'SetAllMotorsAngularDriveParams',
+      10_000,
+      0,
+      0,
+    ])
+
+    harness.Events.length = 0
+    harness.Bodies.get('pelvis')!.LinearVelocity = {
+      x: 3,
+      y: 0,
+      z: 0,
+    }
+    harness.Bodies.get('pelvis')!.Location = {
+      x: 1.96,
+      y: 0,
+      z: 0,
+    }
+    harness.TargetLocation = { x: 2, y: 0, z: 0 }
+    refreshRagdolling({
+      ...ragdollInput(
+        Character,
+        harness,
+        { LocalRole: 'SimulatedProxy' },
+      ),
+      DeltaTime: 100,
+    })
+    expect(Character.ragdollingState.PullForce).toBe(750)
+    expect(harness.Events).toContainEqual([
+      'GetBodyInstance',
+      'pelvis',
+    ])
+    expect(harness.Events.some(
+      (event) => Array.isArray(event)
+        && event[0] === 'AddForce',
+    )).toBe(false)
+  })
+
+  it('applies stiffness and speed constraints for exactly eight refreshes', () => {
+    const Character = createAlsCharacter()
+    setLocomotionAction(Character, 'Ragdolling')
+    Character.ragdollingState.SpeedLimit = 2
+    Character.ragdollingState.SpeedLimitFrameTimeRemaining = 8
+    const harness = ragdollLifecycle(Character, {
+      PelvisVelocity: { x: 0, y: 0, z: 20 },
+      TargetLocation: { x: 0, y: 0, z: 0 },
+      GroundHitLocation: null,
+    })
+
+    for (let frame = 0; frame < 9; frame += 1) {
+      harness.Bodies.get('pelvis')!.LinearVelocity = {
+        x: 0,
+        y: 0,
+        z: 20,
+      }
+      refreshRagdolling({
+        ...ragdollInput(Character, harness, {
+          bIsLocallyControlled: true,
+        }),
+        DeltaTime: 1 / 60,
+      })
+    }
+
+    expect(
+      Character.ragdollingState.SpeedLimitFrameTimeRemaining,
+    ).toBe(0)
+    expect(harness.Events.filter(
+      (event) => Array.isArray(event)
+        && event[0] === 'ForEachBodyBelow',
+    )).toHaveLength(8)
+    expect(harness.Events.filter(
+      (event) => Array.isArray(event)
+        && event[0] === 'SetAllMotorsAngularDriveParams',
+    )[0]).toEqual([
+      'SetAllMotorsAngularDriveParams',
+      25_000,
+      0,
+      0,
+    ])
+  })
+
+  it('uses target-centered sphere geometry and MIN_FLOOR_DIST', () => {
+    const Character = createAlsCharacter()
+    const harness = ragdollLifecycle(Character, {
+      TargetLocation: { x: 1, y: 2, z: 3 },
+      GroundHitLocation: { x: 1, y: 2, z: 0.2 },
+    })
+    const result = ragdollTraceGround(ragdollInput(
+      Character,
+      harness,
+    ))
+
+    expect(harness.Sweeps).toEqual([{
+      Start: { x: 1, y: 2, z: 4 },
+      End: { x: 1, y: 2, z: 2.5 },
+      Rotation: { x: 0, y: 0, z: 0, w: 1 },
+      Radius: 0.5,
+      CollisionChannel: 'PawnChannel',
+      QueryParameters: {
+        TraceTag: 'RagdollTraceGround',
+        bTraceComplex: false,
+        bIgnoreOwningActor: true,
+      },
+      CollisionResponses: { Name: 'CollisionResponses' },
+    }])
+    expect(result).toEqual({
+      bGrounded: true,
+      Location: { x: 1, y: 2, z: 0.719 },
+    })
+
+    harness.TargetLocation = { x: 0, y: 0, z: 0 }
+    harness.GroundHit = null
+    harness.Events.length = 0
+    expect(ragdollTraceGround(ragdollInput(
+      Character,
+      harness,
+    ))).toEqual({
+      bGrounded: false,
+      Location: { x: 10, y: 20, z: 30 },
+    })
+    expect(harness.Events[0]).toBe('GetActorLocation')
+  })
+
+  it('constrains only rigid bodies above the total 3D speed limit', () => {
+    const Character = createAlsCharacter()
+    Character.ragdollingState.SpeedLimit = 6.5
+    const harness = ragdollLifecycle(Character, {
+      PelvisVelocity: { x: 3, y: 4, z: 12 },
+      SpineVelocity: { x: 0, y: 6.5, z: 0 },
+    })
+    const skipped = {
+      BoneName: 'hand_l',
+      Location: { x: 0, y: 0, z: 0 },
+      LinearVelocity: { x: 20, y: 0, z: 0 },
+      bRigidBody: false,
+    }
+    harness.Bodies.set(skipped.BoneName, skipped)
+
+    constraintRagdollSpeed(Character, harness.Lifecycle)
+    expect(
+      Math.hypot(
+        ...Object.values(
+          harness.Bodies.get('pelvis')!.LinearVelocity,
+        ),
+      ),
+    ).toBeCloseTo(6.5, 12)
+    expect(harness.Bodies.get('spine_03')!.LinearVelocity)
+      .toEqual({ x: 0, y: 6.5, z: 0 })
+    expect(skipped.LinearVelocity).toEqual({ x: 20, y: 0, z: 0 })
+  })
+
+  it('restores grounded pose before playing the upward get-up montage', () => {
+    const Character = createAlsCharacter({
+      locomotionMode: 'InAir',
+    })
+    setLocomotionMode(Character, null)
+    setLocomotionAction(Character, 'Ragdolling')
+    Character.movement.inputBlocked = true
+    const harness = ragdollLifecycle(Character, {
+      TargetLocation: { x: 1, y: 2, z: 3 },
+      GroundHitLocation: { x: 1, y: 2, z: 0.2 },
+      PelvisRotation: { Pitch: 1, Yaw: 50, Roll: 350 },
+      MontagePlayResult: 1.2,
+    })
+
+    expect(stopRagdollingImplementation(ragdollInput(
+      Character,
+      harness,
+    ))).toEqual({
+      bGrounded: true,
+      bRagdollFacingUpward: true,
+      bStartedGettingUp: true,
+    })
+    expect(harness.ActorLocation).toEqual({
+      x: 1,
+      y: 2,
+      z: 0.719,
+    })
+    expect(harness.ActorRotation).toEqual({
+      Pitch: 7,
+      Yaw: -130,
+      Roll: 9,
+    })
+    expect(Character.locomotionMode).toBe('Grounded')
+    expect(Character.locomotionAction).toBe('GettingUp')
+    expect(Character.movement.inputBlocked).toBe(true)
+
+    const names = harness.Events.map(
+      (event) => Array.isArray(event) ? event[0] : event,
+    )
+    expect(names).toEqual([
+      'SnapshotFinalRagdollPose',
+      'GetPelvisSocketTransform',
+      'GetTransformRotation',
+      'SetUpdateJointsFromAnimation',
+      'SetMeshSimulatePhysics',
+      'SetMeshCollisionEnabled',
+      'SetMeshCollisionObjectType',
+      'SetCapsuleCollisionEnabled',
+      'SetNetworkSmoothingMode',
+      'SetIgnoreClientMovementErrorChecksAndCorrection',
+      'GetScaledCapsuleRadius',
+      'GetScaledCapsuleHalfHeight',
+      'GetMovementCollisionObjectType',
+      'InitCollisionParams',
+      'SweepSingleByChannel',
+      'GetActorRotation',
+      'SetActorLocationAndRotationTeleport',
+      'RestoreMeshWorldTransformFromActorBaseOffsets',
+      'AttachMeshToCapsuleKeepWorld',
+      'RefreshUpdateRateOptimizationsAfterRagdolling',
+      'RestoreFinalRagdollPosePelvisTransform',
+      'SetMovementModeLocked',
+      'SetMovementMode',
+      'OnRagdollingEnded',
+      'Montage_Play',
+    ])
+    expect(harness.Events).toContainEqual([
+      'RestoreFinalRagdollPosePelvisTransform',
+      true,
+      true,
+    ])
+    expect(harness.Events).toContainEqual([
+      'OnRagdollingEnded',
+      'Grounded',
+      null,
+      false,
+    ])
+    expect(harness.Events.at(-1)).toEqual([
+      'Montage_Play',
+      'AM_Als_GetUp_Back',
+      null,
+      false,
+    ])
+  })
+
+  it('leaves get-up unowned when Montage_Play fails', () => {
+    const Character = createAlsCharacter()
+    setLocomotionMode(Character, null)
+    setLocomotionAction(Character, 'Ragdolling')
+    Character.movement.inputBlocked = true
+    const harness = ragdollLifecycle(Character, {
+      TargetLocation: { x: 1, y: 2, z: 3 },
+      PelvisRotation: { Pitch: 0, Yaw: 80, Roll: 10 },
+      MontagePlayResult: 0,
+    })
+
+    expect(stopRagdollingImplementation(ragdollInput(
+      Character,
+      harness,
+    ))).toEqual({
+      bGrounded: true,
+      bRagdollFacingUpward: false,
+      bStartedGettingUp: false,
+    })
+    expect(harness.ActorRotation.Yaw).toBe(80)
+    expect(harness.Events.at(-1)).toEqual([
+      'Montage_Play',
+      'AM_Als_GetUp_Front',
+      null,
+      false,
+    ])
+    expect(Character.locomotionAction).toBeNull()
+    expect(Character.movement.inputBlocked).toBe(false)
+  })
+
+  it('hands the last pelvis velocity to Falling without get-up', () => {
+    const Character = createAlsCharacter()
+    setLocomotionMode(Character, null)
+    setLocomotionAction(Character, 'Ragdolling')
+    Character.ragdollingState.Velocity = {
+      x: 1,
+      y: 2,
+      z: -3,
+    }
+    const harness = ragdollLifecycle(Character, {
+      TargetLocation: { x: 1, y: 2, z: 3 },
+      GroundHitLocation: null,
+    })
+
+    expect(stopRagdollingImplementation(ragdollInput(
+      Character,
+      harness,
+    ))).toEqual({
+      bGrounded: false,
+      bRagdollFacingUpward: true,
+      bStartedGettingUp: false,
+    })
+    expect(Character.locomotionMode).toBe('InAir')
+    expect(Character.movement.velocity).toEqual({
+      x: 1,
+      y: 2,
+      z: -3,
+    })
+    expect(Character.locomotionAction).toBeNull()
+    expect(harness.Events.some(
+      (event) => Array.isArray(event)
+        && event[0] === 'Montage_Play',
+    )).toBe(false)
+  })
+
+  it('preserves stop and server RPC role behavior', () => {
+    const Character = createAlsCharacter()
+    setLocomotionAction(Character, 'Ragdolling')
+
+    const simulated = ragdollLifecycle(Character)
+    expect(stopRagdolling(ragdollInput(
+      Character,
+      simulated,
+      { LocalRole: 'SimulatedProxy' },
+    ))).toBe(false)
+    expect(simulated.Events).toEqual([])
+
+    const authority = ragdollLifecycle(Character)
+    expect(stopRagdolling(ragdollInput(
+      Character,
+      authority,
+    ))).toBe(true)
+    expect(authority.Events).toEqual([
+      'MulticastStopRagdolling',
+    ])
+
+    const autonomous = ragdollLifecycle(Character)
+    expect(stopRagdolling(ragdollInput(
+      Character,
+      autonomous,
+      { LocalRole: 'AutonomousProxy' },
+    ))).toBe(true)
+    expect(autonomous.Events).toEqual([
+      'ServerStopRagdolling',
+    ])
+
+    const server = ragdollLifecycle(Character)
+    expect(serverStopRagdolling(ragdollInput(
+      Character,
+      server,
+    ))).toBe(true)
+    expect(server.Events).toEqual([
+      'MulticastStopRagdolling',
+      'ForceNetUpdate',
+    ])
+
+    setLocomotionAction(Character, null)
+    const startServer = ragdollLifecycle(Character)
+    expect(serverStartRagdolling(ragdollInput(
+      Character,
+      startServer,
+    ))).toBe(true)
+    expect(startServer.Events).toEqual([
+      ['GetBodyInstance', 'pelvis'],
+      ['GetBodyInstance', 'spine_03'],
+      'MulticastStartRagdolling',
+      'ForceNetUpdate',
+    ])
+    expect(isRagdollingAllowedToStop(Character)).toBe(false)
+    expect(setRagdollTargetLocation(
+      ragdollInput(
+        Character,
+        startServer,
+        { LocalRole: 'AutonomousProxy' },
+      ),
+      { x: 0, y: 0, z: 0 },
+    )).toBe(false)
   })
 })
