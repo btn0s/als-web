@@ -2,7 +2,7 @@
 
 **The standalone web port of ALS Refactored** (the C++ rework of Advanced Locomotion System) on
 React Three Fiber — UE4-mannequin-skeleton-native (SK_Als), built as a reference repo / template.
-ALS-grade locomotion on the web IS the deliverable; gameplay layers (stealth etc.) happen in
+ALS-grade locomotion on the web IS the deliverable; gameplay layers happen in
 downstream forks, in later sessions — not here. `ROADMAP.md` is the authoritative plan — read it
 before feature work.
 
@@ -23,7 +23,7 @@ before feature work.
   "jog"), Stance Standing/Crouching, RotationMode VelocityDirection/ViewDirection/Aiming,
   LocomotionMode Grounded/InAir, LocomotionAction Mantling/Rolling/GettingUp, VelocityBlend,
   GaitAmount, curve names verbatim (FootLeftLock, RotationYawSpeed, …). Concepts ALS doesn't
-  have are DEFERRED BY DEFAULT to the downstream stealth fork (user 2026-07-23) — crawl/prone/
+  have are DEFERRED BY DEFAULT to downstream forks (user 2026-07-23) — crawl/prone/
   sneak/tuck don't live here at all; legacy non-ALS vocabulary is deleted on contact, not renamed.
   **Parity extends to the file tree**: `src/als/` mirrors `Source/ALS/` 1:1 as closely as the
   stack allows — same directory names and casing (`Settings/`, `State/`, `Utility/`, `AlsCamera/`

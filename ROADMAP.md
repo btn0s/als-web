@@ -3,7 +3,7 @@
 A web port of **ALS Refactored** ([Sixze/ALS-Refactored](https://github.com/Sixze/ALS-Refactored),
 the C++ rework of Advanced Locomotion System) on React Three Fiber: **the standalone web port of
 ALS** (scope sharpened 2026-07-23) — a reference repo / template whose deliverable is ALS-grade
-locomotion on the web, full stop. Gameplay layers (stealth etc.) are downstream projects that
+locomotion on the web, full stop. Gameplay layers are downstream projects that
 fork this, not milestones here.
 
 **Operating principles (inherited):** code speaks for itself — this file plus a lean CLAUDE.md are
@@ -29,7 +29,7 @@ touches it.
 **Discovery that bends the premise:** `SK_Als` is UE4-mannequin layout (68 bones, spine_01–03,
 neck_01) even at tag 4.17/UE 5.7 — ALS Refactored never adopted the UE5 Manny skeleton. The
 "UE5-skeleton-native, Fab drops in with no retargeting" bet does not hold for ALS content itself;
-UE5-native packs (TSO) will need the scripted retarget now listed in M2.
+UE5-native clip packs would need a scripted retarget — deferred out with the skeleton decisions.
 
 ---
 
@@ -80,8 +80,7 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
       hard edges matter
 - [x] **OUT OF SCOPE (scope sharpened 2026-07-23): anything that touches the skeleton.** The
       standalone port builds UE4-mannequin-native (SK_Als), period. The UE5 retarget/re-rig
-      decision and the TacticalStealthOperation pack (stealth content) leave this repo with the
-      stealth layer — they belong to downstream forks
+      decision and any non-ALS clip packs leave this repo — they belong to downstream forks
 - [x] `scripts/build-player-anims.mjs` equivalent — `run.sh` + `clips.manifest` + assembler IS
       the curated merge (single GLB, mesh + 67 clips + curves, root tracks preserved) *(2026-07-23)*
 - [x] Clip audit doc-comment: `clips.manifest`, one line per clip keyed to M3 items *(2026-07-23)*
@@ -121,7 +120,7 @@ from another project's implementation:
       stays as a debug assertion, not a survival constraint. This LIFTS the mesh-space arm-layering
       approximation recorded below.
 - [ ] Gaits: walk / run / sprint with authored speeds; stride warping if the clips demand it
-- [ ] Stances: Standing / Crouching (prone/crawl deferred to the stealth fork — non-ALS concepts defer by default); stance ladder + staged transitions
+- [ ] Stances: Standing / Crouching (prone/crawl deferred to downstream forks — non-ALS concepts defer by default); stance ladder + staged transitions
 - [ ] **Parity harness (added 2026-07-23 — before more systems build on unverified semantics)**:
       two oracles the implementation didn't author. (a) C++ DIFFERENTIAL: test-only, line-mirroring
       transliteration of AlsAnimationInstance's Refresh* functions; property sweeps assert our
@@ -174,10 +173,8 @@ in under an hour.
 
 ## Out of scope — downstream forks
 
-Stealth (exposure model, guards, TSO content) is DEFERRED OUT of this repo entirely (user
-2026-07-23): this repo is the standalone web port of ALS, and M4 is its final milestone. Survey
-notes for the stealth layer are preserved in session memory for whichever downstream fork picks
-it up.
+Gameplay systems beyond ALS locomotion are DEFERRED OUT of this repo entirely (user 2026-07-23):
+this repo is the standalone web port of ALS, and M4 is its final milestone.
 
 ---
 
@@ -195,9 +192,9 @@ it up.
 - **ALS Refactored content is cleared** (settled 2026-07-23): its blanket MIT — copyright Sixze,
   Longmire, Yanıkoğlu, and contributors — covers the repo's assets, meshes included. Usable and
   redistributable here; ship the upstream notice alongside.
-- **Purchased Fab content stays out of the public repo** (anti-redistribution terms): TSO pack and
-  any bought character are gitignored, acquisition documented as a setup step; deployed web
-  bundles may include them ("inseparable part of a Project").
+- **Purchased Fab content stays out of the public repo** (anti-redistribution terms): any bought
+  packs/characters are gitignored, acquisition documented as a setup step; deployed web bundles
+  may include them ("inseparable part of a Project").
 - Verify per-listing licenses on Fab before any new asset enters the curated pack.
 - ALS Refactored is the design north star, not a code-port target: its C++/AnimGraph stays in UE;
   we replicate behavior on the pure-module substrate.
