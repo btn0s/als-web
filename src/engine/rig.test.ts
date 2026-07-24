@@ -18,6 +18,8 @@ describe('createRigDefinition', () => {
 
     const rig = createRigDefinition(scene)
 
+    expect(rig.physicalBoneCount).toBe(2)
+    expect(rig.virtualBones).toEqual([])
     expect(rig.boneNames).toEqual(['root', 'child'])
     expect([...rig.parentIndices]).toEqual([-1, 0])
     expect([...rig.referencePositions.slice(0, 3)]).toEqual([1, 2, 3])

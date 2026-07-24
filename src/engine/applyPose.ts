@@ -16,6 +16,33 @@ export function createPoseApplicator(
     if (object instanceof THREE.Bone && !byName.has(object.name)) byName.set(object.name, object)
   })
 
+  for (const virtualBone of rig.virtualBones) {
+    const existing = byName.get(virtualBone.name)
+    if (existing) {
+      if (
+        existing.userData.alsVirtualBone === true
+        && existing.parent?.name === virtualBone.sourceBoneName
+      ) {
+        continue
+      }
+      throw new Error(
+        `Rig virtual bone "${virtualBone.name}" conflicts with the skeleton`,
+      )
+    }
+    const parent = byName.get(virtualBone.sourceBoneName)
+    if (!parent) {
+      throw new Error(
+        `Rig virtual bone "${virtualBone.name}" has missing scene parent `
+        + `"${virtualBone.sourceBoneName}"`,
+      )
+    }
+    const bone = new THREE.Bone()
+    bone.name = virtualBone.name
+    bone.userData.alsVirtualBone = true
+    parent.add(bone)
+    byName.set(bone.name, bone)
+  }
+
   const bones = rig.boneNames.map((name) => {
     const bone = byName.get(name)
     if (!bone) throw new Error(`Rig bone "${name}" is missing from the skeleton`)

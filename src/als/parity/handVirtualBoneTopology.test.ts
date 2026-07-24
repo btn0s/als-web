@@ -5,6 +5,8 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { compileClipCurveSamplers } from '../../engine/curves'
+import { createRigDefinition } from '../../engine/rig'
+import { ALS_VIRTUAL_BONES } from '../Utility/AlsVirtualBones'
 
 type Vector3Tuple = readonly [number, number, number]
 type QuaternionTuple = readonly [number, number, number, number]
@@ -342,6 +344,52 @@ describe('ALS hand virtual-bone topology parity', () => {
           composeTransform(reference.local),
         ),
       )
+    }
+  })
+
+  it('makes the production rig own the exact 79-bone order and hand-VB reference locals', () => {
+    const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
+    expect(rig.physicalBoneCount).toBe(68)
+    expect(rig.boneCount).toBe(79)
+    expect(rig.boneNames.slice(68)).toEqual(
+      oracle.compactPose.virtualBones.map((bone) => bone.name),
+    )
+    expect(rig.virtualBones.map((bone) => ({
+      index: bone.boneIndex,
+      name: bone.name,
+      source: rig.boneNames[bone.sourceBoneIndex],
+      target: rig.boneNames[bone.targetBoneIndex],
+    }))).toEqual(
+      oracle.compactPose.virtualBones.map((bone) => ({
+        index: bone.index,
+        name: bone.name,
+        source: bone.source,
+        target: bone.target,
+      })),
+    )
+
+    const referenceByName = new Map(
+      oracle.referencePose.handVirtualBones.map((bone) => [bone.name, bone]),
+    )
+    for (const virtualBone of rig.virtualBones.slice(3)) {
+      const expected = referenceByName.get(virtualBone.name)
+      if (!expected) throw new Error(`Missing ${virtualBone.name} reference oracle`)
+      const positionOffset = virtualBone.boneIndex * 3
+      const rotationOffset = virtualBone.boneIndex * 4
+      expectTransformClose({
+        translation: new THREE.Vector3().fromArray(
+          rig.referencePositions,
+          positionOffset,
+        ),
+        rotation: canonicalize(new THREE.Quaternion().fromArray(
+          rig.referenceRotations,
+          rotationOffset,
+        )),
+        scale: new THREE.Vector3().fromArray(
+          rig.referenceScales,
+          positionOffset,
+        ),
+      }, unrealTransformToThree(expected.local), 0.00001)
     }
   })
 

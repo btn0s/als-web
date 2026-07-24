@@ -6,6 +6,11 @@ import {
   resetPoseToReference,
 } from './poseBuffer'
 import type { RigDefinition } from './rig'
+import {
+  createVirtualBonePoseScratch,
+  refreshVirtualBonePose,
+  type VirtualBonePoseScratch,
+} from './virtualBones'
 
 export type TransformProperty = 'position' | 'quaternion' | 'scale'
 
@@ -20,6 +25,7 @@ export interface CompiledTrackBinding {
 export interface CompiledClipSampler {
   readonly clip: THREE.AnimationClip
   readonly bindings: readonly CompiledTrackBinding[]
+  readonly virtualBoneScratch: VirtualBonePoseScratch | null
 }
 
 export type ClipSampleFallback =
@@ -60,7 +66,13 @@ export function compileClipSampler(
     })
   }
 
-  return { clip, bindings }
+  return {
+    clip,
+    bindings,
+    virtualBoneScratch: rig.virtualBones.length > 0
+      ? createVirtualBonePoseScratch(rig.boneCount)
+      : null,
+  }
 }
 
 export function resolveClipTime(time: number, duration: number, loop: boolean): number {
@@ -172,6 +184,13 @@ export function sampleClip(
       target[targetOffset + component] =
         a === b ? from : from + (binding.values[sourceB + component] - from) * alpha
     }
+  }
+
+  if (
+    fallback !== 'additiveIdentity'
+    && sampler.virtualBoneScratch
+  ) {
+    refreshVirtualBonePose(out, rig, sampler.virtualBoneScratch)
   }
 
   return out
