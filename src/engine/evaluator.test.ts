@@ -375,4 +375,52 @@ describe('pose evaluator', () => {
     // lerp(15, 40, .5) = 27.5. Flattening both montages into one node would produce 22.5.
     expect(result.pose.positions[0]).toBeCloseTo(27.5)
   })
+
+  it('evaluates a full-weight PostLocomotion Slot after authored Transition additive output', () => {
+    const root = new THREE.Bone()
+    root.name = 'root'
+    const rig = createRigDefinition(root)
+    const evaluator = createPoseEvaluator(rig)
+    const locomotion = compileClipSampler(
+      constantPositionClip('locomotion', 10),
+      rig,
+    )
+    const transition = compileClipSampler(
+      constantPositionClip('transition-additive', 7),
+      rig,
+    )
+    const mantle = compileClipSampler(
+      constantPositionClip('mantle', 40),
+      rig,
+    )
+    const transitionReference = resetPoseToReference(
+      createPoseBuffer(rig.boneCount),
+      rig,
+    )
+    transitionReference.positions[0] = 2
+
+    const result = evaluatePose(evaluator, {
+      base: [{
+        sampler: locomotion,
+        time: 0,
+        weight: 1,
+      }],
+      preOverlayAdditives: [{
+        sampler: transition,
+        referencePose: transitionReference,
+        additiveSpace: 'local',
+        time: 0,
+        weight: 1,
+      }],
+      postLocomotionMontages: [{
+        sampler: mantle,
+        time: 0,
+        weight: 1,
+      }],
+    })
+
+    // Transition first produces 10 + (7 - 2) = 15. The full PostLocomotion Slot then replaces
+    // that complete result with 40. Applying Transition after node 15 would incorrectly yield 45.
+    expect(result.pose.positions[0]).toBeCloseTo(40)
+  })
 })

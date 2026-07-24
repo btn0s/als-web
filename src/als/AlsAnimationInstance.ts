@@ -57,14 +57,21 @@ import { createRigDefinition } from '../engine/rig'
 import { createRootMotionExtractor, resetRootMotionExtractor } from '../engine/rootMotion'
 import type { RootMotionExtractor } from '../engine/rootMotion'
 import {
-  advanceSlotMontageGroupSamples,
+  advanceSlotMontageClock,
   calculateSlotMontageWeight,
   createSlotMontageClock,
+  getSlotMontageSample,
+  getSlotMontageSamples,
   getSlotMontageEvaluationWeight,
+  montageSetPosition as setSlotMontagePosition,
   playSlotAnimationAsDynamicMontage,
+  playSlotMontage,
   stopSlotAnimation,
 } from '../engine/slotMontage'
-import type { SlotMontageSample } from '../engine/slotMontage'
+import type {
+  SlotMontageNotifyEvent,
+  SlotMontageSample,
+} from '../engine/slotMontage'
 import {
   advanceSyncGroup,
   createSyncGroup,
@@ -231,6 +238,10 @@ import type {
   AlsRotationMode,
   AlsStance,
 } from './Settings/AlsMovementSettings'
+import type {
+  AlsMantlingMontageNotify,
+  AlsMantlingSettings,
+} from './Settings/AlsMantlingSettings'
 import { ALS_TURN_IN_PLACE_SETTINGS } from './Settings/AlsTurnInPlaceSettings'
 import {
   createVelocityBlend,
@@ -321,6 +332,8 @@ import {
   FOOT_RIGHT_LOCK_CURVE_NAME,
   GROUNDED_SLOT_GROUP_NAME,
   HIPS_DIRECTION_LOCK_CURVE_NAME,
+  LOCOMOTION_SLOT_GROUP_NAME,
+  POST_LOCOMOTION_SLOT_NAME,
   POSE_CROUCHING_CURVE_NAME,
   POSE_GAIT_CURVE_NAME,
   POSE_GROUNDED_CURVE_NAME,
@@ -459,6 +472,13 @@ interface RuntimeSlotMontageBinding {
   sample: SlotMontageSample
 }
 
+interface RuntimeMantlingMontageInstance {
+  readonly settings: AlsMantlingSettings
+  readonly sample: SlotMontageSample
+  readonly activeNotifyIndices: Set<number>
+  interrupted: boolean
+}
+
 interface RuntimeLocomotionSequencePlayer {
   readonly key: keyof typeof ALS_LOCOMOTION_PLAYER_METADATA
   readonly clip: RuntimeClip | undefined
@@ -538,6 +558,47 @@ export interface AlsAnimationInstanceState {
   readonly pose: AlsPoseState
 }
 
+export interface AlsMantlingMontagePlayResult {
+  /** FAnimMontageInstance::InstanceID. Zero is a valid first retained instance. */
+  readonly instanceId: number
+  /** Montage_Play()'s successful MontageLength return value at the default play rate. */
+  readonly duration: number
+}
+
+export interface AlsMantlingMontageNotifyEvent {
+  readonly instanceId: number
+  readonly mantlingSettings: AlsMantlingSettings
+  readonly notify: AlsMantlingMontageNotify
+  readonly notifyEventType: 'Begin' | 'End'
+  /** Montage position that dispatched this marker, active-state update, or termination teardown. */
+  readonly triggerTime: number
+}
+
+/**
+ * Character-facing UAnimInstance mantle seam.
+ *
+ * Character movement owns FAlsRootMotionSource_Mantling's authoritative time. It sets
+ * `M - DeltaTime` before the animation update; this retained montage clock then advances once
+ * using the authored UAnimMontage::RateScale, exactly like FMontageSubStepper.
+ */
+export interface AlsMantlingMontageBridge {
+  readonly play: (
+    settings: AlsMantlingSettings,
+    startTime: number,
+  ) => AlsMantlingMontagePlayResult | null
+  readonly montageSetPosition: (
+    instanceId: number,
+    position: number,
+  ) => boolean
+  /** Identity-safe Montage_Stop(): an interrupted instance cannot stop its replacement. */
+  readonly stop: (
+    instanceId: number,
+    blendOutDuration: number,
+  ) => boolean
+  /** Drains branching-point events produced by the most recent animation advances. */
+  readonly takeNotifyEvents: () => readonly AlsMantlingMontageNotifyEvent[]
+}
+
 export interface AlsAnimationInstance {
   playClip: (name: string | null) => boolean
   clearSoloClip: () => void
@@ -550,6 +611,7 @@ export interface AlsAnimationInstance {
   jump: () => void
   /** USkeletalMeshComponent::GetAnimInstance()->GetCurveValue() on the published graph frame. */
   getCurveValue: (name: string) => number
+  readonly mantlingMontage: AlsMantlingMontageBridge
   readonly state: AlsAnimationInstanceState
   refresh: (delta: number, controls: AlsAnimationInstanceControls) => void
 }
@@ -1645,6 +1707,8 @@ export function createAlsAnimationInstance(gltf: {
   const transitionMontageEntries: EvaluatorLayerEntry[] = []
   const transitionMontageAdditiveEntries:
     EvaluatorAuthoredAdditiveEntry[] = []
+  const postLocomotionMontageEntries: EvaluatorLayerEntry[] = []
+  const postLocomotionSlotCurveScratch = new Map<string, number>()
   let activeLocomotionGraphInput:
     AlsLocomotionPoseGraphInput | null = null
   let activeOverlayMode: AlsOverlayMode = 'Default'
@@ -1706,6 +1770,7 @@ export function createAlsAnimationInstance(gltf: {
     },
     montages: transitionMontageEntries,
     preOverlayAdditives: transitionMontageAdditiveEntries,
+    postLocomotionMontages: postLocomotionMontageEntries,
     stagedInertialization: {
       locomotion: groundedInertialization,
       overlay: overlayInertialization,
@@ -1750,12 +1815,18 @@ export function createAlsAnimationInstance(gltf: {
     },
     rootMotion,
     resolveBlendedCurves(_samples, output) {
-      resolveTransitionSlotCurves(
+      resolveSlotCurves(
         groundedInertialization.curves,
+        transitionSlotBindings,
         transitionSlotCurveScratch,
       )
-      composeAlsLayeringFinalCurves(
+      resolveSlotCurves(
         transitionSlotCurveScratch,
+        postLocomotionSlotBindings,
+        postLocomotionSlotCurveScratch,
+      )
+      composeAlsLayeringFinalCurves(
+        postLocomotionSlotCurveScratch,
         overlayInertialization.curves,
         output,
       )
@@ -1841,12 +1912,22 @@ export function createAlsAnimationInstance(gltf: {
   const turnInPlaceState = createAlsTurnInPlaceState()
   const slotMontageClock = createSlotMontageClock()
   const slotMontageSamples: SlotMontageSample[] = []
+  const slotMontageNotifyEvents: SlotMontageNotifyEvent[] = []
+  const locomotionSlotMontageSamples: SlotMontageSample[] = []
   const slotMontageBindings = new Map<
     number,
     RuntimeSlotMontageBinding
   >()
+  const mantlingMontageInstances = new Map<
+    number,
+    RuntimeMantlingMontageInstance
+  >()
+  const pendingMantlingNotifyEvents: AlsMantlingMontageNotifyEvent[] =
+    []
+  const mantlingLastMarkerTimeByInstance = new Map<number, number>()
   const transitionSlotBindings: RuntimeSlotMontageBinding[] = []
   const transitionSlotCurveScratch = new Map<string, number>()
+  const postLocomotionSlotBindings: RuntimeSlotMontageBinding[] = []
   const standingTurnInPlaceMontages: {
     pose: UePoseNode
     weight: number
@@ -2125,8 +2206,10 @@ export function createAlsAnimationInstance(gltf: {
     standingTurnInPlaceMontages.length = 0
     crouchingTurnInPlaceMontages.length = 0
     transitionSlotBindings.length = 0
+    postLocomotionSlotBindings.length = 0
     transitionMontageEntries.length = 0
     transitionMontageAdditiveEntries.length = 0
+    postLocomotionMontageEntries.length = 0
 
     const liveInstanceIds = new Set<number>()
     for (const sample of slotMontageSamples) {
@@ -2161,6 +2244,11 @@ export function createAlsAnimationInstance(gltf: {
 
       if (sample.slotName === TRANSITION_SLOT_NAME) {
         transitionSlotBindings.push(binding)
+      } else if (
+        sample.slotName === POST_LOCOMOTION_SLOT_NAME
+        && sample.groupName === LOCOMOTION_SLOT_GROUP_NAME
+      ) {
+        postLocomotionSlotBindings.push(binding)
       } else if (
         sample.slotName === TURN_IN_PLACE_STANDING_SLOT_NAME
       ) {
@@ -2204,23 +2292,44 @@ export function createAlsAnimationInstance(gltf: {
       }
     }
 
+    const postLocomotionWeightData = calculateSlotMontageWeight(
+      postLocomotionSlotBindings.map((binding) => binding.sample),
+    )
+    for (const binding of postLocomotionSlotBindings) {
+      if (binding.authoredAdditiveEntry) {
+        throw new Error(
+          `ALS PostLocomotion montage "${binding.sample.clipKey}" must be `
+          + 'non-additive',
+        )
+      }
+      binding.entry.weight = getSlotMontageEvaluationWeight(
+        binding.sample,
+        postLocomotionWeightData.totalNodeWeight,
+      )
+      postLocomotionMontageEntries.push(binding.entry)
+    }
+
     turnInPlaceSample = [...slotMontageSamples]
       .reverse()
       .find((sample) => (
         sample.status !== 'completed'
-        && sample.slotName !== TRANSITION_SLOT_NAME
+        && (
+          sample.slotName === TURN_IN_PLACE_STANDING_SLOT_NAME
+          || sample.slotName === TURN_IN_PLACE_CROUCHING_SLOT_NAME
+        )
       ))
     activeTurnInPlaceClip = turnInPlaceSample
       ? turnInPlaceClips.get(turnInPlaceSample.clipKey) ?? null
       : null
   }
 
-  function resolveTransitionSlotCurves(
+  function resolveSlotCurves(
     source: ReadonlyMap<string, number>,
+    bindings: readonly RuntimeSlotMontageBinding[],
     output: Map<string, number>,
   ) {
     output.clear()
-    const samples = transitionSlotBindings.map(
+    const samples = bindings.map(
       (binding) => binding.sample,
     )
     if (samples.length === 0) {
@@ -2232,7 +2341,7 @@ export function createAlsAnimationInstance(gltf: {
     for (const [name, value] of source) {
       output.set(name, value * weightData.sourceWeight)
     }
-    for (const binding of transitionSlotBindings) {
+    for (const binding of bindings) {
       const evaluationWeight = getSlotMontageEvaluationWeight(
         binding.sample,
         weightData.totalNodeWeight,
@@ -2248,7 +2357,7 @@ export function createAlsAnimationInstance(gltf: {
         )
       }
     }
-    for (const binding of transitionSlotBindings) {
+    for (const binding of bindings) {
       if (!binding.authoredAdditiveEntry) continue
       const evaluationWeight = getSlotMontageEvaluationWeight(
         binding.sample,
@@ -2262,6 +2371,305 @@ export function createAlsAnimationInstance(gltf: {
           (output.get(name) ?? 0)
             + sampler(binding.sample.sampleTime) * evaluationWeight,
         )
+      }
+    }
+  }
+
+  function playMantlingMontage(
+    settings: AlsMantlingSettings,
+    startTime: number,
+  ): AlsMantlingMontagePlayResult | null {
+    const montage = settings.Montage
+    const clip = clipsByName.get(montage.Sequence)
+    if (!clip) return null
+    if (montage.SlotName !== POST_LOCOMOTION_SLOT_NAME) {
+      throw new Error(
+        `${montage.Name} must use ALS's ${POST_LOCOMOTION_SLOT_NAME} Slot`,
+      )
+    }
+    if (clip.sampler.clip.duration !== montage.SequenceLength) {
+      throw new Error(
+        `${montage.Name} sequence length does not match `
+        + `"${montage.Sequence}"`,
+      )
+    }
+    if (slotAdditiveTypeForClip(clip) !== 'none') {
+      throw new Error(`${montage.Name} must be a non-additive montage`)
+    }
+    if (clip.sampler.clip.userData?.bEnableRootMotion !== false) {
+      throw new Error(
+        `${montage.Name} must leave animation root motion disabled; `
+        + 'FAlsRootMotionSource_Mantling owns movement',
+      )
+    }
+
+    const sample = playSlotMontage(slotMontageClock, {
+      clipKey: montage.Sequence,
+      clipDuration: montage.SequenceLength,
+      slotName: montage.SlotName,
+      groupName: LOCOMOTION_SLOT_GROUP_NAME,
+      blendInDuration: montage.BlendIn.BlendTime,
+      blendOutDuration: montage.BlendOut.BlendTime,
+      blendInOption: montage.BlendIn.BlendOption,
+      blendOutOption: montage.BlendOut.BlendOption,
+      // Montage_Play(Montage) uses instance PlayRate 1, while FMontageSubStepper advances by
+      // Instance.PlayRate * Montage.RateScale. Preserve the serialized float exactly.
+      playRate: montage.RateScale,
+      blendOutTriggerTime: montage.BlendOutTriggerTime,
+      startTime,
+      additiveType: 'none',
+      bEnableRootMotion: false,
+      montageDuration: montage.PlayLength,
+      segment: {
+        StartPos: montage.StartPos,
+        AnimStartTime: montage.AnimStartTime,
+        AnimEndTime: montage.AnimEndTime,
+        AnimPlayRate: montage.AnimPlayRate,
+        LoopingCount: montage.LoopingCount,
+        SequenceRateScale: montage.SequenceRateScale,
+      },
+      BranchingPointMarkers: montage.BranchingPointMarkers,
+    })
+    if (sample.instanceId < 0 || sample.status === 'completed') return null
+
+    // Montage_PlayInternal interrupts every older instance in the Slot Group. Unreal retains
+    // their ActiveStateBranchingPoints unchanged during the fade because interrupted instances
+    // suppress HandleEvents(); Terminate() dispatches their remaining NotifyEnd callbacks.
+    for (const instance of mantlingMontageInstances.values()) {
+      if (instance.sample.blendOutReason === 'interrupted') {
+        instance.interrupted = true
+      }
+    }
+
+    mantlingMontageInstances.set(sample.instanceId, {
+      settings,
+      sample,
+      // FAnimMontageInstance::Initialize leaves ActiveStateBranchingPoints empty. The first
+      // Advance() populates it through UpdateActiveStateBranchingPoints(), even when Montage_Play
+      // begins inside a notify state.
+      activeNotifyIndices: new Set(),
+      interrupted: false,
+    })
+    return {
+      instanceId: sample.instanceId,
+      duration: montage.PlayLength,
+    }
+  }
+
+  function setMantlingMontagePosition(
+    instanceId: number,
+    position: number,
+  ) {
+    if (!mantlingMontageInstances.has(instanceId)) return false
+    return setSlotMontagePosition(
+      slotMontageClock,
+      instanceId,
+      position,
+    ) !== undefined
+  }
+
+  function stopMantlingMontage(
+    instanceId: number,
+    blendOutDuration: number,
+  ) {
+    const active = getSlotMontageSample(
+      slotMontageClock,
+      LOCOMOTION_SLOT_GROUP_NAME,
+    )
+    if (
+      !mantlingMontageInstances.has(instanceId)
+      || active?.instanceId !== instanceId
+      || active.slotName !== POST_LOCOMOTION_SLOT_NAME
+    ) {
+      return false
+    }
+    const stopped = stopSlotAnimation(
+      slotMontageClock,
+      blendOutDuration,
+      POST_LOCOMOTION_SLOT_NAME,
+    ).some((sample) => sample.instanceId === instanceId)
+    if (stopped) {
+      // UAnimInstance::Montage_Stop calls FAnimMontageInstance::Stop(..., true). Keep active
+      // state branching points frozen until the retained fade reaches Terminate().
+      const instance = mantlingMontageInstances.get(instanceId)
+      if (instance) instance.interrupted = true
+    }
+    return stopped
+  }
+
+  function takeMantlingNotifyEvents() {
+    if (pendingMantlingNotifyEvents.length === 0) return []
+    return pendingMantlingNotifyEvents.splice(
+      0,
+      pendingMantlingNotifyEvents.length,
+    )
+  }
+
+  function isMantlingNotifyActive(
+    instance: RuntimeMantlingMontageInstance,
+    notifyIndex: number,
+    montageTime: number,
+  ) {
+    const markers = instance.settings.Montage.BranchingPointMarkers
+    const begin = markers.find((marker) => (
+      marker.NotifyIndex === notifyIndex
+      && marker.NotifyEventType === 'Begin'
+    ))
+    const end = markers.find((marker) => (
+      marker.NotifyIndex === notifyIndex
+      && marker.NotifyEventType === 'End'
+    ))
+    return Boolean(
+      begin
+      && end
+      // FAnimMontageInstance::UpdateActiveStateBranchingPoints uses this exact half-open test.
+      && montageTime > begin.TriggerTime
+      && montageTime <= end.TriggerTime,
+    )
+  }
+
+  function dispatchMantlingNotifyEvent(
+    instanceId: number,
+    instance: RuntimeMantlingMontageInstance,
+    notifyIndex: number,
+    notifyEventType: 'Begin' | 'End',
+    triggerTime: number,
+  ) {
+    const notify = instance.settings.Montage.Notifies[notifyIndex]
+    if (!notify) {
+      throw new Error(
+        `${instance.settings.Montage.Name} references missing notify `
+        + `${notifyIndex}`,
+      )
+    }
+    if (notifyEventType === 'Begin') {
+      instance.activeNotifyIndices.add(notifyIndex)
+    } else {
+      instance.activeNotifyIndices.delete(notifyIndex)
+    }
+    pendingMantlingNotifyEvents.push({
+      instanceId,
+      mantlingSettings: instance.settings,
+      notify,
+      notifyEventType,
+      triggerTime,
+    })
+  }
+
+  function updateActiveMantlingNotifyStates(
+    instanceId: number,
+    instance: RuntimeMantlingMontageInstance,
+    montageTime: number,
+  ) {
+    // UpdateActiveStateBranchingPoints ends no-longer-active states first, in reverse active
+    // order, before it begins newly active states in authored notify-index order.
+    const activeNotifyIndices = [
+      ...instance.activeNotifyIndices,
+    ].reverse()
+    for (const notifyIndex of activeNotifyIndices) {
+      if (!isMantlingNotifyActive(instance, notifyIndex, montageTime)) {
+        dispatchMantlingNotifyEvent(
+          instanceId,
+          instance,
+          notifyIndex,
+          'End',
+          montageTime,
+        )
+      }
+    }
+    for (
+      let notifyIndex = 0;
+      notifyIndex < instance.settings.Montage.Notifies.length;
+      notifyIndex += 1
+    ) {
+      if (
+        !instance.activeNotifyIndices.has(notifyIndex)
+        && isMantlingNotifyActive(instance, notifyIndex, montageTime)
+      ) {
+        dispatchMantlingNotifyEvent(
+          instanceId,
+          instance,
+          notifyIndex,
+          'Begin',
+          montageTime,
+        )
+      }
+    }
+  }
+
+  function collectMantlingNotifyEvents() {
+    mantlingLastMarkerTimeByInstance.clear()
+    for (const event of slotMontageNotifyEvents) {
+      const instance = mantlingMontageInstances.get(event.instanceId)
+      if (!instance || instance.interrupted) continue
+
+      // HandleEvents updates the active-state set at each branching-point substep before it
+      // dispatches the immediate marker itself.
+      updateActiveMantlingNotifyStates(
+        event.instanceId,
+        instance,
+        event.marker.TriggerTime,
+      )
+      dispatchMantlingNotifyEvent(
+        event.instanceId,
+        instance,
+        event.marker.NotifyIndex,
+        event.marker.NotifyEventType,
+        event.marker.TriggerTime,
+      )
+      mantlingLastMarkerTimeByInstance.set(
+        event.instanceId,
+        event.marker.TriggerTime,
+      )
+    }
+
+    for (const [instanceId, instance] of mantlingMontageInstances) {
+      if (
+        !instance.interrupted
+        && instance.sample.rootMotionPreviousMontageTime
+          !== instance.sample.rootMotionMontageTime
+        // When Advance ends exactly on a branching point, HandleEvents ran once for that marker;
+        // there is no second final-position call that could reactivate a state at its End bound.
+        && mantlingLastMarkerTimeByInstance.get(instanceId)
+          !== instance.sample.montageTime
+      ) {
+        // Advance also calls HandleEvents at the final moved position after any marker substeps.
+        updateActiveMantlingNotifyStates(
+          instanceId,
+          instance,
+          instance.sample.montageTime,
+        )
+      }
+    }
+
+    getSlotMontageSamples(
+      slotMontageClock,
+      LOCOMOTION_SLOT_GROUP_NAME,
+      locomotionSlotMontageSamples,
+    )
+    for (const [instanceId, instance] of mantlingMontageInstances) {
+      if (
+        !locomotionSlotMontageSamples.some(
+          (sample) => sample.instanceId === instanceId,
+        )
+      ) {
+        // FAnimMontageInstance::Terminate iterates ActiveStateBranchingPoints in reverse and
+        // calls BranchingPointNotifyEnd. This is load-bearing for mantling: StopMantling()
+        // deliberately does not clear LocomotionAction because this notify-state teardown owns it.
+        const activeNotifyIndices = [
+          ...instance.activeNotifyIndices,
+        ].reverse()
+        for (const notifyIndex of activeNotifyIndices) {
+          dispatchMantlingNotifyEvent(
+            instanceId,
+            instance,
+            notifyIndex,
+            'End',
+            // Terminate() has no crossed marker; expose its retained montage position instead.
+            instance.sample.montageTime,
+          )
+        }
+        mantlingMontageInstances.delete(instanceId)
       }
     }
   }
@@ -3073,12 +3481,13 @@ export function createAlsAnimationInstance(gltf: {
       return
     }
 
-    advanceSlotMontageGroupSamples(
+    advanceSlotMontageClock(
       slotMontageClock,
-      GROUNDED_SLOT_GROUP_NAME,
       delta,
       slotMontageSamples,
+      slotMontageNotifyEvents,
     )
+    collectMantlingNotifyEvents()
     refreshSlotMontageBindings()
 
     for (const clip of clips) {
@@ -4620,6 +5029,31 @@ export function createAlsAnimationInstance(gltf: {
       activeTransitionSample?.montageTime ?? 0
     normalDebugWeights.TransitionSequenceTime =
       activeTransitionSample?.sampleTime ?? 0
+    const postLocomotionWeightData = calculateSlotMontageWeight(
+      postLocomotionSlotBindings.map((binding) => binding.sample),
+    )
+    const activePostLocomotionSample =
+      postLocomotionSlotBindings.at(-1)?.sample
+    normalDebugWeights.PostLocomotionMontageWeight =
+      postLocomotionWeightData.slotNodeWeight
+    normalDebugWeights.PostLocomotionMontageTime =
+      activePostLocomotionSample?.montageTime ?? 0
+    normalDebugWeights.PostLocomotionSequenceTime =
+      activePostLocomotionSample?.sampleTime ?? 0
+    normalDebugWeights.PostLocomotionMontageBlendingIn =
+      Number(activePostLocomotionSample?.status === 'blendingIn')
+    normalDebugWeights.PostLocomotionMontagePlaying =
+      Number(activePostLocomotionSample?.status === 'playing')
+    normalDebugWeights.PostLocomotionMontageBlendingOut =
+      Number(activePostLocomotionSample?.status === 'blendingOut')
+    normalDebugWeights.PostLocomotionRootMotionEnabled =
+      Number(activePostLocomotionSample?.bEnableRootMotion ?? false)
+    normalDebugWeights.PostLocomotionRetainedInstanceCount =
+      postLocomotionSlotBindings.length
+    normalDebugWeights.PostLocomotionOldestInstanceId =
+      postLocomotionSlotBindings.at(0)?.instanceId ?? -1
+    normalDebugWeights.PostLocomotionNewestInstanceId =
+      postLocomotionSlotBindings.at(-1)?.instanceId ?? -1
     normalDebugWeights.SlotMontageRetainedInstanceCount =
       slotMontageBindings.size
     normalDebugWeights.TransitionRetainedInstanceCount =
@@ -4836,6 +5270,12 @@ export function createAlsAnimationInstance(gltf: {
     setHipsDirection,
     jump,
     getCurveValue: (name) => publishedCurves.get(name) ?? 0,
+    mantlingMontage: Object.freeze({
+      play: playMantlingMontage,
+      montageSetPosition: setMantlingMontagePosition,
+      stop: stopMantlingMontage,
+      takeNotifyEvents: takeMantlingNotifyEvents,
+    }),
     state,
     refresh,
   }

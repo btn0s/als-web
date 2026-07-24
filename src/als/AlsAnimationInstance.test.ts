@@ -28,6 +28,9 @@ import {
 import {
   sampleGroundPredictionAmount,
 } from './Settings/AlsInAirSettings'
+import {
+  ALS_MANTLING_SETTINGS,
+} from './Settings/AlsMantlingSettings'
 import { ALS_VIRTUAL_BONES } from './Utility/AlsVirtualBones'
 import type {
   AlsAnimationInstance,
@@ -376,6 +379,371 @@ describe('AlsAnimationInstance playback regression', () => {
           .toBeCloseTo(1, 12)
       }
     }
+  })
+
+  it('evaluates the extracted mantle in Locomotion/PostLocomotion before Layering', async () => {
+    const gltf = await loadAlsGltf()
+    const settings = ALS_MANTLING_SETTINGS.MS_Als_Low_Right
+    const montage = settings.Montage
+    const clip = gltf.animations.find(
+      (candidate) => candidate.name === montage.Sequence,
+    )
+    if (!clip) throw new Error(`Missing ${montage.Sequence}`)
+    expect(montage).toMatchObject({
+      Name: 'AM_Als_Mantle_Low_Right',
+      Sequence: 'A_Als_Mantle_Low_Right',
+      PlayLength: 1.5,
+      SequenceLength: 1.5,
+      SequenceRateScale: 1,
+      RateScale: 1,
+      BlendIn: {
+        BlendTime: 0.20000000298023224,
+        BlendOption: 'HermiteCubic',
+      },
+      BlendOut: {
+        BlendTime: 0.20000000298023224,
+        BlendOption: 'HermiteCubic',
+      },
+      BlendOutTriggerTime: 0,
+      SlotName: 'PostLocomotion',
+      StartPos: 0,
+      AnimStartTime: 0,
+      AnimEndTime: 1.5,
+      AnimPlayRate: 1,
+      LoopingCount: 1,
+    })
+    expect(clip.userData.bEnableRootMotion).toBe(false)
+
+    const instance = createAlsAnimationInstance(gltf)
+    const played = instance.mantlingMontage.play(settings, 0.4)
+    expect(played).toEqual({
+      instanceId: expect.any(Number),
+      duration: montage.PlayLength,
+    })
+    if (!played) throw new Error('Mantle montage was rejected')
+
+    // FAlsRootMotionSource_Mantling writes M - DeltaTime. This rate-one montage advances to M.
+    expect(instance.mantlingMontage.montageSetPosition(
+      played.instanceId,
+      0.75,
+    )).toBe(true)
+    instance.refresh(0.05, {
+      ...controls,
+      overlayMode: 'Rifle',
+    })
+    expect(window.__weightTable?.PostLocomotionMontageTime)
+      .toBeCloseTo(0.8, 12)
+    expect(window.__weightTable?.PostLocomotionSequenceTime)
+      .toBeCloseTo(0.8, 12)
+    // HermiteCubic(0.05 / 0.2) = 3t² - 2t³ = 0.15625, not a linear 0.25.
+    expect(window.__weightTable?.PostLocomotionMontageWeight)
+      .toBeCloseTo(0.15625, 7)
+    expect(window.__weightTable?.PostLocomotionRootMotionEnabled).toBe(0)
+
+    expect(instance.mantlingMontage.montageSetPosition(
+      played.instanceId,
+      0.65,
+    )).toBe(true)
+    instance.refresh(0.15, {
+      ...controls,
+      overlayMode: 'Rifle',
+    })
+    expect(window.__weightTable?.PostLocomotionMontageWeight)
+      .toBeCloseTo(1, 12)
+    expect(window.__weightTable?.PostLocomotionMontageTime)
+      .toBeCloseTo(0.8, 12)
+
+    const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
+    const sampled = createPoseBuffer(rig.boneCount)
+    sampleClip(
+      compileClipSampler(clip, rig),
+      rig,
+      0.8,
+      sampled,
+      false,
+    )
+    const rootIndex = findBoneIndex(rig, 'root')
+    const root = bone(gltf.scene, 'root')
+    expect(root.position.x).toBeCloseTo(
+      sampled.positions[rootIndex * 3],
+      6,
+    )
+    expect(root.position.y).toBeCloseTo(
+      sampled.positions[rootIndex * 3 + 1],
+      6,
+    )
+    expect(root.position.z).toBeCloseTo(
+      sampled.positions[rootIndex * 3 + 2],
+      6,
+    )
+
+    // Rifle's authored upper-body Layering still runs after the full-body PostLocomotion pose.
+    const handLeftIndex = findBoneIndex(rig, 'hand_l')
+    const expectedHandLeft = new THREE.Quaternion(
+      sampled.rotations[handLeftIndex * 4],
+      sampled.rotations[handLeftIndex * 4 + 1],
+      sampled.rotations[handLeftIndex * 4 + 2],
+      sampled.rotations[handLeftIndex * 4 + 3],
+    )
+    expect(
+      bone(gltf.scene, 'hand_l').quaternion.angleTo(expectedHandLeft),
+    ).toBeGreaterThan(0.01)
+  })
+
+  it('advances high mantle by instance PlayRate times authored Montage RateScale', async () => {
+    const gltf = await loadAlsGltf()
+    const settings = ALS_MANTLING_SETTINGS.MS_Als_High
+    const montage = settings.Montage
+    expect(montage).toMatchObject({
+      Name: 'AM_Als_Mantle_High',
+      PlayLength: 2.6666667461395264,
+      SequenceLength: 2.6666667461395264,
+      RateScale: 1.2000000476837158,
+      BlendOut: {
+        BlendTime: 0.20000000298023224,
+        BlendOption: 'Cubic',
+      },
+    })
+
+    const instance = createAlsAnimationInstance(gltf)
+    const played = instance.mantlingMontage.play(settings, 0.4)
+    if (!played) throw new Error('High mantle montage was rejected')
+    expect(played.duration).toBe(2.6666667461395264)
+
+    // PrepareRootMotion writes M - DeltaTime, then FMontageSubStepper advances by
+    // Instance.PlayRate (one) * the serialized UAnimMontage::RateScale.
+    expect(instance.mantlingMontage.montageSetPosition(
+      played.instanceId,
+      1.15,
+    )).toBe(true)
+    instance.refresh(0.1, controls)
+    const expectedMontageTime = 1.15 + 0.1 * montage.RateScale
+    expect(window.__weightTable?.PostLocomotionMontageTime)
+      .toBeCloseTo(expectedMontageTime, 12)
+    expect(window.__weightTable?.PostLocomotionSequenceTime)
+      .toBeCloseTo(expectedMontageTime, 12)
+  })
+
+  it('places PostLocomotion after Grounded additive Transition montage output', async () => {
+    const baselineGltf = await loadAlsGltf()
+    const transitionGltf = await loadAlsGltf()
+    const baseline = createAlsAnimationInstance(baselineGltf)
+    const withTransition = createAlsAnimationInstance(transitionGltf)
+    const idleControls: AlsAnimationInstanceControls = {
+      ...controls,
+      gait: 'Walking',
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+    }
+
+    withTransition.state.transitions.queuedTransition = {
+      clip: 'A_Als_Stand_DynamicTransition_Left',
+      blendInDuration: 0.2,
+      blendOutDuration: 0.2,
+      playRate: 1.5,
+      startTime: 0.8,
+    }
+    baseline.refresh(0, idleControls)
+    withTransition.refresh(0, idleControls)
+
+    const settings = ALS_MANTLING_SETTINGS.MS_Als_Low
+    const baselinePlay = baseline.mantlingMontage.play(settings, 0.6)
+    const transitionPlay =
+      withTransition.mantlingMontage.play(settings, 0.6)
+    if (!baselinePlay || !transitionPlay) {
+      throw new Error('Mantle montage was rejected')
+    }
+    baseline.refresh(0.2, idleControls)
+    withTransition.refresh(0.2, idleControls)
+    expect(window.__weightTable?.TransitionMontageWeight)
+      .toBeCloseTo(1, 12)
+    expect(window.__weightTable?.PostLocomotionMontageWeight)
+      .toBeCloseTo(1, 12)
+
+    // The full-weight PostLocomotion slot replaces the complete Locomotion result. If the
+    // additive Transition slot were incorrectly applied after it, the two final poses diverge.
+    const baseTransforms = snapshotLocalBoneTransforms(baselineGltf.scene)
+    const transitionTransforms =
+      snapshotLocalBoneTransforms(transitionGltf.scene)
+    const postLocomotionDelta = maximumLocalBoneDelta(
+      baseTransforms,
+      transitionTransforms,
+    )
+
+    const upstreamBaselineGltf = await loadAlsGltf()
+    const upstreamTransitionGltf = await loadAlsGltf()
+    const upstreamBaseline =
+      createAlsAnimationInstance(upstreamBaselineGltf)
+    const upstreamTransition =
+      createAlsAnimationInstance(upstreamTransitionGltf)
+    upstreamTransition.state.transitions.queuedTransition = {
+      clip: 'A_Als_Stand_DynamicTransition_Left',
+      blendInDuration: 0.2,
+      blendOutDuration: 0.2,
+      playRate: 1.5,
+      startTime: 0.8,
+    }
+    upstreamBaseline.refresh(0, idleControls)
+    upstreamTransition.refresh(0, idleControls)
+    upstreamBaseline.refresh(0.2, idleControls)
+    upstreamTransition.refresh(0.2, idleControls)
+    const upstreamTransitionDelta = maximumLocalBoneDelta(
+      snapshotLocalBoneTransforms(upstreamBaselineGltf.scene),
+      snapshotLocalBoneTransforms(upstreamTransitionGltf.scene),
+    )
+    expect(upstreamTransitionDelta).toBeGreaterThan(0.01)
+    expect(postLocomotionDelta)
+      .toBeLessThan(upstreamTransitionDelta * 0.01)
+  })
+
+  it('drains the exact authored mantle branching points after Advance()', async () => {
+    const gltf = await loadAlsGltf()
+    const settings = ALS_MANTLING_SETTINGS.MS_Als_Low
+    const montage = settings.Montage
+    expect(montage.BranchingPointMarkers).toEqual([
+      {
+        NotifyIndex: 0,
+        TriggerTime: -0.00009999999747378752,
+        NotifyEventType: 'Begin',
+      },
+      {
+        NotifyIndex: 0,
+        TriggerTime: 0.9665666222572327,
+        NotifyEventType: 'End',
+      },
+      {
+        NotifyIndex: 1,
+        TriggerTime: 1,
+        NotifyEventType: 'Begin',
+      },
+      {
+        NotifyIndex: 1,
+        TriggerTime: 1.499899983406067,
+        NotifyEventType: 'End',
+      },
+    ])
+
+    const instance = createAlsAnimationInstance(gltf)
+    const played = instance.mantlingMontage.play(settings, 0.95)
+    if (!played) throw new Error('Mantle montage was rejected')
+    instance.refresh(
+      montage.BranchingPointMarkers[1].TriggerTime - 0.95,
+      controls,
+    )
+
+    expect(instance.mantlingMontage.takeNotifyEvents()).toEqual([
+      {
+        instanceId: played.instanceId,
+        mantlingSettings: settings,
+        notify: montage.Notifies[0],
+        notifyEventType: 'Begin',
+        triggerTime: 0.9665666222572327,
+      },
+      {
+        instanceId: played.instanceId,
+        mantlingSettings: settings,
+        notify: montage.Notifies[0],
+        notifyEventType: 'End',
+        triggerTime: 0.9665666222572327,
+      },
+    ])
+    expect(instance.mantlingMontage.takeNotifyEvents()).toEqual([])
+
+    expect(instance.mantlingMontage.montageSetPosition(
+      played.instanceId,
+      0.99,
+    )).toBe(true)
+    instance.refresh(0.02, controls)
+    expect(instance.mantlingMontage.takeNotifyEvents()).toEqual([{
+      instanceId: played.instanceId,
+      mantlingSettings: settings,
+      notify: montage.Notifies[1],
+      notifyEventType: 'Begin',
+      triggerTime: 1,
+    }])
+  })
+
+  it('retains interrupted mantle fades and makes Stop instance-identity safe', async () => {
+    const gltf = await loadAlsGltf()
+    const settings = ALS_MANTLING_SETTINGS.MS_Als_Low_Right
+    const instance = createAlsAnimationInstance(gltf)
+    const first = instance.mantlingMontage.play(settings, 0.2)
+    if (!first) throw new Error('First mantle montage was rejected')
+    instance.refresh(0.2, controls)
+    expect(instance.mantlingMontage.takeNotifyEvents()).toEqual([{
+      instanceId: first.instanceId,
+      mantlingSettings: settings,
+      notify: settings.Montage.Notifies[0],
+      notifyEventType: 'Begin',
+      triggerTime: expect.closeTo(0.4, 12),
+    }])
+
+    const second = instance.mantlingMontage.play(settings, 0.4)
+    if (!second) throw new Error('Second mantle montage was rejected')
+    expect(second.instanceId).not.toBe(first.instanceId)
+    instance.refresh(0.1, controls)
+    expect(window.__weightTable?.PostLocomotionRetainedInstanceCount)
+      .toBe(2)
+    expect(window.__weightTable?.PostLocomotionOldestInstanceId)
+      .toBe(first.instanceId)
+    expect(window.__weightTable?.PostLocomotionNewestInstanceId)
+      .toBe(second.instanceId)
+    expect(window.__weightTable?.PostLocomotionMontageWeight)
+      .toBeCloseTo(1, 12)
+    expect(instance.mantlingMontage.takeNotifyEvents()).toEqual([{
+      instanceId: second.instanceId,
+      mantlingSettings: settings,
+      notify: settings.Montage.Notifies[0],
+      notifyEventType: 'Begin',
+      triggerTime: expect.closeTo(0.5, 12),
+    }])
+
+    expect(instance.mantlingMontage.stop(first.instanceId, 0.35))
+      .toBe(false)
+    expect(instance.mantlingMontage.stop(second.instanceId, 0.35))
+      .toBe(true)
+    expect(instance.mantlingMontage.stop(second.instanceId, 0.35))
+      .toBe(false)
+
+    // FAnimMontageInstance retains native branching-point states through an
+    // interrupted fade, then Terminate() dispatches NotifyEnd for every state
+    // whose authored End marker was suppressed by the interruption.
+    expect(instance.mantlingMontage.takeNotifyEvents()).toEqual([])
+    instance.refresh(0.11, controls)
+    expect(instance.mantlingMontage.takeNotifyEvents()).toEqual([{
+      instanceId: first.instanceId,
+      mantlingSettings: settings,
+      notify: settings.Montage.Notifies[0],
+      notifyEventType: 'End',
+      triggerTime: expect.closeTo(0.61, 12),
+    }])
+    instance.refresh(0.24, controls)
+    expect(instance.mantlingMontage.takeNotifyEvents()).toEqual([{
+      instanceId: second.instanceId,
+      mantlingSettings: settings,
+      notify: settings.Montage.Notifies[0],
+      notifyEventType: 'End',
+      triggerTime: expect.closeTo(0.85, 12),
+    }])
+  })
+
+  it('does not end an unentered notify state when replaced before its first Advance()', async () => {
+    const gltf = await loadAlsGltf()
+    const settings = ALS_MANTLING_SETTINGS.MS_Als_Low_Right
+    const instance = createAlsAnimationInstance(gltf)
+    const first = instance.mantlingMontage.play(settings, 0.2)
+    const second = instance.mantlingMontage.play(settings, 0.3)
+    if (!first || !second) throw new Error('Mantle montage was rejected')
+
+    instance.refresh(0.21, controls)
+    expect(instance.mantlingMontage.takeNotifyEvents()).toEqual([{
+      instanceId: second.instanceId,
+      mantlingSettings: settings,
+      notify: settings.Montage.Notifies[0],
+      notifyEventType: 'Begin',
+      triggerTime: expect.closeTo(0.51, 12),
+    }])
   })
 
   it('runs NativePostUpdateAnimation after normal, solo, and fallback publication', async () => {

@@ -17,7 +17,10 @@ import type {
 import {
   createAlsAnimationInstance,
 } from './AlsAnimationInstance'
-import type { AlsAnimationInstanceControls } from './AlsAnimationInstance'
+import type {
+  AlsAnimationInstanceControls,
+  AlsMantlingMontageBridge,
+} from './AlsAnimationInstance'
 import {
   ROTATION_YAW_OFFSET_CURVE_NAME,
   ROTATION_YAW_SPEED_CURVE_NAME,
@@ -59,6 +62,7 @@ export function useAlsAnimationInstance(
   onJumped: MutableRefObject<(() => void) | null>,
   groundPredictionSweep: AlsGroundPredictionCapsuleSweep,
   controlRigFootTrace: AlsControlRigFootOffsetTrace,
+  mantlingMontage?: MutableRefObject<AlsMantlingMontageBridge | null>,
 ) {
   const animationInstance = useMemo(
     () => createAlsAnimationInstance({
@@ -81,6 +85,17 @@ export function useAlsAnimationInstance(
       }
     }
   }, [animationInstance, onJumped])
+
+  useEffect(() => {
+    if (!mantlingMontage) return
+    const bridge = animationInstance.mantlingMontage
+    mantlingMontage.current = bridge
+    return () => {
+      if (mantlingMontage.current === bridge) {
+        mantlingMontage.current = null
+      }
+    }
+  }, [animationInstance, mantlingMontage])
 
   useEffect(() => {
     window.__playClip = animationInstance.playClip

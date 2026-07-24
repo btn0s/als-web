@@ -800,14 +800,14 @@ export function evaluatePose(
   if (locomotionInertialization) {
     applyMontageLayersAfterInertialization(evaluator, input.montages)
   }
-  applyMontageLayersAfterInertialization(
-    evaluator,
-    input.postLocomotionMontages,
-  )
   applyAuthoredAdditives(
     evaluator,
     evaluator.outputPose,
     input.preOverlayAdditives,
+  )
+  applyMontageLayersAfterInertialization(
+    evaluator,
+    input.postLocomotionMontages,
   )
   copyPose(evaluator.outputPose, evaluator.basePose)
 
