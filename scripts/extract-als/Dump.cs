@@ -163,6 +163,20 @@ public static class Dump
                 }
             }
 
+            // AuthoredSyncMarkers and Notifies are tagged on UAnimSequence, not its
+            // AnimDataModel. UE omits default-valued tagged properties, so null (absent)
+            // and an authored empty array are both valid and intentionally emit [].
+            var syncMarkers = ReadNamedTimes(
+                seq.GetOrDefault<UScriptArray?>("AuthoredSyncMarkers"),
+                "MarkerName",
+                "Time",
+                animName);
+            var notifies = ReadNamedTimes(
+                seq.GetOrDefault<UScriptArray?>("Notifies"),
+                "NotifyName",
+                "LinkValue",
+                animName);
+
             anims.Add(new
             {
                 name = animName,
@@ -173,6 +187,8 @@ public static class Dump
                 numberOfKeys = model.Get<int>("NumberOfKeys"),
                 tracks,
                 curves,
+                syncMarkers,
+                notifies,
             });
         }
 
@@ -208,6 +224,39 @@ public static class Dump
         Console.WriteLine(
             $"dumped {skeletonName}: {bones.Length} bones, {anims.Count} anims -> {outJson}");
         return 0;
+    }
+
+    static object[] ReadNamedTimes(
+        UScriptArray? array,
+        string nameProperty,
+        string timeProperty,
+        string animName)
+    {
+        if (array is null)
+            return [];
+
+        return array.Properties.Select((element, index) =>
+        {
+            if (element is not StructProperty structProperty ||
+                structProperty.Value?.StructType is not FStructFallback entry)
+            {
+                throw new Exception(
+                    $"{animName} {nameProperty} entry {index} is not a tagged struct");
+            }
+
+            var name = entry.Properties
+                .FirstOrDefault(property => property.Name.Text == nameProperty)
+                ?.Tag?.GenericValue?.ToString() ?? "";
+            if (string.IsNullOrWhiteSpace(name))
+                throw new Exception(
+                    $"{animName} {nameProperty} entry {index} has no {nameProperty}");
+
+            return new
+            {
+                name,
+                time = entry.GetOrDefault(timeProperty, 0f),
+            };
+        }).Cast<object>().ToArray();
     }
 
     static FLinearColor FindVectorParameter(UObject materialInstance, string parameterName)

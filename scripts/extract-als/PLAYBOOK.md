@@ -21,7 +21,7 @@ extracting asset class X from uncooked ALS-Refactored (.uasset only, no .uexp/.u
 │
 ├─ Does provider.Mount() resolve /ALS/... paths?
 │   trap: loose Content needs a stage-dir symlink layout (stage/ALS → repo clone root)
-│   VERIFIED: run.sh does this today (`ln -sfn $repo $WORK/stage/ALS`)
+│   VERIFIED: run.sh reuses a matching stage/ALS mount or creates the symlink when needed
 │
 ├─ X = AnimSequence
 │   ├─ cooked/compressed fields (CompressedByteStream etc.) → always null. Don't touch them.
@@ -227,6 +227,46 @@ extracting asset class X from uncooked ALS-Refactored (.uasset only, no .uexp/.u
 | Bow/Pistol overlay meshes will parse the same way | HYPOTHESIS | not yet run; same code path as rifle, no reason to expect otherwise |
 | StaticMesh source geometry needs a new custom bulk-data class | HYPOTHESIS (with concrete next step) | `inspect` shows `RenderData:null` and an unparsed `StaticMeshDescriptionBulkData` stub |
 | Uncooked SoundWave audio is unextractable via this pipeline | VERIFIED (negative result) | `inspect` output + `USoundWave.Deserialize` source shows the streaming branch never reads `RawData` for uncooked assets |
+
+## AnimSequence sync markers and notifies
+
+- **VERIFIED — ALS generates foot sync markers with
+  `B_Als_AnimationModifier_FootSyncMarkers`.** The upstream 4.15 `README.md` feature list
+  names that modifier, and direct package inspection independently finds two modifier
+  instances plus the generated `FootSyncMarkers` notify track in both
+  `A_Als_Walk_Forward` and `A_Als_Run_Forward`.
+
+- **VERIFIED — both event arrays are tagged directly on `UAnimSequence`, not on its
+  `AnimDataModel`.** `AuthoredSyncMarkers` contains `FAnimSyncMarker` fallback structs with
+  `MarkerName` and `Time`; `Notifies` contains `FAnimNotifyEvent` fallback structs with
+  `NotifyName` and inherited `LinkValue`. The extractor maps `LinkValue` to notify `time`;
+  `TriggerTimeOffset` is trigger-boundary adjustment metadata and is not folded into the
+  authored event position.
+
+- **VERIFIED — exact forward-cycle values in ALS Refactored 4.15 / UE 5.5 content:**
+  `A_Als_Walk_Forward` has `Left` at `0.083333336` seconds and `Right` at
+  `0.65000004`; `A_Als_Run_Forward` has `Left` at `0.033333335` and `Right` at
+  `0.43333337`. Both sequences have two `BMAnimNotifyFootstep` notifies: walk at
+  `0.13333333` and `0.6999999`, run at `0.06666667` and `0.4666667`.
+
+- **VERIFIED — default-valued tags can be absent.** `A_Als_Idle` has neither
+  `AuthoredSyncMarkers` nor `Notifies`. `Dump.cs` therefore reads both with nullable
+  `GetOrDefault<UScriptArray?>`; an absent tag and a present-but-empty array are handled as
+  distinct input states, and both intentionally serialize as explicit empty arrays in the
+  dump and GLB.
+
+- **VERIFIED — GLB metadata contract.** Beside
+  `animation.extras.alsCurves: [{name, flags, keys: [[timeSeconds, value,
+  ueInterpMode], ...]}]`, every animation carries
+  `animation.extras.syncMarkers: [{name: string, time: number}]` and
+  `animation.extras.notifies: [{name: string, time: number}]`. Both `time` fields are
+  authored seconds.
+
+- **HYPOTHESIS — an explicitly serialized empty `AuthoredSyncMarkers` or `Notifies`
+  tag may occur in other Unreal content.** It was not observed in the three probe assets;
+  verify by inspecting a sequence saved with an explicitly cleared event track. The
+  nullable-array implementation already accepts that representation without conflating it
+  with a parse failure.
 
 ## Key file/line references
 - `/Users/btnorris/dev/games/echelon/tech-demos/als-ue5-r3f/scripts/extract-als/AlsSkeletalMesh.cs` — the shim; `ProbeInfluenceLayout` (lines ~199-272) is the generalized fix, header comment (lines ~11-17) needs the uint8→uint16-weight correction

@@ -23,7 +23,10 @@ mkdir -p "$WORK/stage"
 if [ ! -d "$WORK/ALS-Refactored-$TAG" ]; then
   git clone --depth 1 --branch "$TAG" https://github.com/Sixze/ALS-Refactored "$WORK/ALS-Refactored-$TAG"
 fi
-ln -sfn "$WORK/ALS-Refactored-$TAG" "$WORK/stage/ALS"
+if [ ! -d "$WORK/stage/ALS" ] ||
+   [ "$(cd "$WORK/stage/ALS" && pwd -P)" != "$(cd "$WORK/ALS-Refactored-$TAG" && pwd -P)" ]; then
+  ln -sfn "$WORK/ALS-Refactored-$TAG" "$WORK/stage/ALS"
+fi
 
 dotnet run -- dump \
   "$WORK/stage" "$WORK/als-dump.json" \

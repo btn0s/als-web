@@ -93,8 +93,12 @@ if (animNameSet.size !== animNames.length) errs.push('duplicate animation names 
 let channelCount = 0;
 let rootTrackCount = 0;
 let curveCount = 0;
+let syncMarkerCount = 0;
+let notifyCount = 0;
 const curveNamePattern = /^[A-Za-z][A-Za-z0-9_]*$/;
 const curvesByClip = new Map();
+const syncMarkersByClip = new Map();
+const notifiesByClip = new Map();
 for (const anim of anims) {
   const rootPaths = new Set();
   for (const channel of anim.listChannels()) {
@@ -112,22 +116,45 @@ for (const anim of anims) {
   curvesByClip.set(anim.getName(), curves);
   if (!Array.isArray(curves)) {
     errs.push(`${anim.getName()} animation.extras.alsCurves is not an array`);
-    continue;
+  } else {
+    curveCount += curves.length;
+    for (const curve of curves) {
+      if (!curveNamePattern.test(curve?.name ?? ''))
+        errs.push(`${anim.getName()} has invalid curve name: ${JSON.stringify(curve?.name)}`);
+      if (!Array.isArray(curve?.keys)) {
+        errs.push(`${anim.getName()}/${curve?.name ?? '<unnamed>'} keys is not an array`);
+        continue;
+      }
+      for (let i = 0; i < curve.keys.length; i++) {
+        const time = curve.keys[i]?.[0];
+        if (!Number.isFinite(time))
+          errs.push(`${anim.getName()}/${curve.name} key ${i} has invalid time: ${time}`);
+        if (i > 0 && time < curve.keys[i - 1]?.[0])
+          errs.push(`${anim.getName()}/${curve.name} key times decrease at key ${i}`);
+      }
+    }
   }
-  curveCount += curves.length;
-  for (const curve of curves) {
-    if (!curveNamePattern.test(curve?.name ?? ''))
-      errs.push(`${anim.getName()} has invalid curve name: ${JSON.stringify(curve?.name)}`);
-    if (!Array.isArray(curve?.keys)) {
-      errs.push(`${anim.getName()}/${curve?.name ?? '<unnamed>'} keys is not an array`);
+
+  for (const [field, table, count] of [
+    ['syncMarkers', syncMarkersByClip, (value) => { syncMarkerCount += value; }],
+    ['notifies', notifiesByClip, (value) => { notifyCount += value; }],
+  ]) {
+    const events = anim.getExtras()?.[field] ?? [];
+    if (!Array.isArray(events)) {
+      errs.push(`${anim.getName()} animation.extras.${field} is not an array`);
+      table.set(anim.getName(), []);
       continue;
     }
-    for (let i = 0; i < curve.keys.length; i++) {
-      const time = curve.keys[i]?.[0];
-      if (!Number.isFinite(time))
-        errs.push(`${anim.getName()}/${curve.name} key ${i} has invalid time: ${time}`);
-      if (i > 0 && time < curve.keys[i - 1]?.[0])
-        errs.push(`${anim.getName()}/${curve.name} key times decrease at key ${i}`);
+    table.set(anim.getName(), events);
+    count(events.length);
+    for (let i = 0; i < events.length; i++) {
+      const event = events[i];
+      if (typeof event?.name !== 'string' || event.name.length === 0)
+        errs.push(`${anim.getName()} ${field}[${i}] has invalid name: ${JSON.stringify(event?.name)}`);
+      if (!Number.isFinite(event?.time))
+        errs.push(`${anim.getName()} ${field}[${i}] has invalid time: ${event?.time}`);
+      if (field === 'syncMarkers' && i > 0 && event.time < events[i - 1]?.time)
+        errs.push(`${anim.getName()} ${field} times decrease at entry ${i}`);
     }
   }
 }
@@ -154,6 +181,36 @@ if (!idleCurves) errs.push('curve-free sentinel clip missing: A_Als_Idle');
 else if (idleCurves.length !== 0)
   errs.push(`A_Als_Idle should have no curves, found ${idleCurves.length}`);
 
+const forwardLocomotionCycles = [
+  'A_Als_Walk_Forward',
+  'A_Als_Walk_Left_Forward',
+  'A_Als_Walk_Right_Forward',
+  'A_Als_Run_Forward',
+  'A_Als_Run_Left_Forward',
+  'A_Als_Run_Right_Forward',
+];
+let gaitMarkerNames = null;
+for (const clipName of forwardLocomotionCycles) {
+  const markers = syncMarkersByClip.get(clipName);
+  if (!markers) {
+    errs.push(`sync-marker sentinel clip missing: ${clipName}`);
+    continue;
+  }
+  if (markers.length < 2)
+    errs.push(`${clipName} has ${markers.length} sync markers, expected at least 2`);
+  const markerNames = [...new Set(markers.map((marker) => marker.name))].sort();
+  if (gaitMarkerNames === null) {
+    gaitMarkerNames = markerNames;
+  } else if (
+    markerNames.length !== gaitMarkerNames.length ||
+    markerNames.some((name, index) => name !== gaitMarkerNames[index])
+  ) {
+    errs.push(
+      `${clipName} sync marker names [${markerNames.join(', ')}] differ from gait family ` +
+      `[${gaitMarkerNames.join(', ')}]`);
+  }
+}
+
 const idle = anims.find((a) => /idle/i.test(a.getName()));
 if (!idle) errs.push('no /idle/i clip');
 const dur = Math.max(...(idle?.listSamplers() ?? []).map((s) => s.getInput().getMax([0])[0] ?? 0), 0);
@@ -174,6 +231,14 @@ console.log(`curated clips: ${anims.length}/${manifest.length} present`);
 console.log(`bindings: ${channelCount} channels target only expected SK_Als bones`);
 console.log(`root tracks: translation + rotation present in ${rootTrackCount}/${anims.length} clips`);
 console.log(`curves: ${curveCount} across ${[...curvesByClip.values()].filter((curves) => curves.length > 0).length}/${anims.length} clips; sentinel clips passed`);
+console.log(
+  `sync markers: ${syncMarkerCount} across ` +
+  `${[...syncMarkersByClip.values()].filter((markers) => markers.length > 0).length}/${anims.length} clips; ` +
+  `${forwardLocomotionCycles.length} forward walk/run cycles have >=2 non-decreasing markers ` +
+  `with consistent names [${gaitMarkerNames?.join(', ') ?? ''}]`);
+console.log(
+  `notifies: ${notifyCount} across ` +
+  `${[...notifiesByClip.values()].filter((notifies) => notifies.length > 0).length}/${anims.length} clips`);
 console.log(`idle duration: ${dur.toFixed(2)}s, pelvis@0: ${pelvisHeight?.toFixed(3)}m`);
 if (errs.length) { console.error('FAIL:\n  ' + errs.join('\n  ')); process.exit(1); }
 console.log('GLB validation passed');

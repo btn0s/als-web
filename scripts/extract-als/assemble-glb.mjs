@@ -98,6 +98,14 @@ const clips = dump.anims.map((a) => ({
     flags: curve.flags,
     keys: curve.keys.map(([t, v, interp]) => [compactFloat(t), compactFloat(v), interp]),
   })),
+  syncMarkers: (a.syncMarkers ?? []).map(({ name, time }) => ({
+    name,
+    time: compactFloat(time),
+  })),
+  notifies: (a.notifies ?? []).map(({ name, time }) => ({
+    name,
+    time: compactFloat(time),
+  })),
 }));
 
 // ---------- build document ----------
@@ -385,9 +393,15 @@ const boneIndex = Object.fromEntries(bones.map((b, i) => [b.name, i]));
 for (const clip of clips) {
   // Runtime contract: animation.extras.alsCurves is
   // [{ name, flags, keys: [[timeSeconds, value, ueInterpMode], ...] }].
+  // Alongside it, animation.extras.syncMarkers and animation.extras.notifies are
+  // [{ name, time }], where time is authored seconds in the UAnimSequence.
   // UE auto-cubic keys store zero tangents because the editor computes them; preserve the
   // authored interpolation enum, but consumers intentionally sample t/v linearly for now.
-  const anim = doc.createAnimation(clip.name).setExtras({ alsCurves: clip.curves });
+  const anim = doc.createAnimation(clip.name).setExtras({
+    alsCurves: clip.curves,
+    syncMarkers: clip.syncMarkers,
+    notifies: clip.notifies,
+  });
   const times = Float32Array.from({ length: clip.numKeys }, (_, i) => i / clip.fps);
   const timeAcc = doc.createAccessor().setType('SCALAR').setArray(times).setBuffer(buffer);
   for (const t of clip.tracks) {
