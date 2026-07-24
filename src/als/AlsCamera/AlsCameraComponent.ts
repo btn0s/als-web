@@ -155,6 +155,20 @@ export interface AlsCameraComponentInput {
   readonly trace: AlsCameraTrace
 }
 
+export interface AlsThirdPersonPivotLocationInput {
+  /** `Character->GetMesh()->GetAttachParent()` validity. */
+  readonly meshHasAttachParent: boolean
+  /** `FirstPivotSocketName` location from the evaluated character pose, in metres. */
+  readonly firstPivotSocketLocation: Readonly<AlsVector3>
+  /** `SecondPivotSocketName` location from the evaluated character pose, in metres. */
+  readonly secondPivotSocketLocation: Readonly<AlsVector3>
+  /** Character root-component location, in metres. */
+  readonly characterRootComponentLocation: Readonly<AlsVector3>
+  /** Character root-component bounds box extent, in metres. */
+  readonly characterRootBoundsBoxExtent: Readonly<AlsVector3>
+  readonly settings?: AlsThirdPersonCameraSettings
+}
+
 export interface AlsCameraComponentTick {
   readonly state: AlsCameraComponentState
   readonly lagAllowed: boolean
@@ -255,6 +269,34 @@ function isRelevant(weight: number): boolean {
 
 function isFullWeight(weight: number): boolean {
   return weight >= 1 - ZERO_ANIMATION_WEIGHT_THRESHOLD
+}
+
+/**
+ * Exact `UAlsCameraComponent::GetThirdPersonPivotLocation()`.
+ *
+ * The normal path is the midpoint of the evaluated first and second pivot sockets (`root` and
+ * `head` in `CS_Als_Default`). A detached mesh can leave its root bone fixed, so ALS substitutes
+ * the capsule bottom only when the configured first pivot is the root bone.
+ */
+export function getThirdPersonPivotLocation(
+  input: AlsThirdPersonPivotLocationInput,
+): AlsVector3 {
+  const settings = input.settings ?? ALS_CAMERA_SETTINGS.thirdPerson
+  const firstPivotLocation =
+    !input.meshHasAttachParent
+    && settings.firstPivotSocketName === 'root'
+      ? vector(
+          input.characterRootComponentLocation.x,
+          input.characterRootComponentLocation.y,
+          input.characterRootComponentLocation.z
+            - input.characterRootBoundsBoxExtent.z,
+        )
+      : input.firstPivotSocketLocation
+
+  return multiply(
+    add(firstPivotLocation, input.secondPivotSocketLocation),
+    0.5,
+  )
 }
 
 function normalizeQuaternion(

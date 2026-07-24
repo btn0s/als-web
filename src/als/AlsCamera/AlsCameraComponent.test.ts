@@ -13,6 +13,7 @@ import {
   calculatePivotLagLocation,
   calculatePivotOffset,
   createAlsCameraComponentState,
+  getThirdPersonPivotLocation,
   quaternionToCameraRotation,
   refreshCameraDeltaTime,
   rotateCameraVector,
@@ -52,6 +53,55 @@ function cameraSettings(
 }
 
 describe('UAlsCameraComponent pure math', () => {
+  it('uses ALS root+head midpoint framing directly from the evaluated pose', () => {
+    const standing = getThirdPersonPivotLocation({
+      meshHasAttachParent: true,
+      firstPivotSocketLocation: { x: 2, y: -1, z: 0.1 },
+      secondPivotSocketLocation: { x: 2.2, y: -0.8, z: 1.9 },
+      characterRootComponentLocation: { x: 99, y: 99, z: 99 },
+      characterRootBoundsBoxExtent: { x: 1, y: 1, z: 1 },
+    })
+    expectVector(standing, { x: 2.1, y: -0.9, z: 1 })
+
+    const crouching = getThirdPersonPivotLocation({
+      meshHasAttachParent: true,
+      firstPivotSocketLocation: { x: 2, y: -1, z: 0.1 },
+      secondPivotSocketLocation: { x: 2.2, y: -0.8, z: 1.3 },
+      characterRootComponentLocation: { x: 99, y: 99, z: 99 },
+      characterRootBoundsBoxExtent: { x: 1, y: 1, z: 1 },
+    })
+    expectVector(crouching, { x: 2.1, y: -0.9, z: 0.7 })
+  })
+
+  it('uses the capsule bottom for a detached mesh with root as first pivot', () => {
+    const pivot = getThirdPersonPivotLocation({
+      meshHasAttachParent: false,
+      // ALS explicitly ignores this commonly stale detached-mesh root location.
+      firstPivotSocketLocation: { x: -100, y: -100, z: -100 },
+      secondPivotSocketLocation: { x: 4, y: 6, z: 2 },
+      characterRootComponentLocation: { x: 4, y: 6, z: 1 },
+      characterRootBoundsBoxExtent: { x: 0.3, y: 0.3, z: 0.9 },
+    })
+
+    expectVector(pivot, { x: 4, y: 6, z: 1.05 })
+  })
+
+  it('keeps a non-root configured first pivot on a detached mesh', () => {
+    const pivot = getThirdPersonPivotLocation({
+      meshHasAttachParent: false,
+      firstPivotSocketLocation: { x: 1, y: 2, z: 3 },
+      secondPivotSocketLocation: { x: 5, y: 6, z: 7 },
+      characterRootComponentLocation: { x: 50, y: 60, z: 70 },
+      characterRootBoundsBoxExtent: { x: 1, y: 1, z: 2 },
+      settings: {
+        ...ALS_CAMERA_SETTINGS.thirdPerson,
+        firstPivotSocketName: 'pelvis',
+      },
+    })
+
+    expectVector(pivot, { x: 3, y: 4, z: 5 })
+  })
+
   it('ports FRotator exponential decay and the +175 degree counterclockwise bias', () => {
     const decayed = calculateCameraRotation(
       { pitch: 10, yaw: 170, roll: -30 },
