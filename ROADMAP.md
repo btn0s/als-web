@@ -63,13 +63,14 @@ Idle/Walking/Running and the Sprinting-arms region rule rides Running — verifi
       If CUE4Parse lags the plugin's engine target (4.17 → UE 5.7), pin an older plugin release
       (e.g. 4.15 → UE 5.5) — the content is identical for our purposes.
 - [x] **ALS Refactored's complete referenced animation set** extracted — the union of every
-      direct ABP sequence and every authored BlendSpace sample/preview base is 109 clips, pinned
-      by `clips.manifest` and the cross-oracle validator
+      direct ABP sequence, authored BlendSpace sample/preview base, and animation-instance
+      settings transition reference is 117 clips, pinned by `clips.manifest` and the cross-oracle
+      validator
       *(2026-07-23; licensing settled: the repo's
       blanket MIT names the full author lineage — Sixze, Longmire, Yanıkoğlu — and covers its
       assets; upstream notice ships as `LICENSE-ALS-Refactored.md` beside ported assets)*
-- [x] **Animation metadata extracted** — 333 float curves across 74/109 clips, 60 authored sync
-      markers across 30 clips, and 150 notifies across 57 clips as glTF animation extras
+- [x] **Animation metadata extracted** — 361 float curves across 82/117 clips, 60 authored sync
+      markers across 30 clips, and 162 notifies across 65 clips as glTF animation extras
       *(2026-07-23)*. (Architecture review: ALS's runtime is
       curve-driven — `AlsConstants.h` names them all: `FootLeft/RightLock`/`Ik`, `RotationYawSpeed`
       (turn-in-place timing), `AllowTransitions`, `SprintBlock`, `Pose*`, per-region `Layer*`
@@ -87,7 +88,7 @@ Idle/Walking/Running and the Sprinting-arms region rule rides Running — verifi
       standalone port builds UE4-mannequin-native (SK_Als), period. The UE5 retarget/re-rig
       decision and any non-ALS clip packs leave this repo — they belong to downstream forks
 - [x] `scripts/build-player-anims.mjs` equivalent — `run.sh` + `clips.manifest` + assembler IS
-      the curated merge (single GLB, mesh + 109 clips + curves/markers/notifies, root tracks
+      the curated merge (single GLB, mesh + 117 clips + curves/markers/notifies, root tracks
       preserved) *(2026-07-23)*
 - [x] Clip audit doc-comment: `clips.manifest`, one line per clip keyed to M3 items *(2026-07-23)*
 
@@ -111,8 +112,8 @@ Idle/Walking/Running and the Sprinting-arms region rule rides Running — verifi
       exact key, modifier order, and trigger metadata; the live bridge consumes that contract
       for the implemented controller actions
 
-**Exit (revised):** one curated GLB (met 2026-07-23: 10,038,916 bytes / 9.57 MiB, real mesh,
-109 clips, 333 curves, 60 markers, 150 notifies; every clip binds by bone name) plus the ABP,
+**Exit (revised):** one curated GLB (met 2026-07-23: 11,167,356 bytes / 10.65 MiB, real mesh,
+117 clips, 361 curves, 60 markers, 162 notifies; every clip binds by bone name) plus the ABP,
 BlendSpace, movement-settings, and input-mapping dumps alongside it.
 
 ---
@@ -139,7 +140,7 @@ second (flagged) — never from another project's implementation:
 - [x] Stances: Standing / Crouching with authored StandToCrouch/CrouchToStand transitions
       following their own PoseCrouching curves *(2026-07-23; non-ALS stance additions stay in
       downstream forks)*
-- [ ] **Parity harness (added 2026-07-23 — before more systems build on unverified semantics)**:
+- [x] **Parity harness (landed 2026-07-23 — before more systems build on unverified semantics)**:
       two oracles the implementation didn't author. (a) C++ DIFFERENTIAL: test-only, line-mirroring
       transliteration of AlsAnimationInstance's Refresh* functions; property sweeps assert our
       systems match within epsilon — catches math/constant/interp drift. (b) CONTENT-DERIVED POSE
