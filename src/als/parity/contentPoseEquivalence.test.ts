@@ -14,6 +14,7 @@ import type { LocalPoseBuffer } from '../../engine/poseBuffer'
 import { createRigDefinition, findBoneIndex } from '../../engine/rig'
 import {
   resolveRiflePoseBankTime,
+  RIFLE_OVERLAY_CLIPS,
   RIFLE_OVERLAY_REGION_POLICY,
   sampleRifleOverlayPolicyWeight,
 } from '../AnimGraph/overlayMode'
@@ -50,7 +51,275 @@ interface LoadedAlsGltf {
   scene: THREE.Group
 }
 
+interface AbpSequenceReference {
+  readonly ObjectName: string
+  readonly ObjectPath: string
+}
+
+interface AbpBranchFilter {
+  readonly BoneName: string
+  readonly BlendDepth: number
+}
+
+interface AbpNode {
+  readonly compiledIndex: number | null
+  readonly property: string
+  readonly type: string
+  readonly parameters: {
+    readonly Name?: string
+    readonly CachePoseName?: string
+    readonly Sequence?: AbpSequenceReference
+    readonly ExplicitTime?: number
+    readonly bTeleportToExplicitTime?: boolean
+    readonly ReinitializationBehavior?: string
+    readonly LayerSetup?: readonly {
+      readonly BranchFilters: readonly AbpBranchFilter[]
+    }[]
+  }
+}
+
+interface AbpPoseLink {
+  readonly sourceNodeIndex: number
+  readonly targetNodeIndex: number
+  readonly targetInput: string
+  readonly status: string
+}
+
+interface AbpAsset {
+  readonly nodes: readonly AbpNode[]
+  readonly wiring: {
+    readonly poseLinks: readonly AbpPoseLink[]
+  }
+}
+
+interface AbpGraph {
+  readonly assets: Readonly<Record<string, AbpAsset>>
+}
+
+interface GraphSequenceSelection {
+  readonly clipName: string
+  readonly explicitTime: number
+  readonly node: AbpNode
+}
+
+const abpGraph = JSON.parse(readFileSync(
+  new URL('../../../scripts/extract-als/abp-graph.json', import.meta.url),
+  'utf8',
+)) as AbpGraph
+
 let gltf: LoadedAlsGltf
+
+function abpAsset(name: string) {
+  const asset = abpGraph.assets[name]
+  if (!asset) throw new Error(`Missing ALS ABP content-oracle asset "${name}"`)
+  return asset
+}
+
+function abpNode(asset: AbpAsset, property: string) {
+  const node = asset.nodes.find((candidate) => candidate.property === property)
+  if (!node) throw new Error(`Missing ALS ABP node "${property}"`)
+  return node
+}
+
+function abpSourceNode(
+  asset: AbpAsset,
+  targetProperty: string,
+  targetInput: string,
+) {
+  const target = abpNode(asset, targetProperty)
+  if (target.compiledIndex === null) {
+    throw new Error(`ALS ABP target "${targetProperty}" has no compiled index`)
+  }
+  const links = asset.wiring.poseLinks.filter((link) =>
+    link.targetNodeIndex === target.compiledIndex
+    && link.targetInput === targetInput
+    && link.status === 'recovered',
+  )
+  if (links.length !== 1) {
+    throw new Error(
+      `Expected one recovered ALS ABP link into ${targetProperty}.${targetInput}, got ${links.length}`,
+    )
+  }
+  const source = asset.nodes.find(
+    (candidate) => candidate.compiledIndex === links[0].sourceNodeIndex,
+  )
+  if (!source) {
+    throw new Error(
+      `Missing ALS ABP source index ${links[0].sourceNodeIndex} for ${targetProperty}.${targetInput}`,
+    )
+  }
+  return source
+}
+
+function abpAnimationName(reference: AbpSequenceReference) {
+  const match = /^AnimSequence'([^']+)'$/.exec(reference.ObjectName)
+  if (!match) {
+    throw new Error(`Unexpected ALS animation object name "${reference.ObjectName}"`)
+  }
+  return match[1]
+}
+
+function abpSequenceName(node: AbpNode) {
+  const sequence = node.parameters.Sequence
+  if (!sequence) throw new Error(`ALS ABP node "${node.property}" has no sequence`)
+  return abpAnimationName(sequence)
+}
+
+function abpSequenceSelection(node: AbpNode): GraphSequenceSelection {
+  const { Sequence: sequence, ExplicitTime: explicitTime } = node.parameters
+  if (!sequence || typeof explicitTime !== 'number') {
+    throw new Error(`ALS ABP node "${node.property}" is not a sequence evaluator`)
+  }
+  return {
+    clipName: abpAnimationName(sequence),
+    explicitTime,
+    node,
+  }
+}
+
+function abpUpstreamNodeIndices(asset: AbpAsset, target: AbpNode) {
+  if (target.compiledIndex === null) {
+    throw new Error(`ALS ABP target "${target.property}" has no compiled index`)
+  }
+  const upstream = new Set<number>()
+  const pending = [target.compiledIndex]
+  while (pending.length > 0) {
+    const targetNodeIndex = pending.pop()!
+    if (upstream.has(targetNodeIndex)) continue
+    upstream.add(targetNodeIndex)
+    for (const link of asset.wiring.poseLinks) {
+      if (
+        link.targetNodeIndex === targetNodeIndex
+        && link.sourceNodeIndex >= 0
+        && link.status === 'recovered'
+      ) {
+        pending.push(link.sourceNodeIndex)
+      }
+    }
+  }
+  return upstream
+}
+
+function abpStateResult(asset: AbpAsset, stateName: string) {
+  const matches = asset.nodes.filter((node) =>
+    node.type === 'FAnimNode_StateResult'
+    && node.parameters.Name === stateName,
+  )
+  if (matches.length !== 1) {
+    throw new Error(
+      `Expected one ALS ABP state result "${stateName}", got ${matches.length}`,
+    )
+  }
+  return matches[0]
+}
+
+function abpStateSequenceSelection(asset: AbpAsset, stateName: string) {
+  const upstream = abpUpstreamNodeIndices(asset, abpStateResult(asset, stateName))
+  const sequences = asset.nodes
+    .filter((node) =>
+      node.compiledIndex !== null
+      && upstream.has(node.compiledIndex)
+      && node.parameters.Sequence,
+    )
+    .map(abpSequenceSelection)
+  if (sequences.length !== 1) {
+    throw new Error(
+      `Expected one ALS ABP sequence upstream of "${stateName}", got ${sequences.length}`,
+    )
+  }
+  return sequences[0]
+}
+
+function abpBranchFiltersForCachedPose(asset: AbpAsset, cachePoseName: string) {
+  const matches = asset.wiring.poseLinks.flatMap((link) => {
+    if (!link.targetInput.startsWith('BlendPoses[')) return []
+    const source = asset.nodes.find(
+      (node) => node.compiledIndex === link.sourceNodeIndex,
+    )
+    const target = asset.nodes.find(
+      (node) => node.compiledIndex === link.targetNodeIndex,
+    )
+    if (source?.parameters.CachePoseName !== cachePoseName) return []
+    if (target?.type !== 'FAnimNode_LayeredBoneBlend') return []
+    const layerIndex = Number(/\[(\d+)\]/.exec(link.targetInput)?.[1])
+    const filters = target.parameters.LayerSetup?.[layerIndex]?.BranchFilters
+    return filters ? [filters] : []
+  })
+  if (matches.length === 0) {
+    throw new Error(`No ALS branch filters consume cached pose "${cachePoseName}"`)
+  }
+  return matches
+}
+
+function abpHandBranchFilters(asset: AbpAsset) {
+  const node = asset.nodes.find((candidate) =>
+    candidate.type === 'FAnimNode_LayeredBoneBlend'
+    && candidate.parameters.LayerSetup?.some((layer) =>
+      layer.BranchFilters.some((filter) =>
+        filter.BoneName.includes('_to_ik_hand_gun'),
+      ),
+    ),
+  )
+  if (!node?.parameters.LayerSetup) {
+    throw new Error('Missing ALS hand/IK branch-filter node')
+  }
+  return node.parameters.LayerSetup.map((layer) => layer.BranchFilters)
+}
+
+const rifleGraph = abpAsset('AB_Als_Rifle')
+const rifleGraphSelections = {
+  Standing: abpSequenceSelection(abpSourceNode(
+    rifleGraph,
+    'AnimGraphNode_TwoWayBlend_1',
+    'A',
+  )),
+  Crouching: abpSequenceSelection(abpSourceNode(
+    rifleGraph,
+    'AnimGraphNode_MultiWayBlend_3',
+    'Poses[1]',
+  )),
+} as const
+
+const rifleGraphSourceClips = {
+  poses: rifleGraphSelections.Standing.clipName,
+  runArms: abpSequenceName(abpSourceNode(
+    rifleGraph,
+    'AnimGraphNode_MultiWayBlend',
+    'Poses[0]',
+  )),
+  sprintArms: abpSequenceName(abpSourceNode(
+    rifleGraph,
+    'AnimGraphNode_TwoWayBlend_2',
+    'A',
+  )),
+} as const
+
+const graphStanceBaseSelections = {
+  Standing: abpStateSequenceSelection(abpAsset('AB_Als_Standing'), 'Idle'),
+  Crouching: abpStateSequenceSelection(abpAsset('AB_Als_Crouching'), 'Idle'),
+} as const
+
+const graphStanceBaseClips = {
+  Standing: graphStanceBaseSelections.Standing.clipName,
+  Crouching: graphStanceBaseSelections.Crouching.clipName,
+} as const
+
+const RIFLE_GRAPH_CASES = [
+  {
+    stance: 'Standing',
+    stateName: 'Relaxed',
+    crouchingAmount: 0,
+    baseClipName: graphStanceBaseClips.Standing,
+    selection: rifleGraphSelections.Standing,
+  },
+  {
+    stance: 'Crouching',
+    stateName: 'Ready',
+    crouchingAmount: 1,
+    baseClipName: graphStanceBaseClips.Crouching,
+    selection: rifleGraphSelections.Crouching,
+  },
+] as const
 
 function loadAlsGltf() {
   const bytes = readFileSync(
@@ -87,7 +356,7 @@ function rifleEntries(
   rig: ReturnType<typeof createRigDefinition>,
   time: number,
 ): EvaluatorLayerEntry[] {
-  const animation = clip('A_Als_Rifle_Poses')
+  const animation = clip(RIFLE_OVERLAY_CLIPS.poses)
   const sampler = compileClipSampler(animation, rig)
   const curves = compileClipCurveSamplers(animation)
   const source = { curves, time, weight: 1 }
@@ -143,12 +412,130 @@ beforeAll(async () => {
   gltf = await loadAlsGltf()
 })
 
+describe('ALS ABP content oracle: runtime-selected Rifle facts', () => {
+  it.each(RIFLE_GRAPH_CASES)(
+    '$stance pose-bank selection traces to the $stateName state graph',
+    ({ stateName, crouchingAmount, selection }) => {
+      const upstream = abpUpstreamNodeIndices(
+        rifleGraph,
+        abpStateResult(rifleGraph, stateName),
+      )
+
+      expect(selection.node.type).toBe('FAnimNode_SequenceEvaluator')
+      expect(selection.node.compiledIndex).not.toBeNull()
+      expect(upstream.has(selection.node.compiledIndex!)).toBe(true)
+      expect(selection.node.parameters.bTeleportToExplicitTime).toBe(true)
+      expect(selection.node.parameters.ReinitializationBehavior)
+        .toBe('ESequenceEvalReinit::ExplicitTime')
+      expect(resolveRiflePoseBankTime(crouchingAmount))
+        .toBeCloseTo(selection.explicitTime, 6)
+    },
+  )
+
+  it('interpolates between graph-authored Standing and Crouching ExplicitTimes', () => {
+    const expectedMidpoint = (
+      rifleGraphSelections.Standing.explicitTime
+      + rifleGraphSelections.Crouching.explicitTime
+    ) * 0.5
+    expect(resolveRiflePoseBankTime(0.5)).toBeCloseTo(expectedMidpoint, 6)
+  })
+
+  it('selects pose, run-arm, and sprint-arm clips from the Rifle graph wiring', () => {
+    expect(rifleGraphSelections.Crouching.clipName)
+      .toBe(rifleGraphSelections.Standing.clipName)
+    expect(RIFLE_OVERLAY_CLIPS).toEqual(rifleGraphSourceClips)
+    for (const clipName of Object.values(rifleGraphSourceClips)) {
+      expect(() => clip(clipName)).not.toThrow()
+    }
+  })
+
+  it.each([
+    ['Standing', graphStanceBaseSelections.Standing],
+    ['Crouching', graphStanceBaseSelections.Crouching],
+  ] as const)(
+    '%s idle base clip is the sole sequence upstream of its ABP state result',
+    (_, selection) => {
+      expect(selection.node.type).toBe('FAnimNode_SequenceEvaluator')
+      expect(selection.node.parameters.bTeleportToExplicitTime).toBe(true)
+      expect(() => clip(selection.clipName)).not.toThrow()
+    },
+  )
+
+  it('maps AB_Als_Layering branch roots onto the runtime region predicates', () => {
+    const layering = abpAsset('AB_Als_Layering')
+    const policyRegions = new Set(
+      RIFLE_OVERLAY_REGION_POLICY.map((policy) => policy.region),
+    )
+
+    for (const filters of abpBranchFiltersForCachedPose(layering, 'Pelvis')) {
+      const included = filters.filter((filter) => filter.BlendDepth >= 0)
+      const excluded = filters.filter((filter) => filter.BlendDepth < 0)
+      expect(included.length).toBeGreaterThan(0)
+      expect(excluded.length).toBeGreaterThan(0)
+      for (const filter of included) {
+        expect(REGION_PREDICATES.pelvis(filter.BoneName), filter.BoneName).toBe(true)
+      }
+      for (const filter of excluded) {
+        expect(REGION_PREDICATES.pelvis(filter.BoneName), filter.BoneName).toBe(false)
+      }
+    }
+
+    for (const filters of abpBranchFiltersForCachedPose(layering, 'Spine')) {
+      for (const filter of filters) {
+        expect(REGION_PREDICATES.spine(filter.BoneName), filter.BoneName).toBe(true)
+      }
+    }
+    for (const filters of abpBranchFiltersForCachedPose(layering, 'Head')) {
+      for (const filter of filters) {
+        expect(REGION_PREDICATES.head(filter.BoneName), filter.BoneName).toBe(true)
+      }
+    }
+    for (const filters of abpBranchFiltersForCachedPose(layering, 'Arm Left')) {
+      for (const filter of filters) {
+        expect(REGION_PREDICATES.armLeft(filter.BoneName), filter.BoneName).toBe(true)
+      }
+    }
+    for (const filters of abpBranchFiltersForCachedPose(layering, 'Arm Right')) {
+      for (const filter of filters) {
+        expect(REGION_PREDICATES.armRight(filter.BoneName), filter.BoneName).toBe(true)
+      }
+    }
+
+    for (const filters of abpHandBranchFilters(layering)) {
+      const side = filters.some((filter) => filter.BoneName.includes('hand_l'))
+        ? 'Left'
+        : 'Right'
+      const predicate = side === 'Left'
+        ? REGION_PREDICATES.handLeft
+        : REGION_PREDICATES.handRight
+      const deformingBones = filters.filter(
+        (filter) => !filter.BoneName.startsWith('VB '),
+      )
+      const ikGunVirtualBones = filters.filter(
+        (filter) => filter.BoneName.includes('_to_ik_hand_gun'),
+      )
+
+      expect(deformingBones.length).toBeGreaterThan(0)
+      for (const filter of deformingBones) {
+        expect(predicate(filter.BoneName), filter.BoneName).toBe(true)
+      }
+      expect(ikGunVirtualBones).toHaveLength(1)
+      expect(policyRegions.has(side === 'Left' ? 'ikHandLeft' : 'ikHandRight'))
+        .toBe(true)
+    }
+  })
+})
+
 describe('ALS content oracle: crouch under Rifle', () => {
-  it('traces pelvis and both thigh locals to A_Als_Crouch_Pose', () => {
+  it('traces pelvis and both thigh locals to the crouching ABP idle clip', () => {
     const rig = createRigDefinition(gltf.scene)
-    const crouchSampler = compileClipSampler(clip('A_Als_Crouch_Pose'), rig)
-    const rifleSampler = compileClipSampler(clip('A_Als_Rifle_Poses'), rig)
-    const bankTime = resolveRiflePoseBankTime(1)
+    const selection = rifleGraphSelections.Crouching
+    const crouchSampler = compileClipSampler(
+      clip(graphStanceBaseClips.Crouching),
+      rig,
+    )
+    const rifleSampler = compileClipSampler(clip(selection.clipName), rig)
+    const runtimeBankTime = resolveRiflePoseBankTime(1)
     const crouchPose = sampleClip(
       crouchSampler,
       rig,
@@ -159,13 +546,13 @@ describe('ALS content oracle: crouch under Rifle', () => {
     const riflePose = sampleClip(
       rifleSampler,
       rig,
-      bankTime,
+      selection.explicitTime,
       createPoseBuffer(rig.boneCount),
       false,
     )
     const result = evaluatePose(createPoseEvaluator(rig), {
       base: [{ sampler: crouchSampler, time: 0, weight: 1, loop: false }],
-      overlays: rifleEntries(rig, bankTime),
+      overlays: rifleEntries(rig, runtimeBankTime),
     })
 
     for (const boneName of ['pelvis', 'thigh_l', 'thigh_r']) {
@@ -175,7 +562,7 @@ describe('ALS content oracle: crouch under Rifle', () => {
       const wrongSource = transformComponents(riflePose, bone)
       expect(
         maximumComponentDelta(actual, expected),
-        `${boneName} did not trace to A_Als_Crouch_Pose`,
+        `${boneName} did not trace to ${graphStanceBaseClips.Crouching}`,
       ).toBeLessThanOrEqual(POSE_EPSILON)
       expect(maximumComponentDelta(actual, wrongSource), boneName)
         .toBeGreaterThan(0.01)
@@ -184,19 +571,17 @@ describe('ALS content oracle: crouch under Rifle', () => {
 })
 
 describe('ALS content oracle: Rifle ik_hand_gun bank trace', () => {
-  it.each([
-    ['Standing', 'A_Als_Idle', resolveRiflePoseBankTime(0)],
-    ['Crouching', 'A_Als_Crouch_Pose', resolveRiflePoseBankTime(1)],
-  ])(
-    '%s final ik_hand_gun local transform traces exactly to A_Als_Rifle_Poses at %ss',
-    (_, baseClipName, bankTime) => {
+  it.each(RIFLE_GRAPH_CASES)(
+    '$stance final ik_hand_gun local transform traces to the selected ABP evaluator',
+    ({ baseClipName, crouchingAmount, selection }) => {
       const rig = createRigDefinition(gltf.scene)
       const baseSampler = compileClipSampler(clip(baseClipName), rig)
-      const rifleSampler = compileClipSampler(clip('A_Als_Rifle_Poses'), rig)
+      const rifleSampler = compileClipSampler(clip(selection.clipName), rig)
+      const runtimeBankTime = resolveRiflePoseBankTime(crouchingAmount)
       const riflePose = sampleClip(
         rifleSampler,
         rig,
-        bankTime,
+        selection.explicitTime,
         createPoseBuffer(rig.boneCount),
         false,
       )
@@ -209,7 +594,7 @@ describe('ALS content oracle: Rifle ik_hand_gun bank trace', () => {
       )
       const result = evaluatePose(createPoseEvaluator(rig), {
         base: [{ sampler: baseSampler, time: 0, weight: 1, loop: false }],
-        overlays: rifleEntries(rig, bankTime),
+        overlays: rifleEntries(rig, runtimeBankTime),
       })
       const bone = findBoneIndex(rig, 'ik_hand_gun')
       const actual = transformComponents(result.pose, bone)
