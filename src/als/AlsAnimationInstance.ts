@@ -128,9 +128,10 @@ import {
   ALS_HIPS_DIRECTIONS,
   ALS_GROUNDED_DIRECTION_PLAYER,
   createGroundedLocomotionGraph,
-  evaluateGroundedLocomotionGraph,
+  readGroundedLocomotionGraph,
   refreshMovementDirection,
   refreshStandingMovement,
+  updateGroundedLocomotionGraphFromStateWeights,
 } from './AnimGraph/groundedLocomotion'
 import type {
   AlsGroundedDirectionTransition,
@@ -4907,12 +4908,20 @@ export function createAlsAnimationInstance(gltf: {
         standingGraphRuntime.standing.stateWeights.Move
         + standingGraphRuntime.standing.stateWeights.Stop
       )
+    updateGroundedLocomotionGraphFromStateWeights(
+      groundedLocomotionGraph,
+      standingGraphRuntime.direction.stateWeights,
+      velocityBlend,
+      standingMovement,
+      Math.max(0, delta),
+      standingMovementSubtreeWeight,
+    )
     if (standingGraphRuntime.movementDetails.relevant) {
       for (const hipsDirection of ALS_HIPS_DIRECTIONS) {
         const directionStateWeight =
           standingGraphRuntime.direction.stateWeights[hipsDirection]
         if (directionStateWeight <= 0) continue
-        const samples = evaluateGroundedLocomotionGraph(
+        const samples = readGroundedLocomotionGraph(
           groundedLocomotionGraph,
           hipsDirection,
           velocityBlend,
@@ -5277,7 +5286,7 @@ export function createAlsAnimationInstance(gltf: {
       for (const hipsDirection of ALS_HIPS_DIRECTIONS) {
         standingMovementPoseSources.length = 0
         standingMovementPoseWeights.length = 0
-        const samples = evaluateGroundedLocomotionGraph(
+        const samples = readGroundedLocomotionGraph(
           groundedLocomotionGraph,
           hipsDirection,
           velocityBlend,

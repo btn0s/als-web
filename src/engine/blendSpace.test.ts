@@ -6,6 +6,8 @@ import {
   compileBlendSpace,
   createBlendSpaceEvaluator,
   evaluateBlendSpace,
+  resetBlendSpaceEvaluator,
+  updateBlendSpaceEvaluator,
 } from './blendSpace'
 import type {
   AuthoredBlendSpace,
@@ -255,6 +257,153 @@ describe('ALS authored BlendSpaces', () => {
     expect(weights).not.toEqual(expectedWalkRunTriangleWeights(0.25, 0.25))
   })
 
+  it('compiles the six authored WalkRun FIR interpolation settings verbatim', () => {
+    const interpolationByAsset = Object.fromEntries(
+      Object.entries(extracted.blendSpaces).map(([name, authored]) => [
+        name,
+        compileBlendSpace(authored).axisInterpolation.map((parameter) => ({
+          time: parameter.interpolationTime,
+          type: parameter.interpolationType,
+        })),
+      ]),
+    )
+    expect(interpolationByAsset).toEqual({
+      BS_Als_Air_Lean: [
+        { time: 0, type: 'none' },
+        { time: 0, type: 'none' },
+      ],
+      BS_Als_Lean: [
+        { time: 0, type: 'none' },
+        { time: 0, type: 'none' },
+      ],
+      BS_Als_Look: [{ time: 0, type: 'none' }],
+      BS_Als_WalkRun_Backward: [
+        { time: 0.2, type: 'cubic' },
+        { time: 0.4, type: 'cubic' },
+      ],
+      BS_Als_WalkRun_Forward: [
+        { time: 0.2, type: 'cubic' },
+        { time: 0.4, type: 'cubic' },
+      ],
+      BS_Als_WalkRun_Left_Backward: [
+        { time: 0.2, type: 'cubic' },
+        { time: 0.4, type: 'cubic' },
+      ],
+      BS_Als_WalkRun_Left_Forward: [
+        { time: 0.2, type: 'cubic' },
+        { time: 0.4, type: 'cubic' },
+      ],
+      BS_Als_WalkRun_Right_Backward: [
+        { time: 0.5848035, type: 'cubic' },
+        { time: 0.7368063, type: 'cubic' },
+      ],
+      BS_Als_WalkRun_Right_Forward: [
+        { time: 0.2, type: 'cubic' },
+        { time: 0.4, type: 'cubic' },
+      ],
+    })
+  })
+
+  it.each([
+    [
+      'BS_Als_WalkRun_Forward',
+      [0, 0.533333333333, 1, 0.466666666667],
+      [0, 0.503937007874, 0.693989071038, 0.540909090909],
+    ],
+    [
+      'BS_Als_WalkRun_Right_Backward',
+      [0, 0.501253133139, 0.675126905652, 0.511780107727],
+      [0, 0.500625782227, 0.670864819475, 0.505754475697],
+    ],
+  ] as const)(
+    '%s matches UE cubic trailing-window FIR vectors',
+    (name, expectedX, expectedY) => {
+      const evaluator = createBlendSpaceEvaluator(
+        compileBlendSpace(extracted.blendSpaces[name]),
+      )
+      const actualX: number[] = []
+      const actualY: number[] = []
+      for (const input of [0, 1, 1, 0]) {
+        updateBlendSpaceEvaluator(evaluator, input, input, 0.1)
+        actualX.push(evaluator.filteredInput[0])
+        actualY.push(evaluator.filteredInput[1])
+      }
+      expectWeightsClose(actualX, expectedX)
+      expectWeightsClose(actualY, expectedY)
+    },
+  )
+
+  it('does not advance filter time at or below UE KINDA_SMALL_NUMBER', () => {
+    const evaluator = createBlendSpaceEvaluator(compileBlendSpace(
+      extracted.blendSpaces.BS_Als_WalkRun_Forward,
+    ))
+    updateBlendSpaceEvaluator(evaluator, 0, 0, 0.1)
+    const priorTime = evaluator.axisFilters[0].currentTime
+
+    updateBlendSpaceEvaluator(evaluator, 1, 1, 1e-4)
+    expect(Array.from(evaluator.filteredInput)).toEqual([0, 0])
+    expect(evaluator.axisFilters[0].currentTime).toBe(priorTime)
+
+    updateBlendSpaceEvaluator(evaluator, 1, 1, 0)
+    expect(Array.from(evaluator.filteredInput)).toEqual([0, 0])
+    expect(evaluator.axisFilters[0].currentTime).toBe(priorTime)
+  })
+
+  it('matches UE long-step pruning for ordinary and RightBackward filters', () => {
+    const ordinary = createBlendSpaceEvaluator(compileBlendSpace(
+      extracted.blendSpaces.BS_Als_WalkRun_Forward,
+    ))
+    updateBlendSpaceEvaluator(ordinary, 0, 0, 0.5)
+    updateBlendSpaceEvaluator(ordinary, 1, 0, 0.5)
+    expect(ordinary.filteredInput[0]).toBe(1)
+
+    const rightBackward = createBlendSpaceEvaluator(compileBlendSpace(
+      extracted.blendSpaces.BS_Als_WalkRun_Right_Backward,
+    ))
+    updateBlendSpaceEvaluator(rightBackward, 0, 0, 0.5)
+    updateBlendSpaceEvaluator(rightBackward, 1, 0, 0.5)
+    expect(rightBackward.filteredInput[0]).toBeCloseTo(0.727272808067, 12)
+  })
+
+  it('keeps FIR history per player and resets only the requested player', () => {
+    const compiled = compileBlendSpace(
+      extracted.blendSpaces.BS_Als_WalkRun_Forward,
+    )
+    const first = createBlendSpaceEvaluator(compiled)
+    const second = createBlendSpaceEvaluator(compiled)
+
+    updateBlendSpaceEvaluator(first, 0, 0, 0.1)
+    updateBlendSpaceEvaluator(first, 1, 1, 0.1)
+    updateBlendSpaceEvaluator(second, 1, 1, 0.1)
+    expect(first.filteredInput[0]).toBeCloseTo(0.533333333333, 12)
+    expect(second.filteredInput[0]).toBe(1)
+
+    resetBlendSpaceEvaluator(first)
+    updateBlendSpaceEvaluator(first, 1, 1, 0.1)
+    expect(Array.from(first.filteredInput)).toEqual([1, 1])
+    expect(Array.from(second.filteredInput)).toEqual([1, 1])
+  })
+
+  it('filters in authored units before topology clamping', () => {
+    const authored = extracted.blendSpaces.BS_Als_WalkRun_Forward
+    const evaluator = createBlendSpaceEvaluator(compileBlendSpace(authored))
+    const result = updateBlendSpaceEvaluator(evaluator, -1, 2, 0.1)
+
+    expect(Array.from(evaluator.filteredInput)).toEqual([-1, 2])
+    expectWeightsClose(
+      denseWeights(result, authored.samples.length),
+      expectedWalkRunTriangleWeights(-1, 2),
+    )
+  })
+
+  it('rejects a negative filter delta', () => {
+    const evaluator = createBlendSpaceEvaluator(compileBlendSpace(
+      extracted.blendSpaces.BS_Als_WalkRun_Forward,
+    ))
+    expect(() => updateBlendSpaceEvaluator(evaluator, 0, 0, -0.1))
+      .toThrow(/non-negative/)
+  })
+
   it('reuses one stable, UE weight-ordered output buffer', () => {
     const authored = extracted.blendSpaces.BS_Als_WalkRun_Right_Backward
     const evaluator = createBlendSpaceEvaluator(compileBlendSpace(authored))
@@ -276,5 +425,47 @@ describe('ALS authored BlendSpaces', () => {
     expect(next.count).toBe(1)
     expect(next.sampleIndices[0]).toBe(0)
     expect(next.weights[0]).toBe(1)
+  })
+
+  it('drops source samples at UE ZERO_ANIMWEIGHT_THRESH before renormalizing', () => {
+    const authored = extracted.blendSpaces.BS_Als_WalkRun_Forward
+    const evaluator = createBlendSpaceEvaluator(compileBlendSpace(authored))
+
+    const below = evaluateBlendSpace(evaluator, 0.5e-5, 0)
+    expect(Array.from(below.sampleIndices.slice(0, below.count))).toEqual([1])
+    expect(below.weights[0]).toBe(1)
+
+    const above = evaluateBlendSpace(evaluator, 2e-5, 0)
+    expect(Array.from(above.sampleIndices.slice(0, above.count))).toEqual([1, 0])
+    expectWeightsClose(
+      Array.from(above.weights.slice(0, above.count)),
+      [1 - 2e-5, 2e-5],
+    )
+  })
+
+  it('reuses stable FIR history buffers across updates', () => {
+    const evaluator = createBlendSpaceEvaluator(compileBlendSpace(
+      extracted.blendSpaces.BS_Als_WalkRun_Right_Backward,
+    ))
+    const filteredInput = evaluator.filteredInput
+    const xValues = evaluator.axisFilters[0].values
+    const xTimes = evaluator.axisFilters[0].times
+    const yValues = evaluator.axisFilters[1].values
+    const yTimes = evaluator.axisFilters[1].times
+
+    for (let frame = 0; frame < 100; frame++) {
+      updateBlendSpaceEvaluator(
+        evaluator,
+        frame % 2,
+        (frame + 1) % 2,
+        1 / 60,
+      )
+    }
+
+    expect(evaluator.filteredInput).toBe(filteredInput)
+    expect(evaluator.axisFilters[0].values).toBe(xValues)
+    expect(evaluator.axisFilters[0].times).toBe(xTimes)
+    expect(evaluator.axisFilters[1].values).toBe(yValues)
+    expect(evaluator.axisFilters[1].times).toBe(yTimes)
   })
 })

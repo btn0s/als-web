@@ -21,13 +21,35 @@ export interface AuthoredBlendSpaceSample {
   readonly rateScale: number
 }
 
+export interface AuthoredBlendSpaceInterpolationParameter {
+  readonly index: number
+  readonly serialized: {
+    readonly InterpolationTime?: number
+    readonly InterpolationType?:
+      | 'BSIT_Linear'
+      | 'BSIT_Cubic'
+      | 'BSIT_EaseInOut'
+      | 'BSIT_Exponential'
+      | 'BSIT_SpringDamper'
+    readonly DampingRatio?: number
+    readonly MaxSpeed?: number
+  }
+}
+
 interface NumberedFields {
   readonly [key: string]: unknown
 }
 
 export interface AuthoredBlendSpace {
   readonly className: 'BlendSpace' | 'BlendSpace1D'
+  readonly loop?: boolean
+  /** Serialized UBlendSpace::AnimLength; maximum sample duration, not the dynamic player length. */
+  readonly animLengthSeconds?: number
+  /** Authored sample whose marker table represents this BlendSpace to an outer sync group. */
+  readonly sampleIndexWithMarkers?: number | null
   readonly axes: readonly AuthoredBlendSpaceAxis[]
+  readonly interpolationParameters?:
+    readonly AuthoredBlendSpaceInterpolationParameter[]
   readonly samples: readonly AuthoredBlendSpaceSample[]
   readonly topology: {
     readonly interpolateUsingGrid: boolean
@@ -67,6 +89,11 @@ interface CompiledGrid {
 
 type CompiledTopology = CompiledSegments | CompiledTriangles | CompiledGrid
 
+export interface CompiledBlendSpaceAxisInterpolation {
+  readonly interpolationTime: number
+  readonly interpolationType: 'none' | 'cubic'
+}
+
 export interface CompiledBlendSpace {
   readonly dimensions: 1 | 2
   readonly samples: readonly AuthoredBlendSpaceSample[]
@@ -74,6 +101,8 @@ export interface CompiledBlendSpace {
   readonly minY: number
   readonly inverseRangeX: number
   readonly inverseRangeY: number
+  readonly axisInterpolation:
+    readonly CompiledBlendSpaceAxisInterpolation[]
   readonly topology: CompiledTopology
 }
 
@@ -86,6 +115,10 @@ export interface BlendSpaceSampleWeights {
 
 export interface BlendSpaceEvaluator {
   readonly blendSpace: CompiledBlendSpace
+  /** Mutable UE FBlendFilter state owned by this player, never by the compiled asset. */
+  readonly axisFilters: readonly BlendSpaceAxisFilterState[]
+  /** Authored-axis units after filtering and before topology clamping. */
+  readonly filteredInput: Float64Array
   /** UE's FAnimNode_BlendSpacePlayer::CachedTriangulationIndex. */
   cachedTriangulationIndex: number
   /**
@@ -96,7 +129,17 @@ export interface BlendSpaceEvaluator {
 
 const GEOMETRY_EPSILON = 1e-10
 const UE_KINDA_SMALL_NUMBER = 1e-4
-const ZERO_ANIMWEIGHT_THRESH = 1e-5
+export const BLEND_SPACE_ZERO_ANIMWEIGHT_THRESH = 1e-5
+
+export interface BlendSpaceAxisFilterState {
+  readonly interpolation: CompiledBlendSpaceAxisInterpolation
+  readonly values: Float64Array
+  readonly times: Float64Array
+  start: number
+  count: number
+  currentTime: number
+  lastOutput: number
+}
 
 function numberedNumber(
   fields: NumberedFields,
@@ -318,6 +361,54 @@ function compileAxis(axis: AuthoredBlendSpaceAxis, label: string) {
   return { min, inverseRange: 1 / (max - min) }
 }
 
+function compileAxisInterpolation(
+  authored: AuthoredBlendSpace,
+  dimensions: 1 | 2,
+): readonly CompiledBlendSpaceAxisInterpolation[] {
+  const result: CompiledBlendSpaceAxisInterpolation[] = Array.from(
+    { length: dimensions },
+    () => ({ interpolationTime: 0, interpolationType: 'none' }),
+  )
+  const seen = new Set<number>()
+  for (const parameter of authored.interpolationParameters ?? []) {
+    if (
+      !Number.isInteger(parameter.index)
+      || parameter.index < 0
+      || parameter.index >= dimensions
+    ) {
+      throw new Error(
+        `BlendSpace interpolation axis ${parameter.index} is outside 0..${dimensions - 1}`,
+      )
+    }
+    if (seen.has(parameter.index)) {
+      throw new Error(
+        `BlendSpace interpolation axis ${parameter.index} is duplicated`,
+      )
+    }
+    seen.add(parameter.index)
+    const interpolationTime = parameter.serialized.InterpolationTime ?? 0
+    if (!Number.isFinite(interpolationTime) || interpolationTime < 0) {
+      throw new Error(
+        `BlendSpace interpolation axis ${parameter.index} has invalid time`,
+      )
+    }
+    if (interpolationTime === 0) continue
+    const interpolationType =
+      parameter.serialized.InterpolationType ?? 'BSIT_Linear'
+    if (interpolationType !== 'BSIT_Cubic') {
+      throw new Error(
+        `BlendSpace interpolation axis ${parameter.index} uses unsupported `
+        + interpolationType,
+      )
+    }
+    result[parameter.index] = {
+      interpolationTime,
+      interpolationType: 'cubic',
+    }
+  }
+  return result
+}
+
 /**
  * Compiles the serialized topology emitted by `dump-blend-spaces`; it never regenerates a
  * triangulation or infers neighbours from sample positions.
@@ -337,6 +428,7 @@ export function compileBlendSpace(
   const y = dimensions === 2
     ? compileAxis(authored.axes[1], 'Y')
     : { min: 0, inverseRange: 0 }
+  const axisInterpolation = compileAxisInterpolation(authored, dimensions)
   let topology: CompiledTopology
   if (authored.topology.interpolateUsingGrid) {
     if (dimensions !== 2) throw new Error('Grid interpolation requires a 2D BlendSpace')
@@ -360,6 +452,7 @@ export function compileBlendSpace(
     minY: y.min,
     inverseRangeX: x.inverseRange,
     inverseRangeY: y.inverseRange,
+    axisInterpolation,
     topology,
   }
 }
@@ -367,8 +460,26 @@ export function compileBlendSpace(
 export function createBlendSpaceEvaluator(
   blendSpace: CompiledBlendSpace,
 ): BlendSpaceEvaluator {
+  const axisFilters = blendSpace.axisInterpolation.map((interpolation) => {
+    const capacity = interpolation.interpolationType === 'cubic'
+      ? Math.ceil(
+          interpolation.interpolationTime / UE_KINDA_SMALL_NUMBER,
+        ) + 2
+      : 0
+    return {
+      interpolation,
+      values: new Float64Array(capacity),
+      times: new Float64Array(capacity),
+      start: 0,
+      count: 0,
+      currentTime: 0,
+      lastOutput: 0,
+    }
+  })
   return {
     blendSpace,
+    axisFilters,
+    filteredInput: new Float64Array(blendSpace.dimensions),
     cachedTriangulationIndex: -1,
     result: {
       sampleIndices: new Int32Array(blendSpace.samples.length),
@@ -376,6 +487,106 @@ export function createBlendSpaceEvaluator(
       count: 0,
     },
   }
+}
+
+export function resetBlendSpaceEvaluator(evaluator: BlendSpaceEvaluator) {
+  evaluator.filteredInput.fill(0)
+  evaluator.cachedTriangulationIndex = -1
+  evaluator.result.count = 0
+  for (const filter of evaluator.axisFilters) {
+    filter.start = 0
+    filter.count = 0
+    filter.currentTime = 0
+    filter.lastOutput = 0
+  }
+}
+
+function updateBlendSpaceAxisFilter(
+  filter: BlendSpaceAxisFilterState,
+  input: number,
+  deltaTime: number,
+) {
+  if (filter.interpolation.interpolationType === 'none') {
+    filter.lastOutput = input
+    return input
+  }
+
+  filter.currentTime += deltaTime
+  const capacity = filter.values.length
+  if (filter.count === capacity) {
+    // The preallocated bound assumes every accepted delta is strictly above KINDA_SMALL_NUMBER.
+    // Retaining the newest history is still deterministic if floating-point accumulation reaches
+    // that theoretical bound by one sample.
+    filter.start = (filter.start + 1) % capacity
+    filter.count--
+  }
+  const insertionIndex = (filter.start + filter.count) % capacity
+  filter.values[insertionIndex] = input
+  filter.times[insertionIndex] = filter.currentTime
+  filter.count++
+
+  const interpolationTime = filter.interpolation.interpolationTime
+  while (
+    filter.count > 0
+    && filter.currentTime - filter.times[filter.start] > interpolationTime
+  ) {
+    filter.start = (filter.start + 1) % capacity
+    filter.count--
+  }
+
+  let weightedValue = 0
+  let totalWeight = 0
+  for (let sample = 0; sample < filter.count; sample++) {
+    const index = (filter.start + sample) % capacity
+    const age = filter.currentTime - filter.times[index]
+    const normalizedAge = Math.min(Math.max(age / interpolationTime, 0), 1)
+    const weight = 1 - normalizedAge ** 3
+    weightedValue += filter.values[index] * weight
+    totalWeight += weight
+  }
+  filter.lastOutput = weightedValue / totalWeight
+  return filter.lastOutput
+}
+
+/**
+ * Advances this player's authored per-axis filters, then evaluates the existing immutable
+ * topology. Filter time advances only when the owning player is relevant and calls this function.
+ */
+export function updateBlendSpaceEvaluator(
+  evaluator: BlendSpaceEvaluator,
+  x: number,
+  y: number,
+  deltaTime: number,
+): BlendSpaceSampleWeights {
+  if (
+    !Number.isFinite(x)
+    || !Number.isFinite(y)
+    || !Number.isFinite(deltaTime)
+    || deltaTime < 0
+  ) {
+    throw new Error(
+      'BlendSpace update inputs must be finite and deltaTime must be non-negative',
+    )
+  }
+  if (deltaTime > UE_KINDA_SMALL_NUMBER) {
+    evaluator.filteredInput[0] = updateBlendSpaceAxisFilter(
+      evaluator.axisFilters[0],
+      x,
+      deltaTime,
+    )
+    if (evaluator.blendSpace.dimensions === 2) {
+      evaluator.filteredInput[1] = updateBlendSpaceAxisFilter(
+        evaluator.axisFilters[1],
+        y,
+        deltaTime,
+      )
+    }
+  }
+  return evaluateBlendSpace(
+    evaluator,
+    evaluator.filteredInput[0],
+    evaluator.filteredInput[1] ?? 0,
+  )
 }
 
 function addWeight(
@@ -405,8 +616,8 @@ function finishWeights(
   for (let index = 0; index < result.count; index++) {
     const weight = result.weights[index]
     const isRelevant = includeThresholdEquality
-      ? weight >= ZERO_ANIMWEIGHT_THRESH
-      : weight > ZERO_ANIMWEIGHT_THRESH
+      ? weight >= BLEND_SPACE_ZERO_ANIMWEIGHT_THRESH
+      : weight > BLEND_SPACE_ZERO_ANIMWEIGHT_THRESH
     if (!isRelevant) continue
     result.sampleIndices[retainedCount] = result.sampleIndices[index]
     result.weights[retainedCount] = weight

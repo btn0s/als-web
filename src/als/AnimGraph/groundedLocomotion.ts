@@ -1,7 +1,7 @@
 import {
   compileBlendSpace,
   createBlendSpaceEvaluator,
-  evaluateBlendSpace,
+  updateBlendSpaceEvaluator,
 } from '../../engine/blendSpace'
 import type {
   AuthoredBlendSpace,
@@ -68,6 +68,7 @@ export type AlsHipsDirection = (typeof ALS_HIPS_DIRECTIONS)[number]
 
 export const UE_SMALL_NUMBER = 1e-8
 export const UE_KINDA_SMALL_NUMBER = 1e-4
+export const ZERO_ANIMWEIGHT_THRESH = 1e-5
 
 export const ALS_ANIMATED_STANDING_SPEEDS_CM_PER_SECOND = {
   animatedWalkSpeed: 150,
@@ -995,6 +996,10 @@ export const ALS_GROUNDED_DIRECTION_MULTI_WAY_BLEND_TABLE: Readonly<
 
 export interface AlsGroundedLocomotionGraph {
   readonly evaluators: Readonly<Record<AlsHipsDirection, BlendSpaceEvaluator>>
+  /** Reused union of cached players relevant to the current state update. */
+  readonly relevantPlayers: Uint8Array
+  /** Full graph relevance of each logical FAnimNode_BlendSpacePlayer. */
+  readonly playerWeights: Float64Array
 }
 
 export function createGroundedLocomotionGraph(
@@ -1016,10 +1021,14 @@ export function createGroundedLocomotionGraph(
       RightForward: createEvaluator('RightForward'),
       RightBackward: createEvaluator('RightBackward'),
     },
+    relevantPlayers: new Uint8Array(ALS_HIPS_DIRECTIONS.length),
+    playerWeights: new Float64Array(ALS_HIPS_DIRECTIONS.length),
   }
 }
 
 export interface AlsGroundedLocomotionClipWeight {
+  /** Owning FAnimNode_BlendSpacePlayer; source clips never own Movement sync membership. */
+  readonly player: AlsHipsDirection
   readonly clip: string
   readonly objectPath?: string
   readonly weight: number
@@ -1027,7 +1036,7 @@ export interface AlsGroundedLocomotionClipWeight {
   readonly rateScale: number
 }
 
-function evaluateGroundedLocomotionPlayer(
+function readGroundedLocomotionPlayer(
   graph: AlsGroundedLocomotionGraph,
   player: AlsHipsDirection,
   standing: Pick<
@@ -1036,17 +1045,14 @@ function evaluateGroundedLocomotionPlayer(
   >,
 ) {
   const evaluator = graph.evaluators[player]
-  const weights = evaluateBlendSpace(
-    evaluator,
-    standing.strideBlendAmount,
-    standing.walkRunBlendAmount,
-  )
+  const weights = evaluator.result
   const samples = evaluator.blendSpace.samples
   const result: AlsGroundedLocomotionClipWeight[] = []
 
   for (let index = 0; index < weights.count; index++) {
     const sample = samples[weights.sampleIndices[index]]
     result.push({
+      player,
       clip: sample.animation.name,
       objectPath: sample.animation.objectPath,
       weight: weights.weights[index],
@@ -1058,11 +1064,150 @@ function evaluateGroundedLocomotionPlayer(
   return result
 }
 
+function markRelevantGroundedLocomotionPlayers(
+  graph: AlsGroundedLocomotionGraph,
+  hipsDirection: AlsHipsDirection,
+  stateWeight: number,
+  velocityBlend: AlsGroundedVelocityBlend,
+  relevanceWeight: number,
+) {
+  const effectiveStateWeight =
+    Math.max(0, stateWeight) * Math.max(0, relevanceWeight)
+  if (effectiveStateWeight <= ZERO_ANIMWEIGHT_THRESH) return
+
+  const rawAlphas = [
+    velocityBlend.forwardAmount,
+    velocityBlend.backwardAmount,
+    velocityBlend.leftAmount,
+    velocityBlend.rightAmount,
+  ] as const
+  const alphaTotal = rawAlphas.reduce(
+    (total, alpha) => total + Math.max(0, alpha),
+    0,
+  )
+  if (alphaTotal <= ZERO_ANIMWEIGHT_THRESH) return
+
+  const players = ALS_GROUNDED_DIRECTION_MULTI_WAY_BLEND_TABLE[hipsDirection]
+  for (let inputIndex = 0; inputIndex < players.length; inputIndex++) {
+    const inputAlpha = Math.max(0, rawAlphas[inputIndex]) / alphaTotal
+    if (
+      inputAlpha * effectiveStateWeight
+      <= ZERO_ANIMWEIGHT_THRESH
+    ) {
+      continue
+    }
+    const playerIndex = ALS_HIPS_DIRECTIONS.indexOf(players[inputIndex])
+    graph.relevantPlayers[playerIndex] = 1
+    // SaveCachedPose combines every caller and updates its child once using the maximum final
+    // blend weight. Summing shared paths would over-score reused BlendSpace players in Movement.
+    graph.playerWeights[playerIndex] = Math.max(
+      graph.playerWeights[playerIndex],
+      inputAlpha * effectiveStateWeight,
+    )
+  }
+}
+
+function resetGroundedLocomotionPlayerUpdate(
+  graph: AlsGroundedLocomotionGraph,
+) {
+  graph.relevantPlayers.fill(0)
+  graph.playerWeights.fill(0)
+}
+
+function advanceRelevantGroundedLocomotionPlayers(
+  graph: AlsGroundedLocomotionGraph,
+  standing: Pick<
+    AlsStandingMovementState,
+    'strideBlendAmount' | 'walkRunBlendAmount' | 'playRate'
+  >,
+  deltaTime: number,
+) {
+  for (let index = 0; index < ALS_HIPS_DIRECTIONS.length; index++) {
+    if (graph.relevantPlayers[index] === 0) continue
+    updateBlendSpaceEvaluator(
+      graph.evaluators[ALS_HIPS_DIRECTIONS[index]],
+      standing.strideBlendAmount,
+      standing.walkRunBlendAmount,
+      deltaTime,
+    )
+  }
+}
+
 /**
- * Evaluates AB_Als_Standing's state-local normalized MultiWayBlend. All six cached players keep
- * their sync clocks upstream; the current state chooses which four cached poses are combined.
+ * Updates all cached BlendSpace players visited by the retained Movement States pose.
+ *
+ * An interrupted UE state machine may retain more than two source states. SaveCachedPose visits
+ * the union of those callers and updates each logical player once at the maximum path weight.
  */
-export function evaluateGroundedLocomotionGraph(
+export function updateGroundedLocomotionGraphFromStateWeights(
+  graph: AlsGroundedLocomotionGraph,
+  stateWeights: Readonly<Record<AlsHipsDirection, number>>,
+  velocityBlend: AlsGroundedVelocityBlend,
+  standing: Pick<
+    AlsStandingMovementState,
+    'strideBlendAmount' | 'walkRunBlendAmount' | 'playRate'
+  >,
+  deltaTime: number,
+  relevanceWeight: number,
+) {
+  resetGroundedLocomotionPlayerUpdate(graph)
+  for (const hipsDirection of ALS_HIPS_DIRECTIONS) {
+    markRelevantGroundedLocomotionPlayers(
+      graph,
+      hipsDirection,
+      stateWeights[hipsDirection],
+      velocityBlend,
+      relevanceWeight,
+    )
+  }
+  advanceRelevantGroundedLocomotionPlayers(graph, standing, deltaTime)
+}
+
+/**
+ * Updates the union of cached BlendSpace players used by an optional two-state transition.
+ * Shared players advance exactly once even when both outgoing and incoming states read them.
+ */
+export function updateGroundedLocomotionGraph(
+  graph: AlsGroundedLocomotionGraph,
+  fromDirection: AlsHipsDirection,
+  fromStateWeight: number,
+  toDirection: AlsHipsDirection | null,
+  toStateWeight: number,
+  velocityBlend: AlsGroundedVelocityBlend,
+  standing: Pick<
+    AlsStandingMovementState,
+    'strideBlendAmount' | 'walkRunBlendAmount' | 'playRate'
+  >,
+  deltaTime: number,
+  relevanceWeight: number,
+) {
+  resetGroundedLocomotionPlayerUpdate(graph)
+  markRelevantGroundedLocomotionPlayers(
+    graph,
+    fromDirection,
+    fromStateWeight,
+    velocityBlend,
+    relevanceWeight,
+  )
+  if (toDirection !== null) {
+    markRelevantGroundedLocomotionPlayers(
+      graph,
+      toDirection,
+      toStateWeight,
+      velocityBlend,
+      relevanceWeight,
+    )
+  }
+
+  advanceRelevantGroundedLocomotionPlayers(graph, standing, deltaTime)
+}
+
+/**
+ * Reads AB_Als_Standing's state-local normalized MultiWayBlend from the cached player results.
+ * Call updateGroundedLocomotionGraph() once before reading one steady state or both sides of a
+ * transition.
+ */
+export function readGroundedLocomotionGraph(
   graph: AlsGroundedLocomotionGraph,
   hipsDirection: AlsHipsDirection,
   velocityBlend: AlsGroundedVelocityBlend,
@@ -1081,32 +1226,58 @@ export function evaluateGroundedLocomotionGraph(
     (total, alpha) => total + Math.max(0, alpha),
     0,
   )
-  if (alphaTotal <= UE_SMALL_NUMBER) return []
+  if (alphaTotal <= ZERO_ANIMWEIGHT_THRESH) return []
 
   const players = ALS_GROUNDED_DIRECTION_MULTI_WAY_BLEND_TABLE[hipsDirection]
-  const resultByClip = new Map<string, AlsGroundedLocomotionClipWeight>()
+  const result: AlsGroundedLocomotionClipWeight[] = []
 
   for (let inputIndex = 0; inputIndex < players.length; inputIndex++) {
     const inputAlpha = Math.max(0, rawAlphas[inputIndex]) / alphaTotal
-    if (inputAlpha <= UE_SMALL_NUMBER) continue
+    if (inputAlpha <= ZERO_ANIMWEIGHT_THRESH) continue
 
-    for (const sample of evaluateGroundedLocomotionPlayer(
+    for (const sample of readGroundedLocomotionPlayer(
       graph,
       players[inputIndex],
       standing,
     )) {
-      const weight = sample.weight * inputAlpha
-      const previous = resultByClip.get(sample.clip)
-      if (previous) {
-        resultByClip.set(sample.clip, {
-          ...previous,
-          weight: previous.weight + weight,
-        })
-      } else {
-        resultByClip.set(sample.clip, { ...sample, weight })
-      }
+      result.push({ ...sample, weight: sample.weight * inputAlpha })
     }
   }
 
-  return [...resultByClip.values()]
+  return result
+}
+
+/**
+ * Steady-state convenience wrapper. Transition evaluation must call update once and read each
+ * state separately so shared cached players cannot advance twice in one frame.
+ */
+export function evaluateGroundedLocomotionGraph(
+  graph: AlsGroundedLocomotionGraph,
+  hipsDirection: AlsHipsDirection,
+  velocityBlend: AlsGroundedVelocityBlend,
+  standing: Pick<
+    AlsStandingMovementState,
+    'strideBlendAmount' | 'walkRunBlendAmount' | 'playRate'
+  >,
+  deltaTime: number,
+  relevanceWeight: number,
+): readonly AlsGroundedLocomotionClipWeight[] {
+  updateGroundedLocomotionGraph(
+    graph,
+    hipsDirection,
+    1,
+    null,
+    0,
+    velocityBlend,
+    standing,
+    deltaTime,
+    relevanceWeight,
+  )
+  if (relevanceWeight <= ZERO_ANIMWEIGHT_THRESH) return []
+  return readGroundedLocomotionGraph(
+    graph,
+    hipsDirection,
+    velocityBlend,
+    standing,
+  )
 }

@@ -20,6 +20,7 @@ import {
   createAlsGroundedDirectionRuntime,
   createGroundedLocomotionGraph,
   evaluateGroundedLocomotionGraph,
+  readGroundedLocomotionGraph,
   refreshAlsGroundedDirectionRuntime,
   refreshMovementDirection,
   refreshPoseGait,
@@ -29,6 +30,8 @@ import {
   sampleStrideBlendAmountWalk,
   selectGroundedDirectionTransition,
   selectGroundedDirectionState,
+  updateGroundedLocomotionGraph,
+  updateGroundedLocomotionGraphFromStateWeights,
 } from './groundedLocomotion'
 import type {
   AlsGait,
@@ -154,7 +157,11 @@ const abpGraph = JSON.parse(readFileSync(
 function denseClipWeights(
   weights: ReturnType<typeof evaluateGroundedLocomotionGraph>,
 ) {
-  return Object.fromEntries(weights.map((entry) => [entry.clip, entry.weight]))
+  const result: Record<string, number> = {}
+  for (const entry of weights) {
+    result[entry.clip] = (result[entry.clip] ?? 0) + entry.weight
+  }
+  return result
 }
 
 const FORWARD_VELOCITY_BLEND: AlsGroundedVelocityBlend = {
@@ -476,12 +483,16 @@ describe('VERIFIED ALS content-oracle graph', () => {
         state,
         velocityBlend,
         { strideBlendAmount: 1, walkRunBlendAmount: 0, playRate: 0.75 },
+        1,
+        1,
       ))).toEqual({ [walkClip]: 1 })
       expect(denseClipWeights(evaluateGroundedLocomotionGraph(
         graph,
         state,
         velocityBlend,
         { strideBlendAmount: 1, walkRunBlendAmount: 1, playRate: 1.25 },
+        1,
+        1,
       ))).toEqual({ [runClip]: 1 })
     },
   )
@@ -492,13 +503,46 @@ describe('VERIFIED ALS content-oracle graph', () => {
       'Forward',
       LEFT_VELOCITY_BLEND,
       { strideBlendAmount: 0, walkRunBlendAmount: 0, playRate: 1 },
+      1,
+      1,
     ))).toEqual({ A_Als_Walk_Left_Pose: 1 })
     expect(denseClipWeights(evaluateGroundedLocomotionGraph(
       graph,
       'Forward',
       LEFT_VELOCITY_BLEND,
       { strideBlendAmount: 0, walkRunBlendAmount: 1, playRate: 1 },
+      1,
+      1,
     ))).toEqual({ A_Als_Run_Left_Pose: 1 })
+  })
+
+  it('retains logical player ownership when two players sample the same clip', () => {
+    const weights = evaluateGroundedLocomotionGraph(
+      createGroundedLocomotionGraph(blendSpaces.blendSpaces),
+      'RightForward',
+      {
+        forwardAmount: 0,
+        backwardAmount: 0,
+        leftAmount: 0.5,
+        rightAmount: 0.5,
+      },
+      { strideBlendAmount: 0, walkRunBlendAmount: 1, playRate: 1 },
+      0.1,
+      1,
+    )
+
+    expect(weights).toMatchObject([
+      {
+        player: 'LeftBackward',
+        clip: 'A_Als_Run_Right_Pose',
+        weight: 0.5,
+      },
+      {
+        player: 'RightForward',
+        clip: 'A_Als_Run_Right_Pose',
+        weight: 0.5,
+      },
+    ])
   })
 
   it('preserves the exceptional authored RightBackward GridSamples topology', () => {
@@ -507,6 +551,8 @@ describe('VERIFIED ALS content-oracle graph', () => {
       'Backward',
       RIGHT_VELOCITY_BLEND,
       { strideBlendAmount: 0.25, walkRunBlendAmount: 0.25, playRate: 1 },
+      1,
+      1,
     ))).toEqual({
       A_Als_Walk_Right_Backward: 0.1875,
       A_Als_Walk_Left_Pose: 0.5625,
@@ -535,24 +581,32 @@ describe('VERIFIED ALS content-oracle graph', () => {
       'RightForward',
       LEFT_VELOCITY_BLEND,
       standing,
+      1,
+      1,
     ))).toEqual({ A_Als_Run_Left_Backward: 1 })
     expect(denseClipWeights(evaluateGroundedLocomotionGraph(
       graph,
       'RightBackward',
       LEFT_VELOCITY_BLEND,
       standing,
+      1,
+      1,
     ))).toEqual({ A_Als_Run_Left_Forward: 1 })
     expect(denseClipWeights(evaluateGroundedLocomotionGraph(
       graph,
       'LeftForward',
       RIGHT_VELOCITY_BLEND,
       standing,
+      1,
+      1,
     ))).toEqual({ A_Als_Run_Right_Backward: 1 })
     expect(denseClipWeights(evaluateGroundedLocomotionGraph(
       graph,
       'LeftBackward',
       RIGHT_VELOCITY_BLEND,
       standing,
+      1,
+      1,
     ))).toEqual({ A_Als_Run_Right_Forward: 1 })
   })
 
@@ -567,11 +621,268 @@ describe('VERIFIED ALS content-oracle graph', () => {
         rightAmount: 0,
       },
       { strideBlendAmount: 1, walkRunBlendAmount: 1, playRate: 1 },
+      1,
+      1,
     ))).toEqual({
       A_Als_Run_Forward: 0.5,
       A_Als_Run_Backward: 0.25,
       A_Als_Run_Left_Forward: 0.25,
     })
+  })
+
+  it('ticks only cached players above ZERO_ANIMWEIGHT_THRESH', () => {
+    const relevanceGraph = createGroundedLocomotionGraph(
+      blendSpaces.blendSpaces,
+    )
+    const standing = {
+      strideBlendAmount: 1,
+      walkRunBlendAmount: 1,
+      playRate: 1,
+    }
+
+    evaluateGroundedLocomotionGraph(
+      relevanceGraph,
+      'Forward',
+      {
+        forwardAmount: 1e-5,
+        backwardAmount: 1,
+        leftAmount: 0,
+        rightAmount: 0,
+      },
+      standing,
+      0.1,
+      1,
+    )
+    expect(relevanceGraph.evaluators.Forward.axisFilters[0].currentTime).toBe(0)
+    expect(relevanceGraph.evaluators.Backward.axisFilters[0].currentTime)
+      .toBe(0.1)
+
+    evaluateGroundedLocomotionGraph(
+      relevanceGraph,
+      'Forward',
+      FORWARD_VELOCITY_BLEND,
+      standing,
+      0.1,
+      1,
+    )
+    expect(relevanceGraph.evaluators.Forward.axisFilters[0].currentTime)
+      .toBe(0.1)
+    expect(relevanceGraph.evaluators.Backward.axisFilters[0].currentTime)
+      .toBe(0.1)
+  })
+
+  it('pauses all player filters while the effective parent is irrelevant', () => {
+    const parentGraph = createGroundedLocomotionGraph(blendSpaces.blendSpaces)
+    const standing = {
+      strideBlendAmount: 1,
+      walkRunBlendAmount: 1,
+      playRate: 1,
+    }
+
+    evaluateGroundedLocomotionGraph(
+      parentGraph,
+      'Forward',
+      FORWARD_VELOCITY_BLEND,
+      standing,
+      0.1,
+      1,
+    )
+    expect(parentGraph.evaluators.Forward.axisFilters[0].currentTime).toBe(0.1)
+
+    for (const parentWeight of [0, 1e-5]) {
+      expect(evaluateGroundedLocomotionGraph(
+        parentGraph,
+        'Forward',
+        FORWARD_VELOCITY_BLEND,
+        standing,
+        0.1,
+        parentWeight,
+      )).toEqual([])
+    }
+    expect(parentGraph.evaluators.Forward.axisFilters[0].currentTime).toBe(0.1)
+
+    evaluateGroundedLocomotionGraph(
+      parentGraph,
+      'Forward',
+      FORWARD_VELOCITY_BLEND,
+      standing,
+      0.1,
+      1.00001e-5,
+    )
+    expect(parentGraph.evaluators.Forward.axisFilters[0].currentTime).toBe(0.2)
+  })
+
+  it('updates transition players once and retains the maximum cached-pose path weight', () => {
+    const transitionGraph = createGroundedLocomotionGraph(
+      blendSpaces.blendSpaces,
+    )
+    const standing = {
+      strideBlendAmount: 1,
+      walkRunBlendAmount: 1,
+      playRate: 1,
+    }
+    const velocityBlend = {
+      forwardAmount: 0.5,
+      backwardAmount: 0,
+      leftAmount: 0,
+      rightAmount: 0.5,
+    }
+
+    updateGroundedLocomotionGraph(
+      transitionGraph,
+      'Forward',
+      0.4,
+      'Backward',
+      0.6,
+      velocityBlend,
+      standing,
+      0.1,
+      1,
+    )
+
+    expect(transitionGraph.evaluators.Forward.axisFilters[0].currentTime)
+      .toBe(0.1)
+    expect(transitionGraph.evaluators.RightForward.axisFilters[0].currentTime)
+      .toBe(0.1)
+    expect(transitionGraph.evaluators.RightBackward.axisFilters[0].currentTime)
+      .toBe(0.1)
+    expect(transitionGraph.evaluators.Backward.axisFilters[0].currentTime)
+      .toBe(0)
+    expect([...transitionGraph.playerWeights]).toEqual([
+      0.3,
+      0,
+      0,
+      0,
+      0.2,
+      0.3,
+    ])
+    expect(denseClipWeights(readGroundedLocomotionGraph(
+      transitionGraph,
+      'Forward',
+      velocityBlend,
+      standing,
+    ))).toEqual({
+      A_Als_Run_Forward: 0.5,
+      A_Als_Run_Right_Forward: 0.5,
+    })
+    expect(denseClipWeights(readGroundedLocomotionGraph(
+      transitionGraph,
+      'Backward',
+      velocityBlend,
+      standing,
+    ))).toEqual({
+      A_Als_Run_Forward: 0.5,
+      A_Als_Run_Right_Backward: 0.5,
+    })
+
+    updateGroundedLocomotionGraph(
+      transitionGraph,
+      'Forward',
+      0.4,
+      'Backward',
+      0.6,
+      velocityBlend,
+      standing,
+      0.1,
+      1,
+    )
+    expect(transitionGraph.evaluators.Forward.axisFilters[0].currentTime)
+      .toBe(0.2)
+  })
+
+  it('updates a retained multi-transition state union once per logical player', () => {
+    const transitionGraph = createGroundedLocomotionGraph(
+      blendSpaces.blendSpaces,
+    )
+    const stateWeights = {
+      Forward: 0.2,
+      Backward: 0.3,
+      LeftForward: 0,
+      LeftBackward: 0.4,
+      RightForward: 0,
+      RightBackward: 0,
+    }
+    const velocityBlend = {
+      forwardAmount: 0.5,
+      backwardAmount: 0,
+      leftAmount: 0,
+      rightAmount: 0.5,
+    }
+    const standing = {
+      strideBlendAmount: 1,
+      walkRunBlendAmount: 1,
+      playRate: 1,
+    }
+
+    updateGroundedLocomotionGraphFromStateWeights(
+      transitionGraph,
+      stateWeights,
+      velocityBlend,
+      standing,
+      0.1,
+      1,
+    )
+
+    expect([...transitionGraph.playerWeights]).toEqual([
+      0.2,
+      0,
+      0,
+      0,
+      0.2,
+      0.15,
+    ])
+    expect(
+      transitionGraph.evaluators.Forward.axisFilters[0].currentTime,
+    ).toBe(0.1)
+    expect(
+      transitionGraph.evaluators.RightForward.axisFilters[0].currentTime,
+    ).toBe(0.1)
+    expect(
+      transitionGraph.evaluators.RightBackward.axisFilters[0].currentTime,
+    ).toBe(0.1)
+
+    updateGroundedLocomotionGraphFromStateWeights(
+      transitionGraph,
+      stateWeights,
+      velocityBlend,
+      standing,
+      0.1,
+      1,
+    )
+    expect(
+      transitionGraph.evaluators.Forward.axisFilters[0].currentTime,
+    ).toBe(0.2)
+  })
+
+  it('uses the complete state, parent, and MultiWay weight for relevance', () => {
+    const relevanceGraph = createGroundedLocomotionGraph(
+      blendSpaces.blendSpaces,
+    )
+
+    updateGroundedLocomotionGraph(
+      relevanceGraph,
+      'Forward',
+      0.01,
+      null,
+      0,
+      {
+        forwardAmount: 0.01,
+        backwardAmount: 0.99,
+        leftAmount: 0,
+        rightAmount: 0,
+      },
+      {
+        strideBlendAmount: 1,
+        walkRunBlendAmount: 1,
+        playRate: 1,
+      },
+      0.1,
+      0.01,
+    )
+
+    expect(relevanceGraph.evaluators.Forward.axisFilters[0].currentTime).toBe(0)
+    expect(relevanceGraph.evaluators.Backward.axisFilters[0].currentTime)
+      .toBe(0.1)
   })
 
   it('makes steady-state HipsDirection selection one-hot', () => {
@@ -802,6 +1113,8 @@ describe('VERIFIED ALS content-oracle graph', () => {
         'Forward',
         FORWARD_VELOCITY_BLEND,
         standing,
+        1,
+        1,
       )
       expect(weights.every((entry) => entry.playRate === standing.playRate))
         .toBe(true)
