@@ -168,6 +168,27 @@ describe('UE animation-sequence notifies', () => {
       .toBe(true)
   })
 
+  it('pins UE 5.5 traversal budgeting when a multi-loop tick starts mid-sequence', () => {
+    const source = clip([
+      { name: 'Quarter', time: 0.25 },
+      { name: 'ThreeQuarters', time: 0.75 },
+    ])
+
+    // AnimSequenceBase.cpp calculates MaxLoopCount as
+    // Clamp(uint32(DesiredDeltaMove / PlayLength), 2, 1000), independent of StartTime.
+    // Thus UE harvests 0.5->1 and two full loops, then exhausts its three-iteration budget
+    // before the mathematically remaining 0->0.5 segment.
+    expect(gather(source, 0.5, 3, {
+      bAllowLooping: true,
+    }).map(({ NotifyName }) => NotifyName)).toEqual([
+      'ThreeQuarters',
+      'Quarter',
+      'ThreeQuarters',
+      'Quarter',
+      'ThreeQuarters',
+    ])
+  })
+
   it('applies inclusive trigger weight and leader/follower filtering while gathering', () => {
     const source = clip([
       {
