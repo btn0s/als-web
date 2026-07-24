@@ -35,6 +35,55 @@ function request(
 }
 
 describe('UE dynamic slot montage clock', () => {
+  it('retains one instance ID per play and preserves same-clip insertion order', () => {
+    const clock = createSlotMontageClock()
+    const outgoing = playSlotAnimationAsDynamicMontage(clock, request())
+    const outgoingInstanceId = outgoing.instanceId
+    advanceSlotMontageGroup(clock, 'DefaultGroup', 0.2)
+
+    const incoming = playSlotAnimationAsDynamicMontage(clock, request())
+    const samples = getSlotMontageSamples(clock, 'DefaultGroup')
+
+    expect(incoming.instanceId).toBe(outgoingInstanceId + 1)
+    expect(incoming.instanceId).not.toBe(outgoing.instanceId)
+    expect(samples.map(({ instanceId }) => instanceId)).toEqual([
+      outgoing.instanceId,
+      incoming.instanceId,
+    ])
+
+    const advanced: SlotMontageSample[] = []
+    advanceSlotMontageGroupSamples(clock, 'DefaultGroup', 0.2, advanced)
+    expect(advanced.map(({ instanceId }) => instanceId)).toEqual([
+      outgoing.instanceId,
+      incoming.instanceId,
+    ])
+    expect(outgoing.instanceId).toBe(outgoingInstanceId)
+  })
+
+  it('does not reset or recycle instance IDs across completion and clock creation', () => {
+    const firstClock = createSlotMontageClock()
+    const first = playSlotAnimationAsDynamicMontage(firstClock, request({
+      blendInDuration: 0,
+    }))
+    const firstInstanceId = first.instanceId
+    stopSlotAnimation(firstClock, 0)
+
+    expect(first.status).toBe('completed')
+    expect(first.instanceId).toBe(firstInstanceId)
+
+    const secondClock = createSlotMontageClock()
+    const rejectedEmpty = playSlotAnimationAsDynamicMontage(secondClock, request({
+      clipDuration: 0,
+    }))
+    const replay = playSlotAnimationAsDynamicMontage(secondClock, request({
+      blendInDuration: 0,
+    }))
+
+    expect(rejectedEmpty.instanceId).toBe(-1)
+    expect(replay.instanceId).toBe(firstInstanceId + 1)
+    expect(replay.clipKey).toBe(first.clipKey)
+  })
+
   it('uses the same complementary alpha for present and absent montage curves', () => {
     expect(blendSlotCurveValue(1, -1, 0.25)).toBeCloseTo(0.5)
     expect(blendSlotCurveValue(1, undefined, 0.25)).toBeCloseTo(0.75)

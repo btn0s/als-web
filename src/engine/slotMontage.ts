@@ -30,6 +30,8 @@ export type SlotMontageBlendOutReason =
   | 'interrupted'
 
 export interface SlotMontageSample {
+  /** FAnimMontageInstance::InstanceID; unique for this play, even when clipKey is reused. */
+  readonly instanceId: number
   readonly clipKey: string
   readonly slotName: string
   readonly groupName: string
@@ -44,6 +46,8 @@ export interface SlotMontageSample {
 }
 
 export interface SlotMontageInstance {
+  /** FAnimMontageInstance::InstanceID. */
+  readonly instanceId: number
   readonly request: SlotMontageRequest
   /** Length of the generated UAnimMontage timeline, before instance PlayRate. */
   readonly montageDuration: number
@@ -77,6 +81,17 @@ export interface SlotMontageWeightData {
 
 const UE_KINDA_SMALL_NUMBER = 1e-4
 const UE_MONTAGE_END_OFFSET = UE_KINDA_SMALL_NUMBER / 2
+const UE_INDEX_NONE = -1
+
+// FAnimMontageInstance::Initialize() owns a function-static IncrementInstanceID. Its lifetime is
+// the process, not one UAnimInstance, so constructing a new SlotMontageClock must not reset it.
+let incrementInstanceId = 0
+
+function allocateMontageInstanceId() {
+  const instanceId = incrementInstanceId
+  incrementInstanceId += 1
+  return instanceId
+}
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value))
@@ -252,14 +267,21 @@ function createInstance(request: SlotMontageRequest): SlotMontageInstance {
   if (!Number.isFinite(montageDuration)) {
     throw new Error('Slot montage duration must be finite')
   }
+  // Montage_PlayInternal rejects an empty montage before it constructs and initializes an
+  // FAnimMontageInstance. Keep the constructor's INDEX_NONE and do not consume an ID.
+  const instanceId = montageDuration > 0
+    ? allocateMontageInstanceId()
+    : UE_INDEX_NONE
   const montageTime = clamp(request.startTime, 0, montageDuration)
   const instance: SlotMontageInstance = {
+    instanceId,
     request: {
       ...request,
       additiveType: request.additiveType ?? 'none',
     },
     montageDuration,
     sample: {
+      instanceId,
       clipKey: request.clipKey,
       slotName: request.slotName,
       groupName: request.groupName,
