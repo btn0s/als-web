@@ -2,9 +2,6 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   ALS_CAMERA_ANIMATION_CURVE_NAMES,
-  ALS_CAMERA_LOOK_STATE_REENTRY_ASSUMPTION,
-  ALS_CAMERA_LOOK_TRANSITION_INTERRUPTION_ASSUMPTION,
-  ALS_CAMERA_STANDARD_BLEND_INTERRUPTION_ASSUMPTION,
   createAlsCameraAnimationInstance,
   refreshAlsCameraAnimationInstance,
   type AlsCameraAnimationInstanceInput,
@@ -24,6 +21,7 @@ interface OracleBlend {
   readonly blendTimes: readonly number[]
   readonly blendType: string
   readonly customCurve: string | null
+  readonly resetChildOnActivation: boolean
 }
 
 interface OracleLookStance {
@@ -55,7 +53,9 @@ interface CameraContentOracle {
       readonly index: number
       readonly type: string
       readonly StateMachineIndexInClass?: number
+      readonly MaxTransitionsPerFrame?: number
       readonly bSkipFirstUpdateTransition?: boolean
+      readonly bReinitializeOnBecomingRelevant?: boolean
     }[]
     readonly stateMachine: {
       readonly initialState: string
@@ -72,6 +72,7 @@ interface CameraContentOracle {
         readonly previousState: string
         readonly nextState: string
         readonly duration: number
+        readonly blendMode: string
         readonly customCurve: string
       }[]
     }
@@ -260,7 +261,10 @@ function input(
 
 function expectCurves(actual: Curves, expected: Curves) {
   for (const name of curveNames) {
-    expect(actual[name], name).toBeCloseTo(expected[name], 10)
+    // UE stores transition/state weights as float; the port deliberately
+    // writes through Float32Array at the same boundary.
+    expect(Math.abs(actual[name] - expected[name]), name)
+      .toBeLessThanOrEqual(2e-5)
   }
 }
 
@@ -330,38 +334,130 @@ describe('AlsCameraAnimationInstance', () => {
     )
   })
 
-  it('honors the authored initial state and skipped first-update transition', () => {
+  it('pins authored transition priority, duration, blend mode, and relevancy settings', () => {
     const stateMachineNode = graph.nodes.find(
       (node) =>
         node.type === 'FAnimNode_StateMachine'
         && node.StateMachineIndexInClass === 0,
     )
+    expect(stateMachineNode?.MaxTransitionsPerFrame).toBe(3)
     expect(stateMachineNode?.bSkipFirstUpdateTransition).toBe(true)
+    expect(stateMachineNode?.bReinitializeOnBecomingRelevant).toBe(true)
+    expect(
+      graph.stateMachine.states.map((state) => [
+        state.name,
+        state.transitions.map(({ targetState }) => targetState),
+      ]),
+    ).toEqual([
+      ['Velocity Direction', ['View Direction', 'Aiming']],
+      ['View Direction', ['Aiming', 'Velocity Direction']],
+      ['Aiming', ['Velocity Direction', 'View Direction']],
+    ])
+    expect(
+      graph.stateMachine.transitions.map((transition) => [
+        `${transition.previousState}->${transition.nextState}`,
+        transition.duration,
+        transition.blendMode,
+        transition.customCurve,
+      ]),
+    ).toEqual([
+      [
+        'Velocity Direction->View Direction',
+        1,
+        'EAlphaBlendOption::Custom',
+        'CF_Als_CameraBlend_Smooth',
+      ],
+      [
+        'Velocity Direction->Aiming',
+        0.3499999940395355,
+        'EAlphaBlendOption::Custom',
+        'CF_Als_CameraBlend_Quick',
+      ],
+      [
+        'View Direction->Aiming',
+        0.3499999940395355,
+        'EAlphaBlendOption::Custom',
+        'CF_Als_CameraBlend_Quick',
+      ],
+      [
+        'View Direction->Velocity Direction',
+        1,
+        'EAlphaBlendOption::Custom',
+        'CF_Als_CameraBlend_Smooth',
+      ],
+      [
+        'Aiming->Velocity Direction',
+        1,
+        'EAlphaBlendOption::Custom',
+        'CF_Als_CameraBlend_Smooth',
+      ],
+      [
+        'Aiming->View Direction',
+        1,
+        'EAlphaBlendOption::Custom',
+        'CF_Als_CameraBlend_Smooth',
+      ],
+    ])
+    expect(graph.branches.viewMode.blend).toMatchObject({
+      blendTimes: [0.1, 0.1],
+      blendType: 'EAlphaBlendOption::HermiteCubic',
+      customCurve: null,
+      resetChildOnActivation: false,
+    })
+    expect(graph.branches.shoulder.blend).toMatchObject({
+      blendTimes: [0.5, 0.5],
+      blendType: 'EAlphaBlendOption::Custom',
+      customCurve: 'CF_Als_CameraBlend_Quick',
+      resetChildOnActivation: false,
+    })
+    expect(graph.branches.locomotionAction.blend).toMatchObject({
+      blendTimes: [0.4, 0.2, 0.2, 1],
+      blendType: 'EAlphaBlendOption::Cubic',
+      customCurve: null,
+      resetChildOnActivation: false,
+    })
+    for (const state of graph.stateMachine.states) {
+      const branch = graph.branches.lookStates[
+        state.name.replaceAll(' ', '')
+      ]
+      expect(branch.stanceBlend.resetChildOnActivation).toBe(false)
+      expect(branch.Standing.gaitBlend.resetChildOnActivation).toBe(true)
+      expect(branch.Crouching.gaitBlend.resetChildOnActivation).toBe(true)
+    }
+  })
 
+  it('takes the first valid transition but discards its blend on the skipped first update', () => {
     const state = createAlsCameraAnimationInstance()
+    const initialUpdate = refreshAlsCameraAnimationInstance(
+      state,
+      input(),
+      10,
+    )
+    expectCurves(
+      initialUpdate,
+      profileCurves(graph.stateMachine.initialState),
+    )
+
+    const redirectedState = createAlsCameraAnimationInstance()
     const viewInput = input({
       RotationMode: rotationModeForState('View Direction'),
     })
     const firstUpdate = refreshAlsCameraAnimationInstance(
-      state,
+      redirectedState,
       viewInput,
       10,
     )
-    expectCurves(
-      firstUpdate,
-      profileCurves(graph.stateMachine.initialState),
+    expectCurves(firstUpdate, profileCurves('View Direction'))
+    expect(
+      redirectedState.lookStateMachine.transitionStack.currentState,
+    ).toBe(
+      graph.stateMachine.states.findIndex(
+        ({ name }) => name === 'View Direction',
+      ),
     )
-
-    const transition = lookTransition(
-      graph.stateMachine.initialState,
-      'View Direction',
-    )
-    const secondUpdate = refreshAlsCameraAnimationInstance(
-      state,
-      viewInput,
-      transition.duration,
-    )
-    expectCurves(secondUpdate, profileCurves('View Direction'))
+    expect(
+      redirectedState.lookStateMachine.transitionStack.activeTransitions,
+    ).toHaveLength(0)
   })
 
   it('uses the authored custom curve at a direct look-transition midpoint', () => {
@@ -560,7 +656,7 @@ describe('AlsCameraAnimationInstance', () => {
     expectCurves(defaultComplete, upstream)
   })
 
-  it('preserves weights deterministically across rapid standard and look changes', () => {
+  it('rescales an interrupted BlendListBase reversal by the remaining target weight', () => {
     const viewState = createAlsCameraAnimationInstance()
     const thirdPersonInput = input()
     const viewBlend = graph.branches.viewMode.blend
@@ -570,40 +666,110 @@ describe('AlsCameraAnimationInstance', () => {
       { ...thirdPersonInput, ViewMode: viewBlend.tags[0] },
       viewBlend.blendTimes[1] / 2,
     )
+    expect(viewState.viewModeBlend.weights).toEqual(
+      new Float64Array([0.5, 0.5]),
+    )
+
     const interruptedView = refreshAlsCameraAnimationInstance(
       viewState,
       thirdPersonInput,
-      viewBlend.blendTimes[0] / 2,
+      viewBlend.blendTimes[0] / 4,
     )
     expect(interruptedView.FirstPersonOverride).toBeCloseTo(0.25, 10)
-    expect(ALS_CAMERA_STANDARD_BLEND_INTERRUPTION_ASSUMPTION)
-      .toContain('Preserve current normalized child weights')
+    expect(viewState.viewModeBlend.duration).toBeCloseTo(
+      viewBlend.blendTimes[0] / 2,
+      10,
+    )
 
+    const completedView = refreshAlsCameraAnimationInstance(
+      viewState,
+      thirdPersonInput,
+      viewBlend.blendTimes[0] / 4,
+    )
+    expect(completedView.FirstPersonOverride).toBe(0)
+  })
+
+  it('uses UE stack duration rescaling and state-weight recurrence for interrupted look transitions', () => {
     const lookState = createAlsCameraAnimationInstance()
     refreshAlsCameraAnimationInstance(lookState, input(), 0)
     const velocityToAiming = lookTransition(
       'Velocity Direction',
       'Aiming',
     )
-    const firstAlpha = sampleCustomBlend(
-      velocityToAiming.customCurve,
-      0.5,
-    )
+    const firstFraction = 0.25
     refreshAlsCameraAnimationInstance(
       lookState,
       input({ RotationMode: rotationModeForState('Aiming') }),
-      velocityToAiming.duration / 2,
+      velocityToAiming.duration * firstFraction,
     )
 
     const aimingToView = lookTransition('Aiming', 'View Direction')
+    const secondElapsed = 0.05
+    refreshAlsCameraAnimationInstance(
+      lookState,
+      input({ RotationMode: rotationModeForState('View Direction') }),
+      secondElapsed,
+    )
+
+    const viewToVelocity = lookTransition(
+      'View Direction',
+      'Velocity Direction',
+    )
+    refreshAlsCameraAnimationInstance(
+      lookState,
+      input({
+        RotationMode: rotationModeForState('Velocity Direction'),
+      }),
+      0,
+    )
+    const entries =
+      lookState.lookStateMachine.transitionStack.activeTransitions
+    expect(entries).toHaveLength(3)
+
+    const firstAlphaBeforeThird = sampleCustomBlend(
+      velocityToAiming.customCurve,
+      (
+        velocityToAiming.duration * firstFraction
+        + secondElapsed
+      ) / velocityToAiming.duration,
+    )
+    const secondAlphaBeforeThird = sampleCustomBlend(
+      aimingToView.customCurve,
+      secondElapsed / aimingToView.duration,
+    )
+    const existingVelocityWeight =
+      (1 - firstAlphaBeforeThird) * (1 - secondAlphaBeforeThird)
+    const expectedDuration =
+      viewToVelocity.duration * (1 - existingVelocityWeight)
+    expect(entries[2].crossfadeDuration).toBeCloseTo(
+      expectedDuration,
+      7,
+    )
+
+    const thirdElapsed = Math.min(expectedDuration * 0.1, 0.05)
+    const thirdFraction = thirdElapsed / expectedDuration
+    const thirdAlpha = sampleCustomBlend(
+      viewToVelocity.customCurve,
+      thirdFraction,
+    )
+    const firstAlpha = sampleCustomBlend(
+      velocityToAiming.customCurve,
+      (
+        velocityToAiming.duration * firstFraction
+        + secondElapsed
+        + thirdElapsed
+      ) / velocityToAiming.duration,
+    )
     const secondAlpha = sampleCustomBlend(
       aimingToView.customCurve,
-      0.5,
+      (secondElapsed + thirdElapsed) / aimingToView.duration,
     )
     const interruptedLook = refreshAlsCameraAnimationInstance(
       lookState,
-      input({ RotationMode: rotationModeForState('View Direction') }),
-      aimingToView.duration / 2,
+      input({
+        RotationMode: rotationModeForState('Velocity Direction'),
+      }),
+      thirdElapsed,
     )
     const expected = mixCurves(
       [
@@ -612,22 +778,33 @@ describe('AlsCameraAnimationInstance', () => {
         profileCurves('Aiming'),
       ],
       [
-        (1 - firstAlpha) * (1 - secondAlpha),
-        secondAlpha,
-        firstAlpha * (1 - secondAlpha),
+        (1 - firstAlpha)
+          * (1 - secondAlpha)
+          * (1 - thirdAlpha)
+          + thirdAlpha,
+        secondAlpha * (1 - thirdAlpha),
+        firstAlpha * (1 - secondAlpha) * (1 - thirdAlpha),
       ],
     )
+    const expectedWeights = Float32Array.from([
+      (1 - firstAlpha)
+        * (1 - secondAlpha)
+        * (1 - thirdAlpha)
+        + thirdAlpha,
+      secondAlpha * (1 - thirdAlpha),
+      firstAlpha * (1 - secondAlpha) * (1 - thirdAlpha),
+    ])
+    expect(
+      Array.from(lookState.lookStateMachine.weights),
+    ).toEqual(Array.from(expectedWeights))
     expectCurves(interruptedLook, expected)
-    expect(ALS_CAMERA_LOOK_TRANSITION_INTERRUPTION_ASSUMPTION)
-      .toContain('Preserve current look-state weights')
   })
 
-  it('does not advance inactive look-state blend nodes in the background', () => {
+  it('initializes a fully inactive look state when it is entered again', () => {
     const state = createAlsCameraAnimationInstance()
     const viewRotationMode = rotationModeForState('View Direction')
     const velocityRotationMode = rotationModeForState('Velocity Direction')
     const viewBranch = graph.branches.lookStates.ViewDirection
-    const velocityBranch = graph.branches.lookStates.VelocityDirection
     const crouching = viewBranch.stanceBlend.tags[0]
     const running = viewBranch.Crouching.gaitBlend.tags[0]
 
@@ -656,20 +833,9 @@ describe('AlsCameraAnimationInstance', () => {
       transition.customCurve,
       deltaTime / transition.duration,
     )
-    const stanceAlpha = sampleStandardBlend(
-      velocityBranch.stanceBlend.blendType,
-      deltaTime / velocityBranch.stanceBlend.blendTimes[1],
-    )
-    const reenteringVelocity = mixCurves(
-      [
-        profileCurves('Velocity Direction'),
-        profileCurves('Velocity Direction', crouching, running),
-      ],
-      [1 - stanceAlpha, stanceAlpha],
-    )
     const expected = mixCurves(
       [
-        reenteringVelocity,
+        profileCurves('Velocity Direction', crouching, running),
         profileCurves('View Direction', crouching, running),
       ],
       [lookAlpha, 1 - lookAlpha],
@@ -685,7 +851,102 @@ describe('AlsCameraAnimationInstance', () => {
     )
 
     expectCurves(actual, expected)
-    expect(ALS_CAMERA_LOOK_STATE_REENTRY_ASSUMPTION)
-      .toContain('Inactive look-state branches retain blend state')
+    expect(state.lookBranches[0].stanceBlend.weights[1]).toBe(1)
+  })
+
+  it('retains a look branch when an interrupted transition reenters it while still active', () => {
+    const state = createAlsCameraAnimationInstance()
+    const viewRotationMode = rotationModeForState('View Direction')
+    const velocityRotationMode = rotationModeForState('Velocity Direction')
+    const velocityBranch = graph.branches.lookStates.VelocityDirection
+    const crouching = velocityBranch.stanceBlend.tags[0]
+    const running = velocityBranch.Crouching.gaitBlend.tags[0]
+
+    refreshAlsCameraAnimationInstance(state, input(), 0)
+    refreshAlsCameraAnimationInstance(
+      state,
+      input({ RotationMode: viewRotationMode }),
+      lookTransition(
+        'Velocity Direction',
+        'View Direction',
+      ).duration / 4,
+    )
+
+    refreshAlsCameraAnimationInstance(
+      state,
+      input({
+        RotationMode: velocityRotationMode,
+        Stance: crouching,
+        Gait: running,
+      }),
+      0,
+    )
+
+    // SetState() sees non-zero existing Velocity Direction weight, so all
+    // authored bAlwaysResetOnEntry=false branch nodes keep their prior state.
+    expect(state.lookBranches[0].stanceBlend.weights[0]).toBe(1)
+    expect(state.lookBranches[0].stanceBlend.weights[1]).toBe(0)
+    expect(
+      state.lookStateMachine.transitionStack.activeTransitions,
+    ).toHaveLength(2)
+  })
+
+  it('reinitializes the authored look state machine after the ragdoll branch makes it irrelevant', () => {
+    const state = createAlsCameraAnimationInstance()
+    const viewRotationMode = rotationModeForState('View Direction')
+    const aimingRotationMode = rotationModeForState('Aiming')
+    const ragdollTag = actionTag('Ragdolling')
+    const actionBlend = graph.branches.locomotionAction.blend
+    const ragdollIndex = childIndexForTag(actionBlend, ragdollTag)
+
+    const viewOutput = refreshAlsCameraAnimationInstance(
+      state,
+      input({ RotationMode: viewRotationMode }),
+      0,
+    )
+    expectCurves(viewOutput, profileCurves('View Direction'))
+
+    refreshAlsCameraAnimationInstance(
+      state,
+      input({
+        RotationMode: aimingRotationMode,
+        LocomotionAction: ragdollTag,
+      }),
+      actionBlend.blendTimes[ragdollIndex],
+    )
+    expect(state.lookStateMachine.updatedPreviousFrame).toBe(false)
+
+    refreshAlsCameraAnimationInstance(
+      state,
+      input({
+        RotationMode: aimingRotationMode,
+        LocomotionAction: ragdollTag,
+      }),
+      1,
+    )
+    expect(
+      state.lookStateMachine.transitionStack.currentState,
+    ).toBe(
+      graph.stateMachine.states.findIndex(
+        ({ name }) => name === 'View Direction',
+      ),
+    )
+
+    const relevantAgain = refreshAlsCameraAnimationInstance(
+      state,
+      input({ RotationMode: aimingRotationMode }),
+      actionBlend.blendTimes[0],
+    )
+    expectCurves(relevantAgain, profileCurves('Aiming'))
+    expect(
+      state.lookStateMachine.transitionStack.currentState,
+    ).toBe(
+      graph.stateMachine.states.findIndex(
+        ({ name }) => name === 'Aiming',
+      ),
+    )
+    expect(
+      state.lookStateMachine.transitionStack.activeTransitions,
+    ).toHaveLength(0)
   })
 })

@@ -8,6 +8,15 @@ import {
   type RichCurveKey,
   type RichCurveInterpolation,
 } from '../../engine/richCurve'
+import {
+  advanceStateMachineTransitionStack,
+  createStateMachineTransitionStack,
+  getStateMachineStateWeight,
+  resetStateMachineTransitionStack,
+  startStateMachineStandardTransition,
+  writeStateMachineStateWeights,
+  type StateMachineTransitionStack,
+} from '../../engine/stateMachineTransitionStack'
 
 /**
  * Curve-only, framework-free execution of AB_Als_Camera.
@@ -50,6 +59,7 @@ interface OracleStateMachineState {
     readonly targetState: string
     readonly expression: {
       readonly value: string
+      readonly acceptsInvalidTag: boolean
     }
   }[]
 }
@@ -72,6 +82,7 @@ interface OracleNode {
   readonly index: number
   readonly type: string
   readonly StateMachineIndexInClass?: number
+  readonly MaxTransitionsPerFrame?: number
   readonly bSkipFirstUpdateTransition?: boolean
 }
 
@@ -183,13 +194,11 @@ interface LookTransitionDefinition {
 
 interface LookStateMachineState {
   firstUpdate: boolean
-  activeStateIndex: number
-  elapsed: number
-  duration: number
-  transitioning: boolean
-  customCurve: readonly RichCurveKey[]
-  readonly weights: Float64Array
-  readonly startWeights: Float64Array
+  hasEverBeenUpdated: boolean
+  updatedPreviousFrame: boolean
+  readonly transitionStack: StateMachineTransitionStack<number>
+  readonly weights: Float32Array
+  readonly statesToUpdate: Uint8Array
 }
 
 interface ActionBranchDefinition {
@@ -197,30 +206,8 @@ interface ActionBranchDefinition {
   readonly startsFromReferencePose: boolean
 }
 
-/**
- * ALS owns the authored blend functions and times, but the allowed source does not include UE's
- * FAnimNode_BlendListBase interruption implementation. The isolated curve-only assumption is:
- * preserve every current normalized child weight, decay that distribution by `(1-alpha)`, then
- * add `alpha` to the newly requested child using that child's authored BlendTime.
- */
-export const ALS_CAMERA_STANDARD_BLEND_INTERRUPTION_ASSUMPTION =
-  'Preserve current normalized child weights; decay them by 1-alpha and add alpha to the newly requested child.'
-
-/**
- * UE state-machine transition-stack interruption internals are likewise outside ALS source.
- * Direct look-state interruptions use the same preserved-weight rule, with the authored direct
- * transition's duration and Quick/Smooth curve selected from the last requested state.
- */
-export const ALS_CAMERA_LOOK_TRANSITION_INTERRUPTION_ASSUMPTION =
-  'Preserve current look-state weights and restart through the authored direct transition from the last requested state.'
-
-/**
- * The camera oracle does not currently expose each baked state's bAlwaysResetOnEntry flag.
- * Inactive state branches therefore retain their blend-node state, matching UE's default false
- * setting, and resume updating only while they have state-machine weight.
- */
-export const ALS_CAMERA_LOOK_STATE_REENTRY_ASSUMPTION =
-  'Inactive look-state branches retain blend state and resume it when they regain state-machine weight.'
+// FAnimWeight::IsRelevant() uses ZERO_ANIMWEIGHT_THRESH.
+const ZERO_ANIMWEIGHT_THRESH = 1e-5
 
 function curveIndex(name: string): number {
   const index = CURVE_INDICES.get(name)
@@ -333,8 +320,18 @@ if (!STATE_MACHINE_NODE_ORACLE) {
 }
 const SKIP_FIRST_LOOK_TRANSITION =
   STATE_MACHINE_NODE_ORACLE.bSkipFirstUpdateTransition === true
+const MAX_LOOK_TRANSITIONS_PER_FRAME =
+  STATE_MACHINE_NODE_ORACLE.MaxTransitionsPerFrame ?? 0
+if (MAX_LOOK_TRANSITIONS_PER_FRAME <= 0) {
+  throw new Error(
+    'AB_Als_Camera state machine has no valid MaxTransitionsPerFrame',
+  )
+}
 const LOOK_STATE_NAMES = Object.freeze(
   STATE_MACHINE_ORACLE.states.map(({ name }) => name),
+)
+const LOOK_STATE_INDICES = Object.freeze(
+  LOOK_STATE_NAMES.map((_, index) => index),
 )
 const INITIAL_LOOK_STATE_INDEX = LOOK_STATE_NAMES.indexOf(
   STATE_MACHINE_ORACLE.initialState,
@@ -383,6 +380,11 @@ for (const transition of STATE_MACHINE_ORACLE.transitions) {
   if (previousStateIndex < 0 || nextStateIndex < 0) {
     throw new Error(
       `missing camera transition state ${transition.previousState} -> ${transition.nextState}`,
+    )
+  }
+  if (transition.blendMode !== 'EAlphaBlendOption::Custom') {
+    throw new Error(
+      `camera transition ${transition.previousState} -> ${transition.nextState} must use its authored custom blend curve`,
     )
   }
   LOOK_TRANSITIONS[previousStateIndex][nextStateIndex] = {
@@ -456,12 +458,38 @@ function initializeBlendState(state: BlendState, childIndex: number) {
   state.initialized = true
 }
 
+function resetBlendState(state: BlendState) {
+  state.weights.fill(0)
+  state.weights[0] = 1
+  state.startWeights.fill(0)
+  state.activeChildIndex = 0
+  state.elapsed = 0
+  state.duration = 0
+  state.transitioning = false
+  // FAnimNode_BlendListBase::Initialize() leaves LastActiveChildIndex at
+  // INDEX_NONE. Its first update therefore snaps to the bound child.
+  state.initialized = false
+}
+
+function sampleCustomBlendCurve(
+  curve: readonly RichCurveKey[],
+  normalizedTime: number,
+) {
+  return Math.max(
+    0,
+    Math.min(1, sampleRichCurve(curve, normalizedTime)),
+  )
+}
+
 function blendAlpha(
   definition: BlendDefinition,
   normalizedTime: number,
 ): number {
   if (definition.customCurve) {
-    return sampleRichCurve(definition.customCurve, normalizedTime)
+    return sampleCustomBlendCurve(
+      definition.customCurve,
+      normalizedTime,
+    )
   }
   return alphaToBlendOption(normalizedTime, definition.blendOption!)
 }
@@ -481,7 +509,12 @@ function advanceBlendState(
     state.startWeights.set(state.weights)
     state.activeChildIndex = targetChildIndex
     state.elapsed = 0
-    state.duration = definition.blendTimes[targetChildIndex]
+    // FAnimNode_BlendListBase scales the target's authored BlendTime by the
+    // remaining target weight. This is what makes an interrupted reversal
+    // complete over the remaining fraction instead of restarting a full blend.
+    state.duration =
+      definition.blendTimes[targetChildIndex]
+      * Math.min(1, Math.abs(1 - state.weights[targetChildIndex]))
     state.transitioning = true
   }
   if (!state.transitioning) return
@@ -513,7 +546,7 @@ function childIndexForTag(
 function blendCurves(
   output: CurveBuffer,
   sources: readonly CurveBuffer[],
-  weights: Float64Array,
+  weights: ArrayLike<number>,
 ) {
   output.fill(0)
   for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
@@ -542,6 +575,15 @@ function createLookBranchState(
   }
 }
 
+function resetLookBranchState(state: LookBranchState) {
+  resetBlendState(state.standingGaitBlend)
+  resetBlendState(state.crouchingGaitBlend)
+  resetBlendState(state.stanceBlend)
+  state.standingCurves.fill(0)
+  state.crouchingCurves.fill(0)
+  state.curves.fill(0)
+}
+
 function evaluateLookBranch(
   state: LookBranchState,
   definition: LookBranchDefinition,
@@ -555,7 +597,7 @@ function evaluateLookBranch(
     deltaTime,
   )
 
-  if (state.stanceBlend.weights[0] > 0) {
+  if (state.stanceBlend.weights[0] > ZERO_ANIMWEIGHT_THRESH) {
     advanceBlendState(
       state.standingGaitBlend,
       definition.standingGaitBlend,
@@ -570,7 +612,7 @@ function evaluateLookBranch(
     applyModifier(state.standingCurves, definition.standingPivotModifier)
   }
 
-  if (state.stanceBlend.weights[1] > 0) {
+  if (state.stanceBlend.weights[1] > ZERO_ANIMWEIGHT_THRESH) {
     advanceBlendState(
       state.crouchingGaitBlend,
       definition.crouchingGaitBlend,
@@ -590,67 +632,183 @@ function evaluateLookBranch(
 }
 
 function createLookStateMachineState(): LookStateMachineState {
-  const weights = new Float64Array(LOOK_STATE_NAMES.length)
+  const weights = new Float32Array(LOOK_STATE_NAMES.length)
   weights[INITIAL_LOOK_STATE_INDEX] = 1
   return {
     firstUpdate: true,
-    activeStateIndex: INITIAL_LOOK_STATE_INDEX,
-    elapsed: 0,
-    duration: 0,
-    transitioning: false,
-    customCurve: [],
+    hasEverBeenUpdated: false,
+    updatedPreviousFrame: false,
+    // The camera state machine has no blend profile. One synthetic pose element
+    // lets the shared stack execute UE's exact transition lifecycle and scalar
+    // state-weight recurrence without inventing camera-specific stack logic.
+    transitionStack: createStateMachineTransitionStack(
+      INITIAL_LOOK_STATE_INDEX,
+      1,
+      3,
+    ),
     weights,
-    startWeights: new Float64Array(LOOK_STATE_NAMES.length),
+    statesToUpdate: new Uint8Array(LOOK_STATE_NAMES.length),
   }
 }
 
-function targetLookStateIndex(rotationMode: string | null | undefined) {
-  return ROTATION_MODE_TO_LOOK_STATE.get(rotationMode ?? '')
-    ?? INITIAL_LOOK_STATE_INDEX
+function nextLookStateIndex(
+  currentStateIndex: number,
+  rotationMode: string | null | undefined,
+) {
+  const rotationModeTag = rotationMode ?? ''
+  const rotationModeIsValid =
+    ROTATION_MODE_TO_LOOK_STATE.has(rotationModeTag)
+  for (
+    const transition of
+      STATE_MACHINE_ORACLE.states[currentStateIndex].transitions
+  ) {
+    if (
+      rotationModeTag === transition.expression.value
+      || (
+        transition.expression.acceptsInvalidTag
+        && !rotationModeIsValid
+      )
+    ) {
+      return LOOK_STATE_NAMES.indexOf(transition.targetState)
+    }
+  }
+  return currentStateIndex
+}
+
+function reinitializeLookStateMachine(
+  state: LookStateMachineState,
+  lookBranches: readonly LookBranchState[],
+) {
+  resetStateMachineTransitionStack(
+    state.transitionStack,
+    INITIAL_LOOK_STATE_INDEX,
+  )
+  state.firstUpdate = true
+  state.weights.fill(0)
+  state.weights[INITIAL_LOOK_STATE_INDEX] = 1
+  state.statesToUpdate.fill(0)
+
+  // FBakedAnimationState::bAlwaysResetOnEntry is false for all three authored
+  // camera states. Whole-machine relevancy reset initializes only the entry
+  // state; inactive targets initialize when SetState() later enters them.
+  resetLookBranchState(lookBranches[INITIAL_LOOK_STATE_INDEX])
+}
+
+function refreshLookTransitionCustomAlphas(
+  state: LookStateMachineState,
+) {
+  for (const transition of state.transitionStack.activeTransitions) {
+    const definition =
+      LOOK_TRANSITIONS[transition.previousState][transition.nextState]
+    if (!definition) {
+      throw new Error(
+        `missing camera transition ${LOOK_STATE_NAMES[transition.previousState]} -> ${LOOK_STATE_NAMES[transition.nextState]}`,
+      )
+    }
+
+    // FAnimationActiveTransitionEntry uses its transition stack for lifetime,
+    // interruption rescaling, and cleanup, then evaluates the authored
+    // FAlphaBlend custom curve at ElapsedTime / CrossfadeDuration.
+    transition.alpha = sampleCustomBlendCurve(
+      definition.customCurve,
+      transition.linearAlpha,
+    )
+    transition.previousPoseMask.fill(1 - transition.alpha)
+    transition.nextPoseMask.fill(transition.alpha)
+  }
+}
+
+function startLookTransition(
+  state: LookStateMachineState,
+  targetStateIndex: number,
+  lookBranches: readonly LookBranchState[],
+) {
+  const previousStateIndex = state.transitionStack.currentState
+  const previousStateName = LOOK_STATE_NAMES[previousStateIndex]
+  const targetStateName = LOOK_STATE_NAMES[targetStateIndex]
+  const definition =
+    LOOK_TRANSITIONS[previousStateIndex][targetStateIndex]
+  if (!definition) {
+    throw new Error(
+      `missing camera transition ${previousStateName} -> ${targetStateName}`,
+    )
+  }
+
+  const targetWasAlreadyActive =
+    getStateMachineStateWeight(
+      state.transitionStack,
+      targetStateIndex,
+    ) > 0
+
+  // The shared stack's Linear option supplies the exact non-Hermite inverse
+  // duration scaler used by UE for Custom alpha blends. We replace each
+  // entry's scalar alpha with its authored curve after advancing the stack.
+  startStateMachineStandardTransition(state.transitionStack, {
+    from: previousStateIndex,
+    to: targetStateIndex,
+    duration: definition.duration,
+    blendOption: 'Linear',
+  })
+
+  if (!targetWasAlreadyActive) {
+    resetLookBranchState(lookBranches[targetStateIndex])
+  }
 }
 
 function advanceLookStateMachine(
   state: LookStateMachineState,
-  targetStateIndex: number,
+  rotationMode: string | null | undefined,
   deltaTime: number,
+  lookBranches: readonly LookBranchState[],
 ) {
+  let skipTransitionAdvance = false
+
+  for (
+    let transitionCount = 0;
+    transitionCount < MAX_LOOK_TRANSITIONS_PER_FRAME;
+    transitionCount++
+  ) {
+    const targetStateIndex = nextLookStateIndex(
+      state.transitionStack.currentState,
+      rotationMode,
+    )
+    if (targetStateIndex === state.transitionStack.currentState) break
+    startLookTransition(state, targetStateIndex, lookBranches)
+  }
+
   if (state.firstUpdate) {
     state.firstUpdate = false
-    if (SKIP_FIRST_LOOK_TRANSITION) return
-  }
-
-  if (targetStateIndex !== state.activeStateIndex) {
-    const previousStateName = LOOK_STATE_NAMES[state.activeStateIndex]
-    const targetStateName = LOOK_STATE_NAMES[targetStateIndex]
-    const transition =
-      LOOK_TRANSITIONS[state.activeStateIndex][targetStateIndex]
-    if (!transition) {
-      throw new Error(
-        `missing camera transition ${previousStateName} -> ${targetStateName}`,
+    if (SKIP_FIRST_LOOK_TRANSITION) {
+      // UE still takes and initializes the first valid transition, then throws
+      // away ActiveTransitionArray. The visited target therefore starts at
+      // full weight on this same first update.
+      resetStateMachineTransitionStack(
+        state.transitionStack,
+        state.transitionStack.currentState,
       )
+      skipTransitionAdvance = true
     }
-    state.startWeights.set(state.weights)
-    state.activeStateIndex = targetStateIndex
-    state.elapsed = 0
-    state.duration = transition.duration
-    state.customCurve = transition.customCurve
-    state.transitioning = true
   }
-  if (!state.transitioning) return
 
-  state.elapsed += Math.max(0, deltaTime)
-  const normalizedTime = state.duration > 0
-    ? Math.min(1, state.elapsed / state.duration)
-    : 1
-  const alpha = sampleRichCurve(state.customCurve, normalizedTime)
-  for (let index = 0; index < state.weights.length; index++) {
-    state.weights[index] = state.startWeights[index] * (1 - alpha)
+  if (!skipTransitionAdvance) {
+    advanceStateMachineTransitionStack(state.transitionStack, deltaTime)
+    refreshLookTransitionCustomAlphas(state)
   }
-  state.weights[state.activeStateIndex] += alpha
-  if (normalizedTime >= 1) {
-    state.weights.fill(0)
-    state.weights[state.activeStateIndex] = 1
-    state.transitioning = false
+
+  writeStateMachineStateWeights(
+    state.transitionStack,
+    LOOK_STATE_INDICES,
+    state.weights,
+  )
+
+  state.statesToUpdate.fill(0)
+  if (state.transitionStack.activeTransitions.length > 0) {
+    for (const transition of state.transitionStack.activeTransitions) {
+      state.statesToUpdate[transition.previousState] = 1
+      state.statesToUpdate[transition.nextState] = 1
+    }
+  } else {
+    state.statesToUpdate[state.transitionStack.currentState] = 1
   }
 }
 
@@ -734,24 +892,97 @@ export function refreshAlsCameraAnimationInstance(
   input: AlsCameraAnimationInstanceInput,
   deltaTime: number,
 ): Record<string, number> {
+  if (!Number.isFinite(deltaTime) || deltaTime < 0) {
+    throw new Error(
+      'Camera animation delta time must be finite and non-negative',
+    )
+  }
+
   // LocomotionMode is published by UAlsCameraAnimationInstance but AB_Als_Camera has no binding
   // for it in the extracted graph.
   void input.LocomotionMode
 
-  advanceLookStateMachine(
-    state.lookStateMachine,
-    targetLookStateIndex(input.RotationMode),
+  // UE updates parents before relevant children. The action node is the root,
+  // so it decides whether the cached View Mode -> Shoulder -> Look States
+  // chain receives an update at all this frame.
+  advanceBlendState(
+    state.locomotionActionBlend,
+    ACTION_DEFINITION,
+    childIndexForTag(ACTION_DEFINITION, input.LocomotionAction),
     deltaTime,
   )
-  for (let index = 0; index < LOOK_BRANCH_DEFINITIONS.length; index++) {
-    if (state.lookStateMachine.weights[index] <= 0) continue
-    evaluateLookBranch(
-      state.lookBranches[index],
-      LOOK_BRANCH_DEFINITIONS[index],
-      input,
+
+  let lookGraphRelevant = false
+  for (
+    let index = 0;
+    index < ACTION_BRANCH_DEFINITIONS.length;
+    index++
+  ) {
+    if (
+      !ACTION_BRANCH_DEFINITIONS[index].startsFromReferencePose
+      && state.locomotionActionBlend.weights[index]
+        > ZERO_ANIMWEIGHT_THRESH
+    ) {
+      lookGraphRelevant = true
+      break
+    }
+  }
+
+  if (lookGraphRelevant) {
+    if (
+      state.lookStateMachine.hasEverBeenUpdated
+      && !state.lookStateMachine.updatedPreviousFrame
+    ) {
+      // The authored state-machine node has
+      // bReinitializeOnBecomingRelevant=true.
+      reinitializeLookStateMachine(
+        state.lookStateMachine,
+        state.lookBranches,
+      )
+    }
+
+    advanceBlendState(
+      state.viewModeBlend,
+      VIEW_DEFINITION,
+      childIndexForTag(VIEW_DEFINITION, input.ViewMode),
       deltaTime,
     )
+    advanceBlendState(
+      state.shoulderBlend,
+      SHOULDER_DEFINITION,
+      // FAnimNode_BlendListByBool intentionally stores True Pose at
+      // BlendPose[0] and False Pose at BlendPose[1].
+      input.bRightShoulder ? 0 : 1,
+      deltaTime,
+    )
+    advanceLookStateMachine(
+      state.lookStateMachine,
+      input.RotationMode,
+      deltaTime,
+      state.lookBranches,
+    )
+
+    for (
+      let index = 0;
+      index < LOOK_BRANCH_DEFINITIONS.length;
+      index++
+    ) {
+      if (state.lookStateMachine.statesToUpdate[index] === 0) continue
+      evaluateLookBranch(
+        state.lookBranches[index],
+        LOOK_BRANCH_DEFINITIONS[index],
+        input,
+        deltaTime,
+      )
+    }
+
+    state.lookStateMachine.hasEverBeenUpdated = true
+    state.lookStateMachine.updatedPreviousFrame = true
+  } else {
+    state.lookStateMachine.updatedPreviousFrame = false
   }
+
+  // Evaluation runs bottom-up after the update traversal above.
   blendCurves(
     state.lookCurves,
     state.lookSources,
@@ -765,14 +996,6 @@ export function refreshAlsCameraAnimationInstance(
       SHOULDER_MODIFIERS[index],
     )
   }
-  advanceBlendState(
-    state.shoulderBlend,
-    SHOULDER_DEFINITION,
-    // FAnimNode_BlendListByBool stores True Pose at BlendPose[0] and False Pose at
-    // BlendPose[1]. AB_Als_Camera's true branch preserves positive CameraOffsetY.
-    input.bRightShoulder ? 0 : 1,
-    deltaTime,
-  )
   blendCurves(
     state.shoulderCurves,
     state.shoulderBranches,
@@ -786,12 +1009,6 @@ export function refreshAlsCameraAnimationInstance(
       VIEW_MODIFIERS[index],
     )
   }
-  advanceBlendState(
-    state.viewModeBlend,
-    VIEW_DEFINITION,
-    childIndexForTag(VIEW_DEFINITION, input.ViewMode),
-    deltaTime,
-  )
   blendCurves(
     state.viewModeCurves,
     state.viewModeBranches,
@@ -808,12 +1025,6 @@ export function refreshAlsCameraAnimationInstance(
     }
     if (definition.modifier) applyModifier(output, definition.modifier)
   }
-  advanceBlendState(
-    state.locomotionActionBlend,
-    ACTION_DEFINITION,
-    childIndexForTag(ACTION_DEFINITION, input.LocomotionAction),
-    deltaTime,
-  )
   blendCurves(
     state.curveValues,
     state.locomotionActionBranches,
