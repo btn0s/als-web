@@ -86,8 +86,18 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
       the curated merge (single GLB, mesh + 67 clips + curves, root tracks preserved) *(2026-07-23)*
 - [x] Clip audit doc-comment: `clips.manifest`, one line per clip keyed to M3 items *(2026-07-23)*
 
-**Exit met (2026-07-23):** one curated GLB (7.4MB: real mesh, 67 clips, 161 curves); every clip
-binds by bone name; strides derive sanely from authored speeds × durations. M2 closed.
+- [ ] **ABP AnimGraph dumper (added 2026-07-23 — build whatever the 1:1 port needs)**: the
+      AnimGraph Blueprints are ALS's only non-legible substance — every shipped visual defect was
+      a wrong reconstruction of graph semantics (overlay ownership, ik routing, bank frames, clip
+      selection). Blueprint uassets serialize their compiled anim-node objects with readable
+      tagged properties (proven piecemeal: ExplicitTimes, attach sockets, CDO flags); a pipeline
+      stage walks AB_Als/AB_Als_Grounded/overlay ABPs/ALI interfaces and emits the graph as JSON —
+      nodes, parameters, pose-link wiring, layered-blend-per-bone branch filters, state
+      transitions, blend durations. Converts graph archaeology into lookups; feeds the parity
+      harness's content oracle its ground truth
+
+**Exit (revised):** one curated GLB (met 2026-07-23: 7.4MB, real mesh, 67 clips, 161 curves; every
+clip binds by bone name; strides from authored speeds) + the ABP graph dump alongside it.
 
 ---
 
@@ -137,6 +147,10 @@ from another project's implementation:
       pose-buffer runtime above makes it implementable; do it if parity footage demands it)
 - [ ] In-air: jump/fall with land recovery (`Land_Light`/`LandRoll` by fall speed)
 - [ ] Mantle/vault through the arbiter (one clock: warp + montage share normalized progress)
+- [ ] **Engine features the UE runtime provided for free (build as needed for parity feel)**:
+      sync groups/markers (footfall-phase-synced gait blending — ALS relies on it; our crossfades
+      don't sync yet), inertialization (UE's transition blending; we approximate with crossfades),
+      montage blend semantics per the ABP dump
 - [ ] Foot IK with pelvis adaptation (ALS's Control Rig stage: ground trace + spring-damped Z offset + slope alignment — constants in the math spec; the pelvis-combine formula is graph-side and flagged original-design)
 - [ ] CUT for now: ragdoll, rolling physics blend, debug-camera parity — revisit on demand
 
