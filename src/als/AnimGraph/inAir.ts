@@ -1013,16 +1013,30 @@ export function createAlsInAirGraphState(): AlsInAirGraphState {
   }
 }
 
-export function resetAlsInAirGraphState(
+export function resetAlsFallGraphState(
   state: AlsInAirGraphState,
 ): AlsInAirGraphState {
   resetInterpolatedAlpha(state.fallFastBlend)
   resetInterpolatedAlpha(state.fallFlailBlend)
   resetInterpolatedAlpha(state.fallGroundPredictionBlend)
+  return state
+}
+
+export function resetAlsLandMovementGraphState(
+  state: AlsInAirGraphState,
+): AlsInAirGraphState {
+  resetInterpolatedAlpha(state.landMovementAimingBlend)
+  return state
+}
+
+export function resetAlsInAirGraphState(
+  state: AlsInAirGraphState,
+): AlsInAirGraphState {
+  resetAlsFallGraphState(state)
   resetInterpolatedAlpha(state.jumpLaunchLeftBlend)
   resetInterpolatedAlpha(state.jumpLaunchRightBlend)
   resetInterpolatedAlpha(state.jumpGroundPredictionBlend)
-  resetInterpolatedAlpha(state.landMovementAimingBlend)
+  resetAlsLandMovementGraphState(state)
   resetAlsJumpStateClock(state.jumpState, 0)
   return state
 }

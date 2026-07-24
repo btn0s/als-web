@@ -82,7 +82,8 @@ import {
   refreshAlsFallGraph,
   refreshAlsJumpGraph,
   refreshAlsLandMovementGraph,
-  resetAlsInAirGraphState,
+  resetAlsFallGraphState,
+  resetAlsLandMovementGraphState,
   sampleAlsLandGraph,
   selectAlsLocomotionGraphTransition,
 } from './inAir'
@@ -434,7 +435,6 @@ export const ALS_AIR_LEAN_ADDITIVE_SETTINGS = {
   additiveSpace: 'local',
   referenceSequence: 'A_Als_Fall',
   referenceFrameIndex: 0,
-  blendRawSourcesBeforeDerivingAdditive: true,
 } as const
 
 export const ALS_LAND_MOVEMENT_ADDITIVE_SETTINGS = {
@@ -442,7 +442,6 @@ export const ALS_LAND_MOVEMENT_ADDITIVE_SETTINGS = {
   additiveSpace: 'mesh',
   referenceSequence: 'A_Als_Stand_Pose',
   referenceFrameIndex: 0,
-  blendRawSourcesBeforeDerivingAdditive: true,
 } as const
 
 export const ALS_LOCOMOTION_QUICK_FEET_BLEND_PROFILE =
@@ -466,8 +465,9 @@ export interface AlsLocomotionSampledPoses {
   readonly jumpFlailPose: UePoseNode
 
   /**
-   * Raw, full-pose samples in ALS_AIR_LEAN_BLEND_SPACE sample order. They must not be pre-derived
-   * additive leaves: UE blends the raw samples first and derives one local additive afterward.
+   * Raw, full-pose samples in ALS_AIR_LEAN_BLEND_SPACE sample order. The web pack preserves
+   * editor-source tracks; this graph converts every sample to its authored SequencePlayer additive
+   * before the BlendSpace mixes them, matching UAnimSequence::GetAnimationPose().
    */
   readonly airLeanRawSourcePoses: readonly [
     UePoseNode,
@@ -577,7 +577,8 @@ export interface AlsLocomotionPoseGraphNodes {
   readonly grounded: MutableUePoseNode
   readonly fallPair: MutableUePoseNode
   readonly fallBase: MutableUePoseNode
-  readonly fallAirLeanRawBlend: MutableUePoseNode
+  /** Additive SequencePlayer outputs shared by nodes32/61's authored BlendSpace samples. */
+  readonly airLeanSourceAdditives: readonly MutableUePoseNode[]
   readonly fallAirLeanAdditive: MutableUePoseNode
   readonly fallWithAirLean: MutableUePoseNode
   readonly fallLandingPreview: MutableUePoseNode
@@ -586,14 +587,16 @@ export interface AlsLocomotionPoseGraphNodes {
   readonly jumpRightLaunch: MutableUePoseNode
   readonly jumpStateMachine: MutableUePoseNode
   readonly jumpInertialized: MutableUePoseNode
-  readonly jumpAirLeanRawBlend: MutableUePoseNode
   readonly jumpAirLeanAdditive: MutableUePoseNode
   readonly jumpWithAirLean: MutableUePoseNode
   readonly jumpLandingPreview: MutableUePoseNode
   readonly jump: MutableUePoseNode
   readonly land: MutableUePoseNode
-  readonly landMovementRawBlend: MutableUePoseNode
-  readonly landMovementAdditive: MutableUePoseNode
+  /** Additive outputs of node23 and node22 before node21 blends them. */
+  readonly landMovementLightAdditive: MutableUePoseNode
+  readonly landMovementHeavyAdditive: MutableUePoseNode
+  /** Node21 output. */
+  readonly landMovementAdditiveBlend: MutableUePoseNode
   readonly landMovementApplied: MutableUePoseNode
   readonly landMovement: MutableUePoseNode
   readonly transitionScratchA: MutableUePoseNode
@@ -647,7 +650,8 @@ export function createAlsLocomotionPoseGraphRuntime(
     grounded: node(),
     fallPair: node(),
     fallBase: node(),
-    fallAirLeanRawBlend: node(),
+    airLeanSourceAdditives:
+      ALS_AIR_LEAN_BLEND_SPACE.samples.map(() => node()),
     fallAirLeanAdditive: node(),
     fallWithAirLean: node(),
     fallLandingPreview: node(),
@@ -656,14 +660,14 @@ export function createAlsLocomotionPoseGraphRuntime(
     jumpRightLaunch: node(),
     jumpStateMachine: node(),
     jumpInertialized: node(),
-    jumpAirLeanRawBlend: node(),
     jumpAirLeanAdditive: node(),
     jumpWithAirLean: node(),
     jumpLandingPreview: node(),
     jump: node(),
     land: node(),
-    landMovementRawBlend: node(),
-    landMovementAdditive: node(),
+    landMovementLightAdditive: node(),
+    landMovementHeavyAdditive: node(),
+    landMovementAdditiveBlend: node(),
     landMovementApplied: node(),
     landMovement: node(),
     transitionScratchA: node(),
@@ -720,11 +724,18 @@ function copyPoseNode(
   output: MutableUePoseNode,
 ) {
   copyPose(source.pose, output.pose)
+  copyCurveValues(source, output)
+  return output
+}
+
+function copyCurveValues(
+  source: UePoseNode,
+  output: MutableUePoseNode,
+) {
   output.curves.clear()
   for (const [name, value] of source.curves) {
     output.curves.set(name, value)
   }
-  return output
 }
 
 function publishCurves(
@@ -950,8 +961,16 @@ function hardInitializeState(
     runtime.outerTransitionStack,
     targetState,
   )
-  if (targetState === 'Jump') {
-    enterJumpState(runtime, input.footPlantedAmount)
+  switch (targetState) {
+    case 'Fall':
+      resetAlsFallGraphState(runtime.inAirGraphState)
+      break
+    case 'Jump':
+      enterJumpState(runtime, input.footPlantedAmount)
+      break
+    case 'Land Movement':
+      resetAlsLandMovementGraphState(runtime.inAirGraphState)
+      break
   }
 }
 
@@ -1004,7 +1023,6 @@ function initializeRelevantGraph(
   runtime.relevant = true
   runtime.jumpRelevant = false
   runtime.jumpSkipFirstUpdate = false
-  resetAlsInAirGraphState(runtime.inAirGraphState)
   resetStateMachineTransitionStack(
     runtime.outerTransitionStack,
     ALS_LOCOMOTION_STATES_MACHINE.initialState,
@@ -1079,16 +1097,28 @@ function stateReferenced(
 function refreshAirLeanAdditive(
   runtime: AlsLocomotionPoseGraphRuntime,
   input: AlsLocomotionPoseGraphInput,
-  rawBlend: MutableUePoseNode,
   additive: MutableUePoseNode,
 ) {
+  // GetAnimationPose() emits every authored local-space additive before nodes32/61 blend them.
+  // The pack intentionally preserves full editor tracks, so reproduce that SequencePlayer seam.
   const sourcePoses = input.poses.airLeanRawSourcePoses
-  for (const source of sourcePoses) {
+  for (let index = 0; index < sourcePoses.length; index++) {
+    const source = sourcePoses[index]
     if (source.curves.size > 0) {
       throw new Error(
         'BS_Als_Air_Lean raw authored samples must not contain curves',
       )
     }
+    const sourceAdditive = runtime.nodes.airLeanSourceAdditives[index]
+    makeDynamicAdditivePose(
+      source.pose,
+      input.poses.airLeanReferencePose.pose,
+      runtime.rig,
+      sourceAdditive.pose,
+      ALS_AIR_LEAN_ADDITIVE_SETTINGS.additiveSpace,
+      runtime.meshSpaceScratch,
+    )
+    sourceAdditive.curves.clear()
   }
   const sparseWeights = evaluateBlendSpace(
     runtime.airLeanBlendSpace,
@@ -1101,19 +1131,10 @@ function refreshAirLeanAdditive(
       sparseWeights.weights[index]
   }
   blendPoseNodesTogether(
-    sourcePoses,
+    runtime.nodes.airLeanSourceAdditives,
     runtime.airLeanWeights,
-    rawBlend,
+    additive,
   )
-  makeDynamicAdditivePose(
-    rawBlend.pose,
-    input.poses.airLeanReferencePose.pose,
-    runtime.rig,
-    additive.pose,
-    ALS_AIR_LEAN_ADDITIVE_SETTINGS.additiveSpace,
-    runtime.meshSpaceScratch,
-  )
-  additive.curves.clear()
 }
 
 function evaluateLandingPreview(
@@ -1156,7 +1177,6 @@ function evaluateFallState(
   refreshAirLeanAdditive(
     runtime,
     input,
-    nodes.fallAirLeanRawBlend,
     nodes.fallAirLeanAdditive,
   )
   copyPoseNode(nodes.fallBase, nodes.fallWithAirLean)
@@ -1287,7 +1307,6 @@ function evaluateJumpState(
   refreshAirLeanAdditive(
     runtime,
     input,
-    nodes.jumpAirLeanRawBlend,
     nodes.jumpAirLeanAdditive,
   )
   copyPoseNode(nodes.jumpInertialized, nodes.jumpWithAirLean)
@@ -1339,36 +1358,54 @@ function evaluateLandMovementState(
     },
   )
   const nodes = runtime.nodes
-  blendTwoPoseNodesTogether(
-    input.poses.landMovementLightRawPose,
-    input.poses.landMovementHeavyRawPose,
-    1 - sample.landHeavyAmount,
-    nodes.landMovementRawBlend,
-  )
+  /*
+   * The curated GLB preserves UAnimSequence's full editor source tracks. Unreal's
+   * GetAnimationPose() converts each additive SequencePlayer to its authored additive pose before
+   * node21 blends the two player outputs. Deriving one mesh-space delta after blending the full
+   * poses changes child rotations, so keep that engine boundary explicit here.
+   */
   makeDynamicAdditivePose(
-    nodes.landMovementRawBlend.pose,
+    input.poses.landMovementLightRawPose.pose,
     input.poses.landMovementReferencePose.pose,
     runtime.rig,
-    nodes.landMovementAdditive.pose,
+    nodes.landMovementLightAdditive.pose,
     ALS_LAND_MOVEMENT_ADDITIVE_SETTINGS.additiveSpace,
     runtime.meshSpaceScratch,
   )
-  nodes.landMovementAdditive.curves.clear()
-  for (const [name, value] of nodes.landMovementRawBlend.curves) {
-    nodes.landMovementAdditive.curves.set(name, value)
-  }
+  makeDynamicAdditivePose(
+    input.poses.landMovementHeavyRawPose.pose,
+    input.poses.landMovementReferencePose.pose,
+    runtime.rig,
+    nodes.landMovementHeavyAdditive.pose,
+    ALS_LAND_MOVEMENT_ADDITIVE_SETTINGS.additiveSpace,
+    runtime.meshSpaceScratch,
+  )
+  copyCurveValues(
+    input.poses.landMovementLightRawPose,
+    nodes.landMovementLightAdditive,
+  )
+  copyCurveValues(
+    input.poses.landMovementHeavyRawPose,
+    nodes.landMovementHeavyAdditive,
+  )
+  blendTwoPoseNodesTogether(
+    nodes.landMovementLightAdditive,
+    nodes.landMovementHeavyAdditive,
+    1 - sample.landHeavyAmount,
+    nodes.landMovementAdditiveBlend,
+  )
 
   copyPoseNode(nodes.grounded, nodes.landMovementApplied)
   applyMeshSpaceAdditivePose(
     nodes.landMovementApplied.pose,
-    nodes.landMovementAdditive.pose,
+    nodes.landMovementAdditiveBlend.pose,
     runtime.rig,
     sample.aimingAdditiveAmount,
     runtime.meshSpaceScratch,
   )
   accumulateAdditiveCurves(
     nodes.landMovementApplied,
-    nodes.landMovementAdditive,
+    nodes.landMovementAdditiveBlend,
     sample.aimingAdditiveAmount,
   )
 

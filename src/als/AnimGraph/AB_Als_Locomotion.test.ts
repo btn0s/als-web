@@ -2,10 +2,20 @@
 
 import { readFileSync } from 'node:fs'
 import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { describe, expect, it } from 'vitest'
+import {
+  createMeshSpaceBlendScratch,
+  makeDynamicAdditivePose,
+} from '../../engine/blend'
+import {
+  compileClipSampler,
+  sampleClip,
+} from '../../engine/clipSampler'
 import { resetPoseToReference } from '../../engine/poseBuffer'
 import { createRigDefinition } from '../../engine/rig'
 import { createMutableUePoseNode } from '../../engine/uePoseGraph'
+import { blendTwoPoseNodesTogether } from '../../engine/uePoseBlend'
 import type { MutableUePoseNode } from '../../engine/uePoseBlend'
 import {
   AB_ALS_LOCOMOTION_GRAPH,
@@ -172,6 +182,17 @@ function readGlbAnimations() {
   return json.animations
 }
 
+async function loadAlsGltf() {
+  const bytes = readFileSync(
+    new URL('../../../public/assets/skm-als.glb', import.meta.url),
+  )
+  const data = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer
+  return new GLTFLoader().parseAsync(data, '')
+}
+
 function createTestRig() {
   const root = new THREE.Bone()
   root.name = 'root'
@@ -233,6 +254,33 @@ function setPoseX(node: MutableUePoseNode, value: number) {
   for (let bone = 0; bone < node.pose.boneCount; bone++) {
     node.pose.positions[bone * 3] = value
   }
+}
+
+function setBoneRotation(
+  node: MutableUePoseNode,
+  rig: TestRig,
+  boneName: string,
+  euler: THREE.Euler,
+) {
+  const boneIndex = rig.boneNames.indexOf(boneName)
+  if (boneIndex < 0) throw new Error(`Missing test bone "${boneName}"`)
+  const quaternion = new THREE.Quaternion().setFromEuler(euler)
+  node.pose.rotations.set(quaternion.toArray(), boneIndex * 4)
+}
+
+function expectBoneRotationEquivalent(
+  actual: MutableUePoseNode,
+  expected: MutableUePoseNode,
+  rig: TestRig,
+  boneName: string,
+) {
+  const offset = rig.boneNames.indexOf(boneName) * 4
+  let dot = 0
+  for (let component = 0; component < 4; component++) {
+    dot += actual.pose.rotations[offset + component]
+      * expected.pose.rotations[offset + component]
+  }
+  expect(Math.abs(dot)).toBeCloseTo(1, 6)
 }
 
 type FrameOverrides =
@@ -547,10 +595,101 @@ describe('VERIFIED AB_Als_Locomotion content topology', () => {
       ])
     }
   })
+
+  it('proves the shipped mesh-space landing clips must become additive before node21 blends', async () => {
+    const gltf = await loadAlsGltf()
+    const rig = createRigDefinition(gltf.scene)
+    const reference = poseNode(rig)
+    const light = poseNode(rig)
+    const heavy = poseNode(rig)
+    const lightAdditive = poseNode(rig)
+    const heavyAdditive = poseNode(rig)
+    const correctBlend = poseNode(rig)
+    const rawBlend = poseNode(rig)
+    const postBlendAdditive = poseNode(rig)
+    const scratch = createMeshSpaceBlendScratch(rig.boneCount)
+    const clip = (name: string) => {
+      const animation = gltf.animations.find(
+        (candidate) => candidate.name === name,
+      )
+      if (!animation) throw new Error(`Missing ALS clip "${name}"`)
+      return compileClipSampler(animation, rig)
+    }
+
+    sampleClip(
+      clip(ALS_LAND_MOVEMENT_ADDITIVE_SETTINGS.referenceSequence),
+      rig,
+      0,
+      reference.pose,
+      false,
+    )
+    sampleClip(
+      clip(ALS_LOCOMOTION_PLAYER_METADATA.landMovementLight.clip),
+      rig,
+      0.5,
+      light.pose,
+      false,
+      reference.pose,
+    )
+    sampleClip(
+      clip(ALS_LOCOMOTION_PLAYER_METADATA.landMovementHeavy.clip),
+      rig,
+      0.5,
+      heavy.pose,
+      false,
+      reference.pose,
+    )
+    makeDynamicAdditivePose(
+      light.pose,
+      reference.pose,
+      rig,
+      lightAdditive.pose,
+      'mesh',
+      scratch,
+    )
+    makeDynamicAdditivePose(
+      heavy.pose,
+      reference.pose,
+      rig,
+      heavyAdditive.pose,
+      'mesh',
+      scratch,
+    )
+    blendTwoPoseNodesTogether(
+      lightAdditive,
+      heavyAdditive,
+      0.5,
+      correctBlend,
+    )
+    blendTwoPoseNodesTogether(light, heavy, 0.5, rawBlend)
+    makeDynamicAdditivePose(
+      rawBlend.pose,
+      reference.pose,
+      rig,
+      postBlendAdditive.pose,
+      'mesh',
+      scratch,
+    )
+
+    let minimumQuaternionDot = 1
+    for (let bone = 0; bone < rig.boneCount; bone++) {
+      const offset = bone * 4
+      let dot = 0
+      for (let component = 0; component < 4; component++) {
+        dot += correctBlend.pose.rotations[offset + component]
+          * postBlendAdditive.pose.rotations[offset + component]
+      }
+      minimumQuaternionDot = Math.min(
+        minimumQuaternionDot,
+        Math.abs(dot),
+      )
+    }
+    expect(minimumQuaternionDot).toBeLessThan(0.999999)
+  })
 })
 
 describe('AB_Als_Locomotion retained pose evaluation', () => {
-  it('blends raw Air Lean sources before deriving and applying the additive', () => {
+  it('derives every Air Lean SequencePlayer additive before the BlendSpace mixes them', () => {
     const rig = createTestRig()
     const poses = sampledPoses(rig)
     const runtime = createAlsLocomotionPoseGraphRuntime(rig)
@@ -571,8 +710,8 @@ describe('AB_Als_Locomotion retained pose evaluation', () => {
       groundPredictionAmount: 0.25,
     }))
 
-    expect(runtime.nodes.fallAirLeanRawBlend.pose.positions[0])
-      .toBeCloseTo(14)
+    expect(runtime.nodes.airLeanSourceAdditives[0].pose.positions[0])
+      .toBeCloseTo(4)
     expect(runtime.nodes.fallAirLeanAdditive.pose.positions[0])
       .toBeCloseTo(4)
     expect(runtime.nodes.fallWithAirLean.pose.positions[0])
@@ -607,9 +746,9 @@ describe('AB_Als_Locomotion retained pose evaluation', () => {
 
     expect(runtime.outerTransitionStack.currentState)
       .toBe('Land Movement')
-    expect(runtime.nodes.landMovementRawBlend.pose.positions[0])
-      .toBeCloseTo(14)
-    expect(runtime.nodes.landMovementAdditive.pose.positions[0])
+    expect(runtime.nodes.landMovementLightAdditive.pose.positions[0])
+      .toBeCloseTo(4)
+    expect(runtime.nodes.landMovementAdditiveBlend.pose.positions[0])
       .toBeCloseTo(4)
     expect(runtime.nodes.landMovementApplied.pose.positions[0])
       .toBeCloseTo(12)
@@ -630,6 +769,82 @@ describe('AB_Als_Locomotion retained pose evaluation', () => {
       .toBeCloseTo(0.3125)
   })
 
+  it('derives each authored mesh-space Land Movement sequence before node21 blends them', () => {
+    const rig = createTestRig()
+    const poses = sampledPoses(rig)
+    const runtime = createAlsLocomotionPoseGraphRuntime(rig)
+    const lightAdditive = poseNode(rig)
+    const heavyAdditive = poseNode(rig)
+    const expectedBlend = poseNode(rig)
+    const scratch = createMeshSpaceBlendScratch(rig.boneCount)
+
+    setBoneRotation(
+      poses.landMovementLightRawPose,
+      rig,
+      'root',
+      new THREE.Euler(0.9, 0.1, -0.2),
+    )
+    setBoneRotation(
+      poses.landMovementLightRawPose,
+      rig,
+      'thigh_l',
+      new THREE.Euler(0.2, 0.7, 0.1),
+    )
+    setBoneRotation(
+      poses.landMovementHeavyRawPose,
+      rig,
+      'root',
+      new THREE.Euler(-0.1, -0.8, 0.3),
+    )
+    setBoneRotation(
+      poses.landMovementHeavyRawPose,
+      rig,
+      'thigh_l',
+      new THREE.Euler(0.5, -0.2, 1.1),
+    )
+    makeDynamicAdditivePose(
+      poses.landMovementLightRawPose.pose,
+      poses.landMovementReferencePose.pose,
+      rig,
+      lightAdditive.pose,
+      'mesh',
+      scratch,
+    )
+    makeDynamicAdditivePose(
+      poses.landMovementHeavyRawPose.pose,
+      poses.landMovementReferencePose.pose,
+      rig,
+      heavyAdditive.pose,
+      'mesh',
+      scratch,
+    )
+    blendTwoPoseNodesTogether(
+      lightAdditive,
+      heavyAdditive,
+      0.5,
+      expectedBlend,
+    )
+
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses))
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
+      locomotionMode: 'InAir',
+    }))
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
+      locomotionMode: 'Grounded',
+      hasInput: true,
+      verticalVelocity: -12.5,
+    }))
+
+    expect(runtime.outerTransitionStack.currentState)
+      .toBe('Land Movement')
+    expectBoneRotationEquivalent(
+      runtime.nodes.landMovementAdditiveBlend,
+      expectedBlend,
+      rig,
+      'thigh_l',
+    )
+  })
+
   it('forces all authored Land curves after the light/heavy blend', () => {
     const rig = createTestRig()
     const poses = sampledPoses(rig)
@@ -646,6 +861,47 @@ describe('AB_Als_Locomotion retained pose evaluation', () => {
 })
 
 describe('AB_Als_Locomotion exact state/frame behavior', () => {
+  it('reinitializes only the first entered state when the machine regains relevance', () => {
+    const rig = createTestRig()
+    const poses = sampledPoses(rig)
+    const runtime = createAlsLocomotionPoseGraphRuntime(rig)
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses))
+    runtime.inAirGraphState.fallFastBlend.value = 0.75
+    runtime.inAirGraphState.fallFastBlend.initialized = true
+    runtime.inAirGraphState.landMovementAimingBlend.value = 0.25
+    runtime.inAirGraphState.landMovementAimingBlend.initialized = true
+
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
+      relevant: false,
+    }))
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses))
+
+    // bReinitializeOnBecomingRelevant resets the first entered Grounded state, not dormant states.
+    expect(runtime.inAirGraphState.fallFastBlend).toEqual({
+      value: 0.75,
+      initialized: true,
+    })
+    expect(runtime.inAirGraphState.landMovementAimingBlend).toEqual({
+      value: 0.25,
+      initialized: true,
+    })
+
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
+      relevant: false,
+    }))
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
+      deltaTime: 0.1,
+      locomotionMode: 'InAir',
+      verticalVelocity: -10,
+    }))
+    expect(runtime.outerTransitionStack.currentState).toBe('Fall')
+    expect(runtime.inAirGraphState.fallFastBlend.value).toBe(1)
+    expect(runtime.inAirGraphState.landMovementAimingBlend).toEqual({
+      value: 0.25,
+      initialized: true,
+    })
+  })
+
   it('resolves conduits to the leaf transition and never evaluates the conduit as a state', () => {
     const rules = {
       locomotionMode: 'Grounded' as const,
