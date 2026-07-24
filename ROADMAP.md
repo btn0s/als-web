@@ -112,6 +112,15 @@ from another project's implementation:
       approximation recorded below.
 - [ ] Gaits: walk / run / sprint with authored speeds; stride warping if the clips demand it
 - [ ] Stances: Standing / Crouching (prone/crawl deferred to the stealth fork — non-ALS concepts defer by default); stance ladder + staged transitions
+- [ ] **Parity harness (added 2026-07-23 — before more systems build on unverified semantics)**:
+      two oracles the implementation didn't author. (a) C++ DIFFERENTIAL: test-only, line-mirroring
+      transliteration of AlsAnimationInstance's Refresh* functions; property sweeps assert our
+      systems match within epsilon — catches math/constant/interp drift. (b) CONTENT-DERIVED POSE
+      EQUIVALENCE: final poses must trace to the authored data path ALS would take (clip
+      transforms, curves, extracted ABP ExplicitTimes as ground truth) — catches the
+      content-semantics failure class the unit suite structurally cannot (the shipped rifle-overlay
+      defects were all this class). Implementation tests remain as regression pins, not equivalence
+      evidence
 - [ ] **Character controller (`AlsCharacter` + movement component analog)**: WASD/gamepad input →
       acceleration/braking → velocity on a rapier capsule, feeding the existing VelocityBlend/
       gait inputs (today's Leva sliders become the debug override, not the source). All constants
@@ -131,8 +140,9 @@ from another project's implementation:
 - [ ] Foot IK with pelvis adaptation (ALS's Control Rig stage: ground trace + spring-damped Z offset + slope alignment — constants in the math spec; the pelvis-combine formula is graph-side and flagged original-design)
 - [ ] CUT for now: ragdoll, rolling physics blend, debug-camera parity — revisit on demand
 
-**Exit:** side-by-side with ALS Refactored in-editor footage, the web version reads as the same
-system. Template README records what's parity, what's approximated, what's cut.
+**Exit:** parity harness green (measured equivalence) AND side-by-side with ALS Refactored
+in-editor footage the web version reads as the same system. Template README records what's
+parity, what's approximated, what's cut.
 
 ---
 
