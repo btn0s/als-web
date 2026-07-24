@@ -46,6 +46,7 @@ A_Als_Stand_DynamicTransition_Left|Standing left foot-error correction montage r
 A_Als_Stand_DynamicTransition_Right|Standing right foot-error correction montage referenced by AIS_Als_Default|M3 Turn-in-place plus start/stop/pivot transitions
 A_Als_Crouch_DynamicTransition_Left|Crouching left foot-error correction montage referenced by AIS_Als_Default|M3 Turn-in-place plus start/stop/pivot transitions
 A_Als_Crouch_DynamicTransition_Right|Crouching right foot-error correction montage referenced by AIS_Als_Default|M3 Turn-in-place plus start/stop/pivot transitions
+A_Als_Lean_Pose|Authored local-space additive reference pose for every BS_Als_Lean sample|M3 Gaits: authored grounded lean
 A_Als_Lean|Neutral grounded lean BlendSpace sample|M3 Gaits: authored grounded lean
 A_Als_Lean_Forward|Forward grounded lean BlendSpace sample|M3 Gaits: authored grounded lean
 A_Als_Lean_Backward|Backward grounded lean BlendSpace sample|M3 Gaits: authored grounded lean

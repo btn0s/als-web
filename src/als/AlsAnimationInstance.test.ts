@@ -683,10 +683,10 @@ describe('AlsAnimationInstance playback regression', () => {
     instance.refresh(0.1, sprint)
     expect(instance.state.standingSprint.sprintTime).toBeCloseTo(0.1)
     expect(instance.state.standingSprint.sprintAccelerationAmount).toBe(0.25)
-    expect(window.__weightTable?.SprintBlendAmount).toBeCloseTo(0.125)
-    expect(window.__weightTable?.runFwd).toBeCloseTo(0.875)
+    expect(window.__weightTable?.SprintBlendAmount).toBeCloseTo(0.5)
+    expect(window.__weightTable?.runFwd).toBeCloseTo(0.5)
     expect(window.__weightTable?.sprint).toBe(0)
-    expect(window.__weightTable?.sprintAcceleration).toBeCloseTo(0.125)
+    expect(window.__weightTable?.sprintAcceleration).toBeCloseTo(0.5)
     expect(requestCount()).toBe(before)
 
     instance.refresh(0.1, sprint)
@@ -706,9 +706,9 @@ describe('AlsAnimationInstance playback regression', () => {
       relativeAccelerationAmount: { x: 0, y: 0 },
     }
     instance.refresh(0.15, running)
-    expect(window.__weightTable?.SprintBlendAmount).toBeCloseTo(0.875)
-    expect(window.__weightTable?.sprint).toBeCloseTo(0.875)
-    expect(window.__weightTable?.runFwd).toBeCloseTo(0.125)
+    expect(window.__weightTable?.SprintBlendAmount).toBeCloseTo(0.5)
+    expect(window.__weightTable?.sprint).toBeCloseTo(0.5)
+    expect(window.__weightTable?.runFwd).toBeCloseTo(0.5)
     instance.refresh(0.15, running)
     expect(window.__weightTable?.SprintBlendAmount).toBe(0)
     expect(window.__weightTable?.sprint).toBe(0)
@@ -800,13 +800,13 @@ describe('AlsAnimationInstance playback regression', () => {
     instance.refresh(0.25, { ...controls, direction: 180 })
     expect(window.__weightTable?.GroundedDirectionTransitionActive).toBe(1)
     expect(window.__weightTable?.GroundedDirectionTransitionLinearAlpha).toBe(0.5)
-    expect(window.__weightTable?.GroundedDirectionTransitionBlendAlpha).toBe(0.125)
+    expect(window.__weightTable?.GroundedDirectionTransitionBlendAlpha).toBe(0.5)
     expect(window.__weightTable?.GroundedDirectionTransitionRootIncomingWeight)
-      .toBeCloseTo(0.125, 7)
+      .toBeCloseTo(0.5, 7)
     expect(window.__weightTable?.GroundedDirectionTransitionFootLeftIncomingWeight)
-      .toBeCloseTo(0.25, 7)
-    expect(window.__weightTable?.['HipsDirection.Forward']).toBeCloseTo(0.875, 7)
-    expect(window.__weightTable?.['HipsDirection.Backward']).toBeCloseTo(0.125, 7)
+      .toBeCloseTo(0.8, 7)
+    expect(window.__weightTable?.['HipsDirection.Forward']).toBeCloseTo(0.5, 7)
+    expect(window.__weightTable?.['HipsDirection.Backward']).toBeCloseTo(0.5, 7)
   })
 
   it('consumes previous resolved HipsDirectionLock and FeetCrossing values', async () => {
@@ -868,10 +868,22 @@ describe('AlsAnimationInstance playback regression', () => {
       .toBeCloseTo(0.4, 12)
     expect(window.__weightTable?.PoseCrouching).toBeCloseTo(0.4, 7)
     expect(window.__weightTable?.runFwd).toBeCloseTo(0.6, 7)
-    expect(window.__weightTable?.crouchFwd).toBeCloseTo(0.4, 7)
+    expect(window.__weightTable?.crouchIdle).toBeCloseTo(0.4, 7)
+    expect(window.__weightTable?.crouchFwd).toBe(0)
+    expect(window.__weightTable?.CrouchingStateIdle).toBe(1)
 
     movingInstance.refresh(0.3, movingCrouch)
     expect(window.__weightTable?.runFwd).toBe(0)
+    expect(window.__weightTable?.crouchIdle).toBe(1)
+    expect(window.__weightTable?.crouchFwd).toBe(0)
+    expect(window.__weightTable?.CrouchingActiveTransitionIndex).toBe(0)
+
+    movingInstance.refresh(0.1, movingCrouch)
+    expect(window.__weightTable?.crouchIdle).toBeCloseTo(0.5, 7)
+    expect(window.__weightTable?.crouchFwd).toBeCloseTo(0.5, 7)
+
+    movingInstance.refresh(0.1, movingCrouch)
+    expect(window.__weightTable?.crouchIdle).toBe(0)
     expect(window.__weightTable?.crouchFwd).toBeCloseTo(1, 7)
 
     const idleGltf = await loadAlsGltf()
@@ -893,6 +905,235 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.GroundedStanceTransitionClipWeight).toBe(1)
     expect(window.__weightTable?.idle).toBe(0)
     expect(window.__weightTable?.crouchIdle).toBe(0)
+  })
+
+  it('keeps the first crouching-relevant target contribution on authored Idle', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    refreshFrames(instance, 60, controls)
+
+    instance.refresh(0.1, {
+      ...controls,
+      stance: 'Crouching',
+    })
+
+    const weights = window.__weightTable
+    expect(weights?.PoseCrouching).toBeCloseTo(0.06348462, 7)
+    expect(weights?.CrouchingStateIdle).toBe(1)
+    expect(weights?.crouchIdle).toBeCloseTo(
+      weights?.PoseCrouching ?? 0,
+      12,
+    )
+    expect(weights?.crouchFwd).toBe(0)
+  })
+
+  it('retains the interrupted Idle-to-Move pose and emits StopQuick once', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const idleCrouching = {
+      ...controls,
+      gait: 'Walking' as const,
+      stance: 'Crouching' as const,
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+    }
+    const movingCrouching = {
+      ...controls,
+      gait: 'Walking' as const,
+      stance: 'Crouching' as const,
+      speed: 1.5,
+    }
+
+    instance.refresh(0, idleCrouching)
+    instance.refresh(0, movingCrouching)
+    instance.refresh(0.1, movingCrouching)
+    expect(window.__weightTable?.CrouchingStateIdle).toBeCloseTo(0.5, 12)
+    expect(window.__weightTable?.CrouchingStateMove).toBeCloseTo(0.5, 12)
+
+    instance.refresh(0, idleCrouching)
+    expect(window.__weightTable?.CrouchingTransitionBlocked).toBe(0)
+    expect(window.__weightTable?.CrouchingStopQuickNotifyCount).toBe(1)
+    expect(window.__weightTable?.CrouchingStateIdle).toBeCloseTo(0.5, 12)
+    expect(window.__weightTable?.CrouchingStateMove).toBeCloseTo(0.5, 12)
+
+    // UE shortens the new transition because Idle already owns half of the state weight, while
+    // the retained Idle-to-Move source continues advancing beneath it.
+    instance.refresh(0.05, idleCrouching)
+    expect(window.__weightTable?.CrouchingStateIdle).toBeCloseTo(0.578125, 12)
+    expect(window.__weightTable?.CrouchingStateMove).toBeCloseTo(0.421875, 12)
+    instance.refresh(0.05, idleCrouching)
+    expect(window.__weightTable?.CrouchingStateIdle).toBe(1)
+    expect(window.__weightTable?.CrouchingStateMove).toBe(0)
+    expect(window.__weightTable?.CrouchingStopQuickNotifyCount).toBe(1)
+  })
+
+  it('plays the Stop Transition slot and applies QuickFeet on Stop-to-Idle', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const idleCrouching = {
+      ...controls,
+      gait: 'Walking' as const,
+      stance: 'Crouching' as const,
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+    }
+    const movingCrouching = {
+      ...controls,
+      gait: 'Walking' as const,
+      stance: 'Crouching' as const,
+      speed: 1.5,
+    }
+
+    instance.refresh(0, idleCrouching)
+    instance.refresh(0, movingCrouching)
+    instance.refresh(0.2, movingCrouching)
+    expect(window.__weightTable?.CrouchingStateMove).toBe(1)
+
+    instance.refresh(0, idleCrouching)
+    expect(window.__weightTable?.CrouchingActiveTransitionIndex).toBe(3)
+    instance.refresh(0.05, idleCrouching)
+    expect(window.__weightTable?.TransitionMontageWeight).toBeGreaterThan(0)
+    expect(window.__weightTable?.TransitionSequenceTime).toBeCloseTo(0.375, 12)
+    instance.refresh(0.05, idleCrouching)
+    expect(window.__weightTable?.CrouchingActiveTransitionIndex).toBe(11)
+    expect(window.__weightTable?.CrouchingStateStop).toBe(1)
+
+    instance.refresh(0.25, idleCrouching)
+    expect(window.__weightTable?.CrouchingQuickFeetProfileActive).toBe(1)
+    expect(window.__weightTable?.CrouchingQuickFeetRootIncomingWeight)
+      .toBeCloseTo(0.5, 7)
+    expect(window.__weightTable?.CrouchingQuickFeetFootLeftIncomingWeight)
+      .toBeCloseTo(25 / 26, 7)
+    expect(window.__weightTable?.CrouchingStateStop).toBeCloseTo(0.5, 7)
+    expect(window.__weightTable?.CrouchingStateIdle).toBeCloseTo(0.5, 7)
+  })
+
+  it('applies MoveDirectionChange masks inside crouching Movement States', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const movingCrouching = {
+      ...controls,
+      gait: 'Walking' as const,
+      stance: 'Crouching' as const,
+      speed: 1.5,
+    }
+    instance.refresh(0, movingCrouching)
+    instance.refresh(0, movingCrouching)
+    instance.refresh(0.2, movingCrouching)
+
+    const backward = { ...movingCrouching, direction: 180 }
+    instance.refresh(0, backward)
+    instance.refresh(0.25, backward)
+
+    expect(window.__weightTable?.CrouchingMovementActiveTransitionCount)
+      .toBe(1)
+    const rootIncoming =
+      window.__weightTable?.CrouchingMovementRootIncomingWeight ?? 0
+    expect(rootIncoming).toBeCloseTo(0.2915451895, 7)
+    expect(window.__weightTable?.CrouchingMovementFootLeftIncomingWeight)
+      .toBeCloseTo(4 * rootIncoming / (1 + 3 * rootIncoming), 7)
+    expect(window.__weightTable?.['CrouchingMovementState.Forward'])
+      .toBeCloseTo(1 - rootIncoming, 7)
+    expect(window.__weightTable?.['CrouchingMovementState.Backward'])
+      .toBeCloseTo(rootIncoming, 7)
+  })
+
+  it('routes crouching rotate transitions through node34 inertialization', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const idleCrouching = {
+      ...controls,
+      gait: 'Walking' as const,
+      stance: 'Crouching' as const,
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+    }
+    instance.refresh(0, idleCrouching)
+    const before = window.__weightTable
+      ?.CrouchingInertializationRequestCount ?? 0
+
+    instance.refresh(1 / 60, {
+      ...idleCrouching,
+      rotateInPlace: true,
+      viewYawAngle: -90,
+    })
+    expect(window.__weightTable?.CrouchingStateRotateLeft).toBe(1)
+    expect(window.__weightTable?.CrouchingInertializationRequestCount)
+      .toBe(before + 1)
+    expect(window.__weightTable?.CrouchingInertializationCorrectionMagnitude)
+      .toBeGreaterThan(0)
+
+    instance.refresh(1 / 60, {
+      ...idleCrouching,
+      rotateInPlace: true,
+      viewYawAngle: 90,
+    })
+    expect(window.__weightTable?.CrouchingStateRotateRight).toBe(1)
+    expect(window.__weightTable?.CrouchingInertializationRequestCount)
+      .toBe(before + 2)
+  })
+
+  it('surfaces the unresolved loop-bound rotate automatic-rule boundary', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const idleCrouching = {
+      ...controls,
+      gait: 'Walking' as const,
+      stance: 'Crouching' as const,
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+    }
+    instance.refresh(0, idleCrouching)
+    instance.refresh(0, {
+      ...idleCrouching,
+      rotateInPlace: true,
+      viewYawAngle: -90,
+    })
+    instance.refresh(2, idleCrouching)
+
+    expect(window.__weightTable?.CrouchingStateRotateLeft).toBe(1)
+    expect(window.__weightTable?.CrouchingAutomaticRuleBlocked).toBe(1)
+  })
+
+  it('evaluates BS_Als_Lean from the authored additive reference pose', async () => {
+    const neutralGltf = await loadAlsGltf()
+    const leaningGltf = await loadAlsGltf()
+    const neutral = createAlsAnimationInstance(neutralGltf)
+    const leaning = createAlsAnimationInstance(leaningGltf)
+    const movingCrouching = {
+      ...controls,
+      gait: 'Walking' as const,
+      stance: 'Crouching' as const,
+      speed: 1.5,
+    }
+    const neutralControls = {
+      ...movingCrouching,
+      relativeAccelerationAmount: { x: 0, y: 0 },
+    }
+    const leaningControls = {
+      ...movingCrouching,
+      relativeAccelerationAmount: { x: 1, y: 0 },
+    }
+
+    neutral.refresh(0, neutralControls)
+    leaning.refresh(0, leaningControls)
+    neutral.refresh(0, neutralControls)
+    leaning.refresh(0, leaningControls)
+    neutral.refresh(0.2, neutralControls)
+    const neutralPose = snapshotLocalBoneTransforms(neutralGltf.scene)
+    leaning.refresh(0.2, leaningControls)
+
+    expect(window.__weightTable?.CrouchingLeanForwardAmount).toBe(1)
+    expect(window.__weightTable?.['CrouchingLean.A_Als_Lean_Forward']).toBe(1)
+    expect(window.__weightTable?.['CrouchingLean.A_Als_Lean']).toBe(0)
+    expect(maximumLocalBoneDelta(
+      neutralPose,
+      snapshotLocalBoneTransforms(leaningGltf.scene),
+    )).toBeGreaterThan(0.01)
   })
 
   it('keeps both stationary authored stance-state boundaries pose-continuous', async () => {

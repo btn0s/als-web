@@ -280,8 +280,8 @@ for (const materialName of actualSkinJointHistograms.keys()) {
 }
 
 if (anims.length < 1) errs.push('no animations');
-if (manifest.length !== 117)
-  errs.push(`ALS 4.15 content manifest has ${manifest.length} clips, expected 117`);
+if (manifest.length !== 118)
+  errs.push(`ALS 4.15 content manifest has ${manifest.length} clips, expected 118`);
 if (manifestSet.size !== manifest.length) errs.push('duplicate clip names in clips.manifest');
 for (const clip of manifest)
   if (!animNameSet.has(clip)) errs.push(`missing curated clip: ${clip}`);
@@ -735,6 +735,23 @@ const QUICK_STOP_LATE_LOCK_KEYS = [
 ];
 const extrasByClip = new Map(
   anims.map((animation) => [animation.getName(), animation.getExtras() ?? {}]));
+if (!manifestSet.has('A_Als_Lean_Pose'))
+  errs.push('BS_Als_Lean additive reference A_Als_Lean_Pose is omitted');
+for (const clipName of [
+  'A_Als_Lean',
+  'A_Als_Lean_Forward',
+  'A_Als_Lean_Backward',
+  'A_Als_Lean_Left',
+  'A_Als_Lean_Right',
+]) {
+  const extras = extrasByClip.get(clipName);
+  if (
+    extras?.additiveType !== 'AAT_LocalSpaceBase'
+    || extras.refPoseSeq !== 'A_Als_Lean_Pose'
+    || extras.refFrameIndex !== 0
+  )
+    errs.push(`${clipName} grounded-lean additive settings differ from ALS 4.15`);
+}
 for (const [clipName, direction] of expectedQuickStopTransitionClips) {
   const extras = extrasByClip.get(clipName);
   if (!extras) {

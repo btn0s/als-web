@@ -2,21 +2,31 @@ import * as THREE from 'three'
 import { pickClip } from '../engine/pickClip'
 import { applyPose, createPoseApplicator } from '../engine/applyPose'
 import { compileAuthoredAdditive } from '../engine/authoredAdditive'
-import { blendPoseInPlace } from '../engine/blend'
+import {
+  accumulatePose,
+  blendPoseInPlace,
+  clearPoseAccumulator,
+  createMeshSpaceBlendScratch,
+  createPoseAccumulator,
+  finalizePose,
+  makeDynamicAdditivePose,
+} from '../engine/blend'
 import {
   compileWeightBlendProfile,
 } from '../engine/blendProfile'
 import type { WeightBlendProfile } from '../engine/blendProfile'
-import { compileClipSampler, sampleClip } from '../engine/clipSampler'
-import type { CompiledClipSampler } from '../engine/clipSampler'
 import {
-  blendCurveValue,
-  compileClipCurveSamplers,
-} from '../engine/curves'
+  compileClipSampler,
+  resolveClipTime,
+  sampleClip,
+} from '../engine/clipSampler'
+import type {
+  CompiledClipSampler,
+} from '../engine/clipSampler'
+import { compileClipCurveSamplers } from '../engine/curves'
 import type {
   ClipCurveSamplers,
   CurveFrame,
-  WeightedCurveSource,
 } from '../engine/curves'
 import {
   createEvaluatorInertializationStage,
@@ -29,8 +39,21 @@ import type {
   EvaluatorLayerEntry,
   EvaluatorSlotEntry,
 } from '../engine/evaluator'
-import { measureInertializationCorrectionMagnitude } from '../engine/inertialization'
-import { copyPose, createPoseBuffer } from '../engine/poseBuffer'
+import {
+  applyInertialization,
+  createInertialization,
+  measureInertializationCorrectionMagnitude,
+} from '../engine/inertialization'
+import {
+  applyOutputInertialization,
+  createOutputInertialization,
+  prepareOutputInertialization,
+} from '../engine/inertializationOutput'
+import {
+  copyPose,
+  createPoseBuffer,
+  resetPoseToAdditiveIdentity,
+} from '../engine/poseBuffer'
 import { createRigDefinition } from '../engine/rig'
 import { createRootMotionExtractor, resetRootMotionExtractor } from '../engine/rootMotion'
 import type { RootMotionExtractor } from '../engine/rootMotion'
@@ -57,10 +80,27 @@ import type {
   SyncGroupMember,
   SyncMarkerTable,
 } from '../engine/syncGroups'
+import {
+  blendPoseNodesTogether,
+  blendTwoCurvesTogether,
+} from '../engine/uePoseBlend'
+import type {
+  MutableUePoseNode,
+  UePoseNode,
+} from '../engine/uePoseBlend'
+import {
+  createMutableUePoseNode,
+  sampleSequencePoseNode,
+} from '../engine/uePoseGraph'
+import {
+  compileBlendSpace,
+  createBlendSpaceEvaluator,
+  evaluateBlendSpace,
+} from '../engine/blendSpace'
 import type { AuthoredBlendSpace } from '../engine/blendSpace'
 import authoredBlendSpacesSource from '../../scripts/extract-als/blend-spaces.json?raw'
 import skeletonProfilesSource from '../../scripts/extract-als/skeleton-profiles.json?raw'
-import { calculateLocomotionCadence, STAND } from './AnimGraph/blendspace'
+import { STAND } from './AnimGraph/blendspace'
 import {
   ALS_GROUNDED_DIRECTION_PLAYER,
   createGroundedLocomotionGraph,
@@ -112,6 +152,25 @@ import {
   resetAlsRifleRelaxedRuntime,
 } from './AnimGraph/AB_Als_Rifle'
 import {
+  ALS_CROUCHING_GRAPH_STATE_ORDER,
+  ALS_CROUCHING_QUICK_FEET_BLEND_PROFILE,
+  ALS_CROUCHING_STATE_TRANSITIONS,
+  createAlsCrouchingPoseGraphRuntime,
+  createAlsCrouchingStateRuntime,
+  createAlsCrouchingStrideBlendRuntime,
+  evaluateAlsCrouchingPoseGraph,
+  publishAlsCrouchingOutputCurve,
+  refreshAlsCrouchingStateRuntime,
+  refreshAlsCrouchingStrideBlend,
+} from './AnimGraph/AB_Als_Crouching'
+import {
+  ALS_CROUCHING_MOVEMENT_STATE_ORDER,
+  createAlsCrouchingMovementPoseWeights,
+  createAlsCrouchingMovementRuntime,
+  evaluateAlsCrouchingMovementState,
+  refreshAlsCrouchingMovementRuntime,
+} from './AnimGraph/crouchingMovement'
+import {
   composeAlsLayeringFinalCurves,
   createAlsLayeringPoseRuntime,
   evaluateAlsLayeringPose,
@@ -121,15 +180,9 @@ import {
   createAlsControlRigHandIkRuntime,
   evaluateAlsControlRigHandIk,
 } from './AnimGraph/CR_Als'
-import {
-  computeWeightTable,
-  createSixDirectionWeights,
-  createWeightTable,
-} from './AnimGraph/weightTable'
-import type { WeightTable, WeightTableInput } from './AnimGraph/weightTable'
+import type { WeightTable } from './AnimGraph/weightTable'
 import {
   ALS_AUTHORED_GAIT_SPEEDS,
-  buildLocomotionProfile,
 } from './Settings/AlsMovementSettings'
 import { ALS_GENERAL_ANIMATION_SETTINGS } from './Settings/AlsGeneralAnimationSettings'
 import type {
@@ -150,6 +203,14 @@ import {
   refreshStanceTransition,
 } from './State/AlsPoseState'
 import type { AlsPoseState } from './State/AlsPoseState'
+import {
+  createAlsCrouchingState,
+  refreshCrouchingMovement,
+} from './State/AlsCrouchingState'
+import {
+  createAlsLeanState,
+  refreshGroundedLean,
+} from './State/AlsLeanState'
 import {
   advanceRotateInPlaceClipTime,
   createAlsRotateInPlaceState,
@@ -239,6 +300,15 @@ const CLIP_ROLES = {
 
 type ClipRole = keyof typeof CLIP_ROLES
 
+const CROUCHING_ROLE_BY_HIPS_DIRECTION = {
+  Forward: 'crouchFwd',
+  Backward: 'crouchBwd',
+  RightForward: 'crouchRightFwd',
+  RightBackward: 'crouchRightBwd',
+  LeftForward: 'crouchLeftFwd',
+  LeftBackward: 'crouchLeftBwd',
+} as const satisfies Record<AlsHipsDirection, ClipRole>
+
 const ROLE_GAIT_AMOUNT: Record<ClipRole, number> = {
   idle: 0,
   walkFwd: 1,
@@ -305,13 +375,24 @@ interface RuntimeOverlaySource {
   time: number
 }
 
-interface RuntimeGaitSource extends WeightedCurveSource {
+interface RuntimeGaitSource {
+  readonly clipKey: string
+  readonly fallback: number
   readonly entry: EvaluatorLayerEntry
+  weight: number
 }
 
 interface RuntimeDirectionTransitionEntries {
   readonly from: EvaluatorLayerEntry
   readonly to: EvaluatorLayerEntry
+}
+
+interface RuntimeQueuedTransitionSlot {
+  readonly clip: RuntimeClip
+  readonly blendInDuration: number
+  readonly blendOutDuration: number
+  readonly playRate: number
+  readonly startTime: number
 }
 
 export interface AlsAnimationInstanceControls {
@@ -460,6 +541,80 @@ function resolveWeightedEntryCurves(
   }
 }
 
+function resolveWeightedEntryCurvesDirect(
+  output: Map<string, number>,
+  entries: readonly EvaluatorLayerEntry[],
+  graphWeight = 0,
+  graphCurves?: ReadonlyMap<string, number>,
+) {
+  let totalWeight = Math.max(0, graphWeight)
+  for (const entry of entries) {
+    if (entry.weight > 0) totalWeight += entry.weight
+  }
+  if (totalWeight <= Number.EPSILON) return
+
+  for (const entry of entries) {
+    if (entry.weight <= 0 || !entry.curves) continue
+    const normalizedWeight = entry.weight / totalWeight
+    const time = resolveClipTime(
+      entry.time,
+      entry.sampler.clip.duration,
+      entry.loop ?? true,
+    )
+    for (const [name, sample] of Object.entries(entry.curves)) {
+      output.set(
+        name,
+        (output.get(name) ?? 0) + sample(time) * normalizedWeight,
+      )
+    }
+  }
+  if (graphWeight > 0 && graphCurves) {
+    const normalizedWeight = graphWeight / totalWeight
+    for (const [name, value] of graphCurves) {
+      output.set(
+        name,
+        (output.get(name) ?? 0) + value * normalizedWeight,
+      )
+    }
+  }
+}
+
+function copyPoseNode(
+  source: UePoseNode,
+  output: MutableUePoseNode,
+) {
+  copyPose(source.pose, output.pose)
+  output.curves.clear()
+  for (const [name, value] of source.curves) {
+    output.curves.set(name, value)
+  }
+  return output
+}
+
+function blendRuntimeGaitCurve(
+  sources: readonly RuntimeGaitSource[],
+  graphWeight: number,
+  graphCurves: ReadonlyMap<string, number>,
+  fallback: number,
+) {
+  let weighted = graphWeight
+    * (graphCurves.get(POSE_GAIT_CURVE_NAME) ?? 0)
+  let totalWeight = graphWeight
+  for (const source of sources) {
+    if (source.weight <= 0) continue
+    const entry = source.entry
+    const sample = entry.curves?.[POSE_GAIT_CURVE_NAME]
+    const time = resolveClipTime(
+      entry.time,
+      entry.sampler.clip.duration,
+      entry.loop ?? true,
+    )
+    weighted += (sample?.(time) ?? source.fallback) * source.weight
+    totalWeight += source.weight
+  }
+  return totalWeight > Number.EPSILON ? weighted / totalWeight : fallback
+}
+
 /**
  * Owns sampling, pose-space composition, and the sole skeleton write for the character. The pure
  * weight table and region rules remain the graph; the React hook only forwards frame delta and
@@ -498,6 +653,12 @@ export function createAlsAnimationInstance(gltf: {
   const moveDirectionChangeProfile = rig.boneCount > 0
     ? compileWeightBlendProfile(rig, MOVE_DIRECTION_CHANGE_PROFILE)
     : null
+  const quickFeetBlendProfile = rig.boneCount > 0
+    ? compileWeightBlendProfile(
+        rig,
+        ALS_CROUCHING_QUICK_FEET_BLEND_PROFILE,
+      )
+    : null
   const directionTransitionClock = rig.boneCount > 0
     ? createStateTransitionClock<AlsHipsDirection>('Forward', rig.boneCount)
     : null
@@ -505,7 +666,6 @@ export function createAlsAnimationInstance(gltf: {
   const directionTransitionToMask = new Float32Array(rig.boneCount)
   const directionTransitionRootIndex = rig.boneNames.indexOf('root')
   const directionTransitionFootLeftIndex = rig.boneNames.indexOf('foot_l')
-  const profile = buildLocomotionProfile(gltf.animations)
   const rootMotion: RootMotionExtractor | undefined =
     rig.boneCount > 0 ? createRootMotionExtractor(rig) : undefined
   const clips = gltf.animations.map((clip): RuntimeClip => {
@@ -515,6 +675,9 @@ export function createAlsAnimationInstance(gltf: {
     return { sampler, curves, entry: createEntry(sampler, curves), time: 0 }
   })
   const clipsByName = new Map(clips.map((clip) => [clip.sampler.clip.name, clip]))
+  const crouchingPoseGraphRuntime =
+    createAlsCrouchingPoseGraphRuntime(rig)
+  const crouchingGraphOutput = createMutableUePoseNode(rig.boneCount)
   const roles: Partial<Record<ClipRole, RuntimeClip>> = {}
   const roleByClip = new Map<RuntimeClip, ClipRole>()
   for (const [role, clipName] of Object.entries(CLIP_ROLES) as [ClipRole, string][]) {
@@ -590,6 +753,159 @@ export function createAlsAnimationInstance(gltf: {
       Right: clipsByName.get(ROTATE_IN_PLACE_CLIPS.Crouching.Right),
     },
   }
+  const crouchingWalkPoseClip = clipsByName.get(
+    'A_Als_Crouch_Walk_Pose',
+  )
+  const crouchingTransitionRightClip = clipsByName.get(
+    'A_Als_Crouch_Transition_Right',
+  )
+  const crouchingMovementClips: Readonly<
+    Record<AlsHipsDirection, RuntimeClip | undefined>
+  > = {
+    Forward: roles.crouchFwd,
+    Backward: roles.crouchBwd,
+    RightForward: roles.crouchRightFwd,
+    RightBackward: roles.crouchRightBwd,
+    LeftForward: roles.crouchLeftFwd,
+    LeftBackward: roles.crouchLeftBwd,
+  }
+  const crouchingLeanBlendSpaceDefinition =
+    AUTHORED_BLEND_SPACES.BS_Als_Lean
+  if (!crouchingLeanBlendSpaceDefinition) {
+    throw new Error('Missing authored ALS BlendSpace BS_Als_Lean')
+  }
+  const crouchingLeanBlendSpace = createBlendSpaceEvaluator(
+    compileBlendSpace(crouchingLeanBlendSpaceDefinition),
+  )
+  const crouchingLeanReferenceClip =
+    clipsByName.get('A_Als_Lean_Pose')
+  const crouchingLeanSourceClips =
+    crouchingLeanBlendSpace.blendSpace.samples.map(
+      ({ animation }) => clipsByName.get(animation.name),
+    )
+  const crouchingLeanSourceComplete =
+    crouchingLeanReferenceClip !== undefined
+    && crouchingLeanSourceClips.every(
+      (clip): clip is RuntimeClip => clip !== undefined,
+    )
+  if (crouchingLeanSourceComplete) {
+    for (const clip of crouchingLeanSourceClips) {
+      const additive = compileAuthoredAdditive(clip!.sampler.clip)
+      if (
+        additive?.additiveSpace !== 'local'
+        || additive.refPoseSeq !== 'A_Als_Lean_Pose'
+        || additive.refFrameIndex !== 0
+      ) {
+        throw new Error(
+          `${clip!.sampler.clip.name} additive metadata differs from BS_Als_Lean`,
+        )
+      }
+    }
+  }
+  const crouchingGraphSourceComplete =
+    crouchingWalkPoseClip !== undefined
+    && crouchingTransitionRightClip !== undefined
+    && roles.crouchIdle !== undefined
+    && rotateInPlaceClips.Crouching.Left !== undefined
+    && rotateInPlaceClips.Crouching.Right !== undefined
+    && ALS_CROUCHING_MOVEMENT_STATE_ORDER.every(
+      (direction) => crouchingMovementClips[direction] !== undefined,
+    )
+    && crouchingLeanSourceComplete
+  const crouchingMovementSequenceNodes = Object.fromEntries(
+    ALS_CROUCHING_MOVEMENT_STATE_ORDER.map(
+      (direction) => [
+        direction,
+        createMutableUePoseNode(rig.boneCount),
+      ],
+    ),
+  ) as Record<AlsHipsDirection, MutableUePoseNode>
+  const crouchingMovementStateNodes = Object.fromEntries(
+    ALS_CROUCHING_MOVEMENT_STATE_ORDER.map(
+      (direction) => [
+        direction,
+        createMutableUePoseNode(rig.boneCount),
+      ],
+    ),
+  ) as Record<AlsHipsDirection, MutableUePoseNode>
+  const crouchingMovementStateWeights = Object.fromEntries(
+    ALS_CROUCHING_MOVEMENT_STATE_ORDER.map(
+      (direction) => [
+        direction,
+        createAlsCrouchingMovementPoseWeights(),
+      ],
+    ),
+  ) as Record<
+    AlsHipsDirection,
+    ReturnType<typeof createAlsCrouchingMovementPoseWeights>
+  >
+  const crouchingMovementClipWeights =
+    createAlsCrouchingMovementPoseWeights()
+  const crouchingMovementOutput =
+    createMutableUePoseNode(rig.boneCount)
+  const crouchingMovementCurveScratch = new Map<string, number>()
+  const crouchingFixedWalkPose =
+    createMutableUePoseNode(rig.boneCount)
+  const crouchingIdlePose = createMutableUePoseNode(rig.boneCount)
+  const crouchingTurnInPlacePose =
+    createMutableUePoseNode(rig.boneCount)
+  const crouchingRotateLeftPose =
+    createMutableUePoseNode(rig.boneCount)
+  const crouchingRotateRightPose =
+    createMutableUePoseNode(rig.boneCount)
+  const crouchingStopLeftPose =
+    createMutableUePoseNode(rig.boneCount)
+  const crouchingStopRightPose =
+    createMutableUePoseNode(rig.boneCount)
+  const crouchingLeanAdditive =
+    createMutableUePoseNode(rig.boneCount)
+  resetPoseToAdditiveIdentity(crouchingLeanAdditive.pose)
+  const crouchingLeanReference =
+    createMutableUePoseNode(rig.boneCount)
+  const crouchingLeanFullPose =
+    createMutableUePoseNode(rig.boneCount)
+  const crouchingLeanSourceAdditives =
+    crouchingLeanBlendSpace.blendSpace.samples.map(
+      () => createMutableUePoseNode(rig.boneCount),
+    )
+  const crouchingLeanWeights = new Float64Array(
+    crouchingLeanSourceAdditives.length,
+  )
+  const crouchingLeanAdditiveScratch =
+    createMeshSpaceBlendScratch(rig.boneCount)
+  if (crouchingLeanSourceComplete) {
+    sampleSequencePoseNode(
+      rig,
+      crouchingLeanReferenceClip!,
+      0,
+      false,
+      crouchingLeanReference,
+    )
+    for (
+      let index = 0;
+      index < crouchingLeanSourceClips.length;
+      index++
+    ) {
+      sampleSequencePoseNode(
+        rig,
+        crouchingLeanSourceClips[index]!,
+        0,
+        false,
+        crouchingLeanFullPose,
+      )
+      const additive = crouchingLeanSourceAdditives[index]
+      makeDynamicAdditivePose(
+        crouchingLeanFullPose.pose,
+        crouchingLeanReference.pose,
+        rig,
+        additive.pose,
+        'local',
+        crouchingLeanAdditiveScratch,
+      )
+      additive.curves.clear()
+    }
+  }
+  const crouchingOuterBlendScratch = new Map<string, number>()
   const turnInPlaceClips = new Map(
     (Object.values(ALS_TURN_IN_PLACE_SETTINGS.clips) as Array<
       typeof ALS_TURN_IN_PLACE_SETTINGS.clips[AlsStance]
@@ -613,6 +929,9 @@ export function createAlsAnimationInstance(gltf: {
         montageClips.add(clip)
       }
     }
+  }
+  if (crouchingTransitionRightClip) {
+    montageClips.add(crouchingTransitionRightClip)
   }
   function createTurnInPlaceSlot(
     source: RuntimeClip | undefined,
@@ -781,6 +1100,8 @@ export function createAlsAnimationInstance(gltf: {
     && [...turnInPlaceClips.values()].every(
       (clip): clip is RuntimeClip => clip !== undefined,
     )
+    && crouchingGraphSourceComplete
+    && quickFeetBlendProfile !== null
     && defaultOverlayGraphRuntime !== undefined
     && rifleOverlaySources.length === Object.keys(RIFLE_OVERLAY_CLIPS).length
     && rifleRelaxedSources !== undefined
@@ -891,21 +1212,96 @@ export function createAlsAnimationInstance(gltf: {
   let graphFootRightLock = 0
   let graphRotationYawSpeed = 0
   let graphAllowTransitions = 1
+  let activeCrouchingGraphWeight = 0
+  const locomotionAccumulator = createPoseAccumulator(rig.boneCount)
+  const locomotionSlotAccumulator = createPoseAccumulator(rig.boneCount)
+  const locomotionSamplePose = createPoseBuffer(rig.boneCount)
+  const locomotionSlotPose = createPoseBuffer(rig.boneCount)
+
+  function sampleLocomotionEntry(
+    entry: EvaluatorLayerEntry,
+    accumulator = locomotionAccumulator,
+  ) {
+    if (entry.weight <= 0) return
+    sampleClip(
+      entry.sampler,
+      rig,
+      entry.time,
+      locomotionSamplePose,
+      entry.loop,
+    )
+    accumulatePose(
+      accumulator,
+      locomotionSamplePose,
+      entry.weight,
+      entry.mask,
+    )
+  }
+
+  function evaluateLocomotionSlot(slot: EvaluatorSlotEntry) {
+    if (slot.weight <= 0) return
+    const montageWeight = clamp01(slot.montageWeight)
+    const montage = slot.montage
+
+    if (!montage || montageWeight < 1) {
+      clearPoseAccumulator(locomotionSlotAccumulator)
+      for (const source of slot.source) {
+        sampleLocomotionEntry(source, locomotionSlotAccumulator)
+      }
+      finalizePose(
+        locomotionSlotAccumulator,
+        evaluator.referencePose,
+        locomotionSlotPose,
+      )
+      if (montage && montageWeight > 0) {
+        sampleClip(
+          montage.sampler,
+          rig,
+          montage.time,
+          locomotionSamplePose,
+          montage.loop,
+        )
+        blendPoseInPlace(
+          locomotionSlotPose,
+          locomotionSamplePose,
+          montageWeight,
+        )
+      }
+    } else {
+      sampleClip(
+        montage.sampler,
+        rig,
+        montage.time,
+        locomotionSlotPose,
+        montage.loop,
+      )
+    }
+    accumulatePose(
+      locomotionAccumulator,
+      locomotionSlotPose,
+      slot.weight,
+    )
+  }
+
   function resolveLocomotionGraphCurves(
-    samples: CurveFrame,
     output: Map<string, number>,
   ) {
-    resolveWeightedEntryCurves(samples, output, mainCurveEntries)
+    resolveWeightedEntryCurvesDirect(
+      output,
+      mainCurveEntries,
+      activeCrouchingGraphWeight,
+      crouchingGraphOutput.curves,
+    )
 
     // These are the explicit graph outputs that enter AB_Als_Grounded's inertialization node.
     // Keeping them on that node's curve container makes pose and curve corrections share one
     // authored request and preserves the downstream AB_Als_Layering curve override.
     output.set(
       POSE_GAIT_CURVE_NAME,
-      blendCurveValue(
-        samples,
-        POSE_GAIT_CURVE_NAME,
+      blendRuntimeGaitCurve(
         gaitSources,
+        activeCrouchingGraphWeight,
+        crouchingGraphOutput.curves,
         graphFallbackGaitAmount,
       ),
     )
@@ -921,11 +1317,11 @@ export function createAlsAnimationInstance(gltf: {
   }
   const groundedInertialization = createEvaluatorInertializationStage(
     rig.boneCount,
-    resolveLocomotionGraphCurves,
   )
   const overlayInertialization = createEvaluatorInertializationStage(
     rig.boneCount,
   )
+  const transitionMontageEntries: EvaluatorLayerEntry[] = []
   let activeOverlayMode: AlsOverlayMode = 'Default'
   let defaultOverlayGraphSample = refreshAlsDefaultOverlayGraph(
     defaultOverlayGraphState,
@@ -939,9 +1335,27 @@ export function createAlsAnimationInstance(gltf: {
     },
   )
   const mainInput: EvaluatePoseInput = {
-    base: baseEntries,
-    slots: turnInPlaceSlots,
-    montages: [],
+    base: [],
+    locomotionGraph(context) {
+      clearPoseAccumulator(locomotionAccumulator)
+      for (const entry of baseEntries) sampleLocomotionEntry(entry)
+      for (const slot of turnInPlaceSlots) evaluateLocomotionSlot(slot)
+      if (activeCrouchingGraphWeight > 0) {
+        accumulatePose(
+          locomotionAccumulator,
+          crouchingGraphOutput.pose,
+          activeCrouchingGraphWeight,
+        )
+      }
+      finalizePose(
+        locomotionAccumulator,
+        context.referencePose,
+        context.outputPose,
+      )
+      context.outputCurves.clear()
+      resolveLocomotionGraphCurves(context.outputCurves)
+    },
+    montages: transitionMontageEntries,
     stagedInertialization: {
       locomotion: groundedInertialization,
       overlay: overlayInertialization,
@@ -1012,6 +1426,7 @@ export function createAlsAnimationInstance(gltf: {
     return evaluator.inertialization.requestCount
       + groundedInertialization.inertialization.requestCount
       + overlayInertialization.inertialization.requestCount
+      + crouchingNode34.requestCount
   }
 
   function inertializationCorrectionMagnitude() {
@@ -1022,12 +1437,34 @@ export function createAlsAnimationInstance(gltf: {
       + measureInertializationCorrectionMagnitude(
         overlayInertialization.inertialization,
       )
+      + measureInertializationCorrectionMagnitude(crouchingNode34)
   }
 
   let soloClip: RuntimeClip | null = null
   const standWeights = [1, 0, 0, 0]
   let crouchMoveWeight = 0
   let moveBlendProgress = 0
+  const crouchingStateRuntime = createAlsCrouchingStateRuntime(
+    rig.boneCount,
+    quickFeetBlendProfile,
+  )
+  const crouchingMovementRuntime =
+    createAlsCrouchingMovementRuntime(
+      rig.boneCount,
+      moveDirectionChangeProfile,
+    )
+  const crouchingStrideBlendRuntime =
+    createAlsCrouchingStrideBlendRuntime()
+  const crouchingState = createAlsCrouchingState()
+  const leanState = createAlsLeanState()
+  let leanPendingUpdate = true
+  const crouchingNode34 = createInertialization(rig.boneCount)
+  const crouchingNode34Output = createOutputInertialization()
+  let crouchingRotateLeftTime = 0
+  let crouchingRotateRightTime = 0
+  let queuedTransitionSlot: RuntimeQueuedTransitionSlot | null = null
+  let activeTransitionClip: RuntimeClip | null = null
+  let stopQuickNotifyCount = 0
   const stanceTransitionState = createAlsStanceTransitionCurveState()
   const groundedStanceTransitionState =
     createAlsGroundedStanceTransitionState()
@@ -1073,16 +1510,6 @@ export function createAlsAnimationInstance(gltf: {
   const velocityBlend = createVelocityBlend()
   const velocityTarget = createVelocityBlend()
   let velocityInitialized = false
-  const directionWeights = createSixDirectionWeights()
-  const table = createWeightTable()
-  const input: WeightTableInput = {
-    standWeights,
-    crouchMoveWeight: 0,
-    crouchingAmount: 0,
-    inAirAmount: 0,
-    montageGate: 0,
-    velocityBlend,
-  }
 
   function playClip(name: string | null) {
     if (name === null) {
@@ -1121,6 +1548,46 @@ export function createAlsAnimationInstance(gltf: {
     state.hipsDirection = hipsDirection
   }
 
+  function processCrouchingLifecycleEvents() {
+    for (const event of crouchingStateRuntime.lifecycleEvents) {
+      if (
+        event.kind === 'CallFunction'
+        && event.functionName === 'InitializeTurnInPlace'
+      ) {
+        turnInPlaceState.activationDelay = 0
+        continue
+      }
+      if (
+        event.kind === 'CallFunction'
+        && event.functionName === 'StopTransitionAndTurnInPlaceAnimations'
+      ) {
+        queueStopTransitionAndTurnInPlaceAnimations(
+          transitionsState,
+          event.blendOutDuration
+            ?? STOP_TRANSITION_AND_TURN_IN_PLACE_BLEND_OUT_DURATION,
+        )
+        continue
+      }
+      if (event.kind === 'PlayTransitionRightAnimation') {
+        if (crouchingTransitionRightClip) {
+          queuedTransitionSlot = {
+            clip: crouchingTransitionRightClip,
+            blendInDuration: event.blendInDuration,
+            blendOutDuration: event.blendOutDuration,
+            playRate: event.playRate,
+            startTime: event.startTime,
+          }
+        }
+        continue
+      }
+      // StopQuick is an authored state-machine start notify. ALS has no native receiver for it;
+      // retain the event at the live seam without assigning unverified Transition-slot behavior.
+      if (event.kind === 'AnimNotify' && event.name === 'StopQuick') {
+        stopQuickNotifyCount++
+      }
+    }
+  }
+
   function accumulateStandingDirectionState(
     hipsDirection: AlsHipsDirection,
     stateWeight: number,
@@ -1153,7 +1620,34 @@ export function createAlsAnimationInstance(gltf: {
   }
 
   function processQueuedTransitionAndTurnInPlaceAnimations() {
-    // NativePostUpdateAnimation order: play queued turn, then stop queued Slots.
+    // NativePostUpdateAnimation order: play queued transition, play queued turn, stop queued Slots.
+    if (
+      queuedTransitionSlot
+      && !transitionsState.stopTransitionsQueued
+    ) {
+      const queued = queuedTransitionSlot
+      queued.clip.time = 0
+      queued.clip.entry.time = 0
+      queued.clip.entry.loop = false
+      playSlotAnimationAsDynamicMontage(
+        slotMontageClock,
+        {
+          clipKey: queued.clip.sampler.clip.name,
+          clipDuration: queued.clip.sampler.clip.duration,
+          slotName: TRANSITION_SLOT_NAME,
+          groupName: GROUNDED_SLOT_GROUP_NAME,
+          blendInDuration: queued.blendInDuration,
+          blendOutDuration: queued.blendOutDuration,
+          playRate: queued.playRate,
+          loopCount: 1,
+          blendOutTriggerTime: 0,
+          startTime: queued.startTime,
+        },
+      )
+      activeTransitionClip = queued.clip
+      queuedTransitionSlot = null
+    }
+
     const queuedTurn = takeQueuedTurnInPlaceAnimation(
       turnInPlaceState,
       transitionsState.stopTransitionsQueued,
@@ -1180,6 +1674,7 @@ export function createAlsAnimationInstance(gltf: {
           },
         )
         activeTurnInPlaceClip = clip
+        activeTransitionClip = null
       }
     }
 
@@ -1313,15 +1808,25 @@ export function createAlsAnimationInstance(gltf: {
       turnInPlaceSample
       && turnInPlaceSample.status !== 'completed'
     ) {
-      activeTurnInPlaceClip =
-        turnInPlaceClips.get(turnInPlaceSample.clipKey) ?? null
-      if (activeTurnInPlaceClip) {
-        activeTurnInPlaceClip.time = turnInPlaceSample.sampleTime
-        activeTurnInPlaceClip.entry.time = turnInPlaceSample.sampleTime
-        activeTurnInPlaceClip.entry.loop = false
+      if (turnInPlaceSample.slotName === TRANSITION_SLOT_NAME) {
+        activeTransitionClip =
+          clipsByName.get(turnInPlaceSample.clipKey) ?? null
+        activeTurnInPlaceClip = null
+      } else {
+        activeTurnInPlaceClip =
+          turnInPlaceClips.get(turnInPlaceSample.clipKey) ?? null
+        activeTransitionClip = null
+      }
+      const activeSlotClip =
+        activeTransitionClip ?? activeTurnInPlaceClip
+      if (activeSlotClip) {
+        activeSlotClip.time = turnInPlaceSample.sampleTime
+        activeSlotClip.entry.time = turnInPlaceSample.sampleTime
+        activeSlotClip.entry.loop = false
       }
     } else {
       activeTurnInPlaceClip = null
+      activeTransitionClip = null
     }
     refreshTransitions(
       transitionsState,
@@ -1334,6 +1839,7 @@ export function createAlsAnimationInstance(gltf: {
       if (
         !syncClips.has(clip)
         && clip !== activeTurnInPlaceClip
+        && clip !== activeTransitionClip
         && clip !== activeGroundedStanceState?.clip
         && clip !== groundedStanceTransitionSource?.clip
         && clip !== roles.idle
@@ -1375,7 +1881,41 @@ export function createAlsAnimationInstance(gltf: {
     }
 
     const rawSpeed = Math.max(0, controls.speed)
+    refreshGroundedLean(leanState, {
+      pendingUpdate: leanPendingUpdate,
+      deltaTime: Math.max(0, delta),
+      relativeAccelerationAmount: controls.relativeAccelerationAmount,
+    })
+    leanPendingUpdate = false
+    if (crouchingLeanSourceComplete) {
+      const leanSamples = evaluateBlendSpace(
+        crouchingLeanBlendSpace,
+        leanState.rightAmount,
+        leanState.forwardAmount,
+      )
+      crouchingLeanWeights.fill(0)
+      for (let index = 0; index < leanSamples.count; index++) {
+        crouchingLeanWeights[leanSamples.sampleIndices[index]] =
+          leanSamples.weights[index]
+      }
+      blendPoseNodesTogether(
+        crouchingLeanSourceAdditives,
+        crouchingLeanWeights,
+        crouchingLeanAdditive,
+      )
+    }
     for (const clip of montageClips) clip.entry.weight = 0
+    transitionMontageEntries.length = 0
+    if (
+      activeTransitionClip
+      && turnInPlaceSample?.slotName === TRANSITION_SLOT_NAME
+      && turnInPlaceSample.status !== 'completed'
+    ) {
+      activeTransitionClip.entry.weight = turnInPlaceSample.weight
+      activeTransitionClip.entry.time = turnInPlaceSample.sampleTime
+      activeTransitionClip.entry.loop = false
+      transitionMontageEntries.push(activeTransitionClip.entry)
+    }
     for (const clip of stanceStateClips) clip.entry.weight = 0
     const crouching = controls.stance === 'Crouching'
     const targetCrouchingAmount = crouching ? 1 : 0
@@ -1478,24 +2018,6 @@ export function createAlsAnimationInstance(gltf: {
       source.clip.entry.loop = false
     }
 
-    resetTurnInPlaceFrame(turnInPlaceState)
-    if (
-      turnInPlaceAllowed
-      && !rotateInPlaceAllowed
-      && !controls.moving
-      && activeGroundedStanceState === null
-    ) {
-      refreshTurnInPlaceState(turnInPlaceState, {
-        delta,
-        transitionsAllowed: transitionsState.transitionsAllowed,
-        viewYawAngle: controls.viewYawAngle,
-        viewYawSpeed: controls.viewYawSpeed,
-        stance: controls.stance,
-      })
-    } else if (!turnInPlaceAllowed || rotateInPlaceAllowed || controls.moving) {
-      turnInPlaceState.activationDelay = 0
-    }
-
     const activeTurnInPlaceSample =
       turnInPlaceSample && turnInPlaceSample.status !== 'completed'
         ? turnInPlaceSample
@@ -1564,11 +2086,76 @@ export function createAlsAnimationInstance(gltf: {
       ? retainedStanceSource.targetCrouchingAmount
       : crouchingAmount
 
+    const crouchingGraphRelevant =
+      activeGroundedStanceState === null
+      && (
+        controls.stance === 'Crouching'
+        || locomotionCrouchingAmount > Number.EPSILON
+      )
+    const previousCrouchingGraphState =
+      crouchingStateRuntime.currentState
+    refreshAlsCrouchingStateRuntime(
+      crouchingStateRuntime,
+      {
+        relevant: crouchingGraphRelevant,
+        deltaTime: Math.max(0, delta),
+        movingSmooth: controls.movingSmooth,
+        rotatingLeft: rotateInPlaceState.rotatingLeft,
+        rotatingRight: rotateInPlaceState.rotatingRight,
+        // These two dynamically loop-bound automatic-rule boundaries remain explicit in the
+        // retained module until a UE differential establishes the engine comparison.
+        rotateLeftAutomaticRemainingTimeReached: false,
+        rotateRightAutomaticRemainingTimeReached: false,
+      },
+    )
+    if (
+      crouchingStateRuntime.currentState
+        !== previousCrouchingGraphState
+    ) {
+      if (crouchingStateRuntime.currentState === 'Rotate Left') {
+        crouchingRotateLeftTime = 0
+      } else if (
+        crouchingStateRuntime.currentState === 'Rotate Right'
+      ) {
+        crouchingRotateRightTime = 0
+      }
+    }
+    processCrouchingLifecycleEvents()
+    for (const request of crouchingStateRuntime.inertializationRequests) {
+      crouchingNode34.requestInertialization(request.duration)
+    }
+
+    resetTurnInPlaceFrame(turnInPlaceState)
+    const turnInPlaceGraphRelevant =
+      controls.stance === 'Crouching'
+        ? (
+            crouchingGraphRelevant
+            && crouchingStateRuntime.stateWeights.Idle > 0
+          )
+        : activeGroundedStanceState === null
+    if (
+      turnInPlaceAllowed
+      && !rotateInPlaceAllowed
+      && !controls.moving
+      && turnInPlaceGraphRelevant
+    ) {
+      refreshTurnInPlaceState(turnInPlaceState, {
+        delta,
+        transitionsAllowed: transitionsState.transitionsAllowed,
+        viewYawAngle: controls.viewYawAngle,
+        viewYawSpeed: controls.viewYawSpeed,
+        stance: controls.stance,
+      })
+    } else if (!turnInPlaceAllowed || rotateInPlaceAllowed || controls.moving) {
+      turnInPlaceState.activationDelay = 0
+    }
+
     const rotateDirection = rotateInPlaceState.rotatingLeft
       ? 'Left'
       : rotateInPlaceState.rotatingRight ? 'Right' : null
-    const selectedRotateClip = rotateDirection
-      ? rotateInPlaceClips[controls.stance][rotateDirection]
+    const selectedRotateClip =
+      controls.stance === 'Standing' && rotateDirection
+      ? rotateInPlaceClips.Standing[rotateDirection]
       : undefined
     if (selectedRotateClip && selectedRotateClip !== rotateClip) {
       rotateClip = selectedRotateClip
@@ -1612,11 +2199,16 @@ export function createAlsAnimationInstance(gltf: {
       activeGroundedStanceState.clip.entry.loop = false
     }
     const effectiveRotateBlendWeight =
-      rotateBlendWeight * stanceTargetWeight
+      rotateBlendWeight
+      * (1 - locomotionCrouchingAmount)
+      * stanceTargetWeight
     if (rotateClip) {
       rotateClip.entry.weight = effectiveRotateBlendWeight
     }
     const baseWeight = (1 - rotateBlendWeight) * stanceTargetWeight
+    const crouchingGraphWeight =
+      locomotionCrouchingAmount * stanceTargetWeight
+    activeCrouchingGraphWeight = crouchingGraphWeight
 
     // AB_Als_Standing's Idle <-> Move transitions are discrete 0.2s Hermite transitions. Speed
     // shapes Stride Amount and PlayRate inside Move; it never continuously crossfades Idle into
@@ -1665,6 +2257,50 @@ export function createAlsAnimationInstance(gltf: {
       controls.direction,
     )
     state.directionTransitionRequest = null
+    const crouchingMovementRelevant =
+      crouchingGraphRelevant
+      && (
+        crouchingStateRuntime.stateWeights.Move > 0
+        || crouchingStateRuntime.stateWeights.Stop > 0
+      )
+    refreshAlsCrouchingMovementRuntime(
+      crouchingMovementRuntime,
+      {
+        relevant: crouchingMovementRelevant,
+        movementDirection: state.movementDirection,
+        hipsDirectionLockAmount: state.hipsDirectionLockAmount,
+        feetCrossingAmount: state.feetCrossingAmount,
+      },
+      Math.max(0, delta),
+      setHipsDirection,
+    )
+    refreshCrouchingMovement(
+      crouchingState,
+      rawSpeed / Math.max(1e-4, controls.scale ?? 1),
+    )
+    const crouchingStrideBlendAmount =
+      refreshAlsCrouchingStrideBlend(
+        crouchingStrideBlendRuntime,
+        crouchingState.strideBlendAmount,
+        Math.max(0, delta),
+        crouchingMovementRelevant,
+      )
+    for (const direction of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
+      crouchingMovementClipWeights[direction] = 0
+    }
+    for (const stateDirection of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
+      const poseWeights = evaluateAlsCrouchingMovementState(
+        stateDirection,
+        velocityBlend,
+        crouchingMovementStateWeights[stateDirection],
+      )
+      const stateWeight =
+        crouchingMovementRuntime.stateWeights[stateDirection]
+      for (const clipDirection of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
+        crouchingMovementClipWeights[clipDirection] +=
+          poseWeights[clipDirection] * stateWeight
+      }
+    }
     const movementStatesShouldBeRelevant =
       controls.movingSmooth && controls.stance === 'Standing'
     if (movementStatesShouldBeRelevant) {
@@ -1722,14 +2358,6 @@ export function createAlsAnimationInstance(gltf: {
       movementStatesRelevant = false
     }
 
-    input.crouchMoveWeight = crouchMoveWeight
-    input.crouchingAmount = locomotionCrouchingAmount
-    const weights = computeWeightTable(
-      input,
-      table,
-      directionWeights,
-    )
-
     for (const clip of baseClips) clip.entry.weight = 0
     for (const entries of directionTransitionEntriesByClip.values()) {
       entries.from.weight = 0
@@ -1739,16 +2367,25 @@ export function createAlsAnimationInstance(gltf: {
       member.weight = 0
     }
 
-    // Crouching still uses its existing authored-sequence path. The standing branch below owns
-    // every standing locomotion entry, so the old VelocityBlend mapping cannot leak into it.
-    for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) {
-      if (role !== 'crouchIdle' && !role.startsWith('crouch')) continue
+    // AB_Als_Crouching now contributes one retained graph node. Its sequence players remain in
+    // Movement for marker synchronization, but may not also leak into the flattened base.
+    const crouchingMovementOuterWeight =
+      crouchingStateRuntime.stateWeights.Move
+      + crouchingStateRuntime.stateWeights.Stop
+    for (const direction of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
+      const role = CROUCHING_ROLE_BY_HIPS_DIRECTION[direction]
       const clip = roles[role]
       if (!clip) continue
       const syncMember = locomotionMembersByRole.get(role)
-      clip.entry.weight = weights[role] * baseWeight
-      if (syncMember) syncMember.weight = clip.entry.weight
+      clip.entry.weight = 0
+      if (syncMember) {
+        syncMember.weight =
+          crouchingMovementClipWeights[direction]
+          * crouchingMovementOuterWeight
+          * crouchingGraphWeight
+      }
     }
+    if (roles.crouchIdle) roles.crouchIdle.entry.weight = 0
 
     const standingAmount = (1 - locomotionCrouchingAmount) * baseWeight
     const idle = roles.idle
@@ -1839,7 +2476,7 @@ export function createAlsAnimationInstance(gltf: {
     const standingTurnInPlaceSlotWeight =
       (1 - movingAmount) * (1 - locomotionCrouchingAmount) * baseWeight
     const crouchingTurnInPlaceSlotWeight =
-      (1 - movingAmount) * locomotionCrouchingAmount * baseWeight
+      crouchingGraphWeight * crouchingStateRuntime.stateWeights.Idle
     const standingTurnInPlaceActive =
       activeTurnInPlaceSample?.slotName === TURN_IN_PLACE_STANDING_SLOT_NAME
       && activeTurnInPlaceClip !== null
@@ -1855,11 +2492,10 @@ export function createAlsAnimationInstance(gltf: {
         standingTurnInPlaceActive ? turnInPlaceMontageWeight : 0
     }
     if (turnInPlaceCrouchingSlot) {
-      turnInPlaceCrouchingSlot.weight = crouchingTurnInPlaceSlotWeight
-      turnInPlaceCrouchingSlot.montage =
-        crouchingTurnInPlaceActive ? activeTurnInPlaceClip!.entry : undefined
-      turnInPlaceCrouchingSlot.montageWeight =
-        crouchingTurnInPlaceActive ? turnInPlaceMontageWeight : 0
+      // The retained Crouching graph owns this Slot before node34.
+      turnInPlaceCrouchingSlot.weight = 0
+      turnInPlaceCrouchingSlot.montage = undefined
+      turnInPlaceCrouchingSlot.montageWeight = 0
     }
     if (roles.idle) {
       roles.idle.entry.time = 0
@@ -1868,17 +2504,14 @@ export function createAlsAnimationInstance(gltf: {
     }
     if (roles.crouchIdle) {
       roles.crouchIdle.entry.time = 0
-      roles.crouchIdle.entry.weight = crouchingTurnInPlaceSlotWeight
-        * (crouchingTurnInPlaceActive ? 1 - turnInPlaceMontageWeight : 1)
+      roles.crouchIdle.entry.weight = 0
     }
     if (activeTurnInPlaceClip) {
       activeTurnInPlaceClip.entry.weight =
         (
           standingTurnInPlaceActive
             ? standingTurnInPlaceSlotWeight
-            : crouchingTurnInPlaceActive
-              ? crouchingTurnInPlaceSlotWeight
-              : 0
+            : 0
         ) * turnInPlaceMontageWeight
     }
 
@@ -2006,19 +2639,6 @@ export function createAlsAnimationInstance(gltf: {
       }
     }
 
-    const crouchingCadence = calculateLocomotionCadence(
-      locomotionSpeed,
-      standWeights,
-      crouchMoveWeight,
-      locomotionCrouchingAmount,
-      {
-        walk: profile.walk.stride,
-        run: profile.run.stride,
-        sprint: profile.sprint.stride,
-        crouchWalk: profile.crouchWalk.stride,
-      },
-      gaitAmounts.amount,
-    )
     for (const member of locomotionSyncGroup.members) {
       if (
         member.weight <= 0
@@ -2035,7 +2655,7 @@ export function createAlsAnimationInstance(gltf: {
     for (const role of locomotionRoles) {
       if (!role.startsWith('crouch')) continue
       const member = locomotionMembersByRole.get(role)
-      if (member) member.playRate = crouchingCadence * member.duration
+      if (member) member.playRate = crouchingState.playRate
     }
     const syncResult = advanceSyncGroup(locomotionSyncGroup, delta)
     normalDebugWeights.locomotionCadence = syncResult.leader
@@ -2064,6 +2684,233 @@ export function createAlsAnimationInstance(gltf: {
         rifleSprintImpulseArmsSource?.time ?? 0
     }
 
+    if (
+      crouchingGraphRelevant
+      && crouchingWalkPoseClip
+      && roles.crouchIdle
+      && rotateInPlaceClips.Crouching.Left
+      && rotateInPlaceClips.Crouching.Right
+    ) {
+      sampleSequencePoseNode(
+        rig,
+        crouchingWalkPoseClip,
+        0,
+        false,
+        crouchingFixedWalkPose,
+      )
+      sampleSequencePoseNode(
+        rig,
+        crouchingWalkPoseClip,
+        0,
+        false,
+        crouchingStopLeftPose,
+      )
+      sampleSequencePoseNode(
+        rig,
+        crouchingWalkPoseClip,
+        0,
+        false,
+        crouchingStopRightPose,
+      )
+      sampleSequencePoseNode(
+        rig,
+        roles.crouchIdle,
+        0,
+        false,
+        crouchingIdlePose,
+      )
+
+      for (const direction of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
+        const clip = crouchingMovementClips[direction]!
+        sampleSequencePoseNode(
+          rig,
+          clip,
+          clip.entry.time,
+          true,
+          crouchingMovementSequenceNodes[direction],
+        )
+      }
+      const movementSequencePoses =
+        ALS_CROUCHING_MOVEMENT_STATE_ORDER.map(
+          (direction) => crouchingMovementSequenceNodes[direction],
+        )
+      for (const direction of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
+        const poseWeights = crouchingMovementStateWeights[direction]
+        blendPoseNodesTogether(
+          movementSequencePoses,
+          ALS_CROUCHING_MOVEMENT_STATE_ORDER.map(
+            (sourceDirection) => poseWeights[sourceDirection],
+          ),
+          crouchingMovementStateNodes[direction],
+        )
+      }
+
+      copyPoseNode(
+        crouchingMovementStateNodes[
+          crouchingMovementRuntime.baseState
+        ],
+        crouchingMovementOutput,
+      )
+      for (const active of crouchingMovementRuntime.activeTransitions) {
+        const target =
+          crouchingMovementStateNodes[active.nextState]
+        blendPoseInPlace(
+          crouchingMovementOutput.pose,
+          target.pose,
+          1,
+          active.nextPoseMask,
+        )
+        blendTwoCurvesTogether(
+          crouchingMovementOutput.curves,
+          target.curves,
+          1 - active.alpha,
+          crouchingMovementCurveScratch,
+        )
+        crouchingMovementOutput.curves.clear()
+        for (const [name, value] of crouchingMovementCurveScratch) {
+          crouchingMovementOutput.curves.set(name, value)
+        }
+      }
+
+      const rotateDelta = Math.max(0, delta)
+        * rotateInPlaceState.playRate
+      const leftDuration =
+        rotateInPlaceClips.Crouching.Left.sampler.clip.duration
+      const rightDuration =
+        rotateInPlaceClips.Crouching.Right.sampler.clip.duration
+      if (crouchingStateRuntime.stateWeights['Rotate Left'] > 0) {
+        crouchingRotateLeftTime = rotateInPlaceState.rotatingLeft
+          ? (
+              leftDuration > 0
+                ? (
+                    crouchingRotateLeftTime + rotateDelta
+                  ) % leftDuration
+                : 0
+            )
+          : Math.min(
+              leftDuration,
+              crouchingRotateLeftTime + rotateDelta,
+            )
+      }
+      if (crouchingStateRuntime.stateWeights['Rotate Right'] > 0) {
+        crouchingRotateRightTime = rotateInPlaceState.rotatingRight
+          ? (
+              rightDuration > 0
+                ? (
+                    crouchingRotateRightTime + rotateDelta
+                  ) % rightDuration
+                : 0
+            )
+          : Math.min(
+              rightDuration,
+              crouchingRotateRightTime + rotateDelta,
+            )
+      }
+      sampleSequencePoseNode(
+        rig,
+        rotateInPlaceClips.Crouching.Left,
+        crouchingRotateLeftTime,
+        rotateInPlaceState.rotatingLeft,
+        crouchingRotateLeftPose,
+      )
+      sampleSequencePoseNode(
+        rig,
+        rotateInPlaceClips.Crouching.Right,
+        crouchingRotateRightTime,
+        rotateInPlaceState.rotatingRight,
+        crouchingRotateRightPose,
+      )
+
+      const activeCrouchingTurn =
+        crouchingTurnInPlaceActive && activeTurnInPlaceClip
+          ? activeTurnInPlaceClip
+          : undefined
+      if (activeCrouchingTurn) {
+        sampleSequencePoseNode(
+          rig,
+          activeCrouchingTurn,
+          activeCrouchingTurn.time,
+          false,
+          crouchingTurnInPlacePose,
+        )
+      }
+
+      const statePoses = evaluateAlsCrouchingPoseGraph(
+        crouchingPoseGraphRuntime,
+        {
+          fixedCrouchWalkPose: crouchingFixedWalkPose,
+          movementStatesPose: crouchingMovementOutput,
+          leanAdditivePose: crouchingLeanAdditive,
+          idlePose: crouchingIdlePose,
+          turnInPlaceMontagePose: activeCrouchingTurn
+            ? crouchingTurnInPlacePose
+            : undefined,
+          turnInPlaceMontageWeight: activeCrouchingTurn
+            ? turnInPlaceMontageWeight
+            : 0,
+          turnInPlacePlayRate: turnInPlaceState.playRate,
+          rotateLeftPose: crouchingRotateLeftPose,
+          rotateRightPose: crouchingRotateRightPose,
+          rotateInPlacePlayRate: rotateInPlaceState.playRate,
+          stopLeftFixedPose: crouchingStopLeftPose,
+          stopRightFixedPose: crouchingStopRightPose,
+          strideBlendAlpha: crouchingStrideBlendAmount,
+        },
+      )
+
+      const activeOuterTransitions =
+        crouchingStateRuntime.activeStandardTransitions
+      const firstOuterTransition = activeOuterTransitions[0]
+      if (!firstOuterTransition) {
+        copyPoseNode(
+          statePoses[crouchingStateRuntime.currentState],
+          crouchingGraphOutput,
+        )
+      } else {
+        copyPoseNode(
+          statePoses[firstOuterTransition.previousState],
+          crouchingGraphOutput,
+        )
+        for (const active of activeOuterTransitions) {
+          const target = statePoses[active.nextState]
+          blendPoseInPlace(
+            crouchingGraphOutput.pose,
+            target.pose,
+            1,
+            active.nextPoseMask,
+          )
+          blendTwoCurvesTogether(
+            crouchingGraphOutput.curves,
+            target.curves,
+            1 - active.alpha,
+            crouchingOuterBlendScratch,
+          )
+          crouchingGraphOutput.curves.clear()
+          for (const [name, value] of crouchingOuterBlendScratch) {
+            crouchingGraphOutput.curves.set(name, value)
+          }
+        }
+      }
+
+      prepareOutputInertialization(
+        crouchingNode34Output,
+        crouchingNode34,
+      )
+      applyInertialization(
+        crouchingNode34,
+        crouchingGraphOutput.pose,
+        Math.max(0, delta),
+      )
+      applyOutputInertialization(
+        crouchingNode34Output,
+        crouchingGraphOutput.curves,
+        undefined,
+        Math.max(0, delta),
+        crouchingNode34,
+      )
+      publishAlsCrouchingOutputCurve(crouchingGraphOutput)
+    }
+
     copyPose(standReference, layeringReference)
     blendPoseInPlace(
       layeringReference,
@@ -2073,12 +2920,10 @@ export function createAlsAnimationInstance(gltf: {
 
     graphRotationYawSpeed = 0
     const turnInPlaceSlotWeight =
-      standingTurnInPlaceSlotWeight + crouchingTurnInPlaceSlotWeight
+      standingTurnInPlaceSlotWeight
     const activeTurnInPlaceSlotWeight = standingTurnInPlaceActive
       ? standingTurnInPlaceSlotWeight
-      : crouchingTurnInPlaceActive
-        ? crouchingTurnInPlaceSlotWeight
-        : 0
+      : 0
     const turnInPlaceCurves = activeTurnInPlaceClip?.curves
     const turnInPlaceCurveTime = activeTurnInPlaceClip?.time ?? 0
     const activeTurnInPlaceFootLeftLock = blendSlotCurveValue(
@@ -2152,6 +2997,46 @@ export function createAlsAnimationInstance(gltf: {
         )
       }
     }
+    if (crouchingGraphWeight > 0) {
+      graphFootLeftLock = clamp01(
+        graphFootLeftLock
+        + (
+          crouchingGraphOutput.curves.get(FOOT_LEFT_LOCK_CURVE_NAME)
+          ?? 0
+        ) * crouchingGraphWeight,
+      )
+      graphFootRightLock = clamp01(
+        graphFootRightLock
+        + (
+          crouchingGraphOutput.curves.get(FOOT_RIGHT_LOCK_CURVE_NAME)
+          ?? 0
+        ) * crouchingGraphWeight,
+      )
+      graphRotationYawSpeed +=
+        (
+          crouchingGraphOutput.curves.get(
+            ROTATION_YAW_SPEED_CURVE_NAME,
+          ) ?? 0
+        ) * crouchingGraphWeight
+      graphAllowTransitions = clamp01(
+        graphAllowTransitions
+        + crouchingGraphWeight * (
+          (
+            crouchingGraphOutput.curves.get(
+              ALLOW_TRANSITIONS_CURVE_NAME,
+            ) ?? 0
+          ) - 1
+        ),
+      )
+      graphMovingAmount =
+        movingAmount * (1 - crouchingGraphWeight)
+        + (
+          crouchingGraphOutput.curves.get(POSE_MOVING_CURVE_NAME)
+          ?? 0
+        ) * crouchingGraphWeight
+    } else {
+      graphMovingAmount = movingAmount
+    }
     graphFallbackGaitAmount = fallbackGaitAmount
     for (const source of gaitSources) source.weight = source.entry.weight
 
@@ -2216,6 +3101,27 @@ export function createAlsAnimationInstance(gltf: {
             : 0
       }
     }
+    const crouchingMovementDebugWeight =
+      (
+        crouchingStateRuntime.stateWeights.Move
+        + crouchingStateRuntime.stateWeights.Stop
+      )
+      * crouchingStrideBlendAmount
+      * crouchingGraphWeight
+    for (const direction of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
+      const role = CROUCHING_ROLE_BY_HIPS_DIRECTION[direction]
+      normalDebugWeights[role] =
+        crouchingMovementClipWeights[direction]
+        * crouchingMovementDebugWeight
+    }
+    normalDebugWeights.crouchIdle =
+      crouchingStateRuntime.stateWeights.Idle
+      * crouchingGraphWeight
+      * (
+        crouchingTurnInPlaceActive
+          ? 1 - turnInPlaceMontageWeight
+          : 1
+      )
     for (const [clipName, clip] of groundedLocomotionClips) {
       const transitionEntries = directionTransitionEntriesByClip.get(clip)
       normalDebugWeights[clipName] =
@@ -2309,6 +3215,121 @@ export function createAlsAnimationInstance(gltf: {
       )?.clip.time ?? 0
     normalDebugWeights.GroundedStanceTransitionSourceWeight =
       groundedStanceTransitionSourceWeight
+    normalDebugWeights.CrouchingGraphRelevant =
+      Number(crouchingGraphRelevant)
+    for (const graphState of ALS_CROUCHING_GRAPH_STATE_ORDER) {
+      normalDebugWeights[`CrouchingState${graphState.replaceAll(' ', '')}`] =
+        crouchingGraphRelevant
+          ? crouchingStateRuntime.stateWeights[graphState]
+          : 0
+    }
+    const activeCrouchingTransition =
+      crouchingStateRuntime.activeStandardTransitions[0]
+    const activeCrouchingTransitionDefinition =
+      activeCrouchingTransition
+        ? ALS_CROUCHING_STATE_TRANSITIONS.find((transition) => (
+            transition.from === activeCrouchingTransition.previousState
+            && transition.to === activeCrouchingTransition.nextState
+            && transition.logic === 'StandardBlend'
+            && transition.duration > 0
+          ))
+        : undefined
+    normalDebugWeights.CrouchingActiveTransitionIndex =
+      activeCrouchingTransitionDefinition?.transitionIndex ?? -1
+    normalDebugWeights.CrouchingActiveTransitionLinearAlpha =
+      activeCrouchingTransition?.linearAlpha ?? 1
+    normalDebugWeights.CrouchingActiveTransitionBlendAlpha =
+      activeCrouchingTransition?.alpha ?? 1
+    const activeQuickFeetTransition =
+      quickFeetBlendProfile
+        ? crouchingStateRuntime.activeStandardTransitions.find(
+            ({ blendProfile }) => blendProfile === quickFeetBlendProfile,
+          )
+        : undefined
+    normalDebugWeights.CrouchingQuickFeetProfileActive =
+      Number(activeQuickFeetTransition !== undefined)
+    normalDebugWeights.CrouchingQuickFeetRootIncomingWeight =
+      activeQuickFeetTransition && directionTransitionRootIndex >= 0
+        ? activeQuickFeetTransition.nextPoseMask[
+            directionTransitionRootIndex
+          ]
+        : 0
+    normalDebugWeights.CrouchingQuickFeetFootLeftIncomingWeight =
+      activeQuickFeetTransition && directionTransitionFootLeftIndex >= 0
+        ? activeQuickFeetTransition.nextPoseMask[
+            directionTransitionFootLeftIndex
+          ]
+        : 0
+    normalDebugWeights.CrouchingActiveTransitionCount =
+      crouchingStateRuntime.activeStandardTransitions.length
+    normalDebugWeights.CrouchingTransitionBlocked = 0
+    normalDebugWeights.CrouchingTransitionBlockedIndex = -1
+    const activeCrouchingMovementTransition =
+      crouchingMovementRuntime.activeTransitions[0]
+    normalDebugWeights.CrouchingMovementActiveTransitionCount =
+      crouchingMovementRuntime.activeTransitions.length
+    normalDebugWeights.CrouchingMovementRootIncomingWeight =
+      activeCrouchingMovementTransition
+      && directionTransitionRootIndex >= 0
+        ? activeCrouchingMovementTransition.nextPoseMask[
+            directionTransitionRootIndex
+          ]
+        : 0
+    normalDebugWeights.CrouchingMovementFootLeftIncomingWeight =
+      activeCrouchingMovementTransition
+      && directionTransitionFootLeftIndex >= 0
+        ? activeCrouchingMovementTransition.nextPoseMask[
+            directionTransitionFootLeftIndex
+          ]
+        : 0
+    for (const direction of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
+      normalDebugWeights[`CrouchingMovementState.${direction}`] =
+        crouchingMovementRuntime.stateWeights[direction]
+    }
+    const automaticRotateRuleBlocked =
+      (
+        crouchingStateRuntime.currentState === 'Rotate Left'
+        && !rotateInPlaceState.rotatingLeft
+        && crouchingRotateLeftTime
+          >= (
+            rotateInPlaceClips.Crouching.Left
+              ?.sampler.clip.duration ?? Number.POSITIVE_INFINITY
+          )
+      )
+      || (
+        crouchingStateRuntime.currentState === 'Rotate Right'
+        && !rotateInPlaceState.rotatingRight
+        && crouchingRotateRightTime
+          >= (
+            rotateInPlaceClips.Crouching.Right
+              ?.sampler.clip.duration ?? Number.POSITIVE_INFINITY
+          )
+      )
+    normalDebugWeights.CrouchingAutomaticRuleBlocked =
+      Number(automaticRotateRuleBlocked)
+    normalDebugWeights.CrouchingStopQuickNotifyCount =
+      stopQuickNotifyCount
+    normalDebugWeights.CrouchingInertializationRequestCount =
+      crouchingNode34.requestCount
+    normalDebugWeights.CrouchingInertializationCorrectionMagnitude =
+      measureInertializationCorrectionMagnitude(crouchingNode34)
+    normalDebugWeights.CrouchingStrideBlendAmount =
+      crouchingStrideBlendAmount
+    normalDebugWeights.CrouchingPlayRate = crouchingState.playRate
+    normalDebugWeights.CrouchingLeanRightAmount =
+      leanState.rightAmount
+    normalDebugWeights.CrouchingLeanForwardAmount =
+      leanState.forwardAmount
+    for (
+      let index = 0;
+      index < crouchingLeanBlendSpace.blendSpace.samples.length;
+      index++
+    ) {
+      const clipName =
+        crouchingLeanBlendSpace.blendSpace.samples[index].animation.name
+      normalDebugWeights[`CrouchingLean.${clipName}`] =
+        crouchingLeanWeights[index]
+    }
     normalDebugWeights[FOOT_LEFT_LOCK_CURVE_NAME] = state.footLeftLock
     normalDebugWeights[FOOT_RIGHT_LOCK_CURVE_NAME] = state.footRightLock
     normalDebugWeights[HIPS_DIRECTION_LOCK_CURVE_NAME] =
@@ -2334,6 +3355,15 @@ export function createAlsAnimationInstance(gltf: {
       standingTurnInPlaceSlotWeight
     normalDebugWeights.TurnInPlaceCrouchingSlotWeight =
       crouchingTurnInPlaceSlotWeight
+    const transitionSlotActive =
+      turnInPlaceSample?.slotName === TRANSITION_SLOT_NAME
+      && turnInPlaceSample.status !== 'completed'
+    normalDebugWeights.TransitionMontageWeight =
+      transitionSlotActive ? (turnInPlaceSample?.weight ?? 0) : 0
+    normalDebugWeights.TransitionMontageTime =
+      transitionSlotActive ? (turnInPlaceSample?.montageTime ?? 0) : 0
+    normalDebugWeights.TransitionSequenceTime =
+      transitionSlotActive ? (turnInPlaceSample?.sampleTime ?? 0) : 0
     for (const movementDirection of [
       'Forward',
       'Backward',
