@@ -138,4 +138,70 @@ describe('pose blending', () => {
     expect(base.rotations[2]).toBeCloseTo(Math.SQRT1_2)
     expect(base.rotations[3]).toBeCloseTo(Math.SQRT1_2)
   })
+
+  it('reconstructs a raw source from its mesh-space reference on a non-commuting hierarchy', () => {
+    const { rig, reference } = setup()
+    const source = copyPose(reference, createPoseBuffer(2))
+    const referenceRoot = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(Math.PI / 4, 0, 0),
+    )
+    const referenceChild = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(0, Math.PI / 6, 0),
+    )
+    const sourceRoot = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(0, 0, Math.PI / 3),
+    )
+    const sourceChild = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(-Math.PI / 5, Math.PI / 7, 0),
+    )
+    referenceRoot.toArray(reference.rotations, 0)
+    referenceChild.toArray(reference.rotations, 4)
+    sourceRoot.toArray(source.rotations, 0)
+    sourceChild.toArray(source.rotations, 4)
+    reference.positions.set([1, 2, 3, 4, 5, 6])
+    source.positions.set([2, 4, 6, 8, 10, 12])
+    reference.scales.set([1, 1, 1, 1, 1, 1])
+    source.scales.set([1.2, 0.8, 1.1, 0.9, 1.3, 0.7])
+    const additive = createPoseBuffer(2)
+    const reconstructed = copyPose(reference, createPoseBuffer(2))
+    const scratch = createMeshSpaceBlendScratch(2)
+
+    makeDynamicAdditivePose(
+      source,
+      reference,
+      rig,
+      additive,
+      'mesh',
+      scratch,
+    )
+    applyMeshSpaceAdditivePose(
+      reconstructed,
+      additive,
+      rig,
+      1,
+      scratch,
+    )
+
+    for (let component = 0; component < source.positions.length; component++) {
+      expect(reconstructed.positions[component]).toBeCloseTo(
+        source.positions[component],
+        6,
+      )
+      expect(reconstructed.scales[component]).toBeCloseTo(
+        source.scales[component],
+        6,
+      )
+    }
+    for (let bone = 0; bone < 2; bone++) {
+      const offset = bone * 4
+      const actual = new THREE.Quaternion().fromArray(
+        reconstructed.rotations,
+        offset,
+      ).normalize()
+      const expected = new THREE.Quaternion()
+        .fromArray(source.rotations, offset)
+        .normalize()
+      expect(actual.angleTo(expected)).toBeLessThan(1e-6)
+    }
+  })
 })

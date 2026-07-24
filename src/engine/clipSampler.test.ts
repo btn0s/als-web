@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import { compileClipSampler, sampleClip } from './clipSampler'
-import { createPoseBuffer } from './poseBuffer'
+import { createPoseBuffer, resetPoseToReference } from './poseBuffer'
 import { createRigDefinition } from './rig'
 
 function createTwoBoneRig() {
@@ -51,5 +51,48 @@ describe('clip sampler', () => {
 
     expect(sampler.bindings).toHaveLength(1)
     expect(pose.positions[0]).toBeCloseTo(2.5)
+  })
+
+  it('uses an authored pose as the fallback for channels absent from a raw source clip', () => {
+    const rig = createTwoBoneRig()
+    const authoredReference = resetPoseToReference(
+      createPoseBuffer(rig.boneCount),
+      rig,
+    )
+    authoredReference.positions.set([10, 11, 12], 0)
+    authoredReference.positions.set([20, 21, 22], 3)
+    authoredReference.rotations.set([0, 0, Math.SQRT1_2, Math.SQRT1_2], 4)
+    const source = new THREE.AnimationClip('partial-source', 1, [
+      new THREE.VectorKeyframeTrack(
+        'root.position',
+        [0, 1],
+        [30, 31, 32, 40, 41, 42],
+      ),
+    ])
+    const pose = createPoseBuffer(rig.boneCount)
+
+    sampleClip(
+      compileClipSampler(source, rig),
+      rig,
+      0.5,
+      pose,
+      false,
+      authoredReference,
+    )
+
+    expect([...pose.positions.slice(0, 3)]).toEqual([35, 36, 37])
+    expect([...pose.positions.slice(3, 6)])
+      .toEqual([...authoredReference.positions.slice(3, 6)])
+    expect([...pose.rotations.slice(4, 8)])
+      .toEqual([...authoredReference.rotations.slice(4, 8)])
+    expect([...pose.scales]).toEqual([...authoredReference.scales])
+    expect(() => sampleClip(
+      compileClipSampler(source, rig),
+      rig,
+      0,
+      pose,
+      false,
+      createPoseBuffer(1),
+    )).toThrow(/bone-count mismatch/)
   })
 })

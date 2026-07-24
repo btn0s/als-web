@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  accumulateAdditiveCurveValues,
   beginCurveFrame,
   blendCurveValue,
   compileClipCurveSamplers,
@@ -57,5 +58,46 @@ describe('float curves', () => {
       { clipKey: 'run', weight: 0.75, fallback: 2 },
       { clipKey: 'idle-without-curves', weight: 0.25, fallback: 0 },
     ])).toBeCloseTo(1.5)
+  })
+
+  it('accumulates additive curve deltas without normalizing away their weights', () => {
+    const frame = createCurveFrame()
+    beginCurveFrame(frame)
+    sampleClipCurves(frame, 'transition', {
+      AllowTransitions: () => -1,
+      FootLeftLock: () => -1,
+      FootstepSoundBlock: () => 1,
+    }, 0)
+    sampleClipCurves(frame, 'secondary', {
+      AllowTransitions: () => -0.25,
+    }, 0)
+    const output = new Map<string, number>([
+      ['AllowTransitions', 1],
+      ['FootLeftLock', 1],
+    ])
+
+    accumulateAdditiveCurveValues(frame, output, [
+      { clipKey: 'transition', weight: 0.5 },
+      { clipKey: 'secondary', weight: 0.4 },
+      { clipKey: 'missing-curve-source', weight: 1 },
+    ])
+
+    expect(output.get('AllowTransitions')).toBeCloseTo(0.4)
+    expect(output.get('FootLeftLock')).toBeCloseTo(0.5)
+    expect(output.get('FootstepSoundBlock')).toBeCloseTo(0.5)
+    expect(output.has('MissingCurve')).toBe(false)
+  })
+
+  it('ignores retained samples after their clip becomes inactive', () => {
+    const frame = createCurveFrame()
+    sampleClipCurves(frame, 'transition', { AllowTransitions: () => -1 }, 0)
+    beginCurveFrame(frame)
+    const output = new Map([['AllowTransitions', 1]])
+
+    accumulateAdditiveCurveValues(frame, output, [
+      { clipKey: 'transition', weight: 1 },
+    ])
+
+    expect(output.get('AllowTransitions')).toBe(1)
   })
 })

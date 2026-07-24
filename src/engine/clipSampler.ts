@@ -1,6 +1,10 @@
 import * as THREE from 'three'
 import type { LocalPoseBuffer } from './poseBuffer'
-import { resetPoseToAdditiveIdentity, resetPoseToReference } from './poseBuffer'
+import {
+  copyPose,
+  resetPoseToAdditiveIdentity,
+  resetPoseToReference,
+} from './poseBuffer'
 import type { RigDefinition } from './rig'
 
 export type TransformProperty = 'position' | 'quaternion' | 'scale'
@@ -17,6 +21,11 @@ export interface CompiledClipSampler {
   readonly clip: THREE.AnimationClip
   readonly bindings: readonly CompiledTrackBinding[]
 }
+
+export type ClipSampleFallback =
+  | 'reference'
+  | 'additiveIdentity'
+  | LocalPoseBuffer
 
 const PROPERTY_SIZES: Record<TransformProperty, number> = {
   position: 3,
@@ -111,10 +120,11 @@ export function sampleClip(
   time: number,
   out: LocalPoseBuffer,
   loop = true,
-  fallback: 'reference' | 'additiveIdentity' = 'reference',
+  fallback: ClipSampleFallback = 'reference',
 ): LocalPoseBuffer {
   if (fallback === 'additiveIdentity') resetPoseToAdditiveIdentity(out)
-  else resetPoseToReference(out, rig)
+  else if (fallback === 'reference') resetPoseToReference(out, rig)
+  else copyPose(fallback, out)
 
   const sampleTime = resolveClipTime(time, sampler.clip.duration, loop)
   for (const binding of sampler.bindings) {

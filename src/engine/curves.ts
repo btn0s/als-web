@@ -121,6 +121,11 @@ export interface WeightedCurveSource {
   fallback: number
 }
 
+export interface AdditiveCurveSource {
+  clipKey: string
+  weight: number
+}
+
 /**
  * Reconstructs the AnimGraph's blended scalar from the per-clip curve seam. Missing curves use
  * their damped graph share's semantic value, matching the approximation called out by the ALS
@@ -141,4 +146,27 @@ export function blendCurveValue(
     totalWeight += source.weight
   }
   return totalWeight > Number.EPSILON ? weighted / totalWeight : fallback
+}
+
+/**
+ * Adds clip-authored curve deltas to an already-resolved graph curve container.
+ *
+ * Additive sources are deliberately not normalized against one another or against base sources.
+ * A missing additive curve is an identity delta of zero, and stale samples from inactive clips are
+ * ignored even though `CurveFrame` retains their maps to avoid per-frame allocation.
+ */
+export function accumulateAdditiveCurveValues(
+  frame: CurveFrame,
+  output: Map<string, number>,
+  sources: readonly AdditiveCurveSource[],
+): Map<string, number> {
+  for (const source of sources) {
+    if (source.weight <= 0 || !frame.activeClips.has(source.clipKey)) continue
+    const sampled = frame.byClip.get(source.clipKey)
+    if (!sampled) continue
+    for (const [name, value] of sampled) {
+      output.set(name, (output.get(name) ?? 0) + value * source.weight)
+    }
+  }
+  return output
 }

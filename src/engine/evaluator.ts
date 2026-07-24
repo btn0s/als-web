@@ -51,10 +51,23 @@ export interface EvaluatorLayerEntry extends EvaluatorClipEntry {
   additiveSpace?: 'local' | 'mesh'
 }
 
+/**
+ * A raw authored source sequence plus the pose named by its UAnimSequence additive metadata.
+ *
+ * Unlike `additives`, this entry has not been converted to identity-relative transform tracks.
+ */
+export interface EvaluatorAuthoredAdditiveEntry extends EvaluatorClipEntry {
+  readonly referencePose: LocalPoseBuffer
+  readonly additiveSpace: 'local' | 'mesh'
+  mask?: BoneMask
+}
+
 export interface EvaluatePoseInput {
   readonly base: readonly EvaluatorLayerEntry[]
   readonly overlays?: readonly EvaluatorLayerEntry[]
   readonly montages?: readonly EvaluatorLayerEntry[]
+  /** Additive slot output that is part of the locomotion base consumed by downstream layering. */
+  readonly preOverlayAdditives?: readonly EvaluatorAuthoredAdditiveEntry[]
   readonly additives?: readonly EvaluatorLayerEntry[]
   readonly dynamicAdditives?: readonly EvaluatorDynamicAdditiveEntry[]
   readonly rootMotion?: RootMotionExtractor
@@ -144,6 +157,23 @@ export function createPoseEvaluator(
   }
 }
 
+function sampleEntryCurves(
+  evaluator: PoseEvaluator,
+  entry: EvaluatorClipEntry,
+) {
+  if (!entry.curves) return
+  sampleClipCurves(
+    evaluator.curves,
+    entry.curveKey ?? entry.sampler.clip.name,
+    entry.curves,
+    resolveClipTime(
+      entry.time,
+      entry.sampler.clip.duration,
+      entry.loop ?? true,
+    ),
+  )
+}
+
 function sampleAndAccumulate(
   evaluator: PoseEvaluator,
   entries: readonly EvaluatorLayerEntry[] | undefined,
@@ -160,18 +190,51 @@ function sampleAndAccumulate(
       entry.loop,
     )
     accumulatePose(accumulator, evaluator.samplePose, entry.weight, entry.mask)
-    if (entry.curves) {
-      sampleClipCurves(
-        evaluator.curves,
-        entry.curveKey ?? entry.sampler.clip.name,
-        entry.curves,
-        resolveClipTime(
-          entry.time,
-          entry.sampler.clip.duration,
-          entry.loop ?? true,
-        ),
+    sampleEntryCurves(evaluator, entry)
+  }
+}
+
+function applyAuthoredAdditives(
+  evaluator: PoseEvaluator,
+  entries: readonly EvaluatorAuthoredAdditiveEntry[] | undefined,
+) {
+  if (!entries) return
+  for (const entry of entries) {
+    if (entry.weight <= 0) continue
+    sampleClip(
+      entry.sampler,
+      evaluator.rig,
+      entry.time,
+      evaluator.samplePose,
+      entry.loop,
+      entry.referencePose,
+    )
+    makeDynamicAdditivePose(
+      evaluator.samplePose,
+      entry.referencePose,
+      evaluator.rig,
+      evaluator.dynamicAdditivePose,
+      entry.additiveSpace,
+      evaluator.meshSpaceScratch,
+    )
+    if (entry.additiveSpace === 'mesh') {
+      applyMeshSpaceAdditivePose(
+        evaluator.outputPose,
+        evaluator.dynamicAdditivePose,
+        evaluator.rig,
+        entry.weight,
+        evaluator.meshSpaceScratch,
+        entry.mask,
+      )
+    } else {
+      applyAdditivePose(
+        evaluator.outputPose,
+        evaluator.dynamicAdditivePose,
+        entry.weight,
+        entry.mask,
       )
     }
+    sampleEntryCurves(evaluator, entry)
   }
 }
 
@@ -200,8 +263,9 @@ function checkCoverage(evaluator: PoseEvaluator) {
 }
 
 /**
- * Samples and normalizes the full-coverage base, replaces masked regions with normalized overlay
- * groups, then applies ALS dynamic locomotion additives and clip-authored additives.
+ * Samples and normalizes the full-coverage base, applies raw authored slot additives that must be
+ * visible to downstream layering, replaces masked regions with normalized overlay groups, then
+ * applies ALS dynamic locomotion additives and already-delta clip additives.
  */
 export function evaluatePose(
   evaluator: PoseEvaluator,
@@ -214,6 +278,7 @@ export function evaluatePose(
   sampleAndAccumulate(evaluator, input.montages)
   checkCoverage(evaluator)
   finalizePose(evaluator.accumulator, evaluator.referencePose, evaluator.outputPose)
+  applyAuthoredAdditives(evaluator, input.preOverlayAdditives)
   copyPose(evaluator.outputPose, evaluator.basePose)
 
   if (input.overlays) {
@@ -284,18 +349,7 @@ export function evaluatePose(
       } else {
         applyAdditivePose(evaluator.outputPose, evaluator.samplePose, entry.weight, entry.mask)
       }
-      if (entry.curves) {
-        sampleClipCurves(
-          evaluator.curves,
-          entry.curveKey ?? entry.sampler.clip.name,
-          entry.curves,
-          resolveClipTime(
-            entry.time,
-            entry.sampler.clip.duration,
-            entry.loop ?? true,
-          ),
-        )
-      }
+      sampleEntryCurves(evaluator, entry)
     }
   }
 

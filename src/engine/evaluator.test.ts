@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { compileClipSampler } from './clipSampler'
 import { createPoseEvaluator, evaluatePose } from './evaluator'
 import { compileBoneMask } from './blend'
+import { accumulateAdditiveCurveValues } from './curves'
 import { createPoseBuffer, resetPoseToReference } from './poseBuffer'
 import { createRigDefinition } from './rig'
 
@@ -135,5 +136,81 @@ describe('pose evaluator', () => {
     })
 
     expect(result.pose.positions[0]).toBeCloseTo(12)
+  })
+
+  it('derives a raw authored additive over its named reference before copying the layering base', () => {
+    const root = new THREE.Bone()
+    root.name = 'root'
+    const child = new THREE.Bone()
+    child.name = 'child'
+    root.add(child)
+    const rig = createRigDefinition(root)
+    const evaluator = createPoseEvaluator(rig)
+    const base = compileClipSampler(new THREE.AnimationClip('base', 1, [
+      new THREE.VectorKeyframeTrack(
+        'root.position',
+        [0, 1],
+        [20, 0, 0, 20, 0, 0],
+      ),
+      new THREE.VectorKeyframeTrack(
+        'child.position',
+        [0, 1],
+        [30, 0, 0, 30, 0, 0],
+      ),
+    ]), rig)
+    const rawSource = compileClipSampler(new THREE.AnimationClip('transition', 1, [
+      new THREE.VectorKeyframeTrack(
+        'root.position',
+        [0, 1],
+        [13, 0, 0, 13, 0, 0],
+      ),
+    ]), rig)
+    const overlay = compileClipSampler(constantPositionClip('overlay', 100), rig)
+    const authoredReference = resetPoseToReference(
+      createPoseBuffer(rig.boneCount),
+      rig,
+    )
+    authoredReference.positions[0] = 10
+    authoredReference.positions[3] = 7
+
+    const result = evaluatePose(evaluator, {
+      base: [{ sampler: base, time: 0, weight: 1, loop: false }],
+      preOverlayAdditives: [{
+        sampler: rawSource,
+        referencePose: authoredReference,
+        additiveSpace: 'local',
+        time: 0,
+        weight: 0.5,
+        loop: false,
+        curveKey: 'transition',
+        curves: {
+          AllowTransitions: () => -1,
+          FootstepSoundBlock: () => 1,
+        },
+      }],
+      overlays: [{
+        sampler: overlay,
+        time: 0,
+        weight: 1,
+        mask: compileBoneMask(rig, (name) => name === 'root'),
+      }],
+      resolveBlendedCurves(samples, output) {
+        output.set('AllowTransitions', 1)
+        accumulateAdditiveCurveValues(samples, output, [
+          { clipKey: 'transition', weight: 0.5 },
+        ])
+      },
+    })
+
+    // Raw source 13 minus authored reference 10 produces a +3 delta, weighted to +1.5.
+    expect(evaluator.basePose.positions[0]).toBeCloseTo(21.5)
+    // The source omits child tracks, so authored-reference fallback makes its child delta zero.
+    expect(evaluator.basePose.positions[3]).toBeCloseTo(30)
+    // The downstream overlay sees the composed base but still owns its masked final region.
+    expect(result.pose.positions[0]).toBeCloseTo(100)
+    expect(result.pose.positions[3]).toBeCloseTo(30)
+    expect(result.curves.byClip.get('transition')?.get('AllowTransitions')).toBe(-1)
+    expect(result.curves.values.get('AllowTransitions')).toBeCloseTo(0.5)
+    expect(result.curves.values.get('FootstepSoundBlock')).toBeCloseTo(0.5)
   })
 })
