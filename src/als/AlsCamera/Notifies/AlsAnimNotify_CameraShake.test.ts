@@ -11,15 +11,50 @@ describe('UAlsAnimNotify_CameraShake', () => {
   it('consumes the exact B_Als_CameraShake_Sprint serialized pattern', () => {
     expect(B_Als_CameraShake_Sprint).toEqual({
       CameraShakeClass: 'B_Als_CameraShake_Sprint_C',
+      bSingleInstance: false,
       RootShakePattern: {
-        Type: 'WaveOscillatorCameraShakePattern',
-        RotationAmplitudeMultiplier: 1,
-        Pitch: { Amplitude: 0.1, Frequency: 0.1 },
-        Yaw: { Amplitude: 0.1, Frequency: 0.1 },
-        Roll: { Amplitude: 0.1, Frequency: 0.1 },
         Duration: 0.2,
         BlendInTime: 0.1,
         BlendOutTime: 0.1,
+        LocationAmplitudeMultiplier: 1,
+        LocationFrequencyMultiplier: 1,
+        X: {
+          Amplitude: 1,
+          Frequency: 1,
+          InitialOffsetType: 'Random',
+        },
+        Y: {
+          Amplitude: 1,
+          Frequency: 1,
+          InitialOffsetType: 'Random',
+        },
+        Z: {
+          Amplitude: 1,
+          Frequency: 1,
+          InitialOffsetType: 'Random',
+        },
+        RotationAmplitudeMultiplier: 1,
+        RotationFrequencyMultiplier: 1,
+        Pitch: {
+          Amplitude: 0.1,
+          Frequency: 0.1,
+          InitialOffsetType: 'Random',
+        },
+        Yaw: {
+          Amplitude: 0.1,
+          Frequency: 0.1,
+          InitialOffsetType: 'Random',
+        },
+        Roll: {
+          Amplitude: 0.1,
+          Frequency: 0.1,
+          InitialOffsetType: 'Random',
+        },
+        FOV: {
+          Amplitude: 0,
+          Frequency: 1,
+          InitialOffsetType: 'Random',
+        },
       },
     })
   })

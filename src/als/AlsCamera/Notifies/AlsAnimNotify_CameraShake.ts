@@ -1,4 +1,13 @@
 import cameraContentJson from '../../../../scripts/extract-als/camera-content.json?raw'
+import {
+  CAMERA_SHAKE_BASE_DEFAULTS,
+} from '../../../engine/PlayerCameraManager'
+import {
+  createWaveOscillatorCameraShakePatternDefaults,
+} from '../../../engine/WaveOscillatorCameraShakePattern'
+import type {
+  CameraShakeClass,
+} from '../../../engine/PlayerCameraManager'
 
 interface ExtractedValue<Value> {
   readonly value: Value
@@ -54,47 +63,50 @@ const ORACLE = (
   JSON.parse(cameraContentJson) as CameraShakeContentOracle
 ).cameraShake
 
-export interface AlsWaveOscillator {
-  readonly Amplitude: number
-  readonly Frequency: number
-}
-
 /**
- * Serialized runtime values from `B_Als_CameraShake_Sprint`'s
+ * Resolved runtime values from `B_Als_CameraShake_Sprint`'s
  * `UWaveOscillatorCameraShakePattern`.
  *
- * Properties absent from the asset retain UE's `UWaveOscillatorCameraShakePattern` defaults.
- * They are deliberately not guessed here; the camera-manager implementation owns those engine
- * defaults when it ports `StartCameraShake()`.
+ * Properties absent from the asset resolve through the UE 5.5 EngineCameras constructor defaults
+ * in `WaveOscillatorCameraShakePattern.ts`.
  */
-export interface AlsWaveOscillatorCameraShakePattern {
-  readonly Type: 'WaveOscillatorCameraShakePattern'
-  readonly RotationAmplitudeMultiplier: number
-  readonly Pitch: AlsWaveOscillator
-  readonly Yaw: AlsWaveOscillator
-  readonly Roll: AlsWaveOscillator
-  readonly Duration: number
-  readonly BlendInTime: number
-  readonly BlendOutTime: number
+const cameraShakePatternDefaults =
+  createWaveOscillatorCameraShakePatternDefaults()
+const sprintRootShakePattern = {
+  ...cameraShakePatternDefaults,
+  RotationAmplitudeMultiplier:
+    ORACLE.rootPattern.values.RotationAmplitudeMultiplier,
+  Pitch: {
+    ...cameraShakePatternDefaults.Pitch,
+    ...ORACLE.rootPattern.values.Pitch,
+  },
+  Yaw: {
+    ...cameraShakePatternDefaults.Yaw,
+    ...ORACLE.rootPattern.values.Yaw,
+  },
+  Roll: {
+    ...cameraShakePatternDefaults.Roll,
+    ...ORACLE.rootPattern.values.Roll,
+  },
+  Duration: ORACLE.rootPattern.values.Duration,
+  BlendInTime: ORACLE.rootPattern.values.BlendInTime,
+  BlendOutTime: ORACLE.rootPattern.values.BlendOutTime,
 }
 
 /** Exact authored payload of `B_Als_CameraShake_Sprint`. */
 export const B_Als_CameraShake_Sprint:
-Readonly<{
-  CameraShakeClass: 'B_Als_CameraShake_Sprint_C'
-  RootShakePattern: AlsWaveOscillatorCameraShakePattern
-}> = Object.freeze({
+Readonly<CameraShakeClass> = Object.freeze({
   CameraShakeClass: 'B_Als_CameraShake_Sprint_C',
+  bSingleInstance: CAMERA_SHAKE_BASE_DEFAULTS.bSingleInstance,
   RootShakePattern: Object.freeze({
-    Type: ORACLE.rootPattern.type as 'WaveOscillatorCameraShakePattern',
-    RotationAmplitudeMultiplier:
-      ORACLE.rootPattern.values.RotationAmplitudeMultiplier,
-    Pitch: Object.freeze({ ...ORACLE.rootPattern.values.Pitch }),
-    Yaw: Object.freeze({ ...ORACLE.rootPattern.values.Yaw }),
-    Roll: Object.freeze({ ...ORACLE.rootPattern.values.Roll }),
-    Duration: ORACLE.rootPattern.values.Duration,
-    BlendInTime: ORACLE.rootPattern.values.BlendInTime,
-    BlendOutTime: ORACLE.rootPattern.values.BlendOutTime,
+    ...sprintRootShakePattern,
+    X: Object.freeze(sprintRootShakePattern.X),
+    Y: Object.freeze(sprintRootShakePattern.Y),
+    Z: Object.freeze(sprintRootShakePattern.Z),
+    Pitch: Object.freeze(sprintRootShakePattern.Pitch),
+    Yaw: Object.freeze(sprintRootShakePattern.Yaw),
+    Roll: Object.freeze(sprintRootShakePattern.Roll),
+    FOV: Object.freeze(sprintRootShakePattern.FOV),
   }),
 })
 
