@@ -19,6 +19,8 @@ export interface AlsQuaternion {
 export interface AlsTransform {
   readonly location: Readonly<AlsVector3>
   readonly rotation: Readonly<AlsQuaternion>
+  /** FTransform scale; omitted inputs preserve the source default identity scale. */
+  readonly scale?: Readonly<AlsVector3>
 }
 
 /** The subset of FAlsMovementBaseState consumed by the foot-lock functions. */
@@ -243,16 +245,36 @@ function transformPosition(
   transform: AlsTransform,
   value: Readonly<AlsVector3>,
 ): AlsVector3 {
-  return add(transform.location, rotateVector(transform.rotation, value))
+  const scale = transform.scale
+  const scaled = scale
+    ? vector(
+        value.x * scale.x,
+        value.y * scale.y,
+        value.z * scale.z,
+      )
+    : value
+  return add(
+    transform.location,
+    rotateVector(transform.rotation, scaled),
+  )
 }
 
 function inverseTransformPosition(
   transform: AlsTransform,
   value: Readonly<AlsVector3>,
 ): AlsVector3 {
-  return unrotateVector(
+  const unrotated = unrotateVector(
     transform.rotation,
     subtract(value, transform.location),
+  )
+  const scale = transform.scale
+  if (!scale) return unrotated
+
+  // FTransform::GetSafeScaleReciprocal() zeros singular axes at SMALL_NUMBER.
+  return vector(
+    Math.abs(scale.x) <= UE_SMALL_NUMBER ? 0 : unrotated.x / scale.x,
+    Math.abs(scale.y) <= UE_SMALL_NUMBER ? 0 : unrotated.y / scale.y,
+    Math.abs(scale.z) <= UE_SMALL_NUMBER ? 0 : unrotated.z / scale.z,
   )
 }
 

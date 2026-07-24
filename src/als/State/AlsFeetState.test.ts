@@ -478,6 +478,31 @@ describe('ProcessFootLockBaseChange', () => {
 })
 
 describe('RefreshFootLock', () => {
+  it('uses the complete FTransform scale when producing a component-space target', () => {
+    const state = createAlsFootState({ x: 1, y: 0, z: 0 })
+    state.targetLocation = { x: 4, y: 6, z: 8 }
+
+    refreshFootLock(state, {
+      ikAmount: 0,
+      lockCurveAmount: 0,
+      componentTransform: {
+        location: { x: 1, y: 2, z: 3 },
+        rotation: yawQuaternion(0),
+        scale: { x: 3, y: 2, z: 5 },
+      },
+      deltaTime: 1 / 60,
+      movingSmooth: false,
+      grounded: true,
+      pendingUpdate: false,
+      disableFootLock: false,
+      movementBase: NO_MOVEMENT_BASE,
+      pelvisRotation: yawQuaternion(0),
+      footLockAngleLimit: 90,
+    })
+
+    expect(state.finalLocation).toEqual({ x: 1, y: 2, z: 1 })
+  })
+
   it('decreases moving and in-air locks at the exact 5/s and 0.6/s rates', () => {
     const moving = makeLockedFoot()
     const movingReference = toReferenceFootState(moving)
