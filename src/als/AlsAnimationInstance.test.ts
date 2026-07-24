@@ -23,6 +23,9 @@ import {
 import {
   createAlsAnimationInstance,
 } from './AlsAnimationInstance'
+import {
+  sampleGroundPredictionAmount,
+} from './Settings/AlsInAirSettings'
 import { ALS_VIRTUAL_BONES } from './Utility/AlsVirtualBones'
 import type {
   AlsAnimationInstance,
@@ -292,7 +295,7 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.TurnInPlaceMontageWeight)
       .toBeCloseTo(montageWeight, 12)
     expect(window.__weightTable?.TurnInPlaceMontageTime)
-      .toBeCloseTo(1 / 60, 12)
+      .toBeCloseTo(sequenceTime, 12)
     expect(window.__weightTable?.TurnInPlaceSequenceTime)
       .toBeCloseTo(sequenceTime, 12)
     expect(window.__weightTable?.idle).toBeCloseTo(1 - montageWeight, 12)
@@ -328,12 +331,15 @@ describe('AlsAnimationInstance playback regression', () => {
     instance.refresh(1 / 60, requestTurn)
     instance.refresh(2 / 1.2 - 1 / 60, idle)
 
-    expect(window.__weightTable?.TurnInPlaceSequenceTime).toBeCloseTo(2, 12)
+    const terminalSequenceTime = 2 - 0.00005
+    expect(window.__weightTable?.TurnInPlaceSequenceTime)
+      .toBeCloseTo(terminalSequenceTime, 12)
     expect(window.__weightTable?.TurnInPlaceMontageWeight).toBe(1)
     expect(window.__weightTable?.TurnInPlaceMontageBlendingOut).toBe(1)
 
     instance.refresh(0.1, idle)
-    expect(window.__weightTable?.TurnInPlaceSequenceTime).toBe(2)
+    expect(window.__weightTable?.TurnInPlaceSequenceTime)
+      .toBe(terminalSequenceTime)
     expect(window.__weightTable?.TurnInPlaceMontageWeight).toBeCloseTo(0.5, 12)
     expect(window.__weightTable?.AllowTransitions).toBeCloseTo(0.5, 12)
 
@@ -995,7 +1001,7 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.CrouchingActiveTransitionIndex).toBe(3)
     instance.refresh(0.05, idleCrouching)
     expect(window.__weightTable?.TransitionMontageWeight).toBeGreaterThan(0)
-    expect(window.__weightTable?.TransitionSequenceTime).toBeCloseTo(0.375, 12)
+    expect(window.__weightTable?.TransitionSequenceTime).toBeCloseTo(0.275, 12)
     instance.refresh(0.05, idleCrouching)
     expect(window.__weightTable?.CrouchingActiveTransitionIndex).toBe(11)
     expect(window.__weightTable?.CrouchingStateStop).toBe(1)
@@ -1337,5 +1343,365 @@ describe('AlsAnimationInstance playback regression', () => {
         initialPhases[index],
       )
     }
+  })
+
+  it('consumes the accepted jump and refreshes exact ALS in-air state from the live character seam', async () => {
+    const gltf = await loadAlsGltf()
+    let sweepCount = 0
+    let lastSweepEnd: Readonly<{ x: number; y: number; z: number }> | null =
+      null
+    const instance = createAlsAnimationInstance({
+      ...gltf,
+      groundPredictionSweep: (query) => {
+        sweepCount++
+        lastSweepEnd = query.end
+        return {
+          validBlockingHit: true,
+          time: 0.5,
+          impactNormal: { x: 0, y: 0, z: 1 },
+        }
+      },
+    })
+    const groundedControls: AlsAnimationInstanceControls = {
+      ...controls,
+      speed: 3,
+      locomotionMode: 'Grounded',
+      hasInput: true,
+    }
+    const inAirControls: AlsAnimationInstanceControls = {
+      ...groundedControls,
+      locomotionMode: 'InAir',
+      location: { x: 0, y: 0, z: 1 },
+      velocity: { x: 3, y: 0, z: 4.2 },
+      capsuleRadius: 0.34,
+      capsuleHalfHeight: 0.88,
+      walkableFloorAngleCos: Math.SQRT1_2,
+    }
+
+    // The first relevant graph frame clears bPendingUpdate, matching the game-thread proxy path.
+    instance.refresh(1 / 60, groundedControls)
+    instance.jump()
+    instance.refresh(1 / 60, inAirControls)
+
+    expect(window.__weightTable?.InAirJumped).toBe(1)
+    expect(window.__weightTable?.['LocomotionState.Jump']).toBe(1)
+    expect(window.__weightTable?.InAirJumpPlayRate).toBeCloseTo(1.35, 12)
+    expect(window.__weightTable?.InAirVerticalVelocity).toBe(4.2)
+    expect(window.__weightTable?.InAirGroundPredictionAmount).toBe(0)
+    expect(sweepCount).toBe(0)
+    const groundPredictionBlock =
+      window.__weightTable?.GroundPredictionBlock ?? 0
+
+    instance.refresh(1 / 60, {
+      ...inAirControls,
+      velocity: { x: 3, y: 0, z: -5 },
+    })
+
+    expect(window.__weightTable?.InAirJumped).toBe(0)
+    expect(window.__weightTable?.InAirVerticalVelocity).toBe(-5)
+    expect(window.__weightTable?.InAirGroundPredictionAmount)
+      .toBeCloseTo(
+        sampleGroundPredictionAmount(0.5) * (1 - groundPredictionBlock),
+        12,
+      )
+    expect(sweepCount).toBe(1)
+    expect(lastSweepEnd).not.toBeNull()
+    expect(lastSweepEnd!.z).toBeLessThan(1)
+  })
+
+  it('samples Jump Loop on the same frame its exact remaining-time rule selects it', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance({
+      ...gltf,
+      groundPredictionSweep: () => null,
+    })
+    const groundedControls: AlsAnimationInstanceControls = {
+      ...controls,
+      speed: 3,
+      locomotionMode: 'Grounded',
+      hasInput: true,
+    }
+    const inAirControls: AlsAnimationInstanceControls = {
+      ...groundedControls,
+      locomotionMode: 'InAir',
+      location: { x: 0, y: 0, z: 1 },
+      velocity: { x: 3, y: 0, z: 4.2 },
+      capsuleRadius: 0.34,
+      capsuleHalfHeight: 0.88,
+      walkableFloorAngleCos: Math.SQRT1_2,
+    }
+
+    instance.refresh(1 / 60, groundedControls)
+    instance.jump()
+
+    let preTransitionWeights: Record<string, number> | undefined
+    let loopTransitionWeights: Record<string, number> | undefined
+    for (let frame = 0; frame < 120; frame++) {
+      instance.refresh(1 / 60, inAirControls)
+      if (window.__weightTable?.['JumpState.Loop'] === 1) {
+        loopTransitionWeights = { ...window.__weightTable }
+        break
+      }
+      preTransitionWeights = { ...window.__weightTable }
+    }
+
+    expect(preTransitionWeights).toBeDefined()
+    expect(preTransitionWeights?.InAirJumpLaunchRemainingTime)
+      .toBeGreaterThan(0.2)
+    expect(preTransitionWeights?.InAirJumpTransitionCount).toBe(0)
+    expect(loopTransitionWeights).toBeDefined()
+    expect(loopTransitionWeights?.InAirJumpLaunchRemainingTime)
+      .toBeLessThanOrEqual(0.2)
+    expect(loopTransitionWeights?.InAirJumpTransitionCount).toBe(2)
+    expect(loopTransitionWeights?.['InAirPlayer.jumpLoop'])
+      .toBeGreaterThan(0)
+    expect(loopTransitionWeights?.['InAirPlayer.jumpLoop'])
+      .toBeLessThan(1)
+    expect(loopTransitionWeights?.['InAirPlayer.jumpFlail'])
+      .toBeGreaterThan(0)
+    expect(
+      (loopTransitionWeights?.['InAirPlayer.jumpLoop'] ?? 0)
+      + (loopTransitionWeights?.['InAirPlayer.jumpFlail'] ?? 0),
+    ).toBeCloseTo(1, 12)
+    expect(loopTransitionWeights?.['InAirPlayer.jumpWalkLeft']).toBe(0)
+    expect(loopTransitionWeights?.['InAirPlayer.jumpRunLeft']).toBe(0)
+    expect(loopTransitionWeights?.['InAirPlayer.jumpWalkRight']).toBe(0)
+    expect(loopTransitionWeights?.['InAirPlayer.jumpRunRight']).toBe(0)
+  })
+
+  it('takes Fall through the Land conduit and emits LandToGrounded exactly once', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance({
+      ...gltf,
+      groundPredictionSweep: () => null,
+    })
+    const groundedControls: AlsAnimationInstanceControls = {
+      ...controls,
+      gait: 'Walking',
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+      locomotionMode: 'Grounded',
+      hasInput: false,
+    }
+    const fallingControls: AlsAnimationInstanceControls = {
+      ...groundedControls,
+      locomotionMode: 'InAir',
+      location: { x: 0, y: 0, z: 2 },
+      velocity: { x: 0, y: 0, z: -8 },
+      capsuleRadius: 0.34,
+      capsuleHalfHeight: 0.88,
+      walkableFloorAngleCos: Math.SQRT1_2,
+    }
+
+    instance.refresh(1 / 60, groundedControls)
+    instance.refresh(1 / 60, fallingControls)
+    expect(window.__weightTable?.['LocomotionState.Fall']).toBe(1)
+
+    instance.refresh(1 / 60, groundedControls)
+    expect(window.__weightTable?.['LocomotionState.Land']).toBe(1)
+    expect(
+      (window.__weightTable?.['InAirPlayer.landLight'] ?? 0)
+      + (window.__weightTable?.['InAirPlayer.landHeavy'] ?? 0),
+    ).toBeCloseTo(1, 12)
+
+    for (let frame = 0; frame < 180; frame++) {
+      instance.refresh(1 / 60, groundedControls)
+      if ((window.__weightTable?.LandToGroundedNotifyCount ?? 0) > 0) break
+    }
+    expect(window.__weightTable?.LandToGroundedNotifyCount).toBe(1)
+
+    refreshFrames(instance, 60, groundedControls)
+    expect(window.__weightTable?.LandToGroundedNotifyCount).toBe(1)
+    expect(window.__weightTable?.['LocomotionState.Grounded']).toBe(1)
+  })
+
+  it('weights the shared Land sync group by its outer state blend before leader election', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance({
+      ...gltf,
+      groundPredictionSweep: () => null,
+    })
+    const groundedControls: AlsAnimationInstanceControls = {
+      ...controls,
+      gait: 'Walking',
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+      locomotionMode: 'Grounded',
+      hasInput: false,
+    }
+    const fallingControls: AlsAnimationInstanceControls = {
+      ...groundedControls,
+      locomotionMode: 'InAir',
+      location: { x: 0, y: 0, z: 2 },
+      velocity: { x: 0, y: 0, z: -8 },
+      capsuleRadius: 0.34,
+      capsuleHalfHeight: 0.88,
+      walkableFloorAngleCos: Math.SQRT1_2,
+    }
+    const movingControls: AlsAnimationInstanceControls = {
+      ...groundedControls,
+      moving: true,
+      movingSmooth: true,
+      speed: 1,
+      hasInput: true,
+    }
+
+    instance.refresh(1 / 60, groundedControls)
+    instance.refresh(1 / 60, fallingControls)
+    instance.refresh(1 / 60, groundedControls)
+    instance.refresh(1 / 60, movingControls)
+
+    const landLeadingWeights = { ...window.__weightTable }
+    const landStateWeight =
+      landLeadingWeights['LocomotionState.Land'] ?? 0
+    const landMovementStateWeight =
+      landLeadingWeights['LocomotionState.LandMovement'] ?? 0
+    expect(landStateWeight).toBeGreaterThan(landMovementStateWeight)
+    expect(landMovementStateWeight).toBeGreaterThan(0)
+    expect(
+      (landLeadingWeights['InAirPlayer.landLight'] ?? 0)
+      + (landLeadingWeights['InAirPlayer.landHeavy'] ?? 0),
+    ).toBeCloseTo(landStateWeight, 12)
+    expect(
+      (landLeadingWeights['InAirPlayer.landMovementLight'] ?? 0)
+      + (landLeadingWeights['InAirPlayer.landMovementHeavy'] ?? 0),
+    ).toBeCloseTo(landMovementStateWeight, 12)
+    expect(
+      (landLeadingWeights['InAirSyncLeader.Land.landLight'] ?? 0)
+      + (landLeadingWeights['InAirSyncLeader.Land.landHeavy'] ?? 0),
+    ).toBe(1)
+    expect(
+      (landLeadingWeights[
+        'InAirSyncLeader.Land.landMovementLight'
+      ] ?? 0)
+      + (landLeadingWeights[
+        'InAirSyncLeader.Land.landMovementHeavy'
+      ] ?? 0),
+    ).toBe(0)
+
+    let landMovementLeadingWeights:
+      Record<string, number> | undefined
+    for (let frame = 0; frame < 12; frame++) {
+      instance.refresh(1 / 60, movingControls)
+      const weights = window.__weightTable
+      if (
+        (weights?.['LocomotionState.LandMovement'] ?? 0)
+        > (weights?.['LocomotionState.Land'] ?? 0)
+      ) {
+        landMovementLeadingWeights = weights
+          ? { ...weights }
+          : undefined
+        break
+      }
+    }
+
+    expect(landMovementLeadingWeights).toBeDefined()
+    const laterLandWeight =
+      landMovementLeadingWeights?.['LocomotionState.Land'] ?? 0
+    const laterLandMovementWeight =
+      landMovementLeadingWeights?.[
+        'LocomotionState.LandMovement'
+      ] ?? 0
+    expect(
+      (landMovementLeadingWeights?.['InAirPlayer.landLight'] ?? 0)
+      + (landMovementLeadingWeights?.['InAirPlayer.landHeavy'] ?? 0),
+    ).toBeCloseTo(laterLandWeight, 12)
+    expect(
+      (
+        landMovementLeadingWeights?.[
+          'InAirPlayer.landMovementLight'
+        ] ?? 0
+      )
+      + (
+        landMovementLeadingWeights?.[
+          'InAirPlayer.landMovementHeavy'
+        ] ?? 0
+      ),
+    ).toBeCloseTo(laterLandMovementWeight, 12)
+    expect(
+      (landMovementLeadingWeights?.[
+        'InAirSyncLeader.Land.landLight'
+      ] ?? 0)
+      + (landMovementLeadingWeights?.[
+        'InAirSyncLeader.Land.landHeavy'
+      ] ?? 0),
+    ).toBe(0)
+    expect(
+      (
+        landMovementLeadingWeights?.[
+          'InAirSyncLeader.Land.landMovementLight'
+        ] ?? 0
+      )
+      + (
+        landMovementLeadingWeights?.[
+          'InAirSyncLeader.Land.landMovementHeavy'
+        ] ?? 0
+      ),
+    ).toBe(1)
+  })
+
+  it('takes bHasInput through Land Movement and applies UE automatic-rule overshoot', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance({
+      ...gltf,
+      groundPredictionSweep: () => null,
+    })
+    const groundedControls: AlsAnimationInstanceControls = {
+      ...controls,
+      gait: 'Walking',
+      speed: 1,
+      locomotionMode: 'Grounded',
+      hasInput: true,
+    }
+    const fallingControls: AlsAnimationInstanceControls = {
+      ...groundedControls,
+      locomotionMode: 'InAir',
+      location: { x: 0, y: 0, z: 2 },
+      velocity: { x: 1, y: 0, z: -8 },
+      capsuleRadius: 0.34,
+      capsuleHalfHeight: 0.88,
+      walkableFloorAngleCos: Math.SQRT1_2,
+    }
+
+    instance.refresh(1 / 60, groundedControls)
+    instance.refresh(1 / 60, fallingControls)
+    instance.refresh(1 / 60, groundedControls)
+    expect(window.__weightTable?.['LocomotionState.LandMovement']).toBe(1)
+    expect(
+      (window.__weightTable?.['InAirPlayer.landMovementLight'] ?? 0)
+      + (window.__weightTable?.['InAirPlayer.landMovementHeavy'] ?? 0),
+    ).toBeCloseTo(1, 12)
+
+    let beforeAutomaticTransition: Record<string, number> | undefined
+    let automaticTransition: Record<string, number> | undefined
+    for (let frame = 0; frame < 180; frame++) {
+      instance.refresh(1 / 60, groundedControls)
+      const weights = window.__weightTable
+      if (
+        (weights?.InAirLandMovementCrossfadeDuration ?? 0) > 0
+      ) {
+        automaticTransition = { ...weights }
+        break
+      }
+      beforeAutomaticTransition = weights ? { ...weights } : undefined
+    }
+
+    expect(beforeAutomaticTransition).toBeDefined()
+    expect(beforeAutomaticTransition?.InAirLandMovementRemainingTime)
+      .toBeGreaterThan(0.3)
+    expect(automaticTransition).toBeDefined()
+    expect(automaticTransition?.InAirLandMovementRemainingTime)
+      .toBeLessThanOrEqual(0.3)
+    expect(automaticTransition?.InAirLandMovementCrossfadeDuration)
+      .toBeCloseTo(
+        automaticTransition?.InAirLandMovementRemainingTime ?? 0,
+        12,
+      )
+    expect(automaticTransition?.InAirLandMovementCrossfadeElapsedTime)
+      .toBeCloseTo(1 / 60, 12)
+    expect(automaticTransition?.['LocomotionState.Grounded'])
+      .toBeGreaterThan(0)
   })
 })

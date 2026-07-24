@@ -10,6 +10,9 @@ import {
   setTargetYawAngle,
 } from './AlsCharacter'
 import type { AlsCharacter } from './AlsCharacter'
+import type {
+  AlsGroundPredictionCapsuleSweep,
+} from './State/AlsInAirState'
 import {
   createAlsAnimationInstance,
 } from './AlsAnimationInstance'
@@ -28,6 +31,8 @@ function captureMetadata(frameControls: AlsAnimationInstanceControls) {
     direction: frameControls.direction,
     viewYawAngle: frameControls.viewYawAngle,
     viewYawSpeed: frameControls.viewYawSpeed,
+    locomotionMode: frameControls.locomotionMode ?? 'Grounded',
+    hasInput: frameControls.hasInput ?? false,
   }
 }
 
@@ -44,15 +49,29 @@ export function useAlsAnimationInstance(
   characterRoot: MutableRefObject<THREE.Group | null>,
   controls: MutableRefObject<AlsAnimationInstanceControls>,
   character: MutableRefObject<AlsCharacter>,
+  onJumped: MutableRefObject<(() => void) | null>,
+  groundPredictionSweep: AlsGroundPredictionCapsuleSweep,
 ) {
   const animationInstance = useMemo(
-    () => createAlsAnimationInstance(gltf),
-    [gltf],
+    () => createAlsAnimationInstance({
+      ...gltf,
+      groundPredictionSweep,
+    }),
+    [gltf, groundPredictionSweep],
   )
   const frameCapture = useMemo(
     () => new AnimationFrameCapture(gltf.scene),
     [gltf.scene],
   )
+
+  useEffect(() => {
+    onJumped.current = animationInstance.jump
+    return () => {
+      if (onJumped.current === animationInstance.jump) {
+        onJumped.current = null
+      }
+    }
+  }, [animationInstance, onJumped])
 
   useEffect(() => {
     window.__playClip = animationInstance.playClip
@@ -73,10 +92,11 @@ export function useAlsAnimationInstance(
 
   useFrame((_, delta) => {
     const frameControls = controls.current
+    const current = character.current
+    frameControls.hasInput = current.locomotionState.hasInput
     const rotationYawSpeed = animationInstance.refresh(delta, frameControls)
     frameCapture.recordFrame(delta, captureMetadata(frameControls))
     const root = characterRoot.current
-    const current = character.current
     if (
       root
       && current.locomotionMode === 'Grounded'

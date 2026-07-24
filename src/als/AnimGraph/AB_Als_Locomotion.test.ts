@@ -268,7 +268,7 @@ function frame(
     clocks: {
       jumpLaunchRemainingTime: 1,
       landRemainingTime: 1,
-      landMovementAutomaticRemainingTimeReached: false,
+      landMovementRelevantAnimTimeRemaining: 1,
       ...clocks,
     },
     poses,
@@ -621,7 +621,7 @@ describe('AB_Als_Locomotion retained pose evaluation', () => {
     evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
       verticalVelocity: -1,
       rotationMode: 'Aiming',
-      clocks: { landMovementAutomaticRemainingTimeReached: true },
+      clocks: { landMovementRelevantAnimTimeRemaining: 0.3 },
     }))
     expect(runtime.outerTransitionStack.currentState).toBe('Grounded')
     expect(runtime.nodes.outerStateMachine.pose.positions[0])
@@ -656,7 +656,7 @@ describe('AB_Als_Locomotion exact state/frame behavior', () => {
       rotatingRight: false,
       speed: 0,
       landRemainingTime: 1,
-      landMovementAutomaticRemainingTimeReached: false,
+      landMovementRelevantAnimTimeRemaining: 1,
     }
     expect(resolveAlsLocomotionTransition('Fall', rules)).toMatchObject({
       transition: { transitionIndex: 14, logic: 'Inertialization' },
@@ -670,7 +670,58 @@ describe('AB_Als_Locomotion exact state/frame behavior', () => {
       transition: { transitionIndex: 15, logic: 'Inertialization' },
       targetState: 'Land',
       sourceTransitionIndices: [15, 4],
+      crossfadeTimeAdjustment: 0,
     })
+  })
+
+  it('applies UE automatic-rule frame overshoot to the Land Movement crossfade', () => {
+    const rules = {
+      locomotionMode: 'Grounded' as const,
+      jumped: false,
+      stance: 'Standing' as const,
+      hasInput: false,
+      rotatingLeft: false,
+      rotatingRight: false,
+      speed: 0,
+      landRemainingTime: 1,
+      landMovementRelevantAnimTimeRemaining: 0.300001,
+    }
+    expect(resolveAlsLocomotionTransition(
+      'Land Movement',
+      rules,
+    )).toBeNull()
+    const resolved = resolveAlsLocomotionTransition(
+      'Land Movement',
+      {
+        ...rules,
+        landMovementRelevantAnimTimeRemaining: 0.25,
+      },
+    )
+    expect(resolved).toMatchObject({
+      transition: { transitionIndex: 11 },
+      targetState: 'Grounded',
+    })
+    expect(resolved?.crossfadeTimeAdjustment).toBeCloseTo(0.05)
+
+    const rig = createTestRig()
+    const poses = sampledPoses(rig)
+    const runtime = createAlsLocomotionPoseGraphRuntime(rig)
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses))
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
+      locomotionMode: 'InAir',
+    }))
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
+      locomotionMode: 'Grounded',
+      hasInput: true,
+    }))
+    expect(runtime.outerTransitionStack.currentState)
+      .toBe('Land Movement')
+
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
+      clocks: { landMovementRelevantAnimTimeRemaining: 0.25 },
+    }))
+    expect(runtime.outerTransitionStack.activeTransitions[0]
+      ?.crossfadeDuration).toBeCloseTo(0.25)
   })
 
   it('skip-first initializes Jump, resets its nested graph, and reports the correct foot edge', () => {
@@ -775,6 +826,23 @@ describe('AB_Als_Locomotion exact state/frame behavior', () => {
     expect(runtime.lifecycleEvents.filter(
       (event) => event.kind === 'AnimNotify',
     )).toHaveLength(0)
+  })
+
+  it('advances a newly selected standard transition in the same UE update', () => {
+    const rig = createTestRig()
+    const poses = sampledPoses(rig)
+    const runtime = createAlsLocomotionPoseGraphRuntime(rig)
+    reachLand(runtime, poses)
+
+    evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
+      deltaTime: 0.2,
+      clocks: { landRemainingTime: 0.1 },
+    }))
+
+    const transition = runtime.outerTransitionStack.activeTransitions[0]
+    expect(transition.elapsedTime).toBeCloseTo(0.2, 12)
+    expect(transition.linearAlpha).toBeCloseTo(0.25, 12)
+    expect(transition.alpha).toBeCloseTo(0.15625, 12)
   })
 
   it('clears an interrupted standard stack on same-frame Land-to-Grounded-to-Jump', () => {

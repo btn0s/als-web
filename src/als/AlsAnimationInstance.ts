@@ -171,6 +171,28 @@ import {
   refreshAlsCrouchingMovementRuntime,
 } from './AnimGraph/crouchingMovement'
 import {
+  ALS_AIR_LEAN_ADDITIVE_SETTINGS,
+  ALS_LAND_MOVEMENT_ADDITIVE_SETTINGS,
+  ALS_LOCOMOTION_INTERNAL_BLEND_METADATA,
+  ALS_LOCOMOTION_PLAYER_METADATA,
+  ALS_LOCOMOTION_POSE_STATE_ORDER,
+  createAlsLocomotionPoseGraphRuntime,
+  evaluateUpdatedAlsLocomotionPoseGraph,
+  getAlsLocomotionStateWeight,
+  resolveAlsLocomotionTransition,
+  updateAlsLocomotionPoseGraph,
+} from './AnimGraph/AB_Als_Locomotion'
+import type {
+  AlsLocomotionPoseGraphInput,
+  AlsLocomotionPoseState,
+  AlsLocomotionSampledPoses,
+} from './AnimGraph/AB_Als_Locomotion'
+import type { AlsLocomotionMode } from './AlsCharacter'
+import {
+  refreshAlsJumpStateClock,
+  sampleAlsLandGraph,
+} from './AnimGraph/inAir'
+import {
   composeAlsLayeringFinalCurves,
   createAlsLayeringPoseRuntime,
   evaluateAlsLayeringPose,
@@ -210,7 +232,22 @@ import {
 import {
   createAlsLeanState,
   refreshGroundedLean,
+  refreshInAirLean,
 } from './State/AlsLeanState'
+import {
+  createAlsInAirState,
+  jump as requestAlsAnimationJump,
+  refreshGroundPrediction,
+  refreshInAir,
+  refreshInAirOnGameThread,
+} from './State/AlsInAirState'
+import type {
+  AlsGroundPredictionCapsuleSweep,
+} from './State/AlsInAirState'
+import {
+  sampleGroundPredictionAmount,
+  sampleInAirLeanAmount,
+} from './Settings/AlsInAirSettings'
 import {
   advanceRotateInPlaceClipTime,
   createAlsRotateInPlaceState,
@@ -395,6 +432,23 @@ interface RuntimeQueuedTransitionSlot {
   readonly startTime: number
 }
 
+interface RuntimeLocomotionSequencePlayer {
+  readonly key: keyof typeof ALS_LOCOMOTION_PLAYER_METADATA
+  readonly clip: RuntimeClip | undefined
+  readonly node: MutableUePoseNode
+  readonly group: 'Fall' | 'Jump' | 'Flail' | 'Land' | null
+  readonly loop: boolean
+  readonly startPosition: number
+  playRate: number
+  time: number
+  weight: number
+}
+
+interface RuntimeLocomotionSyncGroup {
+  readonly members: RuntimeLocomotionSequencePlayer[]
+  leaderKey: RuntimeLocomotionSequencePlayer['key'] | null
+}
+
 export interface AlsAnimationInstanceControls {
   gait: AlsGait
   moving: boolean
@@ -412,6 +466,18 @@ export interface AlsAnimationInstanceControls {
   rotateInPlace: boolean
   viewYawAngle: number
   viewYawSpeed: number
+  /** AAlsCharacter::LocomotionMode, supplied by the live character bridge. */
+  locomotionMode?: AlsLocomotionMode
+  /** FAlsLocomotionState::bHasInput. Live frames always provide this exact value. */
+  hasInput?: boolean
+  /** FAlsLocomotionState::Location in metres and ALS coordinates. */
+  location?: Readonly<Velocity3>
+  /** FAlsLocomotionState::Velocity in metres per second and ALS coordinates. */
+  velocity?: Readonly<Velocity3>
+  /** Scaled capsule dimensions used by RefreshGroundPrediction(). */
+  capsuleRadius?: number
+  capsuleHalfHeight?: number
+  walkableFloorAngleCos?: number
 }
 
 export interface AlsAnimationInstanceState {
@@ -444,6 +510,8 @@ export interface AlsAnimationInstance {
    * Public for parity tests; normal live updates come from the recovered transition delegates.
    */
   setHipsDirection: (hipsDirection: AlsHipsDirection) => void
+  /** Exact UAlsAnimationInstance::Jump() request latch. */
+  jump: () => void
   readonly state: AlsAnimationInstanceState
   refresh: (delta: number, controls: AlsAnimationInstanceControls) => number
 }
@@ -625,6 +693,8 @@ export function createAlsAnimationInstance(gltf: {
   scene: THREE.Object3D
   /** Optional normalized marker override; regular GLTF loads consume clip.userData.syncMarkers. */
   syncMarkers?: SyncMarkerTable
+  /** Backend adapter for UAlsAnimationInstance::RefreshGroundPrediction(). */
+  groundPredictionSweep?: AlsGroundPredictionCapsuleSweep
 }): AlsAnimationInstance {
   const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
   const applicator = createPoseApplicator(gltf.scene, rig)
@@ -675,6 +745,162 @@ export function createAlsAnimationInstance(gltf: {
     return { sampler, curves, entry: createEntry(sampler, curves), time: 0 }
   })
   const clipsByName = new Map(clips.map((clip) => [clip.sampler.clip.name, clip]))
+  const locomotionPoseGraphRuntime =
+    createAlsLocomotionPoseGraphRuntime(rig)
+  const locomotionGroundedInput =
+    createMutableUePoseNode(rig.boneCount)
+
+  function createLocomotionSequencePlayer(
+    key: RuntimeLocomotionSequencePlayer['key'],
+  ): RuntimeLocomotionSequencePlayer {
+    const metadata = ALS_LOCOMOTION_PLAYER_METADATA[key]
+    if (!('loop' in metadata)) {
+      throw new Error(`${String(key)} is not an ALS SequencePlayer`)
+    }
+    const clip = clipsByName.get(metadata.clip)
+    const node = createMutableUePoseNode(rig.boneCount)
+    if (clip) {
+      sampleSequencePoseNode(
+        rig,
+        clip,
+        metadata.startPosition,
+        metadata.loop,
+        node,
+      )
+    } else {
+      copyPose(evaluator.referencePose, node.pose)
+    }
+    return {
+      key,
+      clip,
+      node,
+      group: metadata.group,
+      loop: metadata.loop,
+      startPosition: metadata.startPosition,
+      playRate: 'playRate' in metadata ? metadata.playRate : 1,
+      time: metadata.startPosition,
+      weight: 0,
+    }
+  }
+
+  const fallFastPlayer = createLocomotionSequencePlayer('fallFast')
+  const fallPlayer = createLocomotionSequencePlayer('fall')
+  const fallFlailPlayer = createLocomotionSequencePlayer('fallFlail')
+  const jumpWalkLeftPlayer =
+    createLocomotionSequencePlayer('jumpWalkLeft')
+  const jumpRunLeftPlayer =
+    createLocomotionSequencePlayer('jumpRunLeft')
+  const jumpWalkRightPlayer =
+    createLocomotionSequencePlayer('jumpWalkRight')
+  const jumpRunRightPlayer =
+    createLocomotionSequencePlayer('jumpRunRight')
+  const jumpLoopPlayer = createLocomotionSequencePlayer('jumpLoop')
+  const jumpFlailPlayer = createLocomotionSequencePlayer('jumpFlail')
+  const landLightPlayer = createLocomotionSequencePlayer('landLight')
+  const landHeavyPlayer = createLocomotionSequencePlayer('landHeavy')
+  const landMovementLightPlayer =
+    createLocomotionSequencePlayer('landMovementLight')
+  const landMovementHeavyPlayer =
+    createLocomotionSequencePlayer('landMovementHeavy')
+  const locomotionSequencePlayers = [
+    fallFastPlayer,
+    fallPlayer,
+    fallFlailPlayer,
+    jumpWalkLeftPlayer,
+    jumpRunLeftPlayer,
+    jumpWalkRightPlayer,
+    jumpRunRightPlayer,
+    jumpLoopPlayer,
+    jumpFlailPlayer,
+    landLightPlayer,
+    landHeavyPlayer,
+    landMovementLightPlayer,
+    landMovementHeavyPlayer,
+  ] as const
+  const locomotionSyncGroups: Readonly<
+    Record<'Fall' | 'Jump' | 'Flail' | 'Land', RuntimeLocomotionSyncGroup>
+  > = {
+    Fall: {
+      members: [fallFastPlayer, fallPlayer],
+      leaderKey: null,
+    },
+    Jump: {
+      members: [
+        jumpWalkLeftPlayer,
+        jumpRunLeftPlayer,
+        jumpWalkRightPlayer,
+        jumpRunRightPlayer,
+      ],
+      leaderKey: null,
+    },
+    Flail: {
+      members: [jumpLoopPlayer, jumpFlailPlayer],
+      leaderKey: null,
+    },
+    Land: {
+      members: [
+        landLightPlayer,
+        landHeavyPlayer,
+        landMovementLightPlayer,
+        landMovementHeavyPlayer,
+      ],
+      leaderKey: null,
+    },
+  }
+
+  function sampleExplicitLocomotionPose(
+    clipName: string,
+  ) {
+    const node = createMutableUePoseNode(rig.boneCount)
+    const clip = clipsByName.get(clipName)
+    if (clip) sampleSequencePoseNode(rig, clip, 0, false, node)
+    else copyPose(evaluator.referencePose, node.pose)
+    return node
+  }
+
+  const airLeanRawSourcePoses =
+    locomotionPoseGraphRuntime.airLeanBlendSpace.blendSpace.samples.map(
+      ({ animation }) => sampleExplicitLocomotionPose(animation.name),
+    ) as [
+      MutableUePoseNode,
+      MutableUePoseNode,
+      MutableUePoseNode,
+      MutableUePoseNode,
+      MutableUePoseNode,
+    ]
+  const airLeanReferencePose = sampleExplicitLocomotionPose(
+    ALS_AIR_LEAN_ADDITIVE_SETTINGS.referenceSequence,
+  )
+  const landingPreviewHeavyPose = sampleExplicitLocomotionPose(
+    ALS_LOCOMOTION_PLAYER_METADATA.landingPreviewHeavy.clip,
+  )
+  const landingPreviewLightPose = sampleExplicitLocomotionPose(
+    ALS_LOCOMOTION_PLAYER_METADATA.landingPreviewLight.clip,
+  )
+  const landMovementReferencePose = sampleExplicitLocomotionPose(
+    ALS_LAND_MOVEMENT_ADDITIVE_SETTINGS.referenceSequence,
+  )
+  const locomotionSampledPoses: AlsLocomotionSampledPoses = {
+    groundedInput: locomotionGroundedInput,
+    fallFastPose: fallFastPlayer.node,
+    fallPose: fallPlayer.node,
+    fallFlailPose: fallFlailPlayer.node,
+    jumpWalkLeftPose: jumpWalkLeftPlayer.node,
+    jumpRunLeftPose: jumpRunLeftPlayer.node,
+    jumpWalkRightPose: jumpWalkRightPlayer.node,
+    jumpRunRightPose: jumpRunRightPlayer.node,
+    jumpLoopPose: jumpLoopPlayer.node,
+    jumpFlailPose: jumpFlailPlayer.node,
+    airLeanRawSourcePoses,
+    airLeanReferencePose,
+    landingPreviewHeavyPose,
+    landingPreviewLightPose,
+    landLightPose: landLightPlayer.node,
+    landHeavyPose: landHeavyPlayer.node,
+    landMovementLightRawPose: landMovementLightPlayer.node,
+    landMovementHeavyRawPose: landMovementHeavyPlayer.node,
+    landMovementReferencePose,
+  }
   const crouchingPoseGraphRuntime =
     createAlsCrouchingPoseGraphRuntime(rig)
   const crouchingGraphOutput = createMutableUePoseNode(rig.boneCount)
@@ -1092,6 +1318,21 @@ export function createAlsAnimationInstance(gltf: {
   const soloDebugWeights = new Map(
     clips.map((clip) => [clip.sampler.clip.name, { [clip.sampler.clip.name]: 1 }]),
   )
+  const locomotionPoseGraphSourceComplete =
+    locomotionSequencePlayers.every((player) => player.clip !== undefined)
+    && locomotionPoseGraphRuntime.airLeanBlendSpace.blendSpace.samples.every(
+      ({ animation }) => clipsByName.has(animation.name),
+    )
+    && clipsByName.has(ALS_AIR_LEAN_ADDITIVE_SETTINGS.referenceSequence)
+    && clipsByName.has(
+      ALS_LOCOMOTION_PLAYER_METADATA.landingPreviewHeavy.clip,
+    )
+    && clipsByName.has(
+      ALS_LOCOMOTION_PLAYER_METADATA.landingPreviewLight.clip,
+    )
+    && clipsByName.has(
+      ALS_LAND_MOVEMENT_ADDITIVE_SETTINGS.referenceSequence,
+    )
   const complete = rig.boneCount > 0
     && (Object.keys(CLIP_ROLES) as ClipRole[]).every((role) => roles[role])
     && groundedLocomotionClips.size === groundedLocomotionClipNames.size
@@ -1106,6 +1347,7 @@ export function createAlsAnimationInstance(gltf: {
     && rifleOverlaySources.length === Object.keys(RIFLE_OVERLAY_CLIPS).length
     && rifleRelaxedSources !== undefined
     && idleAdditiveEntry !== undefined
+    && locomotionPoseGraphSourceComplete
   const gaitFallback = (clip: RuntimeClip) => {
     const role = roleByClip.get(clip)
     return role
@@ -1322,6 +1564,8 @@ export function createAlsAnimationInstance(gltf: {
     rig.boneCount,
   )
   const transitionMontageEntries: EvaluatorLayerEntry[] = []
+  let activeLocomotionGraphInput:
+    AlsLocomotionPoseGraphInput | null = null
   let activeOverlayMode: AlsOverlayMode = 'Default'
   let defaultOverlayGraphSample = refreshAlsDefaultOverlayGraph(
     defaultOverlayGraphState,
@@ -1350,10 +1594,28 @@ export function createAlsAnimationInstance(gltf: {
       finalizePose(
         locomotionAccumulator,
         context.referencePose,
-        context.outputPose,
+        locomotionGroundedInput.pose,
       )
+      locomotionGroundedInput.curves.clear()
+      resolveLocomotionGraphCurves(locomotionGroundedInput.curves)
+      const input = activeLocomotionGraphInput
+      if (!input) {
+        copyPose(locomotionGroundedInput.pose, context.outputPose)
+        context.outputCurves.clear()
+        for (const [name, value] of locomotionGroundedInput.curves) {
+          context.outputCurves.set(name, value)
+        }
+        return
+      }
+      const output = evaluateUpdatedAlsLocomotionPoseGraph(
+        locomotionPoseGraphRuntime,
+        input,
+      )
+      copyPose(output.pose, context.outputPose)
       context.outputCurves.clear()
-      resolveLocomotionGraphCurves(context.outputCurves)
+      for (const [name, value] of output.curves) {
+        context.outputCurves.set(name, value)
+      }
     },
     montages: transitionMontageEntries,
     stagedInertialization: {
@@ -1457,7 +1719,11 @@ export function createAlsAnimationInstance(gltf: {
     createAlsCrouchingStrideBlendRuntime()
   const crouchingState = createAlsCrouchingState()
   const leanState = createAlsLeanState()
+  const inAirState = createAlsInAirState()
   let leanPendingUpdate = true
+  let previousFootPlantedAmount = 0
+  let previousGroundPredictionBlockAmount = 0
+  let landToGroundedNotifyCount = 0
   const crouchingNode34 = createInertialization(rig.boneCount)
   const crouchingNode34Output = createOutputInertialization()
   let crouchingRotateLeftTime = 0
@@ -1546,6 +1812,10 @@ export function createAlsAnimationInstance(gltf: {
 
   function setHipsDirection(hipsDirection: AlsHipsDirection) {
     state.hipsDirection = hipsDirection
+  }
+
+  function jump() {
+    requestAlsAnimationJump(inAirState)
   }
 
   function processCrouchingLifecycleEvents() {
@@ -1762,11 +2032,466 @@ export function createAlsAnimationInstance(gltf: {
     return true
   }
 
+  function resetLocomotionPlayer(
+    player: RuntimeLocomotionSequencePlayer,
+  ) {
+    player.time = player.startPosition
+    player.weight = 0
+    if (player.clip) {
+      sampleSequencePoseNode(
+        rig,
+        player.clip,
+        player.time,
+        player.loop,
+        player.node,
+      )
+    }
+  }
+
+  function resetLocomotionGroup(
+    group: RuntimeLocomotionSyncGroup,
+  ) {
+    group.leaderKey = null
+    for (const player of group.members) resetLocomotionPlayer(player)
+  }
+
+  function resetLocomotionPlayers(
+    group: RuntimeLocomotionSyncGroup,
+    players: readonly RuntimeLocomotionSequencePlayer[],
+  ) {
+    if (players.some((player) => player.key === group.leaderKey)) {
+      group.leaderKey = null
+    }
+    for (const player of players) resetLocomotionPlayer(player)
+  }
+
+  function advanceLocomotionPlayer(
+    player: RuntimeLocomotionSequencePlayer,
+    delta: number,
+  ) {
+    const duration = player.clip?.sampler.clip.duration ?? 0
+    if (duration <= 0) {
+      player.time = 0
+      return
+    }
+    const nextTime = player.time + Math.max(0, delta) * player.playRate
+    player.time = player.loop
+      ? ((nextTime % duration) + duration) % duration
+      : Math.max(0, Math.min(duration, nextTime))
+  }
+
+  function advanceLocomotionSyncGroup(
+    group: RuntimeLocomotionSyncGroup,
+    delta: number,
+  ) {
+    let leader: RuntimeLocomotionSequencePlayer | null = null
+    for (const player of group.members) {
+      if (player.weight <= 0) continue
+      if (
+        !leader
+        || player.weight > leader.weight
+        || (
+          player.weight === leader.weight
+          && player.key === group.leaderKey
+        )
+      ) {
+        leader = player
+      }
+    }
+    if (!leader) {
+      group.leaderKey = null
+      return
+    }
+
+    group.leaderKey = leader.key
+    advanceLocomotionPlayer(leader, delta)
+    const leaderDuration = leader.clip?.sampler.clip.duration ?? 0
+    const normalizedTime =
+      leaderDuration > 0 ? leader.time / leaderDuration : 0
+    for (const follower of group.members) {
+      if (follower === leader || follower.weight <= 0) continue
+      const duration = follower.clip?.sampler.clip.duration ?? 0
+      follower.time = Math.max(0, Math.min(duration, normalizedTime * duration))
+    }
+  }
+
+  function sampleLocomotionSequencePlayers() {
+    for (const player of locomotionSequencePlayers) {
+      if (!player.clip) continue
+      sampleSequencePoseNode(
+        rig,
+        player.clip,
+        player.time,
+        player.loop,
+        player.node,
+      )
+    }
+  }
+
+  function mapRangeClamped(
+    value: number,
+    inputMinimum: number,
+    inputMaximum: number,
+    outputMinimum: number,
+    outputMaximum: number,
+  ) {
+    if (inputMinimum === inputMaximum) return outputMinimum
+    const alpha = clamp01(
+      (value - inputMinimum) / (inputMaximum - inputMinimum),
+    )
+    return outputMinimum + (outputMaximum - outputMinimum) * alpha
+  }
+
+  function nextGraphInterpolatedAmount(
+    state: { readonly value: number; readonly initialized: boolean },
+    target: number,
+    delta: number,
+    interpolationSpeedIncreasing: number,
+    interpolationSpeedDecreasing: number,
+  ) {
+    if (!state.initialized) return target
+    const speed = target > state.value
+      ? interpolationSpeedIncreasing
+      : interpolationSpeedDecreasing
+    if (speed <= 0) return target
+    return state.value
+      + (target - state.value) * clamp01(Math.max(0, delta) * speed)
+  }
+
+  function mostRelevantRemainingTime(
+    players: readonly RuntimeLocomotionSequencePlayer[],
+  ) {
+    let maximumWeight = 0
+    let remainingTime = Number.POSITIVE_INFINITY
+    for (const player of players) {
+      if (player.weight <= maximumWeight || !player.clip) continue
+      maximumWeight = player.weight
+      remainingTime = Math.max(
+        0,
+        player.clip.sampler.clip.duration - player.time,
+      )
+    }
+    return remainingTime
+  }
+
+  function predictLocomotionPoseState(
+    input: AlsLocomotionPoseGraphInput,
+  ) {
+    let predictedState = locomotionPoseGraphRuntime.relevant
+      ? locomotionPoseGraphRuntime.outerTransitionStack.currentState
+      : 'Grounded' as AlsLocomotionPoseState
+    for (
+      let transitionCount = 0;
+      transitionCount < 3;
+      transitionCount++
+    ) {
+      const resolved = resolveAlsLocomotionTransition(
+        predictedState,
+        {
+          locomotionMode: input.locomotionMode,
+          jumped: input.jumped,
+          stance: input.stance,
+          hasInput: input.hasInput,
+          rotatingLeft: input.rotatingLeft,
+          rotatingRight: input.rotatingRight,
+          speed: input.speed,
+          landRemainingTime: input.clocks.landRemainingTime,
+          landMovementRelevantAnimTimeRemaining:
+            input.clocks.landMovementRelevantAnimTimeRemaining,
+        },
+      )
+      if (!resolved) break
+      predictedState = resolved.targetState
+    }
+    return predictedState
+  }
+
+  function resetLocomotionPlayersForEntry(
+    previousState: AlsLocomotionPoseState,
+    nextState: AlsLocomotionPoseState,
+  ) {
+    if (previousState === nextState) return
+    const alreadyActive = getAlsLocomotionStateWeight(
+      locomotionPoseGraphRuntime,
+      nextState,
+    ) > 0
+    if (alreadyActive && nextState !== 'Jump') return
+
+    if (nextState === 'Fall') {
+      resetLocomotionGroup(locomotionSyncGroups.Fall)
+      resetLocomotionPlayer(fallFlailPlayer)
+    } else if (nextState === 'Jump') {
+      resetLocomotionGroup(locomotionSyncGroups.Jump)
+      resetLocomotionGroup(locomotionSyncGroups.Flail)
+    } else if (nextState === 'Land') {
+      resetLocomotionPlayers(
+        locomotionSyncGroups.Land,
+        [landLightPlayer, landHeavyPlayer],
+      )
+    } else if (nextState === 'Land Movement') {
+      resetLocomotionPlayers(
+        locomotionSyncGroups.Land,
+        [landMovementLightPlayer, landMovementHeavyPlayer],
+      )
+    }
+  }
+
+  function refreshLocomotionPlayerWeights(
+    referencedStates: ReadonlySet<AlsLocomotionPoseState>,
+    input: AlsLocomotionPoseGraphInput,
+  ) {
+    for (const player of locomotionSequencePlayers) player.weight = 0
+
+    if (referencedStates.has('Fall')) {
+      const stateWeight = getAlsLocomotionStateWeight(
+        locomotionPoseGraphRuntime,
+        'Fall',
+      )
+      const verticalVelocity = input.verticalVelocity * 100
+      const fallSettings =
+        ALS_LOCOMOTION_INTERNAL_BLEND_METADATA.fall
+      const fallTarget = mapRangeClamped(
+        verticalVelocity,
+        fallSettings.fallFastBlend.inputMinimum,
+        fallSettings.fallFastBlend.inputMaximum,
+        fallSettings.fallFastBlend.outputMinimum,
+        fallSettings.fallFastBlend.outputMaximum,
+      )
+      const flailTarget = mapRangeClamped(
+        verticalVelocity,
+        fallSettings.flailBlend.inputMinimum,
+        fallSettings.flailBlend.inputMaximum,
+        fallSettings.flailBlend.outputMinimum,
+        fallSettings.flailBlend.outputMaximum,
+      )
+      const fallAmount = clamp01(nextGraphInterpolatedAmount(
+        locomotionPoseGraphRuntime.inAirGraphState.fallFastBlend,
+        fallTarget,
+        input.deltaTime,
+        fallSettings.fallFastBlend.interpolationSpeedIncreasing,
+        fallSettings.fallFastBlend.interpolationSpeedDecreasing,
+      ))
+      const flailAmount = clamp01(nextGraphInterpolatedAmount(
+        locomotionPoseGraphRuntime.inAirGraphState.fallFlailBlend,
+        flailTarget,
+        input.deltaTime,
+        fallSettings.flailBlend.interpolationSpeedIncreasing,
+        fallSettings.flailBlend.interpolationSpeedDecreasing,
+      ))
+      fallFastPlayer.weight =
+        stateWeight * (1 - fallAmount) * (1 - flailAmount)
+      fallPlayer.weight =
+        stateWeight * fallAmount * (1 - flailAmount)
+      fallFlailPlayer.weight = stateWeight * flailAmount
+    }
+
+    if (referencedStates.has('Jump')) {
+      const stateWeight = getAlsLocomotionStateWeight(
+        locomotionPoseGraphRuntime,
+        'Jump',
+      )
+      jumpWalkLeftPlayer.playRate = input.jumpPlayRate
+      jumpRunLeftPlayer.playRate = input.jumpPlayRate
+      jumpWalkRightPlayer.playRate = input.jumpPlayRate
+      jumpRunRightPlayer.playRate = input.jumpPlayRate
+      jumpLoopPlayer.playRate = input.jumpPlayRate
+      const currentJumpClock =
+        locomotionPoseGraphRuntime.inAirGraphState.jumpState
+      const samplingJumpClock = { ...currentJumpClock }
+      let jumpState = locomotionPoseGraphRuntime.jumpRelevant
+        ? samplingJumpClock.state
+        : input.footPlantedAmount > 0 ? 'Right Foot' : 'Left Foot'
+      if (
+        locomotionPoseGraphRuntime.jumpRelevant
+        && !locomotionPoseGraphRuntime.jumpSkipFirstUpdate
+      ) {
+        refreshAlsJumpStateClock(samplingJumpClock, {
+          deltaTime: input.deltaTime,
+          launchRemainingTime: input.clocks.jumpLaunchRemainingTime,
+        })
+        jumpState = samplingJumpClock.state
+      }
+      if (jumpState === 'Left Foot' || jumpState === 'Right Foot') {
+        const launchSettings =
+          ALS_LOCOMOTION_INTERNAL_BLEND_METADATA.jump.launchBlend
+        const runTarget = mapRangeClamped(
+          input.speed * 100,
+          launchSettings.inputMinimum,
+          launchSettings.inputMaximum,
+          launchSettings.outputMinimum,
+          launchSettings.outputMaximum,
+        )
+        const launchState = jumpState === 'Left Foot'
+          ? locomotionPoseGraphRuntime.inAirGraphState.jumpLaunchLeftBlend
+          : locomotionPoseGraphRuntime.inAirGraphState.jumpLaunchRightBlend
+        const runAmount = clamp01(nextGraphInterpolatedAmount(
+          launchState,
+          runTarget,
+          input.deltaTime,
+          launchSettings.interpolationSpeedIncreasing,
+          launchSettings.interpolationSpeedDecreasing,
+        ))
+        const walkPlayer = jumpState === 'Left Foot'
+          ? jumpWalkLeftPlayer
+          : jumpWalkRightPlayer
+        const runPlayer = jumpState === 'Left Foot'
+          ? jumpRunLeftPlayer
+          : jumpRunRightPlayer
+        walkPlayer.weight = stateWeight * (1 - runAmount)
+        runPlayer.weight = stateWeight * runAmount
+      } else {
+        jumpLoopPlayer.weight =
+          stateWeight * samplingJumpClock.loopWeight
+        jumpFlailPlayer.weight =
+          stateWeight * samplingJumpClock.flailWeight
+        if (jumpState === 'Loop' && !samplingJumpClock.loopToFlailActive) {
+          jumpLoopPlayer.weight = stateWeight
+        } else if (jumpState === 'Flail') {
+          jumpFlailPlayer.weight = stateWeight
+        }
+      }
+    }
+
+    if (referencedStates.has('Land')) {
+      const stateWeight = getAlsLocomotionStateWeight(
+        locomotionPoseGraphRuntime,
+        'Land',
+      )
+      const land = sampleAlsLandGraph({
+        verticalVelocity: input.verticalVelocity,
+      })
+      landLightPlayer.weight = stateWeight * land.landLightWeight
+      landHeavyPlayer.weight = stateWeight * land.landHeavyWeight
+    }
+
+    if (referencedStates.has('Land Movement')) {
+      const stateWeight = getAlsLocomotionStateWeight(
+        locomotionPoseGraphRuntime,
+        'Land Movement',
+      )
+      const settings =
+        ALS_LOCOMOTION_INTERNAL_BLEND_METADATA.landMovement.additiveBlend
+      const heavyAmount = clamp01(mapRangeClamped(
+        input.verticalVelocity * 100,
+        settings.inputMinimum,
+        settings.inputMaximum,
+        settings.outputMinimum,
+        settings.outputMaximum,
+      ))
+      landMovementLightPlayer.weight =
+        stateWeight * (1 - heavyAmount)
+      landMovementHeavyPlayer.weight =
+        stateWeight * heavyAmount
+    }
+  }
+
+  function advanceLocomotionPlayers(
+    input: AlsLocomotionPoseGraphInput,
+  ) {
+    const referencedStates = new Set<AlsLocomotionPoseState>([
+      locomotionPoseGraphRuntime.outerTransitionStack.currentState,
+    ])
+    for (
+      const transition
+      of locomotionPoseGraphRuntime.outerTransitionStack.activeTransitions
+    ) {
+      referencedStates.add(transition.previousState)
+      referencedStates.add(transition.nextState)
+    }
+    refreshLocomotionPlayerWeights(referencedStates, input)
+    advanceLocomotionSyncGroup(locomotionSyncGroups.Fall, input.deltaTime)
+    advanceLocomotionSyncGroup(locomotionSyncGroups.Jump, input.deltaTime)
+    advanceLocomotionSyncGroup(locomotionSyncGroups.Flail, input.deltaTime)
+    advanceLocomotionSyncGroup(locomotionSyncGroups.Land, input.deltaTime)
+    if (fallFlailPlayer.weight > 0) {
+      advanceLocomotionPlayer(fallFlailPlayer, input.deltaTime)
+    }
+    sampleLocomotionSequencePlayers()
+  }
+
+  function processLocomotionLifecycleEvents() {
+    for (const event of locomotionPoseGraphRuntime.lifecycleEvents) {
+      if (
+        event.kind === 'CallFunction'
+        && event.functionName === 'StopTransitionAndTurnInPlaceAnimations'
+      ) {
+        queueStopTransitionAndTurnInPlaceAnimations(
+          transitionsState,
+          STOP_TRANSITION_AND_TURN_IN_PLACE_BLEND_OUT_DURATION,
+        )
+      } else if (
+        event.kind === 'AnimNotify'
+        && event.name === 'LandToGrounded'
+      ) {
+        landToGroundedNotifyCount++
+      }
+    }
+  }
+
   function refresh(delta: number, controls: AlsAnimationInstanceControls) {
     if (rig.boneCount === 0) return 0
     mainInput.deltaTime = delta
     fallbackInput.deltaTime = delta
     soloInput.deltaTime = delta
+    refreshInAirOnGameThread(inAirState, leanPendingUpdate)
+    const jumpedThisFrame = inAirState.jumped
+    const locomotionMode = controls.locomotionMode ?? 'Grounded'
+    const hasInput = controls.hasInput ?? false
+    if (!locomotionPoseGraphRuntime.relevant) {
+      // AB_Als_Locomotion node3 calls InitializeLean on becoming relevant before its state update
+      // functions refresh the same values for this frame.
+      leanState.rightAmount = 0
+      leanState.forwardAmount = 0
+    }
+    if (locomotionMode === 'InAir') {
+      const velocity = controls.velocity
+      const location = controls.location
+      const capsuleRadius = controls.capsuleRadius
+      const capsuleHalfHeight = controls.capsuleHalfHeight
+      const walkableFloorAngleCos = controls.walkableFloorAngleCos
+      if (
+        !velocity
+        || !location
+        || capsuleRadius === undefined
+        || capsuleHalfHeight === undefined
+        || walkableFloorAngleCos === undefined
+        || !gltf.groundPredictionSweep
+      ) {
+        throw new Error(
+          'Live InAir evaluation requires the ALS character state and ground-prediction sweep',
+        )
+      }
+      refreshInAir(inAirState, {
+        speed: Math.max(0, controls.speed),
+        verticalVelocity: velocity.z,
+      })
+      refreshGroundPrediction(inAirState, {
+        location,
+        velocity,
+        scale: controls.scale ?? 1,
+        capsuleRadius,
+        capsuleHalfHeight,
+        walkableFloorAngleCos,
+        groundPredictionBlockCurveValue:
+          previousGroundPredictionBlockAmount,
+        groundPredictionAmountCurve: sampleGroundPredictionAmount,
+        sweepCapsule: gltf.groundPredictionSweep,
+      })
+      const directionRadians = THREE.MathUtils.degToRad(
+        controls.direction,
+      )
+      refreshInAirLean(leanState, {
+        pendingUpdate: leanPendingUpdate,
+        deltaTime: Math.max(0, delta),
+        relativeVelocity: {
+          x: Math.cos(directionRadians) * Math.max(0, controls.speed),
+          y: Math.sin(directionRadians) * Math.max(0, controls.speed),
+          z: velocity.z,
+        },
+        verticalVelocity: inAirState.verticalVelocity,
+        leanAmountCurve: sampleInAirLeanAmount,
+      })
+    }
     if (soloClip) {
       // Solo owns its selected clip clock directly. Sync-group membership only has meaning while
       // the graph is evaluating the group; bypassing it here prevents the early return from
@@ -1796,6 +2521,7 @@ export function createAlsAnimationInstance(gltf: {
       // the eventual handoff, so do not emit a second overlay request on the first resumed frame.
       previousOverlayMode = controls.overlayMode
       state.rotationYawSpeed = 0
+      locomotionPoseGraphRuntime.relevant = false
       return 0
     }
 
@@ -1881,11 +2607,13 @@ export function createAlsAnimationInstance(gltf: {
     }
 
     const rawSpeed = Math.max(0, controls.speed)
-    refreshGroundedLean(leanState, {
-      pendingUpdate: leanPendingUpdate,
-      deltaTime: Math.max(0, delta),
-      relativeAccelerationAmount: controls.relativeAccelerationAmount,
-    })
+    if (locomotionMode === 'Grounded') {
+      refreshGroundedLean(leanState, {
+        pendingUpdate: leanPendingUpdate,
+        deltaTime: Math.max(0, delta),
+        relativeAccelerationAmount: controls.relativeAccelerationAmount,
+      })
+    }
     leanPendingUpdate = false
     if (crouchingLeanSourceComplete) {
       const leanSamples = evaluateBlendSpace(
@@ -2554,7 +3282,7 @@ export function createAlsAnimationInstance(gltf: {
         standingAmount: gaitAmounts.standingAmount,
         crouchingAmount: gaitAmounts.crouchingAmount,
         inAirAmount: gaitAmounts.inAirAmount,
-        groundPredictionAmount: 0,
+        groundPredictionAmount: inAirState.groundPredictionAmount,
         deltaTime: delta,
         relevant: defaultActive,
       },
@@ -2571,7 +3299,7 @@ export function createAlsAnimationInstance(gltf: {
         gaitRunningAmount: gaitAmounts.running,
         gaitSprintingAmount: gaitAmounts.sprinting,
         inAirAmount: gaitAmounts.inAirAmount,
-        groundPredictionAmount: 0,
+        groundPredictionAmount: inAirState.groundPredictionAmount,
         sprintAccelerationAmount:
           state.standingSprint.sprintAccelerationAmount,
         velocityBlend: {
@@ -3040,7 +3768,62 @@ export function createAlsAnimationInstance(gltf: {
     graphFallbackGaitAmount = fallbackGaitAmount
     for (const source of gaitSources) source.weight = source.entry.weight
 
+    const jumpLaunchRemainingTime = mostRelevantRemainingTime([
+      jumpWalkLeftPlayer,
+      jumpRunLeftPlayer,
+      jumpWalkRightPlayer,
+      jumpRunRightPlayer,
+    ])
+    const landRemainingTime = mostRelevantRemainingTime([
+      landLightPlayer,
+      landHeavyPlayer,
+    ])
+    const landMovementRelevantAnimTimeRemaining =
+      mostRelevantRemainingTime([
+        landMovementLightPlayer,
+        landMovementHeavyPlayer,
+      ])
+    activeLocomotionGraphInput = {
+      relevant: true,
+      deltaTime: Math.max(0, delta),
+      locomotionMode,
+      jumped: jumpedThisFrame,
+      stance: controls.stance,
+      hasInput,
+      rotatingLeft: rotateInPlaceState.rotatingLeft,
+      rotatingRight: rotateInPlaceState.rotatingRight,
+      speed: rawSpeed,
+      verticalVelocity: inAirState.verticalVelocity,
+      groundPredictionAmount: inAirState.groundPredictionAmount,
+      leanRightAmount: leanState.rightAmount,
+      leanForwardAmount: leanState.forwardAmount,
+      footPlantedAmount: previousFootPlantedAmount,
+      jumpPlayRate: inAirState.jumpPlayRate,
+      rotationMode: controls.rotationMode,
+      clocks: {
+        jumpLaunchRemainingTime,
+        landRemainingTime,
+        landMovementRelevantAnimTimeRemaining,
+      },
+      poses: locomotionSampledPoses,
+    }
+    const previousLocomotionState =
+      locomotionPoseGraphRuntime.outerTransitionStack.currentState
+    const predictedLocomotionState = predictLocomotionPoseState(
+      activeLocomotionGraphInput,
+    )
+    resetLocomotionPlayersForEntry(
+      previousLocomotionState,
+      predictedLocomotionState,
+    )
+    updateAlsLocomotionPoseGraph(
+      locomotionPoseGraphRuntime,
+      activeLocomotionGraphInput,
+    )
+    advanceLocomotionPlayers(activeLocomotionGraphInput)
+
     const result = evaluatePose(evaluator, mainInput)
+    processLocomotionLifecycleEvents()
     if (handIkRuntime) {
       evaluateAlsControlRigHandIk(handIkRuntime, {
         pose: result.pose,
@@ -3051,6 +3834,13 @@ export function createAlsAnimationInstance(gltf: {
     applyPose(applicator, result.pose)
 
     const finalCurves = result.curves.values
+    previousFootPlantedAmount = Math.max(
+      -1,
+      Math.min(1, finalCurves.get('FootPlanted') ?? 0),
+    )
+    previousGroundPredictionBlockAmount = clamp01(
+      finalCurves.get('GroundPredictionBlock') ?? 0,
+    )
     refreshTransitions(
       transitionsState,
       finalCurves.get(ALLOW_TRANSITIONS_CURVE_NAME)
@@ -3409,6 +4199,75 @@ export function createAlsAnimationInstance(gltf: {
       groundedInertialization.inertialization.requestCount
     normalDebugWeights.overlayInertializationRequestCount =
       overlayInertialization.inertialization.requestCount
+    for (const locomotionState of ALS_LOCOMOTION_POSE_STATE_ORDER) {
+      normalDebugWeights[
+        `LocomotionState.${locomotionState.replaceAll(' ', '')}`
+      ] = getAlsLocomotionStateWeight(
+        locomotionPoseGraphRuntime,
+        locomotionState,
+      )
+    }
+    for (const player of locomotionSequencePlayers) {
+      normalDebugWeights[`InAirPlayer.${player.key}`] = player.weight
+      normalDebugWeights[`clipTime.${player.key}`] = player.time
+      normalDebugWeights[`clipPhase.${player.key}`] =
+        player.clip && player.clip.sampler.clip.duration > 0
+          ? player.time / player.clip.sampler.clip.duration
+          : 0
+    }
+    for (const [groupName, group] of Object.entries(
+      locomotionSyncGroups,
+    )) {
+      for (const player of group.members) {
+        normalDebugWeights[
+          `InAirSyncLeader.${groupName}.${player.key}`
+        ] = Number(group.leaderKey === player.key)
+      }
+    }
+    const jumpGraphState =
+      locomotionPoseGraphRuntime.inAirGraphState.jumpState
+    for (const jumpState of [
+      'Left Foot',
+      'Right Foot',
+      'Loop',
+      'Flail',
+    ] as const) {
+      normalDebugWeights[
+        `JumpState.${jumpState.replaceAll(' ', '')}`
+      ] = Number(jumpGraphState.state === jumpState)
+    }
+    normalDebugWeights.InAirJumped = Number(jumpedThisFrame)
+    normalDebugWeights.InAirJumpPlayRate = inAirState.jumpPlayRate
+    normalDebugWeights.InAirVerticalVelocity =
+      inAirState.verticalVelocity
+    normalDebugWeights.InAirGroundPredictionAmount =
+      inAirState.groundPredictionAmount
+    normalDebugWeights.GroundPredictionBlock =
+      previousGroundPredictionBlockAmount
+    normalDebugWeights.FootPlanted = previousFootPlantedAmount
+    normalDebugWeights.InAirLeanRightAmount = leanState.rightAmount
+    normalDebugWeights.InAirLeanForwardAmount = leanState.forwardAmount
+    normalDebugWeights.InAirJumpLaunchRemainingTime =
+      jumpLaunchRemainingTime
+    normalDebugWeights.InAirLandRemainingTime = landRemainingTime
+    normalDebugWeights.InAirLandMovementRemainingTime =
+      landMovementRelevantAnimTimeRemaining
+    normalDebugWeights.InAirTransitionCount =
+      locomotionPoseGraphRuntime.transitionsTakenThisFrame
+    normalDebugWeights.InAirJumpTransitionCount =
+      locomotionPoseGraphRuntime.jumpTransitionsTakenThisFrame
+    const landMovementToGroundedTransition =
+      locomotionPoseGraphRuntime.outerTransitionStack.activeTransitions.find(
+        (transition) =>
+          transition.previousState === 'Land Movement'
+          && transition.nextState === 'Grounded',
+      )
+    normalDebugWeights.InAirLandMovementCrossfadeDuration =
+      landMovementToGroundedTransition?.crossfadeDuration ?? 0
+    normalDebugWeights.InAirLandMovementCrossfadeElapsedTime =
+      landMovementToGroundedTransition?.elapsedTime ?? 0
+    normalDebugWeights.LandToGroundedNotifyCount =
+      landToGroundedNotifyCount
     for (const layer of ALS_LAYER_REGIONS) {
       normalDebugWeights[layer.baseCurve] =
         finalCurves.get(layer.baseCurve) ?? 0
@@ -3432,7 +4291,14 @@ export function createAlsAnimationInstance(gltf: {
     return state.rotationYawSpeed
   }
 
-  return { playClip, clearSoloClip, setHipsDirection, state, refresh }
+  return {
+    playClip,
+    clearSoloClip,
+    setHipsDirection,
+    jump,
+    state,
+    refresh,
+  }
 }
 
 /** ALS `RefreshVelocityBlend`; re-exported here so the refresh family lives with its class analog. */

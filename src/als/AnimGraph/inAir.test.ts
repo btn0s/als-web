@@ -697,19 +697,20 @@ describe('VERIFIED nested Jump States decisions and weights', () => {
     expect(clock.state).toBe('Right Foot')
 
     refreshAlsJumpStateClock(clock, {
-      deltaTime: 1,
+      deltaTime: 0.25,
       launchRemainingTime: 0.2,
     })
     expect(clock).toMatchObject({
       state: 'Loop',
       loopToFlailActive: true,
-      loopWeight: 1,
-      flailWeight: 0,
+      loopToFlailElapsedTime: 0.25,
+      loopWeight: 0.84375,
+      flailWeight: 0.15625,
       inertializationRequestDuration: 0.2,
     })
 
     refreshAlsJumpStateClock(clock, {
-      deltaTime: 0.5,
+      deltaTime: 0.25,
       launchRemainingTime: 0,
     })
     expect(clock.loopWeight).toBeCloseTo(0.5)

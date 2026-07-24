@@ -448,17 +448,6 @@ export const ALS_LAND_MOVEMENT_ADDITIVE_SETTINGS = {
 export const ALS_LOCOMOTION_QUICK_FEET_BLEND_PROFILE =
   ALS_CROUCHING_QUICK_FEET_BLEND_PROFILE satisfies WeightBlendProfile
 
-/** The remaining UE-runtime detail outside the extracted ALS content. */
-export const ALS_LOCOMOTION_UNRESOLVED_ENGINE_BEHAVIOR = {
-  landMovementAutomaticRule: {
-    kind: 'hypothesis',
-    verified:
-      'The authored rule is automatic remaining-time with trigger time -1.',
-    unresolved:
-      'The exact dynamically synchronized SequencePlayer comparison boundary.',
-  },
-} as const
-
 export interface AlsLocomotionSampledPoses {
   /** Linked input node1 / cached Grounded pose. */
   readonly groundedInput: UePoseNode
@@ -513,8 +502,11 @@ export interface AlsLocomotionSampledClocks {
   readonly jumpLaunchRemainingTime: number
   /** GetRelevantAnimTimeRemaining(Land), seconds. */
   readonly landRemainingTime: number
-  /** UE's authored automatic remaining-time result for Land Movement. */
-  readonly landMovementAutomaticRemainingTimeReached: boolean
+  /**
+   * Most-relevant Land Movement SequencePlayer's raw accumulated-time remainder. UE's automatic
+   * transition rule compares this to CrossfadeDuration because AutomaticRuleTriggerTime is -1.
+   */
+  readonly landMovementRelevantAnimTimeRemaining: number
 }
 
 export interface AlsLocomotionPoseGraphInput {
@@ -577,6 +569,8 @@ export interface AlsResolvedLocomotionTransition {
    * incoming transition after the already-resolved leaf transition.
    */
   readonly sourceTransitionIndices: readonly number[]
+  /** FAnimationPotentialTransition::CrossfadeTimeAdjustment. */
+  readonly crossfadeTimeAdjustment: number
 }
 
 export interface AlsLocomotionPoseGraphNodes {
@@ -812,9 +806,17 @@ function applyInertializationNode(
   )
 }
 
+export interface AlsResolvedLocomotionTransitionInput
+  extends Omit<
+    AlsLocomotionTransitionInput,
+    'landMovementAutomaticRemainingTimeReached'
+  > {
+  readonly landMovementRelevantAnimTimeRemaining: number
+}
+
 function transitionInput(
   input: AlsLocomotionPoseGraphInput,
-): AlsLocomotionTransitionInput {
+): AlsResolvedLocomotionTransitionInput {
   return {
     locomotionMode: input.locomotionMode,
     jumped: input.jumped,
@@ -824,9 +826,21 @@ function transitionInput(
     rotatingRight: input.rotatingRight,
     speed: input.speed,
     landRemainingTime: input.clocks.landRemainingTime,
-    landMovementAutomaticRemainingTimeReached:
-      input.clocks.landMovementAutomaticRemainingTimeReached,
+    landMovementRelevantAnimTimeRemaining:
+      input.clocks.landMovementRelevantAnimTimeRemaining,
   }
+}
+
+function landMovementAutomaticCrossfadeTimeAdjustment(
+  input: AlsResolvedLocomotionTransitionInput,
+) {
+  const transition = ALS_LOCOMOTION_GRAPH_TRANSITIONS[11]
+  const transitionTriggerTime =
+    transition.automaticRuleTriggerTime >= 0
+      ? transition.automaticRuleTriggerTime
+      : transition.duration
+  return transitionTriggerTime
+    - input.landMovementRelevantAnimTimeRemaining
 }
 
 /**
@@ -836,9 +850,15 @@ function transitionInput(
  */
 export function resolveAlsLocomotionTransition(
   state: AlsLocomotionPoseState,
-  input: AlsLocomotionTransitionInput,
+  input: AlsResolvedLocomotionTransitionInput,
 ): AlsResolvedLocomotionTransition | null {
-  const selected = selectAlsLocomotionGraphTransition(state, input)
+  const automaticCrossfadeTimeAdjustment =
+    landMovementAutomaticCrossfadeTimeAdjustment(input)
+  const selected = selectAlsLocomotionGraphTransition(state, {
+    ...input,
+    landMovementAutomaticRemainingTimeReached:
+      automaticCrossfadeTimeAdjustment >= 0,
+  })
   if (!selected) return null
 
   if (selected.to !== 'Land Conduct') {
@@ -846,6 +866,10 @@ export function resolveAlsLocomotionTransition(
       transition: selected,
       targetState: selected.to,
       sourceTransitionIndices: [selected.transitionIndex],
+      crossfadeTimeAdjustment:
+        selected.transitionIndex === 11
+          ? automaticCrossfadeTimeAdjustment
+          : 0,
     }
   }
 
@@ -862,6 +886,7 @@ export function resolveAlsLocomotionTransition(
       leaf.transitionIndex,
       selected.transitionIndex,
     ],
+    crossfadeTimeAdjustment: 0,
   }
 }
 
@@ -964,6 +989,7 @@ function startLocomotionTransition(
       to: resolved.targetState,
       duration: transition.duration,
       blendOption: transition.blendOption,
+      crossfadeTimeAdjustment: resolved.crossfadeTimeAdjustment,
       blendProfile: transition.blendProfile === 'QuickFeetBlend'
         ? runtime.quickFeetBlendProfile
         : null,
@@ -1005,10 +1031,6 @@ function refreshOuterStateMachine(
   runtime: AlsLocomotionPoseGraphRuntime,
   input: AlsLocomotionPoseGraphInput,
 ) {
-  advanceStateMachineTransitionStack(
-    runtime.outerTransitionStack,
-    input.deltaTime,
-  )
   const rules = transitionInput(input)
 
   while (
@@ -1033,6 +1055,13 @@ function refreshOuterStateMachine(
   ) {
     runtime.transitionLimitReached = true
   }
+
+  // FAnimNode_StateMachine::Update_AnyThread resolves every valid transition before ticking the
+  // complete ActiveTransitionArray, including entries created by this update.
+  advanceStateMachineTransitionStack(
+    runtime.outerTransitionStack,
+    input.deltaTime,
+  )
 }
 
 function stateReferenced(
@@ -1230,16 +1259,12 @@ function refreshJumpSample(
   runtime.jumpSkipFirstUpdate = false
 
   if (!skipTransition) {
-    if (
-      (previousState === 'Left Foot' || previousState === 'Right Foot')
-      && sample.state === 'Loop'
-    ) {
+    if (sample.inertializationRequestDuration !== null) {
       // Foot -> Loop inertialization and Loop -> Flail literal-true standard blend.
       runtime.jumpTransitionsTakenThisFrame = 2
     } else if (
       previousState === 'Loop'
       && !loopToFlailWasActive
-      && runtime.inAirGraphState.jumpState.loopToFlailActive
     ) {
       runtime.jumpTransitionsTakenThisFrame = 1
     }
@@ -1434,15 +1459,16 @@ function evaluateOuterStateMachine(
 }
 
 /**
- * Updates and evaluates one AB_Als_Locomotion frame.
+ * Updates one AB_Als_Locomotion frame before its SequencePlayers update.
  *
- * All supplied poses must already be sampled at their caller-owned clocks. The returned object is
- * runtime.nodes.output and is reused on every call.
+ * Unreal updates the state machine first, then updates the players referenced by its resulting
+ * blend tree. Keeping this phase public lets the owned runtime elect sync-group leaders with the
+ * exact outer-state weights before sampling those players.
  */
-export function evaluateAlsLocomotionPoseGraph(
+export function updateAlsLocomotionPoseGraph(
   runtime: AlsLocomotionPoseGraphRuntime,
   input: AlsLocomotionPoseGraphInput,
-): MutableUePoseNode {
+): boolean {
   if (!Number.isFinite(input.deltaTime) || input.deltaTime < 0) {
     throw new Error(
       'AB_Als_Locomotion delta time must be finite and non-negative',
@@ -1458,7 +1484,7 @@ export function evaluateAlsLocomotionPoseGraph(
   if (!input.relevant) {
     runtime.relevant = false
     runtime.jumpRelevant = false
-    return runtime.nodes.output
+    return false
   }
 
   if (!runtime.relevant) {
@@ -1472,6 +1498,19 @@ export function evaluateAlsLocomotionPoseGraph(
     ALS_LOCOMOTION_POSE_STATE_ORDER,
     runtime.outerStateWeights,
   )
+  return true
+}
+
+/**
+ * Evaluates AB_Als_Locomotion after {@link updateAlsLocomotionPoseGraph} and the caller-owned
+ * SequencePlayers have updated and sampled.
+ */
+export function evaluateUpdatedAlsLocomotionPoseGraph(
+  runtime: AlsLocomotionPoseGraphRuntime,
+  input: AlsLocomotionPoseGraphInput,
+): MutableUePoseNode {
+  if (!input.relevant) return runtime.nodes.output
+
   evaluateReferencedStatePoses(runtime, input)
   evaluateOuterStateMachine(runtime)
   applyInertializationNode(
@@ -1482,6 +1521,22 @@ export function evaluateAlsLocomotionPoseGraph(
     input.deltaTime,
   )
   return runtime.nodes.output
+}
+
+/**
+ * Updates and evaluates one AB_Als_Locomotion frame.
+ *
+ * This convenience entry point preserves the self-contained graph API used by pure tests. Live
+ * animation instances use the split update/evaluate phases so their SequencePlayers update in
+ * Unreal's order. All supplied poses must already be sampled at their caller-owned clocks. The
+ * returned object is runtime.nodes.output and is reused on every call.
+ */
+export function evaluateAlsLocomotionPoseGraph(
+  runtime: AlsLocomotionPoseGraphRuntime,
+  input: AlsLocomotionPoseGraphInput,
+): MutableUePoseNode {
+  updateAlsLocomotionPoseGraph(runtime, input)
+  return evaluateUpdatedAlsLocomotionPoseGraph(runtime, input)
 }
 
 export function getAlsLocomotionStateWeight(

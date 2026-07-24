@@ -246,6 +246,8 @@ function LoadedCharacter({
     characterGroup,
     character.animationControls,
     character.character,
+    character.onJumped,
+    capsuleSweep,
   )
 
   useFrame(() => {

@@ -914,10 +914,36 @@ export interface AlsJumpStateClockInput {
   readonly launchRemainingTime: number
 }
 
+function advanceAlsJumpLoopToFlailTransition(
+  clock: AlsJumpStateClock,
+  deltaTime: number,
+) {
+  const transition = ALS_JUMP_GRAPH_TRANSITIONS[4]
+  clock.loopToFlailElapsedTime = Math.min(
+    transition.duration,
+    clock.loopToFlailElapsedTime + deltaTime,
+  )
+  const alpha = alphaToBlendOption(
+    transition.duration <= 0
+      ? 1
+      : clock.loopToFlailElapsedTime / transition.duration,
+    transition.blendOption,
+  )
+  clock.loopWeight = 1 - alpha
+  clock.flailWeight = alpha
+  if (clock.loopToFlailElapsedTime >= transition.duration) {
+    clock.state = 'Flail'
+    clock.loopToFlailActive = false
+    clock.loopWeight = 0
+    clock.flailWeight = 1
+  }
+}
+
 /**
  * Advances Jump States without owning animation time. The caller supplies UE's
- * GetRelevantAnimTimeRemaining() result; the state machine supplies only its
- * exact <=0.2 rule and the immediate 1 second Loop -> Flail standard blend.
+ * pre-update GetRelevantAnimTimeRemaining() result. Like FAnimNode_StateMachine::Update_AnyThread,
+ * it resolves Foot -> Loop -> Flail first, then advances the newly created 1 second standard
+ * transition by this update's delta time.
  */
 export function refreshAlsJumpStateClock(
   clock: AlsJumpStateClock,
@@ -929,25 +955,7 @@ export function refreshAlsJumpStateClock(
     : 0
 
   if (clock.loopToFlailActive) {
-    const transition = ALS_JUMP_GRAPH_TRANSITIONS[4]
-    clock.loopToFlailElapsedTime = Math.min(
-      transition.duration,
-      clock.loopToFlailElapsedTime + deltaTime,
-    )
-    const alpha = alphaToBlendOption(
-      transition.duration <= 0
-        ? 1
-        : clock.loopToFlailElapsedTime / transition.duration,
-      transition.blendOption,
-    )
-    clock.loopWeight = 1 - alpha
-    clock.flailWeight = alpha
-    if (clock.loopToFlailElapsedTime >= transition.duration) {
-      clock.state = 'Flail'
-      clock.loopToFlailActive = false
-      clock.loopWeight = 0
-      clock.flailWeight = 1
-    }
+    advanceAlsJumpLoopToFlailTransition(clock, deltaTime)
     return clock
   }
 
@@ -966,11 +974,13 @@ export function refreshAlsJumpStateClock(
     clock.loopToFlailElapsedTime = 0
     clock.loopWeight = 1
     clock.flailWeight = 0
+    advanceAlsJumpLoopToFlailTransition(clock, deltaTime)
   } else if (clock.state === 'Loop') {
     clock.loopToFlailActive = true
     clock.loopToFlailElapsedTime = 0
     clock.loopWeight = 1
     clock.flailWeight = 0
+    advanceAlsJumpLoopToFlailTransition(clock, deltaTime)
   } else if (clock.state === 'Flail') {
     clock.loopWeight = 0
     clock.flailWeight = 1
