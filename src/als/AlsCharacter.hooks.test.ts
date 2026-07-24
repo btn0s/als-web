@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { createAlsCharacter, refreshAlsCharacter } from './AlsCharacter'
 import {
+  ALS_CAPSULE_RADIUS,
+  ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
+  ALS_MESH_RELATIVE_LOCATION_Z,
   ALS_PHYSICS_TIMESTEP,
+  ALS_RAPIER_GRAVITY,
   ALS_RAPIER_JUMP_SPEED,
+  ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
+  ALS_STANDING_CAPSULE_HALF_HEIGHT,
   consumeAlsJumpInput,
+  getAlsCapsuleHalfHeight,
   handleAlsJumpInput,
   hasTriggeredSprintHold,
   refreshRapierAlsLocomotionMode,
@@ -15,6 +22,18 @@ import {
 import { exponentialDecay } from './State/AlsGroundedState'
 
 describe('AlsCharacter browser bridge math', () => {
+  it('pins the ALS character constructor and inherited UE movement defaults in metres', () => {
+    expect(ALS_CAPSULE_RADIUS).toBe(0.3)
+    expect(ALS_STANDING_CAPSULE_HALF_HEIGHT).toBe(0.9)
+    expect(ALS_CROUCHING_CAPSULE_HALF_HEIGHT).toBe(0.56)
+    expect(ALS_MESH_RELATIVE_LOCATION_Z).toBe(-0.92)
+    expect(ALS_RAPIER_JUMP_SPEED).toBe(4.2)
+    expect(ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS).toBe(0.71)
+    expect(ALS_RAPIER_GRAVITY).toBe(9.8)
+    expect(getAlsCapsuleHalfHeight('Standing')).toBe(0.9)
+    expect(getAlsCapsuleHalfHeight('Crouching')).toBe(0.56)
+  })
+
   it('fires the authored 0.1s Sprint Hold on the sixth fixed physics tick', () => {
     let heldTime = 0
     for (let tick = 0; tick < 5; tick++) heldTime += ALS_PHYSICS_TIMESTEP

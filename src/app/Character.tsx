@@ -23,6 +23,7 @@ import { useAlsAnimationInstance } from '../als/AlsAnimationInstance.hooks'
 import {
   ALS_CAPSULE_RADIUS,
   ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
+  ALS_MESH_RELATIVE_LOCATION_Z,
   ALS_STANDING_CAPSULE_HALF_HEIGHT,
   useAlsCharacter,
 } from '../als/AlsCharacter.hooks'
@@ -212,10 +213,8 @@ function LoadedCharacter({
     gltf.scene.updateWorldMatrix(true, true)
     const box = new THREE.Box3().setFromObject(gltf.scene, true)
     const size = box.getSize(new THREE.Vector3())
-    const center = box.getCenter(new THREE.Vector3())
 
     return {
-      position: new THREE.Vector3(-center.x, -box.min.y, -center.z),
       size,
     }
   }, [gltf.scene])
@@ -300,12 +299,10 @@ function LoadedCharacter({
       />
       <group
         ref={characterGroup}
-        position={[0, -ALS_STANDING_CAPSULE_HALF_HEIGHT, 0]}
+        position={[0, ALS_MESH_RELATIVE_LOCATION_Z, 0]}
       >
         <group rotation-y={ALS_MESH_COMPONENT_YAW_RADIANS}>
-          <group position={bounds.position}>
-            <primitive object={gltf.scene} />
-          </group>
+          <primitive object={gltf.scene} />
         </group>
         {character.overlayMode === 'Rifle' && (
           <Suspense fallback={null}>

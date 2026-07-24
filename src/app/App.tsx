@@ -8,7 +8,10 @@ import {
   L_Als_GridSkyLight,
   L_Als_GridSkySphere,
 } from '../als/ALSExtras/Levels/L_Als_Grid'
-import { ALS_PHYSICS_TIMESTEP } from '../als/AlsCharacter.hooks'
+import {
+  ALS_PHYSICS_TIMESTEP,
+  ALS_RAPIER_GRAVITY,
+} from '../als/AlsCharacter.hooks'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 import { createCharacterPoseSample } from './CharacterPoseSample'
 import { AlsCamera } from './AlsCamera'
@@ -37,7 +40,7 @@ function Scene() {
       <Suspense fallback={null}>
         <Physics
           colliders={false}
-          gravity={[0, -9.81, 0]}
+          gravity={[0, -ALS_RAPIER_GRAVITY, 0]}
           timeStep={ALS_PHYSICS_TIMESTEP}
           updatePriority={ALS_FRAME_PRIORITY.Physics}
         >

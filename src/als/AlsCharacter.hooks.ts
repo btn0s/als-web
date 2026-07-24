@@ -65,6 +65,9 @@ import type { AlsVector3 } from './State/AlsLocomotionState'
 export const ALS_CAPSULE_RADIUS = 0.3
 export const ALS_STANDING_CAPSULE_HALF_HEIGHT = 0.9
 export const ALS_CROUCHING_CAPSULE_HALF_HEIGHT = 0.56
+// AAlsCharacter::AAlsCharacter(), cpp:43. The mesh component stays 2 cm below the standing
+// capsule base; aligning its rendered bounds to the floor would erase authored ALS placement.
+export const ALS_MESH_RELATIVE_LOCATION_Z = -0.92
 export const ALS_PHYSICS_TIMESTEP = 1 / 60
 
 /*
@@ -73,6 +76,13 @@ export const ALS_PHYSICS_TIMESTEP = 1 / 60
  */
 export const ALS_RAPIER_JUMP_SPEED = 4.2
 export const ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS = 0.71
+export const ALS_RAPIER_GRAVITY = 9.8
+
+export function getAlsCapsuleHalfHeight(stance: AlsStance): number {
+  return stance === 'Crouching'
+    ? ALS_CROUCHING_CAPSULE_HALF_HEIGHT
+    : ALS_STANDING_CAPSULE_HALF_HEIGHT
+}
 
 // Unreal Enhanced Input's default radial dead-zone lower threshold. The authored IMC mapping
 // dump owns buttons/axes; this engine-level normalization only suppresses browser gamepad drift.
@@ -871,9 +881,7 @@ export function useAlsCharacter(
     const linearVelocity = body.linvel()
     threeToUnrealVector(linearVelocity, actualVelocity.current)
     threeToUnrealVector(body.translation(), actorLocation.current)
-    const queryCapsuleHalfHeight = current.stance === 'Crouching'
-      ? ALS_CROUCHING_CAPSULE_HALF_HEIGHT
-      : ALS_STANDING_CAPSULE_HALF_HEIGHT
+    const queryCapsuleHalfHeight = getAlsCapsuleHalfHeight(current.stance)
     const queryLocation = capsuleLocation.current
     queryLocation.x = actorLocation.current.x
     queryLocation.y = actorLocation.current.y
@@ -976,9 +984,7 @@ export function useAlsCharacter(
       : calculateMovingSmooth(state)
     frame.locomotionMode = current.locomotionMode
     frame.scale = 1
-    const activeCapsuleHalfHeight = current.stance === 'Crouching'
-      ? ALS_CROUCHING_CAPSULE_HALF_HEIGHT
-      : ALS_STANDING_CAPSULE_HALF_HEIGHT
+    const activeCapsuleHalfHeight = getAlsCapsuleHalfHeight(current.stance)
     queryLocation.x = actorLocation.current.x
     queryLocation.y = actorLocation.current.y
     queryLocation.z = actorLocation.current.z

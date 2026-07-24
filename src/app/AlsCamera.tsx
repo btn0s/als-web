@@ -26,6 +26,11 @@ import type {
   AlsLocomotionMode,
   AlsViewMode,
 } from '../als/AlsCharacter'
+import {
+  ALS_MESH_RELATIVE_LOCATION_Z,
+  ALS_STANDING_CAPSULE_HALF_HEIGHT,
+  getAlsCapsuleHalfHeight,
+} from '../als/AlsCharacter.hooks'
 import type {
   AlsGait,
   AlsRotationMode,
@@ -545,15 +550,20 @@ export function AlsCamera({
       scratch.socketThree,
       input.thirdPersonTraceStartLocation,
     )
+    // ALS uses GetOwner()->GetActorLocation(): the active capsule center. Our Rapier body stays at
+    // standing height while the crouching collider is offset to preserve the base, so convert its
+    // current post-physics transform and restore the actor-location shift CharacterMovement makes.
+    const activeCapsuleHalfHeight = getAlsCapsuleHalfHeight(character.stance)
     const ownerRigidBody = sample.ownerRigidBody
     if (ownerRigidBody) {
-      threeToUnrealVector(
-        ownerRigidBody.translation(),
-        input.ownerLocation,
-      )
+      threeToUnrealVector(ownerRigidBody.translation(), input.ownerLocation)
+      input.ownerLocation.z +=
+        activeCapsuleHalfHeight - ALS_STANDING_CAPSULE_HALF_HEIGHT
     } else {
       threeToUnrealVector(sample.ground, input.ownerLocation)
-      input.ownerLocation.z += 0.9
+      input.ownerLocation.z +=
+        -ALS_MESH_RELATIVE_LOCATION_Z
+        - (ALS_STANDING_CAPSULE_HALF_HEIGHT - activeCapsuleHalfHeight)
     }
     input.cameraTargetRotation.pitch = rotation.pitch
     input.cameraTargetRotation.yaw = rotation.yaw
