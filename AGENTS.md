@@ -75,6 +75,12 @@ math, and a pose-based camera on ALS's root+head pivot. Where ALS ships authored
 curves, AlsMovementSettings speeds, Pose* transition ramps), this repo consumes that data — never
 re-derived heuristics.
 
+**`src/engine/` is a game-engine animation runtime, not a helper library** (user 2026-07-23):
+three.js is a renderer, not a game engine — every runtime capability UE gave ALS for free (pose
+evaluation, per-bone blending, additives, sync groups/markers, inertialization, montage/slot
+semantics, root motion, curve sampling) gets BUILT here as the need lands. An engine gap is a
+work item, never a reason to approximate the ALS mechanism away.
+
 **Animation applier (decision 2026-07-23):** an OWNED pose-buffer runtime — sample clips into
 typed-array local-pose buffers, blend in pose space (per-bone masks, additive, mesh-space
 capable), write the skeleton once per frame — replaced `THREE.AnimationMixer`
