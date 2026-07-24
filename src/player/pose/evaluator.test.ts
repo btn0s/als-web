@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import { describe, expect, it, vi } from 'vitest'
 import { compileClipSampler } from './clipSampler'
 import { createPoseEvaluator, evaluatePose } from './evaluator'
+import { compileBoneMask } from './blend'
+import { createPoseBuffer, resetPoseToReference } from './poseBuffer'
 import { createRigDefinition } from './rig'
 
 function constantPositionClip(name: string, x: number) {
@@ -86,5 +88,52 @@ describe('pose evaluator', () => {
     expect(footLock).toHaveBeenCalledWith(0.25)
     expect(result.curves.byClip.get('walk')?.get('FootLeftLock')).toBeCloseTo(0.5)
     expect(result.curves.activeClips.has('walk')).toBe(true)
+  })
+
+  it('fully replaces a masked region when its overlay Layer alpha is one', () => {
+    const root = new THREE.Bone()
+    root.name = 'root'
+    const hand = new THREE.Bone()
+    hand.name = 'hand_l'
+    root.add(hand)
+    const rig = createRigDefinition(root)
+    const evaluator = createPoseEvaluator(rig)
+    const base = compileClipSampler(constantPositionClip('base', 2), rig)
+    const overlay = compileClipSampler(constantPositionClip('overlay', 10), rig)
+
+    const result = evaluatePose(evaluator, {
+      base: [{ sampler: base, time: 0, weight: 1 }],
+      overlays: [{
+        sampler: overlay,
+        time: 0,
+        weight: 1,
+        mask: compileBoneMask(rig, (name) => name === 'root'),
+      }],
+    })
+
+    expect(result.pose.positions[0]).toBeCloseTo(10)
+    expect(result.pose.positions[3]).toBeCloseTo(0)
+  })
+
+  it('applies dynamic locomotion delta after the overlay pose', () => {
+    const root = new THREE.Bone()
+    root.name = 'root'
+    const rig = createRigDefinition(root)
+    const evaluator = createPoseEvaluator(rig)
+    const locomotion = compileClipSampler(constantPositionClip('locomotion', 4), rig)
+    const overlay = compileClipSampler(constantPositionClip('overlay', 10), rig)
+    const reference = resetPoseToReference(createPoseBuffer(1), rig)
+
+    const result = evaluatePose(evaluator, {
+      base: [{ sampler: locomotion, time: 0, weight: 1 }],
+      overlays: [{ sampler: overlay, time: 0, weight: 1 }],
+      dynamicAdditives: [{
+        referencePose: reference,
+        additiveSpace: 'local',
+        weight: 0.5,
+      }],
+    })
+
+    expect(result.pose.positions[0]).toBeCloseTo(12)
   })
 })

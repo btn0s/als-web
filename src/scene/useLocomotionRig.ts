@@ -1,16 +1,34 @@
 import { useFrame } from '@react-three/fiber'
-import { useControls } from 'leva'
+import { folder, useControls } from 'leva'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { pickClip } from '../anim/pickClip'
 import { advanceLocomotionPhase, STAND, updateLocomotionTargets } from '../player/blendspace'
 import {
   ALS_AUTHORED_GAIT_SPEEDS,
+  ALS_GAITS,
+  ALS_STANCES,
   buildLocomotionProfile,
+  resolveDesiredGaitSpeed,
 } from '../player/locomotionProfile'
+import type { AlsGait, AlsStance } from '../player/locomotionProfile'
+import {
+  ALS_LAYER_REGIONS,
+  ALS_OVERLAY_MODES,
+  blendOverlayCurve,
+  RIFLE_OVERLAY_CLIPS,
+  RIFLE_RELAXED_POSE_TIME,
+  resolveArmAdditiveSpaceAmounts,
+  resolveRifleOverlaySourceWeights,
+} from '../player/overlayMode'
+import type {
+  AlsLayerRegion,
+  AlsOverlayMode,
+  OverlayCurveSource,
+} from '../player/overlayMode'
 import { applyPose, createPoseApplicator } from '../player/pose/applyPose'
-import { compileBoneMask } from '../player/pose/blend'
-import { compileClipSampler } from '../player/pose/clipSampler'
+import { blendPoseInPlace, compileBoneMask } from '../player/pose/blend'
+import { compileClipSampler, sampleClip } from '../player/pose/clipSampler'
 import type { CompiledClipSampler } from '../player/pose/clipSampler'
 import {
   blendCurveValue,
@@ -25,13 +43,13 @@ import type {
 import { createPoseEvaluator, evaluatePose } from '../player/pose/evaluator'
 import type {
   EvaluatePoseInput,
+  EvaluatorDynamicAdditiveEntry,
   EvaluatorLayerEntry,
 } from '../player/pose/evaluator'
+import { copyPose, createPoseBuffer } from '../player/pose/poseBuffer'
 import { createRigDefinition } from '../player/pose/rig'
 import { createRootMotionExtractor, resetRootMotionExtractor } from '../player/pose/rootMotion'
 import type { RootMotionExtractor } from '../player/pose/rootMotion'
-import { evaluateRegionOverlays, REGION_OVERLAY_RULES } from '../player/regionOverlays'
-import type { OverlayContext, RegionOverlayRule } from '../player/regionOverlays'
 import { REGION_PREDICATES } from '../player/trackMask'
 import {
   computeWeightTable,
@@ -116,25 +134,27 @@ interface RuntimeClip {
   time: number
 }
 
-interface RuntimeOverlay {
-  readonly rule: RegionOverlayRule
-  readonly clip: RuntimeClip
+interface RuntimeOverlayEntry {
+  readonly source: RuntimeOverlaySource
+  readonly layer: AlsLayerRegion
   readonly entry: EvaluatorLayerEntry
+}
+
+interface RuntimeOverlaySource {
+  readonly key: keyof typeof RIFLE_OVERLAY_CLIPS
+  readonly clip: RuntimeClip
+  readonly curves?: ClipCurveSamplers
+  time: number
+  weight: number
+}
+
+interface RuntimeDynamicAdditive {
+  readonly layer: AlsLayerRegion
+  readonly entry: EvaluatorDynamicAdditiveEntry
 }
 
 interface RuntimeGaitSource extends WeightedCurveSource {
   readonly entry: EvaluatorLayerEntry
-}
-
-declare global {
-  interface Window {
-    /** Dev/test hook: last frame's applied clip weights by role (+ overlay rule ids). */
-    __weightTable?: Record<string, number>
-    /** Dev/test hook: override the Leva speed input (m/s). */
-    __setSpeed?: (speed: number) => void
-    /** Dev/test hook: play a named source clip solo, or pass null to resume the weight table. */
-    __playClip?: (name: string | null) => boolean
-  }
 }
 
 function createEntry(
@@ -162,37 +182,83 @@ export function useLocomotionRig(gltf: {
   animations: THREE.AnimationClip[]
   scene: THREE.Object3D
 }) {
-  const [{ speed, direction, stance }, setControls] = useControls(
+  const [{
+    gait,
+    moving,
+    stance,
+    overlayMode,
+    speed,
+    direction,
+  }, setControls] = useControls(
     LEVA_ROOTS.movement,
     () => ({
-      speed: {
-        value: 0,
-        min: 0,
-        max: ALS_AUTHORED_GAIT_SPEEDS.standing.sprint,
-        step: 0.05,
-        label: 'speed (m/s)',
+      gait: {
+        value: 'Running' as AlsGait,
+        options: ALS_GAITS,
+        label: 'Gait',
       },
-      direction: {
-        value: 0,
-        min: -180,
-        max: 180,
-        step: 1,
-        label: 'direction (deg)',
+      moving: {
+        value: false,
+        label: 'Moving',
       },
       stance: {
-        value: 'Standing',
-        options: ['Standing', 'Crouching'],
+        value: 'Standing' as AlsStance,
+        options: ALS_STANCES,
         label: 'Stance',
       },
+      overlayMode: {
+        value: 'Default' as AlsOverlayMode,
+        options: ALS_OVERLAY_MODES,
+        label: 'OverlayMode',
+      },
+      'Debug Overrides': folder({
+        speed: {
+          value: resolveDesiredGaitSpeed('Running', 'Standing'),
+          min: 0,
+          max: ALS_AUTHORED_GAIT_SPEEDS.standing.sprint,
+          step: 0.05,
+          label: 'speed (m/s)',
+        },
+        direction: {
+          value: 0,
+          min: -180,
+          max: 180,
+          step: 1,
+          label: 'direction (deg)',
+        },
+      }, { collapsed: true }),
     }),
     { order: 1 },
   )
-  const controls = useRef({ speed, direction, stance })
-  controls.current = { speed, direction, stance }
+  const controls = useRef({ gait, moving, stance, overlayMode, speed, direction })
+  controls.current = { gait, moving, stance, overlayMode, speed, direction }
 
   useEffect(() => {
-    window.__setSpeed = (value: number) => setControls({ speed: value })
-    return () => { delete window.__setSpeed }
+    setControls({
+      speed: resolveDesiredGaitSpeed(gait as AlsGait, stance as AlsStance),
+    })
+  }, [gait, stance, setControls])
+
+  useEffect(() => {
+    window.__setSpeed = (value: number) => setControls({
+      speed: value,
+      moving: value > 0,
+    })
+    window.__setGait = (value: AlsGait) => {
+      if (ALS_GAITS.includes(value)) setControls({ gait: value })
+    }
+    window.__setStance = (value: AlsStance) => {
+      if (ALS_STANCES.includes(value)) setControls({ stance: value })
+    }
+    window.__setOverlayMode = (value: AlsOverlayMode) => {
+      if (ALS_OVERLAY_MODES.includes(value)) setControls({ overlayMode: value })
+    }
+    return () => {
+      delete window.__setSpeed
+      delete window.__setGait
+      delete window.__setStance
+      delete window.__setOverlayMode
+    }
   }, [setControls])
 
   const runtime = useMemo(() => {
@@ -216,28 +282,89 @@ export function useLocomotionRig(gltf: {
     }
 
     const baseEntries = Object.values(roles).map((clip) => clip.entry)
-    const overlays = REGION_OVERLAY_RULES.flatMap((rule): RuntimeOverlay[] => {
-      const clip = clipsByName.get(rule.clip)
-      if (!clip) return []
-      // Overlay curves do not participate in the base graph's PoseGait result.
-      const entry = createEntry(clip.sampler)
-      entry.mask = compileBoneMask(rig, REGION_PREDICATES[rule.region])
-      return [{ rule, clip, entry }]
+    const overlaySources = (
+      Object.entries(RIFLE_OVERLAY_CLIPS) as [
+        keyof typeof RIFLE_OVERLAY_CLIPS,
+        string,
+      ][]
+    ).flatMap(([key, clipName]): RuntimeOverlaySource[] => {
+      const clip = clipsByName.get(clipName)
+      return clip ? [{ key, clip, curves: clip.curves, time: 0, weight: 0 }] : []
     })
+    const overlayEntries = overlaySources.flatMap((source) =>
+      ALS_LAYER_REGIONS.map((layer): RuntimeOverlayEntry => {
+        const entry = createEntry(source.clip.sampler)
+        entry.mask = compileBoneMask(rig, REGION_PREDICATES[layer.region])
+        return { source, layer, entry }
+      }),
+    )
+
+    const standReference = createPoseBuffer(rig.boneCount)
+    const crouchReference = createPoseBuffer(rig.boneCount)
+    const layeringReference = createPoseBuffer(rig.boneCount)
+    const standPose = clipsByName.get('A_Als_Stand_Pose')
+    const crouchPose = clipsByName.get('A_Als_Crouch_Pose')
+    if (standPose) sampleClip(standPose.sampler, rig, 0, standReference, false)
+    else copyPose(evaluator.referencePose, standReference)
+    if (crouchPose) sampleClip(crouchPose.sampler, rig, 0, crouchReference, false)
+    else copyPose(standReference, crouchReference)
+    copyPose(standReference, layeringReference)
+
+    const dynamicAdditives: RuntimeDynamicAdditive[] = []
+    for (const layer of ALS_LAYER_REGIONS) {
+      if (!layer.additiveCurve) continue
+      const mask = compileBoneMask(rig, REGION_PREDICATES[layer.region])
+      if (layer.localSpaceCurve) {
+        dynamicAdditives.push(
+          {
+            layer,
+            entry: {
+              referencePose: layeringReference,
+              weight: 0,
+              mask,
+              additiveSpace: 'mesh',
+            },
+          },
+          {
+            layer,
+            entry: {
+              referencePose: layeringReference,
+              weight: 0,
+              mask,
+              additiveSpace: 'local',
+            },
+          },
+        )
+      } else {
+        dynamicAdditives.push({
+          layer,
+          entry: {
+            referencePose: layeringReference,
+            weight: 0,
+            mask,
+            additiveSpace: layer.additiveSpace ?? 'mesh',
+          },
+        })
+      }
+    }
     const fallbackSource = pickClip(gltf.animations)
     const fallbackClip = fallbackSource ? clipsByName.get(fallbackSource.name) : undefined
     const fallbackEntries = fallbackClip ? [fallbackClip.entry] : []
     const soloEntries: EvaluatorLayerEntry[] = fallbackClip ? [fallbackClip.entry] : []
-    const overlayRules = overlays.map((overlay) => overlay.rule)
     const normalDebugWeights: Record<string, number> = {
       groundedAmount: 0,
       gaitAmount: 0,
       gaitWalkingAmount: 0,
       gaitRunningAmount: 0,
       gaitSprintingAmount: 0,
+      overlayModeRifle: 0,
     }
     for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) normalDebugWeights[role] = 0
-    for (const overlay of overlays) normalDebugWeights[overlay.rule.id] = 0
+    for (const layer of ALS_LAYER_REGIONS) {
+      normalDebugWeights[layer.baseCurve] = 0
+      if (layer.additiveCurve) normalDebugWeights[layer.additiveCurve] = 0
+      if (layer.localSpaceCurve) normalDebugWeights[layer.localSpaceCurve] = 0
+    }
     const soloDebugWeights = new Map(
       clips.map((clip) => [clip.sampler.clip.name, { [clip.sampler.clip.name]: 1 }]),
     )
@@ -258,7 +385,8 @@ export function useLocomotionRig(gltf: {
     )
     const mainInput: EvaluatePoseInput = {
       base: baseEntries,
-      overlays: overlays.map((overlay) => overlay.entry),
+      overlays: overlayEntries.map((overlay) => overlay.entry),
+      dynamicAdditives: dynamicAdditives.map((additive) => additive.entry),
       rootMotion,
     }
     const fallbackInput: EvaluatePoseInput = { base: fallbackEntries, rootMotion }
@@ -273,8 +401,12 @@ export function useLocomotionRig(gltf: {
       clips,
       clipsByName,
       roles,
-      overlays,
-      overlayRules,
+      overlaySources,
+      overlayEntries,
+      standReference,
+      crouchReference,
+      layeringReference,
+      dynamicAdditives,
       fallbackClip,
       soloEntries,
       normalDebugWeights,
@@ -328,16 +460,7 @@ export function useLocomotionRig(gltf: {
     sprinting: 0,
   })
   const table = useRef(createWeightTable())
-  const overlayOut = useRef(REGION_OVERLAY_RULES.map(() => 0))
-  const overlayContext = useRef<OverlayContext>({
-    idleShare: 1,
-    walkShare: 0,
-    runShare: 0,
-    sprintShare: 0,
-    crouchingAmount: 0,
-    inAirAmount: 0,
-  })
-  const overlayAlphas = useRef({ groundedAmount: 1, inAirAmount: 0 })
+  const rifleSourceWeights = useRef({ poses: 1, runArms: 0, sprintArms: 0 })
   const input = useRef<WeightTableInput>({
     standWeights: standWeights.current,
     crouchMoveWeight: 0,
@@ -370,7 +493,9 @@ export function useLocomotionRig(gltf: {
       return
     }
 
-    const rawSpeed = Math.max(0, controls.current.speed)
+    const rawSpeed = controls.current.moving
+      ? Math.max(0, controls.current.speed)
+      : 0
     const crouching = controls.current.stance === 'Crouching'
     // Deliberate M3 staging trade: StandToCrouch/CrouchToStand clips are present, but until the
     // transition arbiter owns them, this is the single non-popping Stance path.
@@ -437,40 +562,72 @@ export function useLocomotionRig(gltf: {
       clip.entry.weight = weights[role]
     }
 
-    const context = overlayContext.current
-    context.idleShare = standWeights.current[STAND.IDLE]
-    context.walkShare = standWeights.current[STAND.WALK]
-    context.runShare = standWeights.current[STAND.RUN]
-    context.sprintShare = standWeights.current[STAND.SPRINT]
-    context.crouchingAmount = crouchingAmount.current
-    overlayAlphas.current.groundedAmount = weights.groundedAmount
-    overlayAlphas.current.inAirAmount = weights.jumpArms
-    evaluateRegionOverlays(
-      runtime.overlayRules,
-      context,
-      overlayAlphas.current,
-      overlayOut.current,
-    )
-    for (let i = 0; i < runtime.overlays.length; i++) {
-      const overlay = runtime.overlays[i]
-      overlay.entry.time = overlay.rule.holdAt === undefined
-        ? overlay.rule.phaseLock
-          ? overlay.clip.sampler.clip.duration * phase.current
-          : overlay.clip.time
-        : overlay.clip.sampler.clip.duration * overlay.rule.holdAt
-      overlay.entry.weight = overlayOut.current[i]
-    }
-
-    const result = evaluatePose(runtime.evaluator, runtime.mainInput)
-    applyPose(runtime.applicator, result.pose)
-
-    for (const source of runtime.gaitSources) source.weight = source.entry.weight
     const fallbackGaitAmount =
       (standWeights.current[STAND.WALK]
         + standWeights.current[STAND.RUN] * 2
         + standWeights.current[STAND.SPRINT] * 3)
         * (1 - crouchingAmount.current)
       + crouchMoveWeight.current * crouchingAmount.current
+
+    const rifleActive = controls.current.overlayMode === 'Rifle'
+    resolveRifleOverlaySourceWeights(
+      fallbackGaitAmount,
+      rifleSourceWeights.current,
+    )
+    for (const source of runtime.overlaySources) {
+      source.weight = rifleActive ? rifleSourceWeights.current[source.key] : 0
+      source.time = source.key === 'poses'
+        ? RIFLE_RELAXED_POSE_TIME
+        : source.clip.sampler.clip.duration * phase.current
+    }
+    const curveSources: readonly OverlayCurveSource[] = runtime.overlaySources
+    // AB_Als_Rifle's movement states replace the full pose-bank evaluator with arms-only sources.
+    // Walking has no authored arms cycle, so its held rifle upper body remains while the lower
+    // body LayerPelvis/LayerLegs ownership fades with the locomotion idle share.
+    const poseBankLowerBodyGate = standWeights.current[STAND.IDLE]
+    for (const overlay of runtime.overlayEntries) {
+      const lowerBodyGate =
+        overlay.source.key === 'poses'
+        && (overlay.layer.region === 'pelvis' || overlay.layer.region === 'legs')
+          ? poseBankLowerBodyGate
+          : 1
+      overlay.entry.time = overlay.source.time
+      overlay.entry.weight = overlay.source.weight
+        * (overlay.source.curves?.[overlay.layer.baseCurve]?.(overlay.source.time) ?? 0)
+        * lowerBodyGate
+        * weights.groundedAmount
+    }
+
+    copyPose(runtime.standReference, runtime.layeringReference)
+    blendPoseInPlace(
+      runtime.layeringReference,
+      runtime.crouchReference,
+      crouchingAmount.current,
+    )
+    for (const additive of runtime.dynamicAdditives) {
+      const layerAmount = blendOverlayCurve(curveSources, additive.layer.baseCurve)
+      const additiveAmount = blendOverlayCurve(
+        curveSources,
+        additive.layer.additiveCurve!,
+      )
+      const localSpaceAmount = additive.layer.localSpaceCurve
+        ? blendOverlayCurve(curveSources, additive.layer.localSpaceCurve)
+        : additive.layer.additiveSpace === 'local' ? 1 : 0
+      const armSpaceAmounts = additive.layer.localSpaceCurve
+        ? resolveArmAdditiveSpaceAmounts(localSpaceAmount)
+        : undefined
+      const spaceAmount = additive.entry.additiveSpace === 'local'
+        ? armSpaceAmounts?.local ?? localSpaceAmount
+        : armSpaceAmounts?.mesh ?? 1 - localSpaceAmount
+      additive.entry.weight = rifleActive
+        ? layerAmount * additiveAmount * spaceAmount * weights.groundedAmount
+        : 0
+    }
+
+    const result = evaluatePose(runtime.evaluator, runtime.mainInput)
+    applyPose(runtime.applicator, result.pose)
+
+    for (const source of runtime.gaitSources) source.weight = source.entry.weight
     const gaitAmount = blendCurveValue(
       result.curves,
       'PoseGait',
@@ -503,8 +660,24 @@ export function useLocomotionRig(gltf: {
     runtime.normalDebugWeights.gaitWalkingAmount = gaitAmounts.current.walking
     runtime.normalDebugWeights.gaitRunningAmount = gaitAmounts.current.running
     runtime.normalDebugWeights.gaitSprintingAmount = gaitAmounts.current.sprinting
-    for (let i = 0; i < runtime.overlays.length; i++) {
-      runtime.normalDebugWeights[runtime.overlays[i].rule.id] = overlayOut.current[i]
+    runtime.normalDebugWeights.overlayModeRifle = rifleActive ? 1 : 0
+    for (const layer of ALS_LAYER_REGIONS) {
+      runtime.normalDebugWeights[layer.baseCurve] = blendOverlayCurve(
+        curveSources,
+        layer.baseCurve,
+      )
+      if (layer.additiveCurve) {
+        runtime.normalDebugWeights[layer.additiveCurve] = blendOverlayCurve(
+          curveSources,
+          layer.additiveCurve,
+        )
+      }
+      if (layer.localSpaceCurve) {
+        runtime.normalDebugWeights[layer.localSpaceCurve] = blendOverlayCurve(
+          curveSources,
+          layer.localSpaceCurve,
+        )
+      }
     }
     window.__weightTable = runtime.normalDebugWeights
   })

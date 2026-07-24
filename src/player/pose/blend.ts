@@ -152,6 +152,67 @@ export function finalizePose(
   return out
 }
 
+/** Replaces a masked portion of `base` with `overlay` at a conventional 0..1 layer alpha. */
+export function blendPoseInPlace(
+  base: LocalPoseBuffer,
+  overlay: LocalPoseBuffer,
+  weight: number,
+  mask?: BoneMask,
+): LocalPoseBuffer {
+  if (weight <= 0) return base
+  if (base.boneCount !== overlay.boneCount || (mask && mask.length !== base.boneCount)) {
+    throw new Error('Pose layer input has an incompatible bone count')
+  }
+
+  for (let bone = 0; bone < base.boneCount; bone++) {
+    const alpha = Math.max(0, Math.min(1, weight * (mask ? mask[bone] : 1)))
+    if (alpha <= 0) continue
+    const p = bone * 3
+    const q = bone * 4
+    for (let component = 0; component < 3; component++) {
+      base.positions[p + component] +=
+        (overlay.positions[p + component] - base.positions[p + component]) * alpha
+      base.scales[p + component] +=
+        (overlay.scales[p + component] - base.scales[p + component]) * alpha
+    }
+
+    let bx = overlay.rotations[q]
+    let by = overlay.rotations[q + 1]
+    let bz = overlay.rotations[q + 2]
+    let bw = overlay.rotations[q + 3]
+    const ax = base.rotations[q]
+    const ay = base.rotations[q + 1]
+    const az = base.rotations[q + 2]
+    const aw = base.rotations[q + 3]
+    let dot = ax * bx + ay * by + az * bz + aw * bw
+    if (dot < 0) {
+      dot = -dot
+      bx = -bx
+      by = -by
+      bz = -bz
+      bw = -bw
+    }
+    let aWeight = 1 - alpha
+    let bWeight = alpha
+    if (dot < 0.9995) {
+      const theta = Math.acos(Math.min(1, dot))
+      const sinTheta = Math.sin(theta)
+      aWeight = Math.sin((1 - alpha) * theta) / sinTheta
+      bWeight = Math.sin(alpha * theta) / sinTheta
+    }
+    const x = ax * aWeight + bx * bWeight
+    const y = ay * aWeight + by * bWeight
+    const z = az * aWeight + bz * bWeight
+    const w = aw * aWeight + bw * bWeight
+    const inverseLength = 1 / Math.hypot(x, y, z, w)
+    base.rotations[q] = x * inverseLength
+    base.rotations[q + 1] = y * inverseLength
+    base.rotations[q + 2] = z * inverseLength
+    base.rotations[q + 3] = w * inverseLength
+  }
+  return base
+}
+
 /**
  * Applies a three.js-style local additive pose in place. Rotation is pre-multiplied
  * (`add * base`) to match ALS local-space layering; translation and scale are additive deltas.
@@ -237,6 +298,102 @@ function multiplyQuaternions(
   out[outOffset + 1] = aw * by - ax * bz + ay * bw + az * bx
   out[outOffset + 2] = aw * bz + ax * by - ay * bx + az * bw
   out[outOffset + 3] = aw * bw - ax * bx - ay * by - az * bz
+}
+
+/**
+ * UE Make Dynamic Additive: source minus its authored reference pose. Local-space rotation deltas
+ * are `source * inverse(reference)` because Apply Additive pre-multiplies that delta onto the
+ * layered pose. Mesh-space deltas perform the same operation after accumulating component-space
+ * rotations down the hierarchy.
+ */
+export function makeDynamicAdditivePose(
+  source: LocalPoseBuffer,
+  reference: LocalPoseBuffer,
+  rig: RigDefinition,
+  out: LocalPoseBuffer,
+  space: 'local' | 'mesh',
+  scratch: MeshSpaceBlendScratch,
+): LocalPoseBuffer {
+  if (
+    source.boneCount !== reference.boneCount
+    || source.boneCount !== out.boneCount
+    || source.boneCount !== rig.boneCount
+    || scratch.boneCount !== source.boneCount
+  ) {
+    throw new Error('Dynamic additive input has an incompatible bone count')
+  }
+
+  for (let bone = 0; bone < source.boneCount; bone++) {
+    const p = bone * 3
+    const q = bone * 4
+    out.positions[p] = source.positions[p] - reference.positions[p]
+    out.positions[p + 1] = source.positions[p + 1] - reference.positions[p + 1]
+    out.positions[p + 2] = source.positions[p + 2] - reference.positions[p + 2]
+    out.scales[p] = source.scales[p] - reference.scales[p]
+    out.scales[p + 1] = source.scales[p + 1] - reference.scales[p + 1]
+    out.scales[p + 2] = source.scales[p + 2] - reference.scales[p + 2]
+
+    if (space === 'local') {
+      multiplyQuaternions(
+        out.rotations,
+        q,
+        source.rotations[q],
+        source.rotations[q + 1],
+        source.rotations[q + 2],
+        source.rotations[q + 3],
+        -reference.rotations[q],
+        -reference.rotations[q + 1],
+        -reference.rotations[q + 2],
+        reference.rotations[q + 3],
+      )
+      continue
+    }
+
+    const parent = rig.parentIndices[bone]
+    if (parent < 0) {
+      scratch.baseRotations.set(source.rotations.subarray(q, q + 4), q)
+      scratch.outputRotations.set(reference.rotations.subarray(q, q + 4), q)
+    } else {
+      const parentOffset = parent * 4
+      multiplyQuaternions(
+        scratch.baseRotations,
+        q,
+        scratch.baseRotations[parentOffset],
+        scratch.baseRotations[parentOffset + 1],
+        scratch.baseRotations[parentOffset + 2],
+        scratch.baseRotations[parentOffset + 3],
+        source.rotations[q],
+        source.rotations[q + 1],
+        source.rotations[q + 2],
+        source.rotations[q + 3],
+      )
+      multiplyQuaternions(
+        scratch.outputRotations,
+        q,
+        scratch.outputRotations[parentOffset],
+        scratch.outputRotations[parentOffset + 1],
+        scratch.outputRotations[parentOffset + 2],
+        scratch.outputRotations[parentOffset + 3],
+        reference.rotations[q],
+        reference.rotations[q + 1],
+        reference.rotations[q + 2],
+        reference.rotations[q + 3],
+      )
+    }
+    multiplyQuaternions(
+      out.rotations,
+      q,
+      scratch.baseRotations[q],
+      scratch.baseRotations[q + 1],
+      scratch.baseRotations[q + 2],
+      scratch.baseRotations[q + 3],
+      -scratch.outputRotations[q],
+      -scratch.outputRotations[q + 1],
+      -scratch.outputRotations[q + 2],
+      scratch.outputRotations[q + 3],
+    )
+  }
+  return out
 }
 
 /**

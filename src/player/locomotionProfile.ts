@@ -30,6 +30,28 @@ export const ALS_AUTHORED_GAIT_SPEEDS = {
   },
 } as const
 
+export const ALS_GAITS = ['Walking', 'Running', 'Sprinting'] as const
+export type AlsGait = (typeof ALS_GAITS)[number]
+
+export const ALS_STANCES = ['Standing', 'Crouching'] as const
+export type AlsStance = (typeof ALS_STANCES)[number]
+
+/**
+ * Desired-gait target speed from MS_Als_Normal. ALS keeps DesiredGait selected while stopped;
+ * the caller applies the separate Moving gate. Crouching has no sprint gait settings, so both
+ * Running and Sprinting resolve to its authored 2m/s run cap.
+ */
+export function resolveDesiredGaitSpeed(gait: AlsGait, stance: AlsStance): number {
+  if (stance === 'Crouching') {
+    return gait === 'Walking'
+      ? ALS_AUTHORED_GAIT_SPEEDS.crouching.walk
+      : ALS_AUTHORED_GAIT_SPEEDS.crouching.run
+  }
+  if (gait === 'Walking') return ALS_AUTHORED_GAIT_SPEEDS.standing.walk
+  if (gait === 'Running') return ALS_AUTHORED_GAIT_SPEEDS.standing.run
+  return ALS_AUTHORED_GAIT_SPEEDS.standing.sprint
+}
+
 export interface Gait {
   /** Native clip length (s). */
   duration: number

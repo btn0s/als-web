@@ -3,10 +3,12 @@ import {
   accumulatePose,
   applyAdditivePose,
   applyMeshSpaceAdditivePose,
+  blendPoseInPlace,
   clearPoseAccumulator,
   createMeshSpaceBlendScratch,
   createPoseAccumulator,
   finalizePose,
+  makeDynamicAdditivePose,
 } from './blend'
 import type { MeshSpaceBlendScratch } from './blend'
 import type { CompiledClipSampler } from './clipSampler'
@@ -14,7 +16,7 @@ import { resolveClipTime, sampleClip } from './clipSampler'
 import type { ClipCurveSamplers, CurveFrame } from './curves'
 import { beginCurveFrame, createCurveFrame, sampleClipCurves } from './curves'
 import type { LocalPoseBuffer } from './poseBuffer'
-import { createPoseBuffer, resetPoseToReference } from './poseBuffer'
+import { copyPose, createPoseBuffer, resetPoseToReference } from './poseBuffer'
 import type { RigDefinition } from './rig'
 import type { RootMotionDelta, RootMotionExtractor } from './rootMotion'
 import { extractRootMotionDelta } from './rootMotion'
@@ -38,7 +40,15 @@ export interface EvaluatePoseInput {
   readonly overlays?: readonly EvaluatorLayerEntry[]
   readonly montages?: readonly EvaluatorLayerEntry[]
   readonly additives?: readonly EvaluatorLayerEntry[]
+  readonly dynamicAdditives?: readonly EvaluatorDynamicAdditiveEntry[]
   readonly rootMotion?: RootMotionExtractor
+}
+
+export interface EvaluatorDynamicAdditiveEntry {
+  readonly referencePose: LocalPoseBuffer
+  weight: number
+  mask?: BoneMask
+  additiveSpace: 'local' | 'mesh'
 }
 
 export interface CoverageWarning {
@@ -57,8 +67,12 @@ export interface PoseEvaluator {
   readonly rig: RigDefinition
   readonly referencePose: LocalPoseBuffer
   readonly samplePose: LocalPoseBuffer
+  readonly basePose: LocalPoseBuffer
+  readonly overlayPose: LocalPoseBuffer
+  readonly dynamicAdditivePose: LocalPoseBuffer
   readonly outputPose: LocalPoseBuffer
   readonly accumulator: PoseAccumulator
+  readonly overlayAccumulator: PoseAccumulator
   readonly meshSpaceScratch: MeshSpaceBlendScratch
   readonly curves: CurveFrame
   readonly result: PoseEvaluationResult
@@ -86,8 +100,12 @@ export function createPoseEvaluator(
     rig,
     referencePose,
     samplePose: createPoseBuffer(rig.boneCount),
+    basePose: createPoseBuffer(rig.boneCount),
+    overlayPose: createPoseBuffer(rig.boneCount),
+    dynamicAdditivePose: createPoseBuffer(rig.boneCount),
     outputPose,
     accumulator: createPoseAccumulator(rig.boneCount),
+    overlayAccumulator: createPoseAccumulator(rig.boneCount),
     meshSpaceScratch: createMeshSpaceBlendScratch(rig.boneCount),
     curves,
     result,
@@ -107,6 +125,7 @@ export function createPoseEvaluator(
 function sampleAndAccumulate(
   evaluator: PoseEvaluator,
   entries: readonly EvaluatorLayerEntry[] | undefined,
+  accumulator = evaluator.accumulator,
 ) {
   if (!entries) return
   for (const entry of entries) {
@@ -118,7 +137,7 @@ function sampleAndAccumulate(
       evaluator.samplePose,
       entry.loop,
     )
-    accumulatePose(evaluator.accumulator, evaluator.samplePose, entry.weight, entry.mask)
+    accumulatePose(accumulator, evaluator.samplePose, entry.weight, entry.mask)
     if (entry.curves) {
       sampleClipCurves(
         evaluator.curves,
@@ -159,8 +178,8 @@ function checkCoverage(evaluator: PoseEvaluator) {
 }
 
 /**
- * Samples active clips, accumulates all normal layers in pose space, normalizes per bone, then
- * applies local additive layers. Zero-weight entries never reach the sampler.
+ * Samples and normalizes the full-coverage base, replaces masked regions with normalized overlay
+ * groups, then applies ALS dynamic locomotion additives and clip-authored additives.
  */
 export function evaluatePose(
   evaluator: PoseEvaluator,
@@ -171,8 +190,53 @@ export function evaluatePose(
   sampleAndAccumulate(evaluator, input.base)
   sampleAndAccumulate(evaluator, input.montages)
   checkCoverage(evaluator)
-  sampleAndAccumulate(evaluator, input.overlays)
   finalizePose(evaluator.accumulator, evaluator.referencePose, evaluator.outputPose)
+  copyPose(evaluator.outputPose, evaluator.basePose)
+
+  if (input.overlays) {
+    clearPoseAccumulator(evaluator.overlayAccumulator)
+    sampleAndAccumulate(evaluator, input.overlays, evaluator.overlayAccumulator)
+    finalizePose(evaluator.overlayAccumulator, evaluator.outputPose, evaluator.overlayPose)
+    // The accumulator's per-bone coverage is the authored Layer* alpha. Its normalized pose is
+    // the linked overlay source blend (pose bank/run arms/sprint arms).
+    blendPoseInPlace(
+      evaluator.outputPose,
+      evaluator.overlayPose,
+      1,
+      evaluator.overlayAccumulator.weights,
+    )
+  }
+
+  if (input.dynamicAdditives) {
+    for (const entry of input.dynamicAdditives) {
+      if (entry.weight <= 0) continue
+      makeDynamicAdditivePose(
+        evaluator.basePose,
+        entry.referencePose,
+        evaluator.rig,
+        evaluator.dynamicAdditivePose,
+        entry.additiveSpace,
+        evaluator.meshSpaceScratch,
+      )
+      if (entry.additiveSpace === 'mesh') {
+        applyMeshSpaceAdditivePose(
+          evaluator.outputPose,
+          evaluator.dynamicAdditivePose,
+          evaluator.rig,
+          entry.weight,
+          evaluator.meshSpaceScratch,
+          entry.mask,
+        )
+      } else {
+        applyAdditivePose(
+          evaluator.outputPose,
+          evaluator.dynamicAdditivePose,
+          entry.weight,
+          entry.mask,
+        )
+      }
+    }
+  }
 
   if (input.additives) {
     for (const entry of input.additives) {

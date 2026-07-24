@@ -4,11 +4,13 @@ import {
   accumulatePose,
   applyAdditivePose,
   applyMeshSpaceAdditivePose,
+  blendPoseInPlace,
   clearPoseAccumulator,
   compileBoneMask,
   createMeshSpaceBlendScratch,
   createPoseAccumulator,
   finalizePose,
+  makeDynamicAdditivePose,
 } from './blend'
 import { copyPose, createPoseBuffer, resetPoseToReference } from './poseBuffer'
 import { createRigDefinition } from './rig'
@@ -86,6 +88,36 @@ describe('pose blending', () => {
     applyAdditivePose(base, additive, 0)
 
     expect([...base.data]).toEqual(before)
+  })
+
+  it('uses conventional replacement alpha for masked normal layers', () => {
+    const { rig, reference } = setup()
+    const base = copyPose(reference, createPoseBuffer(2))
+    const overlay = copyPose(reference, createPoseBuffer(2))
+    overlay.positions[0] = 12
+    overlay.positions[3] = 20
+
+    blendPoseInPlace(base, overlay, 0.25, compileBoneMask(rig, (name) => name === 'root'))
+
+    expect(base.positions[0]).toBeCloseTo(3)
+    expect(base.positions[3]).toBeCloseTo(reference.positions[3])
+  })
+
+  it('derives a local dynamic additive that reconstructs its source over the reference', () => {
+    const { rig, reference } = setup()
+    const source = copyPose(reference, createPoseBuffer(2))
+    source.positions[0] = 4
+    source.rotations.set([0, 0, Math.SQRT1_2, Math.SQRT1_2], 0)
+    const additive = createPoseBuffer(2)
+    const reconstructed = copyPose(reference, createPoseBuffer(2))
+    const scratch = createMeshSpaceBlendScratch(2)
+
+    makeDynamicAdditivePose(source, reference, rig, additive, 'local', scratch)
+    applyAdditivePose(reconstructed, additive, 1)
+
+    expect(reconstructed.positions[0]).toBeCloseTo(4)
+    expect(reconstructed.rotations[2]).toBeCloseTo(Math.SQRT1_2)
+    expect(reconstructed.rotations[3]).toBeCloseTo(Math.SQRT1_2)
   })
 
   it('supports mesh-space additive rotation and converts back to local pose', () => {

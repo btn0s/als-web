@@ -1,6 +1,12 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { filterClipToBones, isUpperBodyBone, isArmBone, isFingerBone } from './trackMask';
+import {
+  filterClipToBones,
+  isUpperBodyBone,
+  isArmBone,
+  isFingerBone,
+  REGION_PREDICATES,
+} from './trackMask';
 
 /** Builds a minimal 2-keyframe quaternion track for `boneName`, matching how baked clips are shaped. */
 function boneTrack(boneName: string) {
@@ -164,3 +170,31 @@ describe('isFingerBone', () => {
     }
   });
 });
+
+describe('ALS layering regions', () => {
+  it('matches AB_Als_Layering branch roots without overlapping neighboring regions', () => {
+    expect(REGION_PREDICATES.head('neck_01')).toBe(true)
+    expect(REGION_PREDICATES.head('head')).toBe(true)
+    expect(REGION_PREDICATES.spine('spine_03')).toBe(true)
+    expect(REGION_PREDICATES.spine('clavicle_l')).toBe(false)
+
+    expect(REGION_PREDICATES.armLeft('clavicle_l')).toBe(true)
+    expect(REGION_PREDICATES.armLeft('upperarm_twist_01_l')).toBe(true)
+    expect(REGION_PREDICATES.armLeft('hand_l')).toBe(true)
+    expect(REGION_PREDICATES.armLeft('index_01_l')).toBe(false)
+    expect(REGION_PREDICATES.armRight('lowerarm_twist_01_r')).toBe(true)
+    expect(REGION_PREDICATES.armRight('hand_l')).toBe(false)
+
+    expect(REGION_PREDICATES.handLeft('thumb_03_l')).toBe(true)
+    expect(REGION_PREDICATES.handRight('ring_01_r')).toBe(true)
+    expect(REGION_PREDICATES.handLeft('hand_l')).toBe(false)
+
+    expect(REGION_PREDICATES.pelvis('pelvis')).toBe(true)
+    expect(REGION_PREDICATES.pelvis('spine_01')).toBe(false)
+    for (const bone of ['thigh_l', 'calf_twist_01_r', 'foot_l', 'ball_r']) {
+      expect(REGION_PREDICATES.legs(bone)).toBe(true)
+    }
+    expect(REGION_PREDICATES.legs('pelvis')).toBe(false)
+    expect(REGION_PREDICATES.legs('ik_foot_l')).toBe(false)
+  })
+})

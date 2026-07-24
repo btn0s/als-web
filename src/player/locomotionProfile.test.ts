@@ -2,7 +2,10 @@ import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import {
   ALS_AUTHORED_GAIT_SPEEDS,
+  ALS_GAITS,
+  ALS_STANCES,
   buildLocomotionProfile,
+  resolveDesiredGaitSpeed,
   resolveGaitSpeeds,
 } from './locomotionProfile'
 
@@ -17,6 +20,17 @@ function clip(name: string, duration: number) {
 }
 
 describe('ALS locomotion profile', () => {
+  it('resolves desired gait to the authored standing speed and crouching cap', () => {
+    expect(ALS_GAITS).toEqual(['Walking', 'Running', 'Sprinting'])
+    expect(ALS_STANCES).toEqual(['Standing', 'Crouching'])
+    expect(resolveDesiredGaitSpeed('Walking', 'Standing')).toBe(1.75)
+    expect(resolveDesiredGaitSpeed('Running', 'Standing')).toBe(3.75)
+    expect(resolveDesiredGaitSpeed('Sprinting', 'Standing')).toBe(6.5)
+    expect(resolveDesiredGaitSpeed('Walking', 'Crouching')).toBe(1.5)
+    expect(resolveDesiredGaitSpeed('Running', 'Crouching')).toBe(2)
+    expect(resolveDesiredGaitSpeed('Sprinting', 'Crouching')).toBe(2)
+  })
+
   it('exposes the exact ALS authored gait speeds', () => {
     expect(ALS_AUTHORED_GAIT_SPEEDS).toEqual({
       standing: { walk: 1.75, run: 3.75, sprint: 6.5 },

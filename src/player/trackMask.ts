@@ -1,14 +1,6 @@
 import * as THREE from 'three';
 
-/**
- * Track-filtering — the core mechanism of the ALS-style masked overlay layer.
- * three.js has NO per-bone mask / LayeredBlendPerBone API: `PropertyMixer`
- * blends per KeyframeTrack (per bound property), not per clip. So "masking" a clip to a subset of
- * bones just means building a new clip that only contains tracks for those bones — a clip with no
- * track for a bone cannot affect that bone at any weight, full stop.
- *
- * Kept framework-free of React (plain `three` only) so it stays Vitest-testable in isolation.
- */
+/** Framework-free bone predicates shared by extraction utilities and the owned pose evaluator. */
 
 /**
  * Returns a NEW `THREE.AnimationClip` containing only the tracks of `clip` whose target bone
@@ -32,12 +24,8 @@ export function filterClipToBones(
 }
 
 /**
- * Upper-body bone allowlist for the overlay layer, so overlay clips (e.g. `Idle_FoldArms_Loop`)
- * drive arms/torso while legs stay owned by locomotion. Bind-pose caveat (verified against three's
- * source): `PropertyMixer.apply` blends any weight shortfall on a track toward the SAVED BIND POSE,
- * not toward other actions — so the base locomotion layer must keep supplying every bone at total
- * weight ~1, and overlays/additives sit on top of that; this predicate is what
- * lets the overlay clip skip the leg bones entirely rather than fighting the base for them).
+ * Upper-body allowlist retained for generic whole-upper-body masks. ALS OverlayMode uses the
+ * finer exact regions below so each Layer* curve owns a non-overlapping branch.
  *
  * Actual bone names, read directly off `public/assets/skm-als.glb`'s skeleton (68 bones total,
  * ALS Refactored's SK_Als — UE4-mannequin layout, all-lowercase):
@@ -96,13 +84,26 @@ export function isArmBone(boneName: string): boolean {
 }
 
 const HEAD_PREFIXES = ['head', 'neck_'];
-const TORSO_PREFIXES = ['spine_'];
+const SPINE_PREFIXES = ['spine_'];
+const LEG_PREFIXES = ['thigh_', 'calf_', 'foot_', 'ball_'];
+
+function isSide(bone: string, side: 'l' | 'r') {
+  return bone.endsWith(`_${side}`)
+}
+
+function isArmWithoutFingers(bone: string, side: 'l' | 'r') {
+  return isArmBone(bone) && !isFingerBone(bone) && isSide(bone, side)
+}
+
+function isHand(bone: string, side: 'l' | 'r') {
+  // AB_Als_Layering excludes the five authored finger branches from each arm additive, then
+  // restores them through LayerHandLeft/Right. The wrist itself remains part of the arm branch.
+  return isFingerBone(bone) && isSide(bone, side)
+}
 
 /**
- * Named body regions for the declarative region-overlay layer (regionOverlays.ts) — the ALS
- * "layered blend per bone" groups, expressed as track-mask predicates. LEGS/pelvis/root are
- * deliberately NOT offered: the base locomotion layer owns foot placement, and an overlay
- * fighting it would slide the feet (put leg variation in the base weight table instead).
+ * Named body regions for the owned evaluator. The side-specific regions reproduce
+ * AB_Als_Layering's branch filters; the generic regions remain extension seams.
  */
 export const REGION_PREDICATES = {
   /** Full arm chain incl. fingers. */
@@ -114,7 +115,18 @@ export const REGION_PREDICATES = {
   /** Head + neck. */
   head: (bone: string) => HEAD_PREFIXES.some((p) => bone.startsWith(p)),
   /** Spine chain only (no arms, no head). */
-  torso: (bone: string) => TORSO_PREFIXES.some((p) => bone.startsWith(p)),
+  spine: (bone: string) => SPINE_PREFIXES.some((p) => bone.startsWith(p)),
+  /** ALS LayerArmLeft branch: clavicle through wrist/twists, with fingers split to LayerHandLeft. */
+  armLeft: (bone: string) => isArmWithoutFingers(bone, 'l'),
+  /** ALS LayerArmRight branch: clavicle through wrist/twists, with fingers split to LayerHandRight. */
+  armRight: (bone: string) => isArmWithoutFingers(bone, 'r'),
+  /** ALS hand layers are the five finger branches, not the wrist already owned by LayerArm*. */
+  handLeft: (bone: string) => isHand(bone, 'l'),
+  handRight: (bone: string) => isHand(bone, 'r'),
+  /** Pelvis only; child spine and thigh branches have their own Layer* curves. */
+  pelvis: (bone: string) => bone === 'pelvis',
+  /** Both thigh branches and every descendant leg bone. */
+  legs: (bone: string) => LEG_PREFIXES.some((p) => bone.startsWith(p)),
   /** Everything above the pelvis — the existing overlay-state mask. */
   upperBody: isUpperBodyBone,
 } as const;

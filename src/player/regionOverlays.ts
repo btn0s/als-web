@@ -1,16 +1,11 @@
 import type { RegionName } from './trackMask';
 
 /**
- * Declarative region-overlay layer — the ALS-style "per-state, per-body-region animation layer"
- * as DATA. Each rule pins one clip, masked to one region, whose weight is a pure function of the
- * frame's blend state. Want "run shows more crouch arms"? That's a one-line rule, not a new
- * constant threaded through the weight table.
+ * Declarative extension rules for non-OverlayMode state layers. ALS OverlayMode itself lives in
+ * overlayMode.ts because its regions and alphas come directly from the active clip's Layer* curves.
  *
  * Contract (enforced by the pose-buffer applier):
- *  - Rules are OVERLAYS: extra normal-blend weight stacked over the full-coverage base layer.
- *    The pose accumulator normalizes, so a rule at weight v over a ~1-weight base shows the base at
- *    1/(1+v) on that region — dominance units, same math as the stance overlays. Rules can never
- *    cause bind-pose bleed (only base UNDER-coverage does; rules only add).
+ *  - Rules emit conventional non-negative layer alphas for the consumer to apply through a mask.
  *  - Every rule's weight is scaled by the frame's groundedAmount or inAirAmount, so montages and
  *    locomotion-mode changes fade the overlay with the base it rides on and the damping RATIO holds.
  *  - `phaseLock: true` rides the shared locomotion phase (footfall-synced clips, e.g. a moving
@@ -59,21 +54,11 @@ export interface RegionOverlayRule {
 }
 
 /**
- * The shipped rule set. Editing THIS ARRAY is how the layering changes — add a rule per ask
- * ("more X on region Y during Z"), delete rules that stop earning their keep.
+ * No ad-hoc rules ship today. Add one only for a layer with no ALS OverlayMode analog.
  */
-export const REGION_OVERLAY_RULES: RegionOverlayRule[] = [
-  {
-    // Sprint is now a full gait. The old permanent "sprint arms over run" look is only useful in
-    // the run↔sprint crossfade, so the cross-term is zero at either pure endpoint and peaks at
-    // 0.6 dominance in the middle of the hand-off.
-    id: 'run-sprint-arms',
-    clip: 'A_Als_Sprint',
-    region: 'armsNoFingers',
-    phaseLock: true,
-    weight: (c) => Math.min(1, 4 * c.runShare * c.sprintShare) * 0.6,
-  },
-];
+// The M1 run-sprint-arms transplant proof was superseded by OverlayMode Rifle's authored
+// A_Als_Rifle_Run_Arms/A_Als_Rifle_Sprint_Arms linked-layer sources.
+export const REGION_OVERLAY_RULES: RegionOverlayRule[] = [];
 
 /** Per-frame base alphas a rule can ride (see RegionOverlayRule.ride). */
 export interface OverlayAlphas {
