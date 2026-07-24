@@ -118,18 +118,17 @@ export function resolveAlsActorLocation(
 /**
  * Resolves the mesh component's Y relative to the fixed Rapier body anchor.
  *
- * `UAlsCharacterMovementComponent::UAlsCharacterMovementComponent()` sets
- * `bCrouchMaintainsBaseLocation = true` (`AlsCharacterMovementComponent.cpp:236`), so ALS lowers
- * the capsule-root actor location by the half-height difference while keeping its base fixed.
- * The mesh retains AAlsCharacter's authored -92 cm location relative to that active capsule root.
+ * `UCharacterMovementComponent::Crouch()` lowers ALS's capsule root because
+ * `bCrouchMaintainsBaseLocation` is true, then `ACharacter::OnStartCrouch()` adds the same
+ * half-height adjustment to the mesh's relative location. Those two changes cancel in world
+ * space. Rapier deliberately keeps its body anchor fixed, so its equivalent is to keep the mesh
+ * offset fixed too.
  */
 export function resolveAlsMeshRootRelativeY(
-  stance: AlsStance,
+  _stance: AlsStance,
   locomotionMode: AlsLocomotionMode,
 ): number {
   return ALS_MESH_RELATIVE_LOCATION_Z
-    + getAlsCapsuleHalfHeight(stance)
-    - ALS_STANDING_CAPSULE_HALF_HEIGHT
     + getCharacterMovementFloorOffset(locomotionMode === 'Grounded')
 }
 

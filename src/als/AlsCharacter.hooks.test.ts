@@ -113,30 +113,23 @@ describe('AlsCharacter browser bridge math', () => {
     expect(rapierBodyAnchor).toEqual({ x: 2, y: -3, z: 4 })
   })
 
-  it('keeps the rendered mesh on the active capsule base while crouching', () => {
-    // UAlsCharacterMovementComponent constructor line 236 enables bCrouchMaintainsBaseLocation.
+  it('keeps the rendered mesh fixed while the crouching capsule root lowers', () => {
+    // CharacterMovement lowers the capsule root to maintain its base. ACharacter::OnStartCrouch()
+    // adds the same half-height adjustment to the relative mesh location, cancelling that motion.
+    // Our Rapier body anchor is already fixed, so applying either adjustment again would be wrong.
     const floorOffset = UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE
     expect(resolveAlsMeshRootRelativeY('Standing', 'Grounded')).toBe(
       ALS_MESH_RELATIVE_LOCATION_Z + floorOffset,
     )
     expect(resolveAlsMeshRootRelativeY('Crouching', 'Grounded')).toBe(
-      ALS_MESH_RELATIVE_LOCATION_Z
-      + ALS_CROUCHING_CAPSULE_HALF_HEIGHT
-      - ALS_STANDING_CAPSULE_HALF_HEIGHT
-      + floorOffset,
+      ALS_MESH_RELATIVE_LOCATION_Z + floorOffset,
     )
     expect(
       resolveAlsMeshRootRelativeY('Crouching', 'Grounded')
       - resolveAlsMeshRootRelativeY('Standing', 'Grounded'),
-    ).toBeCloseTo(
-      ALS_CROUCHING_CAPSULE_HALF_HEIGHT
-      - ALS_STANDING_CAPSULE_HALF_HEIGHT,
-      12,
-    )
+    ).toBe(0)
     expect(resolveAlsMeshRootRelativeY('Crouching', 'InAir')).toBe(
-      ALS_MESH_RELATIVE_LOCATION_Z
-      + ALS_CROUCHING_CAPSULE_HALF_HEIGHT
-      - ALS_STANDING_CAPSULE_HALF_HEIGHT,
+      ALS_MESH_RELATIVE_LOCATION_Z,
     )
   })
 
