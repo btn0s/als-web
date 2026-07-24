@@ -6,15 +6,35 @@ import type {
 import {
   UE_CHARACTER_MOVEMENT_MAX_FLOOR_DISTANCE,
 } from './characterMovementFloor'
+import {
+  ALS_NO_BASED_MOVEMENT,
+} from '../als/State/AlsMovementBaseState'
+import type {
+  AlsBasedMovement,
+} from '../als/State/AlsMovementBaseState'
 
-interface RapierVector {
+export interface RapierVector {
   x: number
   y: number
   z: number
 }
 
-interface RapierRotation extends RapierVector {
+export interface RapierRotation extends RapierVector {
   w: number
+}
+
+export interface RapierAlsSupportingRigidBody {
+  readonly handle: number
+  translation(): RapierVector
+  rotation(): RapierRotation
+  isFixed(): boolean
+}
+
+export interface RapierAlsSupportingCollider {
+  readonly handle: number
+  translation(): RapierVector
+  rotation(): RapierRotation
+  parent(): RapierAlsSupportingRigidBody | null
 }
 
 interface RapierCapsuleConstructor {
@@ -23,6 +43,7 @@ interface RapierCapsuleConstructor {
 
 interface RapierShapeCastHit {
   readonly time_of_impact: number
+  readonly collider: RapierAlsSupportingCollider
   /**
    * Rapier World.castShape reports the world collider as shape one and the cast query as shape
    * two. `normal1` is therefore the outward normal of the hit collider; `normal2` points back into
@@ -57,7 +78,20 @@ export interface RapierAlsCapsuleSweepOptions {
    * When supplied, this takes precedence over `excludeRigidBody`.
    */
   readonly resolveExcludeRigidBody?: () => unknown
+  /** Query filtering remains an engine-adapter concern, normally `EXCLUDE_SENSORS`. */
+  readonly filterFlags?: number
 }
+
+export interface RapierAlsCapsuleSweepHit
+  extends AlsGroundPredictionSweepHitInput {
+  /** Retained so CharacterMovement's supporting primitive is not erased at the query seam. */
+  readonly collider: RapierAlsSupportingCollider
+  readonly rigidBody: RapierAlsSupportingRigidBody | null
+}
+
+export type RapierAlsCapsuleSweep = (
+  query: Readonly<AlsGroundPredictionSweepQuery>
+) => RapierAlsCapsuleSweepHit | null
 
 /**
  * Rapier bridge for ALS's Z-up capsule sweeps.
@@ -69,7 +103,7 @@ export interface RapierAlsCapsuleSweepOptions {
  */
 export function createRapierAlsCapsuleSweep(
   options: Readonly<RapierAlsCapsuleSweepOptions>,
-): AlsGroundPredictionCapsuleSweep {
+): RapierAlsCapsuleSweep {
   const shapePosition = { x: 0, y: 0, z: 0 }
   const shapeRotation = { x: 0, y: 0, z: 0, w: 1 }
   const shapeVelocity = { x: 0, y: 0, z: 0 }
@@ -105,14 +139,15 @@ export function createRapierAlsCapsuleSweep(
       0,
       1,
       true,
-      undefined,
+      options.filterFlags,
       undefined,
       undefined,
       options.resolveExcludeRigidBody?.() ?? options.excludeRigidBody,
     )
     if (!hit) return null
 
-    const result: AlsGroundPredictionSweepHitInput = {
+    const rigidBody = hit.collider.parent()
+    const result: RapierAlsCapsuleSweepHit = {
       validBlockingHit: true,
       time: hit.time_of_impact,
       impactNormal: {
@@ -120,6 +155,8 @@ export function createRapierAlsCapsuleSweep(
         y: hit.normal1.z,
         z: hit.normal1.y,
       },
+      collider: hit.collider,
+      rigidBody,
     }
     return result
   }
@@ -141,6 +178,14 @@ export const ALS_RAPIER_GROUND_PROBE_DISTANCE =
   UE_CHARACTER_MOVEMENT_MAX_FLOOR_DISTANCE
 
 export function probeRapierAlsGround(
+  sweepCapsule: RapierAlsCapsuleSweep,
+  input: Readonly<AlsGroundProbeInput>,
+): RapierAlsCapsuleSweepHit | null
+export function probeRapierAlsGround(
+  sweepCapsule: AlsGroundPredictionCapsuleSweep,
+  input: Readonly<AlsGroundProbeInput>,
+): AlsGroundPredictionSweepHitInput | null
+export function probeRapierAlsGround(
   sweepCapsule: AlsGroundPredictionCapsuleSweep,
   input: Readonly<AlsGroundProbeInput>,
 ): AlsGroundPredictionSweepHitInput | null {
@@ -158,4 +203,51 @@ export function probeRapierAlsGround(
     && hit.impactNormal.z >= input.walkableFloorAngleCos
     ? hit
     : null
+}
+
+function toAlsLocation(value: Readonly<RapierVector>) {
+  return {
+    x: value.x,
+    y: value.z,
+    z: value.y,
+  }
+}
+
+function toAlsRotation(value: Readonly<RapierRotation>) {
+  // C R_Rapier C. C:(x,y,z)->(x,z,y) is a reflection, so swapping the quaternion vector
+  // components without the signs would produce the inverse physical rotation.
+  return {
+    x: value.x === 0 ? 0 : -value.x,
+    y: value.z === 0 ? 0 : -value.z,
+    z: value.y === 0 ? 0 : -value.y,
+    w: value.w,
+  }
+}
+
+/**
+ * Maps a Rapier floor support to the `FBasedMovementInfo` fields consumed by ALS.
+ *
+ * UE retains `MovementBase` for static primitives even though `HasRelativeLocation()` is false.
+ * The adapter therefore uses a parent rigid body as the primitive when present and the standalone
+ * collider otherwise; it returns `ALS_NO_BASED_MOVEMENT` only for an actual miss.
+ */
+export function rapierAlsMovementBase(
+  hit: Readonly<RapierAlsCapsuleSweepHit> | null,
+  relativeRotation = false,
+): Readonly<AlsBasedMovement> {
+  if (!hit) return ALS_NO_BASED_MOVEMENT
+
+  const primitive = hit.rigidBody ?? hit.collider
+  const hasRelativeLocation =
+    hit.rigidBody !== null && !hit.rigidBody.isFixed()
+  return {
+    primitive,
+    boneName: '',
+    hasRelativeLocation,
+    // UAlsCharacterMovementComponent defaults bIgnoreBaseRotation=true, so the sample's
+    // FBasedMovementInfo::bRelativeRotation remains false unless an adapter explicitly opts in.
+    relativeRotation: hasRelativeLocation && relativeRotation,
+    location: toAlsLocation(primitive.translation()),
+    rotation: toAlsRotation(primitive.rotation()),
+  }
 }

@@ -202,8 +202,9 @@ function LoadedCharacter({
       world,
       Capsule: RapierCapsule,
       resolveExcludeRigidBody: () => rigidBody.current,
+      filterFlags: rapier.QueryFilterFlags.EXCLUDE_SENSORS,
     }),
-    [RapierCapsule, world],
+    [RapierCapsule, rapier.QueryFilterFlags.EXCLUDE_SENSORS, world],
   )
   const poseBones = useMemo(
     () => ({
