@@ -55,8 +55,21 @@ import {
   resetPoseToAdditiveIdentity,
 } from '../engine/poseBuffer'
 import { createRigDefinition } from '../engine/rig'
-import { createRootMotionExtractor, resetRootMotionExtractor } from '../engine/rootMotion'
-import type { RootMotionExtractor } from '../engine/rootMotion'
+import {
+  clearRootMotionMovementParams,
+  compileAuthoredRootMotion,
+  createRootMotionExtractor,
+  createRootMotionMovementParams,
+  resetRootMotionExtractor,
+} from '../engine/rootMotion'
+import type {
+  CompiledAuthoredRootMotion,
+  RootMotionExtractor,
+  RootMotionMovementParams,
+} from '../engine/rootMotion'
+import {
+  accumulateSlotMontageRootMotion,
+} from '../engine/slotMontageRootMotion'
 import {
   advanceSlotMontageClock,
   canGatherSlotMontageSequenceNotifies,
@@ -93,6 +106,7 @@ import type {
 import {
   blendPoseNodesTogether,
   blendTwoCurvesTogether,
+  blendTwoPoseNodesTogether,
 } from '../engine/uePoseBlend'
 import type {
   MutableUePoseNode,
@@ -131,6 +145,18 @@ import {
   ALS_STOP_POSE_EVALUATOR_OPTIONS,
   ALS_STOP_TRANSITION_ANIMATIONS,
 } from './AnimGraph/groundedStates'
+import {
+  ALS_ROLLING_MONTAGE,
+  ALS_ROLL_SEQUENCE,
+} from './AnimGraph/rolling'
+import type {
+  AlsGroundedEntryMode as AlsGroundedEntryModeGameplayTag,
+} from './Notifies/AlsAnimNotify_SetGroundedEntryMode'
+import {
+  ALS_GROUNDED_ROLL_STATE,
+  createAlsGroundedRollGraphRuntime,
+  refreshAlsGroundedRollGraph,
+} from './AnimGraph/AB_Als_Grounded'
 import {
   createAlsStandingGraphRuntime,
   createAlsStandingPoseGraphRuntime,
@@ -213,7 +239,10 @@ import type {
   AlsLocomotionPoseState,
   AlsLocomotionSampledPoses,
 } from './AnimGraph/AB_Als_Locomotion'
-import type { AlsLocomotionMode } from './AlsCharacter'
+import type {
+  AlsLocomotionAction,
+  AlsLocomotionMode,
+} from './AlsCharacter'
 import {
   refreshAlsJumpStateClock,
   sampleAlsLandGraph,
@@ -496,6 +525,13 @@ interface RuntimeMantlingMontageInstance {
   interrupted: boolean
 }
 
+interface RuntimeRollingMontageInstance {
+  readonly sample: SlotMontageSample
+  readonly activeNotifyIndices: Set<number>
+  rootMotionScaleActive: boolean
+  interrupted: boolean
+}
+
 interface RuntimeLocomotionSequencePlayer {
   readonly key: keyof typeof ALS_LOCOMOTION_PLAYER_METADATA
   readonly clip: RuntimeClip | undefined
@@ -538,6 +574,11 @@ export interface AlsAnimationInstanceControls {
   viewYawSpeed: number
   /** AAlsCharacter::LocomotionMode, supplied by the live character bridge. */
   locomotionMode?: AlsLocomotionMode
+  /**
+   * AAlsCharacter::LocomotionAction. NativeUpdateAnimation resets
+   * GroundedEntryMode whenever this tag changes.
+   */
+  locomotionAction?: AlsLocomotionAction
   /** FAlsLocomotionState::bHasInput. Live frames always provide this exact value. */
   hasInput?: boolean
   /** FAlsLocomotionState::Location in metres and ALS coordinates. */
@@ -597,6 +638,66 @@ export interface AlsMantlingMontageNotifyEvent {
   readonly triggerTime: number
 }
 
+export type AlsRollingMontageNotifyEvent =
+  | {
+      readonly instanceId: number
+      readonly montage: 'AM_Als_Roll'
+      readonly sequence: 'A_Als_Roll'
+      readonly notifyClass:
+        'AlsAnimNotifyState_SetLocomotionAction'
+      readonly notifyEventType: 'Begin' | 'End'
+      readonly triggerTime: number
+      readonly LocomotionAction: 'Rolling'
+    }
+  | {
+      readonly instanceId: number
+      readonly montage: 'AM_Als_Roll'
+      readonly sequence: 'A_Als_Roll'
+      readonly notifyClass:
+        'AlsAnimNotifyState_SetRootMotionScale'
+      readonly notifyEventType: 'Begin' | 'End'
+      readonly triggerTime: number
+      readonly TranslationScale: number
+    }
+  | {
+      readonly instanceId: number
+      readonly montage: 'AM_Als_Roll'
+      readonly sequence: 'A_Als_Roll'
+      readonly notifyClass: 'AlsAnimNotify_SetGroundedEntryMode'
+      readonly notifyEventType: 'Notify'
+      readonly triggerTime: number
+      readonly GroundedEntryMode:
+        'Als.GroundedEntryMode.FromRoll'
+    }
+
+/**
+ * Character-facing `UAnimInstance` Roll seam.
+ *
+ * `Montage_Play()` only starts the retained authored montage. Character policy
+ * installs Rolling after the positive return value, and the montage's native
+ * branching-point state owns the eventual exit.
+ */
+export interface AlsRollingMontageBridge {
+  readonly Montage_IsPlaying: (Montage: string) => boolean
+  readonly Montage_Play: (
+    Montage: string,
+    PlayRate: number,
+  ) => number
+  readonly takeNotifyEvents:
+    () => readonly AlsRollingMontageNotifyEvent[]
+  /**
+   * Full-consumption web analog of
+   * `UAnimInstance::ConsumeExtractedRootMotion(1.0f)`.
+   *
+   * The result is unscaled montage root motion. ACharacter applies its
+   * notify-owned AnimRootMotionTranslationScale to translation afterward.
+   * A second call before another animation refresh returns invalid identity.
+   */
+  readonly ConsumeExtractedRootMotion: (
+    Out?: RootMotionMovementParams,
+  ) => RootMotionMovementParams
+}
+
 /**
  * Character-facing UAnimInstance mantle seam.
  *
@@ -638,6 +739,10 @@ export interface AlsAnimationInstance {
    * Public for parity tests; normal live updates come from the recovered transition delegates.
    */
   setHipsDirection: (hipsDirection: AlsHipsDirection) => void
+  /** Exact UAlsAnimationInstance::SetGroundedEntryMode() notify target. */
+  SetGroundedEntryMode: (
+    NewGroundedEntryMode: AlsGroundedEntryModeGameplayTag,
+  ) => void
   /** Exact UAlsAnimationInstance::Jump() request latch. */
   jump: () => void
   /** USkeletalMeshComponent::GetAnimInstance()->GetCurveValue() on the published graph frame. */
@@ -650,6 +755,7 @@ export interface AlsAnimationInstance {
    */
   dispatchQueuedAnimEvents: (sink: AlsPlayerCameraManager) => number
   readonly mantlingMontage: AlsMantlingMontageBridge
+  readonly rollingMontage: AlsRollingMontageBridge
   readonly state: AlsAnimationInstanceState
   refresh: (delta: number, controls: AlsAnimationInstanceControls) => void
 }
@@ -893,6 +999,52 @@ function compileCameraShakeNotifyTracks(
   return tracks
 }
 
+function compileRollSequenceNotifyTrack(
+  animation: THREE.AnimationClip | undefined,
+) {
+  if (!animation) return undefined
+  const rootMotionScale = ALS_ROLL_SEQUENCE.RootMotionScaleNotify
+  const groundedEntry = ALS_ROLL_SEQUENCE.GroundedEntryModeNotify
+  const track = compileSequenceNotifies(animation, [
+    {
+      name: rootMotionScale.NotifyName,
+      time: rootMotionScale.StartTime,
+      triggerTimeOffset: rootMotionScale.TriggerTimeOffset,
+      endTriggerTimeOffset: rootMotionScale.EndTriggerTimeOffset,
+      triggerWeightThreshold:
+        rootMotionScale.TriggerWeightThreshold,
+    },
+    {
+      name: groundedEntry.NotifyName,
+      time: groundedEntry.Time,
+      triggerTimeOffset: groundedEntry.TriggerTimeOffset,
+      triggerWeightThreshold:
+        groundedEntry.TriggerWeightThreshold,
+    },
+  ])
+  for (const expected of [
+    {
+      name: rootMotionScale.NotifyName,
+      time: rootMotionScale.StartTime,
+    },
+    {
+      name: groundedEntry.NotifyName,
+      time: groundedEntry.Time,
+    },
+  ]) {
+    if (!track.notifies.some((notify) => (
+      notify.NotifyName === expected.name
+      && Math.abs(notify.Time - expected.time) <= 1e-6
+    ))) {
+      throw new Error(
+        `${animation.name} is missing authored ${expected.name} `
+        + `at ${expected.time}`,
+      )
+    }
+  }
+  return track
+}
+
 /**
  * Owns sampling, pose-space composition, and the sole skeleton write for the character. The pure
  * weight table and region rules remain the graph; the React hook only forwards frame delta and
@@ -956,8 +1108,56 @@ export function createAlsAnimationInstance(gltf: {
   const cameraShakeNotifyTracks = compileCameraShakeNotifyTracks(
     gltf.animations,
   )
+  const rollClip = clipsByName.get(ALS_ROLLING_MONTAGE.Sequence)
+  const rollSequenceNotifyTrack = compileRollSequenceNotifyTrack(
+    rollClip?.sampler.clip,
+  )
+  const rollAuthoredRootMotion: CompiledAuthoredRootMotion | undefined =
+    rollClip
+      ? compileAuthoredRootMotion(rollClip.sampler.clip)
+      : undefined
+  // UAnimSequence::ExtractRootMotion removes the trajectory from bone zero
+  // before pose publication. A_Als_Roll uses RefPose root lock, so sampling
+  // every non-root track with the ordinary reference fallback is the exact
+  // pose-side equivalent while the raw sidecar feeds movement separately.
+  const rollPoseSampler: CompiledClipSampler | undefined =
+    rollClip && directionTransitionRootIndex >= 0
+      ? {
+          ...rollClip.sampler,
+          bindings: rollClip.sampler.bindings.filter(
+            ({ boneIndex }) =>
+              boneIndex !== directionTransitionRootIndex,
+          ),
+        }
+      : undefined
+  const groundedRollPose = createMutableUePoseNode(rig.boneCount)
+  if (rollClip && rollPoseSampler) {
+    // FAnimNode_SequenceEvaluator owns bShouldLoop=true, but explicit-time
+    // evaluation clamps its authored 1.5-second endpoint instead of advancing
+    // a looping player clock.
+    sampleSequencePoseNode(
+      rig,
+      {
+        sampler: rollPoseSampler,
+        curves: rollClip.curves,
+      },
+      ALS_GROUNDED_ROLL_STATE.sequenceEvaluator.explicitTime,
+      false,
+      groundedRollPose,
+    )
+  } else {
+    copyPose(evaluator.referencePose, groundedRollPose.pose)
+  }
+  groundedRollPose.curves.set(FOOT_LEFT_LOCK_CURVE_NAME, 1)
+  groundedRollPose.curves.set(FOOT_RIGHT_LOCK_CURVE_NAME, 1)
+  const groundedRollGraphOutput =
+    createMutableUePoseNode(rig.boneCount)
+  const groundedRollGraphRuntime =
+    createAlsGroundedRollGraphRuntime()
   const locomotionPoseGraphRuntime =
     createAlsLocomotionPoseGraphRuntime(rig)
+  const locomotionGroundedBaseInput =
+    createMutableUePoseNode(rig.boneCount)
   const locomotionGroundedInput =
     createMutableUePoseNode(rig.boneCount)
   const standingGraphRuntime = createAlsStandingGraphRuntime(
@@ -1192,6 +1392,9 @@ export function createAlsAnimationInstance(gltf: {
   )
   const crouchingTransitionRightClip = clipsByName.get(
     'A_Als_Crouch_Transition_Right',
+  )
+  const standingTransitionRightClip = clipsByName.get(
+    'A_Als_Stand_Transition_Right',
   )
   const crouchingMovementClips: Readonly<
     Record<AlsHipsDirection, RuntimeClip | undefined>
@@ -1479,6 +1682,9 @@ export function createAlsAnimationInstance(gltf: {
   if (crouchingTransitionRightClip) {
     montageClips.add(crouchingTransitionRightClip)
   }
+  if (standingTransitionRightClip) {
+    montageClips.add(standingTransitionRightClip)
+  }
   const rifleOverlaySources = (
     Object.entries(RIFLE_OVERLAY_CLIPS) as [
       keyof typeof RIFLE_OVERLAY_CLIPS,
@@ -1647,6 +1853,10 @@ export function createAlsAnimationInstance(gltf: {
     && Object.values(standingStopTransitionClips).every(
       (clip): clip is RuntimeClip => clip !== undefined,
     )
+    && standingTransitionRightClip !== undefined
+    && rollClip !== undefined
+    && rollPoseSampler !== undefined
+    && rollAuthoredRootMotion !== undefined
     && crouchingGraphSourceComplete
     && quickFeetBlendProfile !== null
     && defaultOverlayGraphRuntime !== undefined
@@ -1839,10 +2049,36 @@ export function createAlsAnimationInstance(gltf: {
       finalizePose(
         locomotionAccumulator,
         context.referencePose,
-        locomotionGroundedInput.pose,
+        locomotionGroundedBaseInput.pose,
       )
-      locomotionGroundedInput.curves.clear()
-      resolveLocomotionGraphCurves(locomotionGroundedInput.curves)
+      locomotionGroundedBaseInput.curves.clear()
+      resolveLocomotionGraphCurves(
+        locomotionGroundedBaseInput.curves,
+      )
+      const rollWeight =
+        groundedRollGraphRuntime.stateWeights.Roll
+      if (rollWeight >= 1 - 1e-5) {
+        copyPoseNode(
+          groundedRollPose,
+          locomotionGroundedInput,
+        )
+      } else if (rollWeight > 1e-5) {
+        blendTwoPoseNodesTogether(
+          groundedRollPose,
+          locomotionGroundedBaseInput,
+          rollWeight,
+          groundedRollGraphOutput,
+        )
+        copyPoseNode(
+          groundedRollGraphOutput,
+          locomotionGroundedInput,
+        )
+      } else {
+        copyPoseNode(
+          locomotionGroundedBaseInput,
+          locomotionGroundedInput,
+        )
+      }
       const input = activeLocomotionGraphInput
       if (!input) {
         copyPose(locomotionGroundedInput.pose, context.outputPose)
@@ -2019,9 +2255,19 @@ export function createAlsAnimationInstance(gltf: {
     number,
     RuntimeMantlingMontageInstance
   >()
+  const rollingMontageInstances = new Map<
+    number,
+    RuntimeRollingMontageInstance
+  >()
   const pendingMantlingNotifyEvents: AlsMantlingMontageNotifyEvent[] =
     []
+  const pendingRollingNotifyEvents: AlsRollingMontageNotifyEvent[] =
+    []
   const mantlingLastMarkerTimeByInstance = new Map<number, number>()
+  const rollingLastMarkerTimeByInstance = new Map<number, number>()
+  const rollingGatheredSequenceNotifies: CompiledSequenceNotify[] = []
+  const extractedRollingRootMotion =
+    createRootMotionMovementParams()
   const transitionSlotBindings: RuntimeSlotMontageBinding[] = []
   const transitionSlotCurveScratch = new Map<string, number>()
   const postLocomotionSlotBindings: RuntimeSlotMontageBinding[] = []
@@ -2036,6 +2282,10 @@ export function createAlsAnimationInstance(gltf: {
   let activeTurnInPlaceClip: RuntimeClip | null = null
   let turnInPlaceSample: SlotMontageSample | undefined
   const rotateInPlaceState = createAlsRotateInPlaceState()
+  let groundedEntryMode: 'FromRoll' | null = null
+  let pendingGroundedEntryMode:
+    'FromRoll' | null | undefined
+  let currentLocomotionAction: AlsLocomotionAction = null
   let previousStance: AlsStance | null = null
   let previousMovingSmooth: boolean | null = null
   let previousOverlayMode: AlsOverlayMode | null = null
@@ -2150,6 +2400,28 @@ export function createAlsAnimationInstance(gltf: {
 
   function setHipsDirection(hipsDirection: AlsHipsDirection) {
     state.hipsDirection = hipsDirection
+  }
+
+  function SetGroundedEntryMode(
+    NewGroundedEntryMode: AlsGroundedEntryModeGameplayTag,
+  ) {
+    // Notify dispatch occurs after the worker-thread graph update. Retain the
+    // value for the next NativeUpdateAnimation boundary.
+    if (NewGroundedEntryMode === null) {
+      pendingGroundedEntryMode = null
+      return
+    }
+    if (
+      NewGroundedEntryMode
+      !== 'Als.GroundedEntryMode.FromRoll'
+    ) {
+      throw new Error(
+        `Unsupported GroundedEntryMode gameplay tag: ${
+          String(NewGroundedEntryMode)
+        }`,
+      )
+    }
+    pendingGroundedEntryMode = 'FromRoll'
   }
 
   function jump() {
@@ -2293,8 +2565,15 @@ export function createAlsAnimationInstance(gltf: {
 
     const curveKey =
       `Slot.${sample.slotName}.${sample.instanceId}.${sample.clipKey}`
+    const sampler = (
+      sample.bEnableRootMotion
+      && clip === rollClip
+      && rollPoseSampler
+    )
+      ? rollPoseSampler
+      : clip.sampler
     const entry: EvaluatorLayerEntry = {
-      sampler: clip.sampler,
+      sampler,
       curves: clip.curves,
       curveKey,
       time: sample.sampleTime,
@@ -2582,6 +2861,11 @@ export function createAlsAnimationInstance(gltf: {
         instance.interrupted = true
       }
     }
+    for (const instance of rollingMontageInstances.values()) {
+      if (instance.sample.blendOutReason === 'interrupted') {
+        instance.interrupted = true
+      }
+    }
 
     mantlingMontageInstances.set(sample.instanceId, {
       settings,
@@ -2843,6 +3127,439 @@ export function createAlsAnimationInstance(gltf: {
         }
         mantlingMontageInstances.delete(instanceId)
       }
+    }
+  }
+
+  function isRollingMontagePlaying(Montage: string) {
+    if (Montage !== ALS_ROLLING_MONTAGE.Name) return false
+    for (const { sample } of rollingMontageInstances.values()) {
+      if (sample.status !== 'completed') return true
+    }
+    return false
+  }
+
+  function playRollingMontage(
+    Montage: string,
+    PlayRate: number,
+  ) {
+    if (
+      Montage !== ALS_ROLLING_MONTAGE.Name
+      || !Number.isFinite(PlayRate)
+      || !rollClip
+      || !rollAuthoredRootMotion
+    ) {
+      return 0
+    }
+    if (
+      rollClip.sampler.clip.duration
+        !== ALS_ROLLING_MONTAGE.SequenceLength
+      || ALS_ROLLING_MONTAGE.SlotName
+        !== POST_LOCOMOTION_SLOT_NAME
+      || slotAdditiveTypeForClip(rollClip) !== 'none'
+      || rollAuthoredRootMotion.duration
+        !== ALS_ROLL_SEQUENCE.SequenceLength
+      || rollAuthoredRootMotion.bEnableRootMotion
+        !== ALS_ROLL_SEQUENCE.rootMotion.bEnableRootMotion
+      || rollAuthoredRootMotion.bForceRootLock
+        !== ALS_ROLL_SEQUENCE.rootMotion.bForceRootLock
+      || rollAuthoredRootMotion.RootMotionRootLock
+        !== ALS_ROLL_SEQUENCE.rootMotion.RootMotionRootLock
+    ) {
+      throw new Error(
+        `${ALS_ROLLING_MONTAGE.Name} does not match its authored `
+        + 'PostLocomotion sequence',
+      )
+    }
+
+    const sample = playSlotMontage(slotMontageClock, {
+      clipKey: ALS_ROLLING_MONTAGE.Sequence,
+      clipDuration: ALS_ROLLING_MONTAGE.SequenceLength,
+      slotName: ALS_ROLLING_MONTAGE.SlotName,
+      groupName: ALS_ROLLING_MONTAGE.GroupName,
+      blendInDuration: ALS_ROLLING_MONTAGE.BlendIn.BlendTime,
+      blendOutDuration: ALS_ROLLING_MONTAGE.BlendOut.BlendTime,
+      blendInOption: ALS_ROLLING_MONTAGE.BlendIn.BlendOption,
+      blendOutOption: ALS_ROLLING_MONTAGE.BlendOut.BlendOption,
+      // FAnimMontageInstance advances by Instance.PlayRate * UAnimMontage::RateScale.
+      playRate: PlayRate * ALS_ROLLING_MONTAGE.RateScale,
+      blendOutTriggerTime: ALS_ROLLING_MONTAGE.BlendOutTriggerTime,
+      startTime: 0,
+      additiveType: 'none',
+      bEnableRootMotion:
+        ALS_ROLL_SEQUENCE.rootMotion.bEnableRootMotion,
+      montageDuration: ALS_ROLLING_MONTAGE.PlayLength,
+      segment: {
+        StartPos: ALS_ROLLING_MONTAGE.StartPos,
+        AnimStartTime: ALS_ROLLING_MONTAGE.AnimStartTime,
+        AnimEndTime: ALS_ROLLING_MONTAGE.AnimEndTime,
+        AnimPlayRate: ALS_ROLLING_MONTAGE.AnimPlayRate,
+        LoopingCount: ALS_ROLLING_MONTAGE.LoopingCount,
+        SequenceRateScale:
+          ALS_ROLLING_MONTAGE.SequenceRateScale,
+      },
+      BranchingPointMarkers:
+        ALS_ROLLING_MONTAGE.BranchingPointMarkers,
+    })
+    if (sample.instanceId < 0 || sample.status === 'completed') {
+      return 0
+    }
+
+    for (const instance of mantlingMontageInstances.values()) {
+      if (instance.sample.blendOutReason === 'interrupted') {
+        instance.interrupted = true
+      }
+    }
+    for (const instance of rollingMontageInstances.values()) {
+      if (instance.sample.blendOutReason === 'interrupted') {
+        instance.interrupted = true
+      }
+    }
+    rollingMontageInstances.set(sample.instanceId, {
+      sample,
+      activeNotifyIndices: new Set(),
+      rootMotionScaleActive: false,
+      interrupted: false,
+    })
+
+    // Montage_Play() defaults to EMontagePlayReturnType::MontageLength.
+    // Character only installs Rolling after this positive authored length.
+    return ALS_ROLLING_MONTAGE.PlayLength
+  }
+
+  function takeRollingNotifyEvents() {
+    if (pendingRollingNotifyEvents.length === 0) return []
+    return pendingRollingNotifyEvents.splice(
+      0,
+      pendingRollingNotifyEvents.length,
+    )
+  }
+
+  function dispatchRollingLocomotionActionEvent(
+    instanceId: number,
+    instance: RuntimeRollingMontageInstance,
+    notifyIndex: number,
+    notifyEventType: 'Begin' | 'End',
+    triggerTime: number,
+  ) {
+    const notify = ALS_ROLLING_MONTAGE.Notifies[notifyIndex]
+    if (!notify) {
+      throw new Error(
+        `${ALS_ROLLING_MONTAGE.Name} references missing notify `
+        + `${notifyIndex}`,
+      )
+    }
+    if (notifyEventType === 'Begin') {
+      instance.activeNotifyIndices.add(notifyIndex)
+    } else {
+      instance.activeNotifyIndices.delete(notifyIndex)
+    }
+    pendingRollingNotifyEvents.push({
+      instanceId,
+      montage: ALS_ROLLING_MONTAGE.Name,
+      sequence: ALS_ROLL_SEQUENCE.Name,
+      notifyClass: notify.StateClassType,
+      notifyEventType,
+      triggerTime,
+      LocomotionAction: notify.LocomotionAction,
+    })
+  }
+
+  function isRollingLocomotionActionNotifyActive(
+    notifyIndex: number,
+    montageTime: number,
+  ) {
+    const begin = ALS_ROLLING_MONTAGE.BranchingPointMarkers.find(
+      (marker) => (
+        marker.NotifyIndex === notifyIndex
+        && marker.NotifyEventType === 'Begin'
+      ),
+    )
+    const end = ALS_ROLLING_MONTAGE.BranchingPointMarkers.find(
+      (marker) => (
+        marker.NotifyIndex === notifyIndex
+        && marker.NotifyEventType === 'End'
+      ),
+    )
+    return Boolean(
+      begin
+      && end
+      && montageTime > begin.TriggerTime
+      && montageTime <= end.TriggerTime,
+    )
+  }
+
+  function updateActiveRollingLocomotionActionNotifyStates(
+    instanceId: number,
+    instance: RuntimeRollingMontageInstance,
+    montageTime: number,
+  ) {
+    for (const notifyIndex of [
+      ...instance.activeNotifyIndices,
+    ].reverse()) {
+      if (
+        !isRollingLocomotionActionNotifyActive(
+          notifyIndex,
+          montageTime,
+        )
+      ) {
+        dispatchRollingLocomotionActionEvent(
+          instanceId,
+          instance,
+          notifyIndex,
+          'End',
+          montageTime,
+        )
+      }
+    }
+    for (
+      let notifyIndex = 0;
+      notifyIndex < ALS_ROLLING_MONTAGE.Notifies.length;
+      notifyIndex += 1
+    ) {
+      if (
+        !instance.activeNotifyIndices.has(notifyIndex)
+        && isRollingLocomotionActionNotifyActive(
+          notifyIndex,
+          montageTime,
+        )
+      ) {
+        dispatchRollingLocomotionActionEvent(
+          instanceId,
+          instance,
+          notifyIndex,
+          'Begin',
+          montageTime,
+        )
+      }
+    }
+  }
+
+  function dispatchRollingRootMotionScaleEvent(
+    instanceId: number,
+    instance: RuntimeRollingMontageInstance,
+    notifyEventType: 'Begin' | 'End',
+    triggerTime: number,
+  ) {
+    instance.rootMotionScaleActive = notifyEventType === 'Begin'
+    const notify = ALS_ROLL_SEQUENCE.RootMotionScaleNotify
+    pendingRollingNotifyEvents.push({
+      instanceId,
+      montage: ALS_ROLLING_MONTAGE.Name,
+      sequence: ALS_ROLL_SEQUENCE.Name,
+      notifyClass: notify.StateClassType,
+      notifyEventType,
+      triggerTime,
+      TranslationScale: notify.TranslationScale,
+    })
+  }
+
+  function collectRollingSequenceNotifyEvents(
+    instanceId: number,
+    instance: RuntimeRollingMontageInstance,
+  ) {
+    const sample = instance.sample
+    const rootMotionScale =
+      ALS_ROLL_SEQUENCE.RootMotionScaleNotify
+    if (instance.interrupted) {
+      if (instance.rootMotionScaleActive) {
+        dispatchRollingRootMotionScaleEvent(
+          instanceId,
+          instance,
+          'End',
+          sample.sourceNotifyCurrentTime,
+        )
+      }
+      return
+    }
+    const startTriggerTime =
+      rootMotionScale.StartTime
+      + rootMotionScale.TriggerTimeOffset
+    const endTriggerTime =
+      rootMotionScale.EndTime
+      + rootMotionScale.EndTriggerTimeOffset
+    if (
+      !instance.rootMotionScaleActive
+      && sample.notifyWeight
+        >= rootMotionScale.TriggerWeightThreshold
+      && sample.sourceNotifyCurrentTime > startTriggerTime
+      && sample.sourceNotifyPreviousTime < endTriggerTime
+    ) {
+      dispatchRollingRootMotionScaleEvent(
+        instanceId,
+        instance,
+        'Begin',
+        startTriggerTime,
+      )
+    }
+    if (
+      rollSequenceNotifyTrack
+      && (
+        sample.notifyPreviousWeight > 0
+        || sample.weight > 0
+      )
+      && canGatherSlotMontageSequenceNotifies(sample)
+    ) {
+      rollingGatheredSequenceNotifies.length = 0
+      gatherSequenceNotifiesFromDeltaPositions(
+        rollSequenceNotifyTrack,
+        sample.sourceNotifyPreviousTime,
+        sample.sourceNotifyCurrentTime,
+        {
+          bAllowLooping: false,
+          bSrcIsLeader: true,
+          InstanceWeight: sample.notifyWeight,
+        },
+        rollingGatheredSequenceNotifies,
+      )
+      for (const notify of rollingGatheredSequenceNotifies) {
+        if (
+          notify.NotifyName
+            === ALS_ROLL_SEQUENCE.GroundedEntryModeNotify.NotifyName
+        ) {
+          const groundedEntry =
+            ALS_ROLL_SEQUENCE.GroundedEntryModeNotify
+          pendingRollingNotifyEvents.push({
+            instanceId,
+            montage: ALS_ROLLING_MONTAGE.Name,
+            sequence: ALS_ROLL_SEQUENCE.Name,
+            notifyClass: groundedEntry.NotifyClassType,
+            notifyEventType: 'Notify',
+            triggerTime:
+              notify.Time + notify.TriggerTimeOffset,
+            GroundedEntryMode:
+              groundedEntry.GroundedEntryMode,
+          })
+        }
+      }
+    }
+
+    if (
+      instance.rootMotionScaleActive
+      && sample.sourceNotifyPreviousTime < endTriggerTime
+      && sample.sourceNotifyCurrentTime >= endTriggerTime
+    ) {
+      dispatchRollingRootMotionScaleEvent(
+        instanceId,
+        instance,
+        'End',
+        endTriggerTime,
+      )
+    }
+  }
+
+  function refreshExtractedRollingRootMotion() {
+    const bindings = rollAuthoredRootMotion
+      ? slotMontageSamples.flatMap((sample) => (
+          rollingMontageInstances.has(sample.instanceId)
+            ? [{
+                sample,
+                rootMotion: rollAuthoredRootMotion,
+              }]
+            : []
+        ))
+      : []
+    accumulateSlotMontageRootMotion(
+      bindings,
+      // UAnimInstance extracts the authored transform unchanged. The
+      // character applies AnimRootMotionTranslationScale after consumption.
+      {},
+      extractedRollingRootMotion,
+    )
+  }
+
+  function ConsumeExtractedRollingRootMotion(
+    Out = createRootMotionMovementParams(),
+  ) {
+    if (Out === extractedRollingRootMotion) {
+      throw new Error(
+        'ConsumeExtractedRootMotion output must not alias its source',
+      )
+    }
+    clearRootMotionMovementParams(Out)
+    if (extractedRollingRootMotion.valid) {
+      Out.translation.set(extractedRollingRootMotion.translation)
+      Out.rotation.set(extractedRollingRootMotion.rotation)
+      Out.scale.set(extractedRollingRootMotion.scale)
+      Out.valid = true
+      Out.blendWeight = extractedRollingRootMotion.blendWeight
+    }
+    clearRootMotionMovementParams(extractedRollingRootMotion)
+    return Out
+  }
+
+  function collectRollingNotifyEvents() {
+    rollingLastMarkerTimeByInstance.clear()
+    for (const event of slotMontageNotifyEvents) {
+      const instance = rollingMontageInstances.get(event.instanceId)
+      if (!instance || instance.interrupted) continue
+      updateActiveRollingLocomotionActionNotifyStates(
+        event.instanceId,
+        instance,
+        event.marker.TriggerTime,
+      )
+      dispatchRollingLocomotionActionEvent(
+        event.instanceId,
+        instance,
+        event.marker.NotifyIndex,
+        event.marker.NotifyEventType,
+        event.marker.TriggerTime,
+      )
+      rollingLastMarkerTimeByInstance.set(
+        event.instanceId,
+        event.marker.TriggerTime,
+      )
+    }
+
+    for (const [instanceId, instance] of rollingMontageInstances) {
+      if (
+        !instance.interrupted
+        && instance.sample.rootMotionPreviousMontageTime
+          !== instance.sample.rootMotionMontageTime
+        && rollingLastMarkerTimeByInstance.get(instanceId)
+          !== instance.sample.montageTime
+      ) {
+        updateActiveRollingLocomotionActionNotifyStates(
+          instanceId,
+          instance,
+          instance.sample.montageTime,
+        )
+      }
+      collectRollingSequenceNotifyEvents(instanceId, instance)
+    }
+
+    getSlotMontageSamples(
+      slotMontageClock,
+      LOCOMOTION_SLOT_GROUP_NAME,
+      locomotionSlotMontageSamples,
+    )
+    for (const [instanceId, instance] of rollingMontageInstances) {
+      if (
+        locomotionSlotMontageSamples.some(
+          (sample) => sample.instanceId === instanceId,
+        )
+      ) {
+        continue
+      }
+      if (instance.rootMotionScaleActive) {
+        dispatchRollingRootMotionScaleEvent(
+          instanceId,
+          instance,
+          'End',
+          instance.sample.sourceNotifyCurrentTime,
+        )
+      }
+      for (const notifyIndex of [
+        ...instance.activeNotifyIndices,
+      ].reverse()) {
+        dispatchRollingLocomotionActionEvent(
+          instanceId,
+          instance,
+          notifyIndex,
+          'End',
+          instance.sample.montageTime,
+        )
+      }
+      rollingMontageInstances.delete(instanceId)
     }
   }
 
@@ -3438,6 +4155,20 @@ export function createAlsAnimationInstance(gltf: {
     if (rig.boneCount === 0) return
     const deltaTime = Math.max(0, delta)
     const pendingUpdateThisFrame = pendingUpdate
+    const nextLocomotionAction = controls.locomotionAction ?? null
+    if (currentLocomotionAction !== nextLocomotionAction) {
+      currentLocomotionAction = nextLocomotionAction
+      // UAlsAnimationInstance::NativeUpdateAnimation resets this property
+      // whenever AAlsCharacter's LocomotionAction tag changes.
+      groundedEntryMode = null
+    }
+    // Queued sequence notifies dispatch after the preceding animation update.
+    // Applying them after the action-change reset preserves ALS's same-frame
+    // Rolling End -> FromRoll ordering.
+    if (pendingGroundedEntryMode !== undefined) {
+      groundedEntryMode = pendingGroundedEntryMode
+      pendingGroundedEntryMode = undefined
+    }
     const locomotionMode = controls.locomotionMode === undefined
       ? 'Grounded'
       : controls.locomotionMode
@@ -3659,7 +4390,9 @@ export function createAlsAnimationInstance(gltf: {
       slotMontageSamples,
       slotMontageNotifyEvents,
     )
+    refreshExtractedRollingRootMotion()
     collectMantlingNotifyEvents()
+    collectRollingNotifyEvents()
     refreshSlotMontageBindings()
 
     for (const clip of clips) {
@@ -4976,6 +5709,62 @@ export function createAlsAnimationInstance(gltf: {
       locomotionPoseGraphRuntime,
       activeLocomotionGraphInput,
     )
+    const groundedPostLocomotionWeightData =
+      calculateSlotMontageWeight(
+        postLocomotionSlotBindings.map(
+          (binding) => binding.sample,
+        ),
+      )
+    const groundedGraphRelevanceWeight = (
+      getAlsLocomotionStateWeight(
+        locomotionPoseGraphRuntime,
+        'Grounded',
+      )
+      + getAlsLocomotionStateWeight(
+        locomotionPoseGraphRuntime,
+        'Land Movement',
+      )
+    ) * groundedPostLocomotionWeightData.sourceWeight
+    const groundedRollGraphRefresh =
+      refreshAlsGroundedRollGraph(
+        groundedRollGraphRuntime,
+        {
+          deltaTime,
+          relevant: groundedGraphRelevanceWeight > 1e-5,
+          stance: controls.stance,
+          movingSmooth: controls.movingSmooth,
+          rotatingLeft: rotateInPlaceState.rotatingLeft,
+          rotatingRight: rotateInPlaceState.rotatingRight,
+          poseStandingAmount: gaitAmounts.standingAmount,
+          poseCrouchingAmount: gaitAmounts.crouchingAmount,
+          groundedEntryMode,
+        },
+      )
+    if (groundedRollGraphRefresh.resetGroundedEntryMode) {
+      groundedEntryMode = null
+    }
+    const rollExitRequest =
+      groundedRollGraphRefresh.stateExitTransitionAnimation
+    if (rollExitRequest) {
+      const clip = clipsByName.get(rollExitRequest.sequence)
+      if (!clip) {
+        throw new Error(
+          `Missing authored Roll exit sequence `
+          + `"${rollExitRequest.sequence}"`,
+        )
+      }
+      queueTransitionAnimation(transitionsState, {
+        clip: clip.sampler.clip.name,
+        blendInDuration: rollExitRequest.blendInDuration,
+        blendOutDuration: rollExitRequest.blendOutDuration,
+        playRate: rollExitRequest.playRate,
+        startTime: rollExitRequest.startTime,
+        fromStandingIdleOnly:
+          rollExitRequest.fromStandingIdleOnly,
+        moving: controls.moving,
+        standing: controls.stance === 'Standing',
+      })
+    }
     advanceLocomotionPlayers(activeLocomotionGraphInput)
 
     const result = evaluatePose(evaluator, mainInput)
@@ -5316,6 +6105,48 @@ export function createAlsAnimationInstance(gltf: {
       postLocomotionSlotBindings.at(0)?.instanceId ?? -1
     normalDebugWeights.PostLocomotionNewestInstanceId =
       postLocomotionSlotBindings.at(-1)?.instanceId ?? -1
+    normalDebugWeights['GroundedOuter.Relevant'] =
+      Number(groundedRollGraphRuntime.relevant)
+    normalDebugWeights['GroundedOuter.State.Roll'] =
+      groundedRollGraphRuntime.stateWeights.Roll
+    normalDebugWeights['GroundedOuter.State.Standing'] =
+      groundedRollGraphRuntime.stateWeights.Standing
+    normalDebugWeights['GroundedOuter.State.Crouching'] =
+      groundedRollGraphRuntime.stateWeights.Crouching
+    normalDebugWeights['GroundedOuter.Current.Roll'] =
+      Number(groundedRollGraphRuntime.currentState === 'Roll')
+    normalDebugWeights['GroundedOuter.LastTransitionIndex'] =
+      groundedRollGraphRuntime.lastTransitionIndex
+    normalDebugWeights[
+      'GroundedOuter.PlayRollToGroundedTransitionAnimation'
+    ] = Number(
+      groundedRollGraphRefresh
+        .stateExitTransitionAnimation !== null,
+    )
+    normalDebugWeights[
+      'GroundedOuter.RollExitTransitionStanding'
+    ] = Number(
+      groundedRollGraphRefresh
+        .stateExitTransitionAnimation?.sequence
+        === 'A_Als_Stand_Transition_Right',
+    )
+    normalDebugWeights[
+      'GroundedOuter.RollExitTransitionCrouching'
+    ] = Number(
+      groundedRollGraphRefresh
+        .stateExitTransitionAnimation?.sequence
+        === 'A_Als_Crouch_Transition_Right',
+    )
+    normalDebugWeights[
+      'GroundedOuter.RollExitTransitionLinearAlpha'
+    ] = groundedRollGraphRuntime.activeExitTransition
+      ?.linearAlpha ?? 1
+    normalDebugWeights[
+      'GroundedOuter.RollExitTransitionBlendAlpha'
+    ] = groundedRollGraphRuntime.activeExitTransition
+      ?.blendAlpha ?? 1
+    normalDebugWeights['GroundedEntryMode.FromRoll'] =
+      Number(groundedEntryMode === 'FromRoll')
     normalDebugWeights.SlotMontageRetainedInstanceCount =
       slotMontageBindings.size
     normalDebugWeights.TransitionRetainedInstanceCount =
@@ -5530,6 +6361,7 @@ export function createAlsAnimationInstance(gltf: {
     playClip,
     clearSoloClip,
     setHipsDirection,
+    SetGroundedEntryMode,
     jump,
     getCurveValue: (name) => publishedCurves.get(name) ?? 0,
     dispatchQueuedAnimEvents,
@@ -5539,6 +6371,13 @@ export function createAlsAnimationInstance(gltf: {
       montageStop: stopMantlingMontage,
       stopMontageInstance: stopMantlingMontageInstance,
       takeNotifyEvents: takeMantlingNotifyEvents,
+    }),
+    rollingMontage: Object.freeze({
+      Montage_IsPlaying: isRollingMontagePlaying,
+      Montage_Play: playRollingMontage,
+      takeNotifyEvents: takeRollingNotifyEvents,
+      ConsumeExtractedRootMotion:
+        ConsumeExtractedRollingRootMotion,
     }),
     state,
     refresh,

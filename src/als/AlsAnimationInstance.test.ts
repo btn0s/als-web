@@ -14,6 +14,15 @@ import { compileClipCurveSamplers } from '../engine/curves'
 import { createPoseBuffer } from '../engine/poseBuffer'
 import { createRigDefinition, findBoneIndex } from '../engine/rig'
 import {
+  compileAuthoredRootMotion,
+  createRootMotionMovementParams,
+  extractAuthoredRootMotionDelta,
+} from '../engine/rootMotion'
+import {
+  ALS_ROLLING_MONTAGE,
+  ALS_ROLL_SEQUENCE,
+} from './AnimGraph/rolling'
+import {
   ALS_RIFLE_RELAXED_GRAPH,
 } from './AnimGraph/AB_Als_Rifle'
 import {
@@ -852,6 +861,386 @@ describe('AlsAnimationInstance playback regression', () => {
       notifyEventType: 'Begin',
       triggerTime: expect.closeTo(0.51, 12),
     }])
+  })
+
+  it('plays AM_Als_Roll through PostLocomotion at the requested instance rate with authored root motion', async () => {
+    const gltf = await loadAlsGltf()
+    const rollClip = gltf.animations.find(
+      ({ name }) => name === ALS_ROLL_SEQUENCE.Name,
+    )
+    if (!rollClip) throw new Error('Missing A_Als_Roll')
+    const authoredRootMotion = compileAuthoredRootMotion(rollClip)
+    if (!authoredRootMotion) {
+      throw new Error('A_Als_Roll has no authored root motion')
+    }
+    const root = bone(gltf.scene, 'root')
+    const referenceRootPosition = root.position.clone()
+    const referenceRootRotation = root.quaternion.clone()
+    const referenceRootScale = root.scale.clone()
+    const instance = createAlsAnimationInstance(gltf)
+
+    expect(instance.rollingMontage.Montage_IsPlaying(
+      'AM_Not_Als_Roll',
+    )).toBe(false)
+    expect(instance.rollingMontage.Montage_Play(
+      'AM_Not_Als_Roll',
+      1.3,
+    )).toBe(0)
+    expect(instance.rollingMontage.Montage_Play(
+      ALS_ROLLING_MONTAGE.Name,
+      1.3,
+    )).toBe(ALS_ROLLING_MONTAGE.PlayLength)
+    expect(instance.rollingMontage.Montage_IsPlaying(
+      ALS_ROLLING_MONTAGE.Name,
+    )).toBe(true)
+    // StartRollingImplementation installs the action after this positive return.
+    // Montage_Play itself does not fake the branching-point begin.
+    expect(instance.rollingMontage.takeNotifyEvents()).toEqual([])
+
+    instance.refresh(0.025, controls)
+    expect(window.__weightTable?.PostLocomotionMontageTime)
+      .toBeCloseTo(0.0325, 12)
+    expect(window.__weightTable?.PostLocomotionSequenceTime)
+      .toBeCloseTo(0.0325, 12)
+    expect(window.__weightTable?.PostLocomotionMontageWeight)
+      .toBeCloseTo(0.15625, 7)
+    expect(window.__weightTable?.PostLocomotionRootMotionEnabled)
+      .toBe(1)
+    expect(bone(gltf.scene, 'root').position)
+      .toEqual(referenceRootPosition)
+    expect(
+      bone(gltf.scene, 'root').quaternion.angleTo(
+        referenceRootRotation,
+      ),
+    ).toBeLessThan(1e-7)
+    expect(
+      bone(gltf.scene, 'root').scale.distanceTo(
+        referenceRootScale,
+      ),
+    ).toBeLessThan(1e-7)
+    expect(instance.rollingMontage.takeNotifyEvents()).toEqual([
+      {
+        instanceId: expect.any(Number),
+        montage: 'AM_Als_Roll',
+        sequence: 'A_Als_Roll',
+        notifyClass:
+          'AlsAnimNotifyState_SetLocomotionAction',
+        notifyEventType: 'Begin',
+        triggerTime: 0.00009999999747378752,
+        LocomotionAction: 'Rolling',
+      },
+      {
+        instanceId: expect.any(Number),
+        montage: 'AM_Als_Roll',
+        sequence: 'A_Als_Roll',
+        notifyClass:
+          'AlsAnimNotifyState_SetRootMotionScale',
+        notifyEventType: 'Begin',
+        triggerTime: 0.00009999999747378752,
+        TranslationScale: 1.3,
+      },
+    ])
+
+    const expectedRootMotion = extractAuthoredRootMotionDelta(
+      authoredRootMotion,
+      0,
+      0.0325,
+    )
+    const extractedRootMotion =
+      instance.rollingMontage.ConsumeExtractedRootMotion()
+    expect(extractedRootMotion.valid).toBe(true)
+    for (let component = 0; component < 3; component++) {
+      expect(extractedRootMotion.translation[component])
+        .toBeCloseTo(
+          expectedRootMotion.translation[component],
+          7,
+        )
+    }
+    const secondConsumption = createRootMotionMovementParams()
+    expect(
+      instance.rollingMontage.ConsumeExtractedRootMotion(
+        secondConsumption,
+      ),
+    ).toBe(secondConsumption)
+    expect(secondConsumption.valid).toBe(false)
+    expect([...secondConsumption.translation]).toEqual([0, 0, 0])
+    // The first by-value result remains available to CharacterMovement even
+    // though UAnimInstance has consumed its internal accumulator.
+    expect(extractedRootMotion.valid).toBe(true)
+    instance.refresh(0.075, controls)
+    expect(window.__weightTable?.PostLocomotionMontageTime)
+      .toBeCloseTo(0.13, 12)
+    expect(window.__weightTable?.PostLocomotionMontageWeight)
+      .toBeCloseTo(1, 12)
+    expect(instance.rollingMontage.takeNotifyEvents()).toEqual([])
+  })
+
+  it('ends Rolling at the authored marker, emits FromRoll in queued sequence order, and uses no duration timer', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    expect(instance.rollingMontage.Montage_Play(
+      ALS_ROLLING_MONTAGE.Name,
+      1.3,
+    )).toBeGreaterThan(0)
+
+    instance.refresh(0.1, controls)
+    instance.rollingMontage.takeNotifyEvents()
+    let montageTime = 0.13
+    const beforeGroundedEntry =
+      ALS_ROLL_SEQUENCE.GroundedEntryModeNotify.Time - 0.00001
+    instance.refresh(
+      (beforeGroundedEntry - montageTime) / 1.3,
+      controls,
+    )
+    montageTime = beforeGroundedEntry
+    expect(instance.rollingMontage.takeNotifyEvents()).toEqual([])
+
+    const afterActionEnd =
+      ALS_ROLLING_MONTAGE.BranchingPointMarkers[1].TriggerTime
+      + 0.00001
+    instance.refresh(
+      (afterActionEnd - montageTime) / 1.3,
+      controls,
+    )
+    montageTime = afterActionEnd
+    expect(instance.rollingMontage.takeNotifyEvents()).toEqual([
+      {
+        instanceId: expect.any(Number),
+        montage: 'AM_Als_Roll',
+        sequence: 'A_Als_Roll',
+        notifyClass:
+          'AlsAnimNotifyState_SetLocomotionAction',
+        notifyEventType: 'End',
+        triggerTime: 0.9334329962730408,
+        LocomotionAction: 'Rolling',
+      },
+      {
+        instanceId: expect.any(Number),
+        montage: 'AM_Als_Roll',
+        sequence: 'A_Als_Roll',
+        notifyClass:
+          'AlsAnimNotify_SetGroundedEntryMode',
+        notifyEventType: 'Notify',
+        triggerTime: 0.9333333373069763,
+        GroundedEntryMode: 'Als.GroundedEntryMode.FromRoll',
+      },
+    ])
+    // The authored action state has ended while the montage remains active.
+    // A synthetic 1.5 / 1.3-second Roll timer would still own the action here.
+    expect(instance.rollingMontage.Montage_IsPlaying(
+      ALS_ROLLING_MONTAGE.Name,
+    )).toBe(true)
+
+    const blendOutMontageTime = 1.16
+    instance.refresh(
+      (blendOutMontageTime - montageTime) / 1.3,
+      controls,
+    )
+    montageTime = blendOutMontageTime
+    expect(instance.rollingMontage.takeNotifyEvents()).toEqual([])
+    expect(instance.rollingMontage.Montage_IsPlaying(
+      ALS_ROLLING_MONTAGE.Name,
+    )).toBe(true)
+
+    instance.refresh(
+      (ALS_ROLLING_MONTAGE.PlayLength - montageTime) / 1.3,
+      controls,
+    )
+    expect(instance.rollingMontage.takeNotifyEvents()).toEqual([{
+      instanceId: expect.any(Number),
+      montage: 'AM_Als_Roll',
+      sequence: 'A_Als_Roll',
+      notifyClass:
+        'AlsAnimNotifyState_SetRootMotionScale',
+      notifyEventType: 'End',
+      triggerTime: 1.5,
+      TranslationScale: 1.3,
+    }])
+    expect(instance.rollingMontage.Montage_IsPlaying(
+      ALS_ROLLING_MONTAGE.Name,
+    )).toBe(false)
+    instance.refresh(ALS_ROLLING_MONTAGE.BlendOut.BlendTime, controls)
+    expect(instance.rollingMontage.takeNotifyEvents()).toEqual([])
+  })
+
+  it('re-enters the live grounded graph through the fixed Roll pose and retains its authored exit', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const idle: AlsAnimationInstanceControls = {
+      ...controls,
+      gait: 'Walking',
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+      locomotionMode: 'Grounded',
+      locomotionAction: null,
+    }
+    instance.refresh(0, idle)
+    expect(instance.rollingMontage.Montage_Play(
+      ALS_ROLLING_MONTAGE.Name,
+      1.3,
+    )).toBeGreaterThan(0)
+
+    const rolling = {
+      ...idle,
+      locomotionAction: 'Rolling' as const,
+    }
+    instance.refresh(0.1, rolling)
+    instance.rollingMontage.takeNotifyEvents()
+    let montageTime = 0.13
+    expect(window.__weightTable?.PostLocomotionMontageWeight)
+      .toBeCloseTo(1, 12)
+    expect(window.__weightTable?.['GroundedOuter.Relevant'])
+      .toBe(0)
+
+    const afterFromRoll =
+      ALS_ROLLING_MONTAGE.BranchingPointMarkers[1].TriggerTime
+      + 0.00001
+    instance.refresh(
+      (afterFromRoll - montageTime) / 1.3,
+      rolling,
+    )
+    montageTime = afterFromRoll
+    const markerEvents =
+      instance.rollingMontage.takeNotifyEvents()
+    expect(markerEvents.map(({ notifyClass }) => notifyClass))
+      .toEqual([
+        'AlsAnimNotifyState_SetLocomotionAction',
+        'AlsAnimNotify_SetGroundedEntryMode',
+      ])
+    expect(() => (
+      instance.SetGroundedEntryMode as (
+        GroundedEntryMode: string | null
+      ) => void
+    )('Als.GroundedEntryMode.Unsupported')).toThrow(
+      'Unsupported GroundedEntryMode gameplay tag',
+    )
+    instance.SetGroundedEntryMode(
+      'Als.GroundedEntryMode.FromRoll',
+    )
+
+    // The action change resets GroundedEntryMode first; the queued sequence
+    // notify is then applied and survives while the full-weight slot keeps
+    // Grounded States irrelevant.
+    const beforeVisibleBlendOut = 1.25
+    instance.refresh(
+      (beforeVisibleBlendOut - montageTime) / 1.3,
+      idle,
+    )
+    montageTime = beforeVisibleBlendOut
+    expect(window.__weightTable?.PostLocomotionMontageWeight)
+      .toBeCloseTo(1, 12)
+    expect(window.__weightTable?.['GroundedOuter.Relevant'])
+      .toBe(0)
+    expect(window.__weightTable?.['GroundedEntryMode.FromRoll'])
+      .toBe(1)
+
+    // The following weight-update phase exposes source weight again. The
+    // reinitialized conduit skips its authored 0.2 blend and enters Roll at
+    // full weight, then its OnBecomeRelevant callback clears the mode.
+    instance.refresh(0.05, idle)
+    montageTime += 0.05 * 1.3
+    expect(window.__weightTable?.PostLocomotionMontageWeight)
+      .toBeLessThan(1)
+    expect(window.__weightTable?.['GroundedOuter.Relevant'])
+      .toBe(1)
+    expect(window.__weightTable?.['GroundedOuter.Current.Roll'])
+      .toBe(1)
+    expect(window.__weightTable?.['GroundedOuter.State.Roll'])
+      .toBe(1)
+    expect(window.__weightTable?.['GroundedOuter.LastTransitionIndex'])
+      .toBe(0)
+    expect(window.__weightTable?.['GroundedEntryMode.FromRoll'])
+      .toBe(0)
+
+    // Roll's state-exit callback selects the current stance's right
+    // transition once, while the outgoing endpoint pose remains in the
+    // state-machine transition for the exact 0.6-second Cubic blend.
+    instance.refresh(0.3, idle)
+    expect(window.__weightTable?.[
+      'GroundedOuter.PlayRollToGroundedTransitionAnimation'
+    ]).toBe(1)
+    expect(window.__weightTable?.[
+      'GroundedOuter.RollExitTransitionStanding'
+    ]).toBe(1)
+    expect(window.__weightTable?.['GroundedOuter.State.Roll'])
+      .toBeCloseTo(0.5, 12)
+    expect(window.__weightTable?.['GroundedOuter.State.Standing'])
+      .toBeCloseTo(0.5, 12)
+    expect(window.__weightTable?.[
+      'GroundedOuter.RollExitTransitionLinearAlpha'
+    ]).toBeCloseTo(0.5, 12)
+    expect(window.__weightTable?.[
+      'GroundedOuter.RollExitTransitionBlendAlpha'
+    ]).toBeCloseTo(0.5, 12)
+
+    instance.refresh(0.01, idle)
+    expect(window.__weightTable?.[
+      'GroundedOuter.PlayRollToGroundedTransitionAnimation'
+    ]).toBe(0)
+    expect(window.__weightTable?.['GroundedOuter.State.Roll'])
+      .toBeGreaterThan(0)
+    expect(window.__weightTable?.TransitionMontageTime)
+      .toBeCloseTo(0.215, 12)
+    expect(montageTime).toBeCloseTo(1.315, 12)
+  })
+
+  it('cleans queued and branching Roll states at their distinct interruption seams', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    expect(instance.rollingMontage.Montage_Play(
+      ALS_ROLLING_MONTAGE.Name,
+      1,
+    )).toBeGreaterThan(0)
+    instance.refresh(0.1, controls)
+    const beginEvents =
+      instance.rollingMontage.takeNotifyEvents()
+    const instanceId = beginEvents[0]?.instanceId
+    expect(instanceId).toEqual(expect.any(Number))
+
+    const mantleSettings = ALS_MANTLING_SETTINGS.MS_Als_Low
+    expect(instance.mantlingMontage.play(
+      mantleSettings,
+      0,
+    )).not.toBeNull()
+    expect(instance.rollingMontage.Montage_IsPlaying(
+      ALS_ROLLING_MONTAGE.Name,
+    )).toBe(true)
+    instance.refresh(0.05, controls)
+    expect(
+      instance.rollingMontage
+        .ConsumeExtractedRootMotion().valid,
+    ).toBe(false)
+    expect(instance.rollingMontage.takeNotifyEvents()).toEqual([{
+      instanceId,
+      montage: 'AM_Als_Roll',
+      sequence: 'A_Als_Roll',
+      notifyClass:
+        'AlsAnimNotifyState_SetRootMotionScale',
+      notifyEventType: 'End',
+      triggerTime: expect.closeTo(0.15, 12),
+      TranslationScale: 1.3,
+    }])
+
+    // The queued sequence state ends as soon as the interrupted source drops
+    // from the notify queue. The native action branching state remains owned
+    // by its retained FAnimMontageInstance until the incoming .2s blend ends.
+    instance.refresh(0.2, controls)
+    expect(instance.rollingMontage.takeNotifyEvents()).toEqual([{
+      instanceId,
+      montage: 'AM_Als_Roll',
+      sequence: 'A_Als_Roll',
+      notifyClass:
+        'AlsAnimNotifyState_SetLocomotionAction',
+      notifyEventType: 'End',
+      triggerTime: expect.closeTo(0.35, 12),
+      LocomotionAction: 'Rolling',
+    }])
+    expect(instance.rollingMontage.Montage_IsPlaying(
+      ALS_ROLLING_MONTAGE.Name,
+    )).toBe(false)
+    instance.refresh(0.1, controls)
+    expect(instance.rollingMontage.takeNotifyEvents()).toEqual([])
   })
 
   it('runs NativePostUpdateAnimation after normal, solo, and fallback publication', async () => {
