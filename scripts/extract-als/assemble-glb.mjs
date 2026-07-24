@@ -87,6 +87,21 @@ const additiveTypes = new Set([
   'AAT_LocalSpaceBase',
   'AAT_RotationOffsetMeshSpace',
 ]);
+const interpolationTypes = new Map([
+  ['Linear', 'LINEAR'],
+  ['Step', 'STEP'],
+]);
+const readInterpolation = (anim) => {
+  const gltfInterpolation = interpolationTypes.get(anim.interpolation);
+  if (!gltfInterpolation)
+    throw new Error(
+      `${anim.name} has unsupported interpolation metadata: ` +
+      `${JSON.stringify(anim.interpolation)}`);
+  return {
+    interpolation: anim.interpolation,
+    gltfInterpolation,
+  };
+};
 const readRootMotionSettings = (anim) => {
   if (typeof anim.bEnableRootMotion !== 'boolean')
     throw new Error(`${anim.name} has no exact bEnableRootMotion metadata`);
@@ -170,6 +185,7 @@ const bakeRootLock = (anim, rootMotionSettings, shouldBakeRootLock, bone, pos, r
 // upstream arms-only clips retain import-time bone-name capitalization; canonicalize
 // those names against SK_Als so every channel binds instead of becoming targetless.
 const clips = dump.anims.map((a) => {
+  const interpolationSettings = readInterpolation(a);
   const rootMotionSettings = readRootMotionSettings(a);
   const additiveSettings = readAdditiveSettings(a);
   const sourceTracks = a.tracks.map((t) => {
@@ -198,6 +214,7 @@ const clips = dump.anims.map((a) => {
     name: a.name,
     fps: a.fps,
     numKeys: a.numberOfKeys,
+    ...interpolationSettings,
     rootMotionSettings,
     additiveSettings,
     // Root-motion extraction reads the authored root trajectory before Unreal
@@ -548,6 +565,7 @@ for (const clip of clips) {
     alsCurves: clip.curves,
     syncMarkers: clip.syncMarkers,
     notifies: clip.notifies,
+    interpolation: clip.interpolation,
     ...clip.rootMotionSettings,
     ...clip.additiveSettings,
   };
@@ -564,7 +582,10 @@ for (const clip of clips) {
   for (const t of clip.tracks) {
     const node = nodes[boneIndex[t.bone]];
     const addChannel = (path, acc) => {
-      const sampler = doc.createAnimationSampler().setInput(timeAcc).setOutput(acc).setInterpolation('LINEAR');
+      const sampler = doc.createAnimationSampler()
+        .setInput(timeAcc)
+        .setOutput(acc)
+        .setInterpolation(clip.gltfInterpolation);
       const channel = doc.createAnimationChannel().setTargetNode(node).setTargetPath(path).setSampler(sampler);
       anim.addSampler(sampler).addChannel(channel);
     };

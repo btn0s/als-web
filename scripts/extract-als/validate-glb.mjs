@@ -146,6 +146,24 @@ const expectedDynamicTransitionClips = new Map([
   ['A_Als_Crouch_DynamicTransition_Left', 'Left'],
   ['A_Als_Crouch_DynamicTransition_Right', 'Right'],
 ]);
+// These are the exact curated ALS sequences with a serialized
+// Interpolation=EAnimInterpolationType::Step tag. Unreal omits the default
+// Linear enum value, so every other curated sequence is authored Linear.
+const expectedStepInterpolationClips = new Set([
+  'A_Als_Default_Poses',
+  'A_Als_Barrel_Poses',
+  'A_Als_Box_Poses',
+  'A_Als_Feminine_Poses',
+  'A_Als_HandsTied_Poses',
+  'A_Als_Injured_Poses',
+  'A_Als_Masculine_Poses',
+  'A_Als_Binoculars_Poses',
+  'A_Als_Bow_Poses',
+  'A_Als_PistolOneHanded_Poses',
+  'A_Als_PistolTwoHanded_Poses',
+  'A_Als_Rifle_Poses',
+  'A_Als_Torch_Poses',
+]);
 const expectedActionRootTranslationEnds = new Map([
   ['A_Als_Roll', [0, 0, 2.75]],
   ['A_Als_Mantle_High', [0, 2, 0.65]],
@@ -448,6 +466,24 @@ const validateRootChannelsMatchRaw = (animName, rawRootTrack) => {
 for (const anim of anims) {
   const rootPaths = new Set();
   const rootChannels = new Map();
+  const extras = anim.getExtras() ?? {};
+  const expectedInterpolation =
+    expectedStepInterpolationClips.has(anim.getName())
+      ? 'Step'
+      : 'Linear';
+  const expectedGltfInterpolation =
+    expectedInterpolation === 'Step' ? 'STEP' : 'LINEAR';
+  if (extras.interpolation !== expectedInterpolation)
+    errs.push(
+      `${anim.getName()} interpolation=${JSON.stringify(extras.interpolation)}, ` +
+      `expected ${expectedInterpolation}`);
+  for (const [samplerIndex, sampler] of anim.listSamplers().entries()) {
+    if (sampler.getInterpolation() !== expectedGltfInterpolation)
+      errs.push(
+        `${anim.getName()} sampler ${samplerIndex} interpolation=` +
+        `${JSON.stringify(sampler.getInterpolation())}, expected ` +
+        `${expectedGltfInterpolation}`);
+  }
   for (const channel of anim.listChannels()) {
     channelCount++;
     const targetName = channel.getTargetNode()?.getName() ?? '';
@@ -465,7 +501,6 @@ for (const anim of anims) {
     if (!rootPaths.has(path)) errs.push(`${anim.getName()} missing root ${path} track`);
   if (rootPaths.has('translation') && rootPaths.has('rotation')) rootTrackCount++;
 
-  const extras = anim.getExtras() ?? {};
   const shouldForceRootLock = expectedForceRootLockedClips.has(anim.getName());
   const shouldEnableRootMotion = expectedRootMotionEnabledClips.has(anim.getName());
   if (typeof extras.bEnableRootMotion !== 'boolean')

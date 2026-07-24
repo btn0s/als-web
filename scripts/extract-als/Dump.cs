@@ -191,6 +191,7 @@ public static class Dump
             anims.Add(new
             {
                 name = animName,
+                interpolation = ReadInterpolation(seq, animName),
                 additiveType = seq.AdditiveAnimType.ToString(),
                 refPoseSeq = seq.RefPoseSeq?.Name ?? "",
                 refFrameIndex = seq.RefFrameIndex,
@@ -238,6 +239,35 @@ public static class Dump
         Console.WriteLine(
             $"dumped {skeletonName}: {bones.Length} bones, {anims.Count} anims -> {outJson}");
         return 0;
+    }
+
+    static string ReadInterpolation(UAnimSequence sequence, string animName)
+    {
+        // UAnimSequence omits default-valued tagged properties. Linear is enum value 0, so an
+        // absent Interpolation tag is authored Linear behavior; Step is value 1.
+        var property = sequence.Properties.FirstOrDefault(
+            candidate => candidate.Name.Text == "Interpolation");
+        if (property?.Tag is null)
+        {
+            return "Linear";
+        }
+
+        var serialized = property.Tag.GenericValue?.ToString()?.Trim() ?? "";
+        if (serialized == "0" ||
+            serialized.EndsWith("Linear", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Linear";
+        }
+
+        if (serialized == "1" ||
+            serialized.EndsWith("Step", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Step";
+        }
+
+        throw new Exception(
+            $"{animName} has unsupported Interpolation value " +
+            $"{JsonSerializer.Serialize(serialized)}");
     }
 
     static string ReadRootMotionRootLock(UAnimSequence sequence, string animName)
