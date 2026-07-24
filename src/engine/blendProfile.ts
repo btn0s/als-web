@@ -57,8 +57,10 @@ export function compileWeightBlendProfile(
 /**
  * Produces complementary outgoing/incoming masks for a state transition.
  *
- * WeightFactor multiplies the already-shaped transition alpha and clamps it per bone. These masks
- * can be passed directly to the normalized pose accumulator: each bone always sums to one.
+ * This mirrors UBlendProfile::CalculateBoneWeight(WeightFactor) followed by
+ * FBlendSampleData::NormalizeDataWeight(): the incoming sample multiplies by the factor, the
+ * outgoing sample divides by it, both retain Unreal's non-zero animation-weight floor, and the
+ * pair is normalized per bone.
  */
 export function resolveWeightBlendProfileMasks(
   profile: CompiledWeightBlendProfile,
@@ -74,12 +76,29 @@ export function resolveWeightBlendProfileMasks(
   }
 
   const alpha = Math.max(0, Math.min(1, transitionAlpha))
+  const zeroAnimWeightThreshold = 0.00001
   for (let bone = 0; bone < profile.blendScales.length; bone++) {
+    const factor = profile.blendScales[bone]
+    // UBlendProfile only allocates PerBoneBlendData for authored profile entries. A scale of one
+    // is the serialized default and is removed from the profile, so those bones use the scalar
+    // transition weights directly in EvaluateTransitionStandardBlendInternal().
+    if (factor === 1) {
+      incoming[bone] = alpha
+      outgoing[bone] = 1 - alpha
+      continue
+    }
     const incomingWeight = Math.max(
-      0,
-      Math.min(1, alpha * profile.blendScales[bone]),
+      alpha * factor,
+      zeroAnimWeightThreshold,
     )
-    incoming[bone] = incomingWeight
-    outgoing[bone] = 1 - incomingWeight
+    const outgoingWeight = Math.max(
+      factor > zeroAnimWeightThreshold
+        ? (1 - alpha) / factor
+        : 1,
+      zeroAnimWeightThreshold,
+    )
+    const totalWeight = incomingWeight + outgoingWeight
+    incoming[bone] = incomingWeight / totalWeight
+    outgoing[bone] = outgoingWeight / totalWeight
   }
 }

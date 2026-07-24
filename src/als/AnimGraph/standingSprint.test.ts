@@ -161,8 +161,8 @@ describe('VERIFIED ALS standing sprint graph', () => {
   it('uses the authored asymmetric Cubic gait-tag blend times', () => {
     const state = createAlsStandingSprintState()
     const halfwayIn = step(state, { deltaTime: 0.1 })
-    expect(halfwayIn.sprintBlendAmount).toBeCloseTo(0.125)
-    expect(halfwayIn.moveForwardBaseWeight).toBeCloseTo(0.875)
+    expect(halfwayIn.sprintBlendAmount).toBeCloseTo(0.5)
+    expect(halfwayIn.moveForwardBaseWeight).toBeCloseTo(0.5)
 
     const entered = step(state, { deltaTime: 0.1 })
     expect(entered.sprintBlendAmount).toBe(1)
@@ -171,8 +171,8 @@ describe('VERIFIED ALS standing sprint graph', () => {
       gait: 'Running',
       deltaTime: 0.15,
     })
-    expect(halfwayOut.sprintBlendAmount).toBeCloseTo(0.875)
-    expect(halfwayOut.moveForwardBaseWeight).toBeCloseTo(0.125)
+    expect(halfwayOut.sprintBlendAmount).toBeCloseTo(0.5)
+    expect(halfwayOut.moveForwardBaseWeight).toBeCloseTo(0.5)
 
     const exited = step(state, {
       gait: 'Running',

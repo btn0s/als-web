@@ -383,9 +383,9 @@ describe('crouching Movement States runtime', () => {
       movementDirection: 'Right',
     }, 0.35)
     expect(active.linearAlpha).toBe(0.5)
-    expect(active.blendAlpha).toBe(0.125)
-    expect(runtime.stateWeights.Forward).toBe(0.875)
-    expect(runtime.stateWeights.RightForward).toBe(0.125)
+    expect(active.blendAlpha).toBe(0.5)
+    expect(runtime.stateWeights.Forward).toBe(0.5)
+    expect(runtime.stateWeights.RightForward).toBe(0.5)
 
     refreshAlsCrouchingMovementRuntime(runtime, {
       ...forward,
@@ -421,12 +421,12 @@ describe('crouching Movement States runtime', () => {
       to: active.transition.to,
       blendAlpha: active.blendAlpha,
     }))).toEqual([
-      { from: 'Forward', to: 'RightForward', blendAlpha: 0.125 },
+      { from: 'Forward', to: 'RightForward', blendAlpha: 0.5 },
       { from: 'RightForward', to: 'LeftBackward', blendAlpha: 0 },
     ])
     expect(runtime.stateWeights).toMatchObject({
-      Forward: 0.875,
-      RightForward: 0.125,
+      Forward: 0.5,
+      RightForward: 0.5,
       LeftBackward: 0,
     })
     expect(entered).toEqual(['Forward', 'RightForward', 'LeftBackward'])
@@ -437,8 +437,8 @@ describe('crouching Movement States runtime', () => {
     }, 0.35)
     expect(runtime.activeTransitions).toHaveLength(1)
     expect(runtime.baseState).toBe('RightForward')
-    expect(runtime.stateWeights.RightForward).toBe(0.875)
-    expect(runtime.stateWeights.LeftBackward).toBe(0.125)
+    expect(runtime.stateWeights.RightForward).toBe(0.5)
+    expect(runtime.stateWeights.LeftBackward).toBe(0.5)
   })
 
   it('takes at most the authored three transitions in one frame', () => {

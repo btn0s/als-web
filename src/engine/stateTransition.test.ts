@@ -196,13 +196,13 @@ describe('VERIFIED UE standard state transition clock', () => {
 
     expect(advanceStateTransition(clock, 0.35)).toBe('transitioning')
     expect(clock.linearAlpha).toBe(0.5)
-    expect(clock.blendAlpha).toBe(0.125)
-    expect(clock.fromStateWeight).toBe(0.875)
-    expect(clock.toStateWeight).toBe(0.125)
-    expect(clock.fromPoseMask[rootIndex]).toBe(0.875)
-    expect(clock.toPoseMask[rootIndex]).toBe(0.125)
-    expect(clock.fromPoseMask[footIndex]).toBe(0.75)
-    expect(clock.toPoseMask[footIndex]).toBe(0.25)
+    expect(clock.blendAlpha).toBe(0.5)
+    expect(clock.fromStateWeight).toBe(0.5)
+    expect(clock.toStateWeight).toBe(0.5)
+    expect(clock.fromPoseMask[rootIndex]).toBe(0.5)
+    expect(clock.toPoseMask[rootIndex]).toBe(0.5)
+    expect(clock.fromPoseMask[footIndex]).toBeCloseTo(0.2, 7)
+    expect(clock.toPoseMask[footIndex]).toBeCloseTo(0.8, 7)
     expectComplementaryMasks(clock.fromPoseMask, clock.toPoseMask)
   })
 
@@ -232,8 +232,10 @@ describe('VERIFIED UE standard state transition clock', () => {
       fromStateWeight: 0,
       toStateWeight: 1,
     })
-    expect([...clock.fromPoseMask].every((weight) => weight === 0)).toBe(true)
-    expect([...clock.toPoseMask].every((weight) => weight === 1)).toBe(true)
+    expect(clock.fromPoseMask[rootIndex]).toBe(0)
+    expect(clock.toPoseMask[rootIndex]).toBe(1)
+    expect(clock.fromPoseMask[footIndex]).toBeLessThan(0.00001)
+    expect(clock.toPoseMask[footIndex]).toBeGreaterThan(0.99999)
   })
 
   it('clamps a large delta on the authored QuadraticInOut transition', () => {
@@ -262,7 +264,7 @@ describe('VERIFIED UE standard state transition clock', () => {
     expect(advanceStateTransition(clock, 0.1875)).toBe('transitioning')
     expect(clock.linearAlpha).toBe(0.25)
     expect(clock.blendAlpha).toBe(0.125)
-    expect(clock.toPoseMask[footIndex]).toBe(0.25)
+    expect(clock.toPoseMask[footIndex]).toBeCloseTo(4 / 11, 7)
     expect(advanceStateTransition(clock, 100)).toBe('completed')
     expect(clock.elapsed).toBe(0.75)
     expect(clock.linearAlpha).toBe(1)

@@ -201,8 +201,7 @@ function sampleCustomBlend(name: string, time: number): number {
 
 function sampleStandardBlend(blendType: string, alpha: number): number {
   const option = blendType.split('::').at(-1)
-  if (option === 'Cubic') return alpha * alpha * alpha
-  if (option === 'HermiteCubic') {
+  if (option === 'Cubic' || option === 'HermiteCubic') {
     return alpha * alpha * (3 - 2 * alpha)
   }
   if (option === 'Linear') return alpha

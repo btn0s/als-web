@@ -11,8 +11,9 @@ function clamp01(value: number) {
 /**
  * The FAlphaBlend options currently authored by ALS's state machines.
  *
- * `Cubic` is Unreal's cubic-in option, not smoothstep; the latter is the separate
- * `HermiteCubic` option used by ALS's Idle/Move transitions.
+ * Unreal's `Cubic` calls `FMath::CubicInterp(0, 0, 1, 0, Alpha)`, while
+ * `HermiteCubic` calls `FMath::SmoothStep(0, 1, Alpha)`. Those two expressions are
+ * numerically the same smoothstep polynomial for these endpoint values.
  */
 export function alphaToBlendOption(
   alpha: number,
@@ -24,7 +25,6 @@ export function alphaToBlendOption(
     case 'Linear':
       return value
     case 'Cubic':
-      return value * value * value
     case 'HermiteCubic':
       return value * value * (3 - 2 * value)
     case 'QuadraticInOut':

@@ -31,7 +31,7 @@ describe('WeightFactor blend profiles', () => {
     expect([...profile.blendScales]).toEqual([1, 2, 5])
   })
 
-  it('multiplies transition alpha and returns complementary masks', () => {
+  it('normalizes Unreal WeightFactor incoming and inverse outgoing weights', () => {
     const profile = compileWeightBlendProfile(createTestRig(), {
       mode: 'WeightFactor',
       entries: [
@@ -44,11 +44,39 @@ describe('WeightFactor blend profiles', () => {
 
     resolveWeightBlendProfileMasks(profile, 0.25, outgoing, incoming)
 
-    expect([...incoming]).toEqual([0.25, 0.5, 1])
-    expect([...outgoing]).toEqual([0.75, 0.5, 0])
+    expect(incoming[0]).toBeCloseTo(0.25, 7)
+    expect(outgoing[0]).toBeCloseTo(0.75, 7)
+    expect(incoming[1]).toBeCloseTo(4 / 7, 7)
+    expect(outgoing[1]).toBeCloseTo(3 / 7, 7)
+    expect(incoming[2]).toBeCloseTo(25 / 28, 7)
+    expect(outgoing[2]).toBeCloseTo(3 / 28, 7)
     for (let bone = 0; bone < 3; bone++) {
-      expect(outgoing[bone] + incoming[bone]).toBe(1)
+      expect(outgoing[bone] + incoming[bone]).toBeCloseTo(1, 7)
     }
+  })
+
+  it('retains Unreal non-zero weights at both transition boundaries', () => {
+    const profile = compileWeightBlendProfile(createTestRig(), {
+      mode: 'WeightFactor',
+      entries: [
+        { bone: 'thigh_l', blendScale: 2 },
+        { bone: 'foot_l', blendScale: 0 },
+      ],
+    })
+    const outgoing = new Float32Array(3)
+    const incoming = new Float32Array(3)
+
+    resolveWeightBlendProfileMasks(profile, 0, outgoing, incoming)
+    expect(incoming[0]).toBe(0)
+    expect(incoming[1]).toBeGreaterThan(incoming[0])
+    expect(incoming[2]).toBeGreaterThan(0)
+    expect(outgoing[2]).toBeGreaterThan(0.999)
+
+    resolveWeightBlendProfileMasks(profile, 1, outgoing, incoming)
+    expect(outgoing[0]).toBe(0)
+    expect(outgoing[1]).toBeGreaterThan(0)
+    expect(outgoing[2]).toBeGreaterThan(0.999)
+    expect(incoming[2]).toBeGreaterThan(0)
   })
 
   it('rejects missing bones instead of silently weakening parity', () => {

@@ -14,9 +14,12 @@ describe('Unreal alpha blend options used by ALS', () => {
     }
   })
 
-  it('keeps Cubic distinct from HermiteCubic', () => {
-    expect(alphaToBlendOption(0.5, 'Cubic')).toBe(0.125)
-    expect(alphaToBlendOption(0.5, 'HermiteCubic')).toBe(0.5)
+  it('matches Unreal CubicInterp and SmoothStep for Cubic and HermiteCubic', () => {
+    for (const alpha of [0.25, 0.5, 0.75]) {
+      const smoothStep = alpha * alpha * (3 - 2 * alpha)
+      expect(alphaToBlendOption(alpha, 'Cubic')).toBe(smoothStep)
+      expect(alphaToBlendOption(alpha, 'HermiteCubic')).toBe(smoothStep)
+    }
   })
 
   it('matches the symmetric quadratic in/out curve', () => {
