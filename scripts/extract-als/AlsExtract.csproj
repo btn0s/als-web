@@ -12,4 +12,8 @@
     <PackageReference Include="CUE4Parse-Conversion" Version="1.2.2.202607" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="control-rig/**/*.cs" />
+  </ItemGroup>
+
 </Project>

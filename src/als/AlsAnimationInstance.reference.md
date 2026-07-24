@@ -73,7 +73,7 @@ i.e. turn-in-place and rotate-in-place clips bake a `RotationYawSpeed` (deg/s) f
 
 ## 3. Foot locking + foot IK
 
-`RefreshFeetOnGameThread` (`1128-1153`, game-thread only) resolves foot **target** transforms every frame from the mesh socket (`ik_foot_l/r` if `bUseFootIkBones`, else the `VB foot_l/r` virtual bone) — these are the mixer's *current pose* output, i.e. "where the blended animation currently wants the foot," before any locking.
+`RefreshFeetOnGameThread` (`1128-1153`, game-thread only) resolves foot **target** transforms every frame from the mesh socket (`ik_foot_l/r` if `bUseFootIkBones`, else the `VB foot_l/r` virtual bone) — these are the skeletal mesh's currently evaluated socket transforms, i.e. "where the blended animation currently wants the foot," before locking. **HYPOTHESIS:** because this capture precedes the thread-safe animation update, the sockets are from the prior evaluated pose; confirm the exact UE tick boundary with a live trace before encoding a one-frame delay.
 
 `RefreshFeet(dt)` (`1155-1167`): reads `FootPlanted` curve (clamped **[-1,1]**: sign picks which foot is planted/about-to-plant, magnitude — less than 0.5 = planted, more = airborne) and `FeetCrossing` curve (clamp01). Then per foot, in order:
 
@@ -91,13 +91,142 @@ i.e. turn-in-place and rotate-in-place clips bake a `RotationYawSpeed` (deg/s) f
 
 ### Pelvis-adaptive ground IK (separate stage, Control Rig — NOT AnimBP C++)
 
-This is a genuinely separate system from foot locking, running in a **Control Rig graph** post-AnimBP, in `Private/Nodes/AlsRigUnit_*`:
-- `FAlsRigUnit_FootOffsetTrace` (`AlsRigUnit_FootOffsetTrace.cpp`): line-traces straight down from each foot's XY through a configurable up/down distance; on a walkable hit, computes `OffsetLocationZ = HitLocation.Z + (FootHeight/cos(slopeAngle) − FootHeight)` (slope-compensated foot-sink correction, right-triangle derivation documented in the file) and outputs the hit normal for rotation alignment.
-- `FAlsRigUnit_ApplyFootOffsetLocation` (`AlsRigUnit_ApplyFootOffsetLocation.cpp/h`): clamps that Z offset so the foot can't rise above `pelvisZ − MinPelvisToFootDistanceZ` (**default 50cm**) and can't go below the current pelvis-drop offset (prevents leg over-stretch); spring-damps the offset toward target via `SpringDampFloat` (**Frequency=0.4Hz, DampingRatio=4.0, TargetVelocityAmount=1.0**); then re-clamps the resulting hip→foot vector to `LegLength · MaxLegStretchRatio` (**default 0.99**) to avoid a fully-straight leg.
-- `FAlsRigUnit_ApplyFootOffsetRotation`: aligns the foot to the ground normal by rotating from world-up to the (exponentially-decayed) hit normal, expressed in calf-local swing/twist space and clamped against `Swing1LimitAngle`/`Swing2LimitAngle`/`TwistLimitAngle` so the ankle doesn't over-rotate relative to what the base animation already had.
-- **Pelvis offset itself** (lowering the hips when both feet want to sink, e.g. standing on a slope) is the `PelvisOffset` input plumbed into `ApplyFootOffsetLocation`'s clamp (line 33) — its *computation* (presumably `min` of both feet's raw offsets, plus its own spring) is **in the Control Rig graph, not in any `.cpp` file this checkout ships** — the graph asset itself isn't text-diffable from this extraction. Flag as a genuine gap: the *interface* (a per-frame scalar Z offset feeding both feet's clamps) is clear, but its exact combination formula is not recoverable from C++ alone.
+**VERIFIED sources:** the current authored `CR_Als` RigVM graphs are frozen in
+`scripts/extract-als/control-rig/CR_Als.json`. `scripts/extract-als/control-rig/Program.cs`
+extracts them repeatably with UAssetAPI, validates the semantic wiring/constants below, and
+can field-for-field verify the checked-in artifact against the upstream `CR_Als.uasset`:
 
-**Web-port mapping:** foot-lock state machine → extends `footIk.ts`/`ikChain.ts` with a new stateful module (`footLock.ts`) carrying `LockAmount`/`LockLocation`/`LockRotation` per foot — this is genuinely new pure-module surface (arbiter-adjacent state, not a weight-table entry), consuming the authored `FootLock`/`FootIk` curves once M2 extracts them (ROADMAP already flags this dependency explicitly: "M3 turn-in-place, foot locking, and transitions are blocked without these"). The ground-trace + spring-damped Z offset + slope alignment (`AlsRigUnit_*`) is a **UE Control Rig dependency we don't have** — flag as consciously approximated: a raycast-based foot/pelvis IK pass is buildable in three.js (raycast against the collision mesh, `THREE.MathUtils.damp`-style spring) as a new pure module layered after `footIk.ts`'s existing two-bone solve, but it is new work, not a transplant. ROADMAP M3 already lists "Foot IK with pelvis adaptation" as the item exposure-r3f deliberately skipped — this confirms it's net-new, and gives you the exact math (slope formula, clamp order, spring constants) to build it from.
+```text
+dotnet run --project scripts/extract-als/control-rig -- validate scripts/extract-als/control-rig/CR_Als.json
+dotnet run --project scripts/extract-als/control-rig -- verify <CR_Als.uasset> scripts/extract-als/control-rig/CR_Als.json
+```
+
+The AnimBP places `CR_Als` after its Layering and View stages and before Ragdolling
+(`scripts/extract-als/abp-graph.json`); pose and curves transfer through the node, its alpha is
+enabled at 1, and it has no authored LOD cutoff. Curve production is graph-side rather than
+necessarily clip-side: `AB_Als_Grounded` sets `PoseGrounded`, `FootLeftIk`, and `FootRightIk` to
+1, while the standing/default path in `AB_Als_Locomotion` sets both `Foot*Ik` and `Foot*Lock`
+curves to 1. Missing clip-level `Foot*Ik` curves therefore do not imply disabled IK.
+
+**Construction and execution order — VERIFIED.** Construction selects `ik_foot_root` when
+`RigInput.bUseFootIkBones` is true, otherwise `VB foot_root`
+(`FAlsGeneralAnimationSettings::bUseFootIkBones` defaults true). It stores the initial global
+`foot_l` Z as `FootHeight` and the initial `thigh_l → foot_l` chain length as the single shared
+`LegLength`. The shipped rest pose independently measures `foot_l`/`ik_foot_l` at about
+13.46573 cm and the left leg at about 82.768727 cm (42.572037 + 40.196690); an ankle near
+0.135 m is the expected rest/contact height, not evidence that the foot floats. In a game world,
+the forward graph is exactly:
+
+```text
+RefreshDiagonalScaling → RefreshSpineRotation → RefreshFootOffset
+→ RefreshPelvisOffset → RefreshFootIk → RefreshHandIk
+```
+
+**`RefreshFootOffset` — VERIFIED.** Left then right, it samples `FootLeftIk`/`FootRightIk` and
+calls `TraceFootOffset`. Trace enablement is the graph expression
+`RigInput.bFootOffsetAllowed || FootIkAmount <= 0.0001`. The active authored pins override the
+C++ defaults with Visibility channel, 50 cm upward, 80 cm downward, construction-derived
+`FootHeight`, and debug off. `FAlsRigUnit_FootOffsetTrace`
+(`Private/Nodes/AlsRigUnit_FootOffsetTrace.cpp:12-59`) traces in rig space from
+`(TargetX, TargetY, +50)` to `(TargetX, TargetY, -80)` — those Z endpoints are absolute, not
+`TargetZ ± distance` — after converting them to world space, and ignores the owning actor. Any
+blocking hit is accepted: despite the source comment saying "walkable," there is no normal-angle
+or walkability rejection in this unit. Disabled/miss outputs offset 0 and up normal. A hit
+converts impact point/normal back to rig space and computes:
+
+```text
+slopeOffsetZ = normal.z > SMALL_NUMBER ? FootHeight / normal.z - FootHeight : 0
+rawOffsetZ   = impactPointRig.z + slopeOffsetZ
+```
+
+**`RefreshPelvisOffset` — VERIFIED; no longer an extraction gap.** Its amount is exactly
+`(FootLeftIk + FootRightIk) * 0.5`, saved as `PelvisOffsetAmount`. When that amount is greater
+than 0.0001:
+
+```text
+targetPelvisOffset = clamp(
+  min(FootLeftOffsetLocationZ, FootRightOffsetLocationZ),
+  -30 cm,
+  +40 cm
+)
+PelvisOffset = SpringInterpV2(targetPelvisOffset)
+```
+
+The authored `FRigUnit_SpringInterpV2` pins are Strength 2, CriticalDamping 1,
+TargetVelocityAmount 0, `bUseCurrentInput=false`, and `bInitializeFromTarget=true`; Force and
+Current are unconnected/default zero. The rig constructs a global pelvis translation from the
+current X/Y and `currentZ + PelvisOffset`, then applies it with
+`Weight=PelvisOffsetAmount` and child propagation enabled. The same stored spring result feeds
+both feet's lower offset clamp.
+
+**`RefreshFootIk` / `ApplyFootIk` — VERIFIED.** The graph solves left completely before right.
+Both use pelvis plus thigh/calf/foot (`*_l`, then `*_r`), with mirrored axes:
+left Primary `(-1,0,0)`, Secondary `(0,1,0)`; right Primary `(1,0,0)`, Secondary `(0,-1,0)`.
+Each solve is weighted by its `Foot*Ik` curve and executes:
+
+```text
+ApplyFootOffsetLocation
+→ CalculatePoleVector + 40 cm pole target + vector exponential decay λ=15
+→ TwoBoneIKSimplePerItem
+→ ApplyFootOffsetRotation
+→ SetRotation(global)
+```
+
+`FAlsRigUnit_ApplyFootOffsetLocation`
+(`Private/Nodes/AlsRigUnit_ApplyFootOffsetLocation.cpp:23-58`) performs this exact clamp order:
+
+```text
+maxFootZ     = pelvisZ - 50 cm
+targetOffset = min(rawOffset, maxFootZ - targetFootZ)
+targetOffset = max(targetOffset, PelvisOffset)
+```
+
+It snaps on initialization; afterward `UAlsMath::SpringDampFloat` uses Frequency 0.4 Hz,
+DampingRatio 4, and TargetVelocityAmount 1. The wrapper
+(`Public/Utility/AlsMath.h:118-143`) returns Current for negligible `dt`, returns Target on the
+first valid spring frame, then calls `FMath::SpringDamper` with target velocity
+`(target - previousTarget) * clamp01(amount) / dt`. The result is added only to target Z, then
+the thigh→foot vector is clamped to `LegLength * 0.99`.
+
+The pole unit projects thigh→calf onto normalized thigh→foot and normalizes
+`calf - projection`; degenerate input retains the last successful result
+(`Private/Nodes/AlsRigUnits.cpp:49-79`, `Private/Utility/AlsMath.cpp:33-61`). Its target is
+`calf + poleDirection * 40 cm`, exponentially decayed at λ=15 before the two-bone solve.
+`TwoBoneIKSimplePerItem` uses pole kind Location, no pole space, SecondaryAxisWeight 1,
+stretch disabled, and child propagation enabled.
+
+`FAlsRigUnit_ApplyFootOffsetRotation`
+(`Private/Nodes/AlsRigUnit_ApplyFootOffsetRotation.cpp:25-108`) snaps the normal on
+initialization, then exponentially decays it at speed 20. It builds
+`FindBetween(up, normal)`, moves the target into calf-local X swing/twist space, and constrains
+quaternion components while expanding each range to preserve a more-extreme authored initial
+rotation. Authored limits are Swing1(Z) 25°, Swing2(Y) 5°, Twist(X) 0°, with `LimitOffset`
+serialized as `(0.001903,-0.043578,0.043578,0.998097)` (the C++ default is
+`FRotator{5,5,0}`). The final global result is
+`calfRotation * constrainedLocal * inverse(LimitOffset)` and is written once more to the foot
+with the same `Foot*Ik` weight.
+
+**Diagonal root scaling — VERIFIED.** Before the foot solve,
+`RefreshDiagonalScaling` computes `sum = VelocityBlendForwardAmount +
+VelocityBlendBackwardAmount`, `factor = 1 - abs(2 * (sum - 0.5))`, and adds
+`(0.4, 0.4, 0) * factor` to the current local `FootRootBone` scale. `PoseMoving` is the write
+weight and children propagate.
+
+**Extraction caveat — VERIFIED/HYPOTHESIS.** Two independent decoders (CUE4Parse inspection
+and UAssetAPI graph/link decoding) agree on the current editor graph above, and the compiled
+RigVM function list/bytecode structure agrees with its topology. Separately serialized
+generated RigVM memory/CDO metadata still contains an older revision (including 45 cm trace
+downward, pelvis spring 0.2/3/0.75 with 0.6/0.4 remap, and 0.999 stretch). The extractor
+intentionally reads only authored `RigVMGraph` exports and the validator rejects those stale
+values. **HYPOTHESIS:** Unreal refreshes that generated memory when the asset is loaded/compiled;
+confirm by recompiling `CR_Als` in UE and tracing the live VM before using the unchecked packaged
+asset as a runtime oracle.
+
+**Web-port mapping:** this Control Rig is no longer a reverse-engineering gap or an
+approximation target. Port it as the post-pose, component/global-pose stage above, preserving
+trace coordinates, the two distinct spring mechanisms, solve order, full per-foot weighting,
+two-bone semantics, and calf-local rotation constraints. Missing three.js engine facilities are
+runtime work items, not grounds to substitute a generic raycast/damp/IK heuristic.
 
 ---
 
