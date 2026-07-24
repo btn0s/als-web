@@ -5,6 +5,7 @@ import type {
   AlsMantlingLifecycleAdapter,
   AlsMantlingNotifyRuntime,
   AlsMantlingSweepHit,
+  AlsRollingMontageBridge,
   AlsStartMantlingCharacterState,
   StartAlsMantlingInput,
 } from './AlsCharacter_Actions'
@@ -12,9 +13,12 @@ import {
   compileAlsMantlingEarlyBlendOutNotify,
   compileAlsMantlingLocomotionActionNotify,
   createAlsMantlingNotifyRuntime,
+  isRollingAllowedToStart,
   prepareCharacterMantling,
   refreshAlsMantlingNotifyRuntime,
   refreshMantling,
+  startRolling,
+  startRollingImplementation,
   startMantling,
   startMantlingGrounded,
   startMantlingImplementation,
@@ -22,7 +26,10 @@ import {
   stopMantling,
 } from './AlsCharacter_Actions'
 import {
+  ALS_CHARACTER_SETTINGS,
   createAlsCharacter,
+  refreshInput,
+  setLocomotionAction,
   setLocomotionMode,
 } from './AlsCharacter'
 import type {
@@ -45,6 +52,223 @@ import type {
 import type {
   CompiledAuthoredRootMotion,
 } from '../engine/rootMotion'
+import {
+  notifyAlsAnimNotifyStateSetLocomotionActionEnd,
+} from './Notifies/AlsAnimNotifyState_SetLocomotionAction'
+
+// ALS Refactored 4.15:
+// Source/ALS/Private/AlsCharacter_Actions.cpp:22-100.
+describe('AAlsCharacter rolling lifecycle', () => {
+  function rollingAnimation(
+    Character: AlsCharacter,
+    Events: unknown[],
+    options: {
+      readonly bPlaying?: boolean
+      readonly MontagePlayResult?: number
+    } = {},
+  ): AlsRollingMontageBridge {
+    return {
+      Montage_IsPlaying(Montage) {
+        Events.push(['Montage_IsPlaying', Montage])
+        return options.bPlaying ?? false
+      },
+      Montage_Play(Montage, PlayRate) {
+        Events.push([
+          'Montage_Play',
+          Montage,
+          PlayRate,
+          Character.locomotionAction,
+          Character.rollingState.TargetYawAngle,
+        ])
+        return options.MontagePlayResult ?? 1.6
+      },
+    }
+  }
+
+  it('uses input yaw, then lets successful montage playback own Roll', () => {
+    const Character = createAlsCharacter({
+      actorYawAngle: 225,
+      desiredStance: 'Standing',
+    })
+    refreshInput(Character, { x: 0, y: 1, z: 0 })
+    const Events: unknown[] = []
+    let MovementStance = Character.movement.stance
+    let MovementStanceWrites = 0
+    Object.defineProperty(Character.movement, 'stance', {
+      configurable: true,
+      get() {
+        return MovementStance
+      },
+      set(value) {
+        MovementStanceWrites += 1
+        MovementStance = value
+      },
+    })
+
+    expect(startRolling(
+      Character,
+      1.3,
+      rollingAnimation(Character, Events),
+    )).toBe(true)
+
+    // A null action short-circuits both IsRollingAllowedToStart() calls.
+    expect(Events).toEqual([
+      ['Montage_Play', 'AM_Als_Roll', 1.3, null, 0],
+    ])
+    expect(Character.rollingState.TargetYawAngle).toBe(90)
+    expect(Character.actorYawAngle).toBe(-135)
+    expect(Character.locomotionState.targetYawAngle).toBe(-135)
+    expect(Character.locomotionState.smoothTargetYawAngle).toBe(-135)
+    expect(Character.locomotionAction).toBe('Rolling')
+    expect(Character.stance).toBe('Crouching')
+    expect(Character.movement.stance).toBe('Crouching')
+    expect(MovementStanceWrites).toBe(1)
+  })
+
+  it('uses actor yaw when rotate-to-input is disabled or input is absent', () => {
+    const disabled = createAlsCharacter({
+      actorYawAngle: 200,
+      settings: {
+        Rolling: {
+          ...ALS_CHARACTER_SETTINGS.Rolling,
+          bRotateToInputOnStart: false,
+        },
+      },
+    })
+    refreshInput(disabled, { x: 0, y: 1, z: 0 })
+    expect(startRolling(
+      disabled,
+      1,
+      rollingAnimation(disabled, []),
+    )).toBe(true)
+    expect(disabled.rollingState.TargetYawAngle).toBe(-160)
+
+    const withoutInput = createAlsCharacter({ actorYawAngle: 190 })
+    expect(startRolling(
+      withoutInput,
+      1,
+      rollingAnimation(withoutInput, []),
+    )).toBe(true)
+    expect(withoutInput.rollingState.TargetYawAngle).toBe(-170)
+  })
+
+  it('checks Grounded only in the player-request overload', () => {
+    const Character = createAlsCharacter({
+      locomotionMode: 'InAir',
+      actorYawAngle: 45,
+    })
+    const Events: unknown[] = []
+    const Animation = rollingAnimation(Character, Events)
+
+    expect(startRolling(Character, 1.3, Animation)).toBe(false)
+    expect(Events).toEqual([])
+
+    expect(startRolling(Character, 1.3, 270, Animation)).toBe(true)
+    expect(Character.rollingState.TargetYawAngle).toBe(270)
+    expect(Character.actorYawAngle).toBe(45)
+    expect(Character.locomotionAction).toBe('Rolling')
+  })
+
+  it('preserves the two eligibility checks for replaying a stopped Roll', () => {
+    const Character = createAlsCharacter()
+    setLocomotionAction(Character, 'Rolling')
+    const Events: unknown[] = []
+    const Animation = rollingAnimation(Character, Events)
+
+    expect(isRollingAllowedToStart(
+      Character,
+      'AM_Als_Roll',
+      Animation,
+    )).toBe(true)
+    Events.length = 0
+
+    expect(startRolling(Character, 1.1, 75, Animation)).toBe(true)
+    expect(Events).toEqual([
+      ['Montage_IsPlaying', 'AM_Als_Roll'],
+      ['Montage_IsPlaying', 'AM_Als_Roll'],
+      ['Montage_Play', 'AM_Als_Roll', 1.1, 'Rolling', 0],
+    ])
+
+    const activeEvents: unknown[] = []
+    const activeAnimation = rollingAnimation(
+      Character,
+      activeEvents,
+      { bPlaying: true },
+    )
+    expect(startRolling(
+      Character,
+      1.1,
+      90,
+      activeAnimation,
+    )).toBe(false)
+    expect(activeEvents).toEqual([
+      ['Montage_IsPlaying', 'AM_Als_Roll'],
+    ])
+  })
+
+  it('does not mutate rolling state when Montage_Play fails', () => {
+    const Character = createAlsCharacter({ actorYawAngle: 30 })
+    const Events: unknown[] = []
+    let MovementStance = Character.movement.stance
+    let MovementStanceWrites = 0
+    Object.defineProperty(Character.movement, 'stance', {
+      configurable: true,
+      get() {
+        return MovementStance
+      },
+      set(value) {
+        MovementStanceWrites += 1
+        MovementStance = value
+      },
+    })
+
+    expect(startRollingImplementation(
+      Character,
+      'AM_Als_Roll',
+      1.3,
+      -45,
+      120,
+      rollingAnimation(Character, Events, {
+        MontagePlayResult: 0,
+      }),
+    )).toBe(false)
+
+    expect(Events).toEqual([
+      ['Montage_Play', 'AM_Als_Roll', 1.3, null, 0],
+    ])
+    expect(Character.rollingState.TargetYawAngle).toBe(0)
+    expect(Character.actorYawAngle).toBe(30)
+    expect(Character.locomotionState.targetYawAngle).toBe(30)
+    expect(Character.locomotionAction).toBeNull()
+    expect(Character.stance).toBe('Standing')
+    expect(Character.movement.stance).toBe('Standing')
+    expect(MovementStanceWrites).toBe(0)
+  })
+
+  it('leaves Roll exit to the authored action-notify identity guard', () => {
+    const Character = createAlsCharacter({
+      desiredStance: 'Standing',
+    })
+    expect(startRolling(
+      Character,
+      1.3,
+      rollingAnimation(Character, []),
+    )).toBe(true)
+    expect(Character.locomotionAction).toBe('Rolling')
+    expect(Character.stance).toBe('Crouching')
+
+    notifyAlsAnimNotifyStateSetLocomotionActionEnd(Character, {
+      LocomotionAction: 'Mantling',
+    })
+    expect(Character.locomotionAction).toBe('Rolling')
+
+    notifyAlsAnimNotifyStateSetLocomotionActionEnd(Character, {
+      LocomotionAction: 'Rolling',
+    })
+    expect(Character.locomotionAction).toBeNull()
+    expect(Character.stance).toBe('Standing')
+  })
+})
 
 const targetPrimitive = {}
 

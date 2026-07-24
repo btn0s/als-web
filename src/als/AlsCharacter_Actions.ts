@@ -12,6 +12,7 @@ import type {
 import {
   setLocomotionAction,
   setLocomotionMode,
+  setRotationInstant,
 } from './AlsCharacter'
 import type {
   AlsCharacter,
@@ -68,6 +69,127 @@ export type AlsCharacterLocalRole =
   | 'SimulatedProxy'
   | 'AutonomousProxy'
   | 'Authority'
+
+/**
+ * The two UAnimInstance calls used by ALS's rolling lifecycle.
+ *
+ * Montage evaluation and notify dispatch stay engine-owned. In particular,
+ * this bridge does not synthesize a Roll duration or clear LocomotionAction.
+ */
+export interface AlsRollingMontageBridge {
+  Montage_IsPlaying(Montage: string): boolean
+  Montage_Play(Montage: string, PlayRate: number): number
+}
+
+/** `AAlsCharacter::IsRollingAllowedToStart()`, lines 32-37. */
+export function isRollingAllowedToStart(
+  Character: Readonly<AlsCharacter>,
+  Montage: string,
+  Animation: AlsRollingMontageBridge,
+): boolean {
+  return Character.locomotionAction === null
+    || (
+      Character.locomotionAction === 'Rolling'
+      && !Animation.Montage_IsPlaying(Montage)
+    )
+}
+
+/**
+ * `AAlsCharacter::StartRollingImplementation()`, lines 89-100.
+ *
+ * The action is installed only after Montage_Play succeeds. Its authored
+ * `AlsAnimNotifyState_SetLocomotionAction` window owns the eventual exit.
+ */
+export function startRollingImplementation(
+  Character: AlsCharacter,
+  Montage: string,
+  PlayRate: number,
+  InitialYawAngle: number,
+  TargetYawAngle: number,
+  Animation: AlsRollingMontageBridge,
+): boolean {
+  if (
+    !isRollingAllowedToStart(Character, Montage, Animation)
+    || Animation.Montage_Play(Montage, PlayRate) <= 0
+  ) {
+    return false
+  }
+
+  Character.rollingState.TargetYawAngle = TargetYawAngle
+  setRotationInstant(Character, InitialYawAngle)
+  setLocomotionAction(Character, 'Rolling')
+  return true
+}
+
+export function startRolling(
+  Character: AlsCharacter,
+  PlayRate: number,
+  Animation: AlsRollingMontageBridge,
+): boolean
+export function startRolling(
+  Character: AlsCharacter,
+  PlayRate: number,
+  TargetYawAngle: number,
+  Animation: AlsRollingMontageBridge,
+): boolean
+
+/**
+ * Both `AAlsCharacter::StartRolling()` overloads, lines 22-66.
+ *
+ * The three-argument overload is the player-request path and therefore
+ * requires Grounded before selecting the authored input/actor target. The
+ * explicit-target overload is also used by landing, after Grounded has already
+ * been established by NotifyLocomotionModeChanged().
+ *
+ * Role/RPC routing happens outside this framework-free character seam. The
+ * synchronous call below is the same character-side implementation reached by
+ * ALS's multicast.
+ */
+export function startRolling(
+  Character: AlsCharacter,
+  PlayRate: number,
+  TargetYawAngleOrAnimation:
+    number | AlsRollingMontageBridge,
+  ExplicitAnimation?: AlsRollingMontageBridge,
+): boolean {
+  const bHasExplicitTarget =
+    typeof TargetYawAngleOrAnimation === 'number'
+
+  if (!bHasExplicitTarget && Character.locomotionMode !== 'Grounded') {
+    return false
+  }
+
+  const Animation = bHasExplicitTarget
+    ? ExplicitAnimation
+    : TargetYawAngleOrAnimation
+  if (!Animation) return false
+
+  const TargetYawAngle = bHasExplicitTarget
+    ? TargetYawAngleOrAnimation
+    : (
+        Character.settings.Rolling.bRotateToInputOnStart
+        && Character.locomotionState.hasInput
+          ? Character.locomotionState.inputYawAngle
+          : unwindDegrees(Character.actorYawAngle)
+      )
+  const Montage = Character.settings.Rolling.Montage
+  if (
+    Montage.length === 0
+    || !isRollingAllowedToStart(Character, Montage, Animation)
+  ) {
+    return false
+  }
+
+  const InitialYawAngle = unwindDegrees(Character.actorYawAngle)
+  return startRollingImplementation(
+    Character,
+    Montage,
+    PlayRate,
+    InitialYawAngle,
+    TargetYawAngle,
+    Animation,
+  )
+}
 
 /**
  * Read-only values consumed by `AAlsCharacter::StartMantling()`.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ALS_ACTUAL_GAIT_SPEED_BUFFER,
+  ALS_CHARACTER_SETTINGS,
   ALS_SPRINT_VIEW_RELATIVE_ANGLE_THRESHOLD,
   applyDesiredStance,
   applyRotationYawSpeedAnimationCurve,
@@ -21,6 +22,9 @@ import {
   setStance,
   setTargetYawAngle,
   setViewMode,
+} from './AlsCharacter'
+import type {
+  AlsLocomotionModeChangedLifecycle,
 } from './AlsCharacter'
 
 describe('AAlsCharacter input and gait policy', () => {
@@ -197,6 +201,197 @@ describe('AAlsCharacter input and gait policy', () => {
     ).toBe(true)
     expect(character.movement.brakingFrictionFactor).toBe(3)
     expect(character.movement.brakingFrictionFactorResetTime).toBe(0.5)
+  })
+
+  it('uses inclusive authored landing thresholds with ragdoll precedence', () => {
+    // AlsCharacter.cpp:519-535. The effective content thresholds are
+    // 1000/700 cm/s, converted to 10/7 m/s by the settings boundary.
+    const land = (verticalSpeed: number) => {
+      const Character = createAlsCharacter({
+        locomotionMode: 'InAir',
+        velocity: { x: 0, y: 1, z: verticalSpeed },
+      })
+      const Events: unknown[] = []
+      const Lifecycle: AlsLocomotionModeChangedLifecycle = {
+        StartRagdolling() {
+          Events.push('StartRagdolling')
+        },
+        StartRolling(PlayRate, TargetYawAngle) {
+          Events.push(['StartRolling', PlayRate, TargetYawAngle])
+        },
+        OnLocomotionModeChanged(PreviousLocomotionMode) {
+          Events.push([
+            'OnLocomotionModeChanged',
+            PreviousLocomotionMode,
+          ])
+        },
+      }
+
+      setLocomotionMode(Character, 'Grounded', Lifecycle)
+      return { Character, Events }
+    }
+
+    const ragdollBoundary = land(-10)
+    expect(ragdollBoundary.Events).toEqual([
+      'StartRagdolling',
+      ['OnLocomotionModeChanged', 'InAir'],
+    ])
+    expect(
+      ragdollBoundary.Character.movement.brakingFrictionFactor,
+    ).toBe(0)
+
+    // Immediately above the ragdoll boundary still satisfies Roll.
+    expect(land(-9.999999).Events).toEqual([
+      ['StartRolling', 1.3, 90],
+      ['OnLocomotionModeChanged', 'InAir'],
+    ])
+    expect(land(-7).Events).toEqual([
+      ['StartRolling', 1.3, 90],
+      ['OnLocomotionModeChanged', 'InAir'],
+    ])
+
+    const ordinaryLanding = land(-6.999999)
+    expect(ordinaryLanding.Events).toEqual([
+      ['OnLocomotionModeChanged', 'InAir'],
+    ])
+    expect(
+      ordinaryLanding.Character.movement.brakingFrictionFactor,
+    ).toBe(3)
+    expect(
+      ordinaryLanding.Character.locomotionState
+        .rotationTowardsLastInputDirectionBlocked,
+    ).toBe(true)
+  })
+
+  it('selects landing Roll yaw from cached velocity or actor rotation', () => {
+    // AlsCharacter.cpp:276-310 refreshes LocomotionState before physics.
+    // NotifyLocomotionModeChanged() must not read post-impact movement velocity.
+    const withVelocity = createAlsCharacter({
+      actorYawAngle: -25,
+      locomotionMode: 'InAir',
+      velocity: { x: 0, y: -2, z: -7 },
+    })
+    withVelocity.movement.velocity.z = 0
+
+    const velocityEvents: unknown[] = []
+    setLocomotionMode(withVelocity, 'Grounded', {
+      StartRagdolling() {
+        velocityEvents.push('StartRagdolling')
+      },
+      StartRolling(PlayRate, TargetYawAngle) {
+        velocityEvents.push([PlayRate, TargetYawAngle])
+      },
+      OnLocomotionModeChanged() {},
+    })
+    expect(velocityEvents).toEqual([[1.3, -90]])
+
+    const withoutVelocity = createAlsCharacter({
+      actorYawAngle: 225,
+      locomotionMode: 'InAir',
+      velocity: { x: 0, y: 0, z: -7 },
+    })
+    const actorEvents: unknown[] = []
+    setLocomotionMode(withoutVelocity, 'Grounded', {
+      StartRagdolling() {
+        actorEvents.push('StartRagdolling')
+      },
+      StartRolling(PlayRate, TargetYawAngle) {
+        actorEvents.push([PlayRate, TargetYawAngle])
+      },
+      OnLocomotionModeChanged() {},
+    })
+    expect(actorEvents).toEqual([[1.3, -135]])
+  })
+
+  it('applies desired stance before action commands and remains re-entrant', () => {
+    // StartRagdolling() changes movement mode in ALS. The nested notification
+    // completes before the outer Blueprint event is dispatched.
+    const Character = createAlsCharacter({
+      desiredStance: 'Crouching',
+      locomotionMode: 'InAir',
+      velocity: { x: 0, y: 0, z: -10 },
+    })
+    const Events: unknown[] = []
+    let Lifecycle: AlsLocomotionModeChangedLifecycle
+    Lifecycle = {
+      StartRagdolling() {
+        Events.push([
+          'StartRagdolling',
+          Character.stance,
+          Character.locomotionMode,
+        ])
+        setLocomotionMode(Character, null, Lifecycle)
+      },
+      StartRolling() {
+        Events.push('StartRolling')
+      },
+      OnLocomotionModeChanged(PreviousLocomotionMode) {
+        Events.push([
+          'OnLocomotionModeChanged',
+          PreviousLocomotionMode,
+          Character.locomotionMode,
+        ])
+      },
+    }
+
+    setLocomotionMode(Character, 'Grounded', Lifecycle)
+
+    expect(Events).toEqual([
+      ['StartRagdolling', 'Crouching', 'Grounded'],
+      ['OnLocomotionModeChanged', 'Grounded', null],
+      ['OnLocomotionModeChanged', 'InAir', null],
+    ])
+  })
+
+  it('uses 0.5 landing friction with input and blocks last-input yaw', () => {
+    const Character = createAlsCharacter({
+      locomotionMode: 'InAir',
+      velocity: { x: 1, y: 0, z: -6 },
+    })
+    refreshInput(Character, { x: 1, y: 0, z: 0 })
+    Character.locomotionState
+      .rotationTowardsLastInputDirectionBlocked = false
+
+    setLocomotionMode(Character, 'Grounded')
+
+    expect(Character.movement.brakingFrictionFactor).toBe(0.5)
+    expect(
+      Character.movement.brakingFrictionFactorResetTime,
+    ).toBe(0.5)
+    expect(
+      Character.locomotionState
+        .rotationTowardsLastInputDirectionBlocked,
+    ).toBe(true)
+  })
+
+  it('requests ragdoll only for the authored rolling-in-air option', () => {
+    const Character = createAlsCharacter({
+      settings: {
+        Rolling: {
+          ...ALS_CHARACTER_SETTINGS.Rolling,
+          bInterruptRollingWhenInAir: true,
+        },
+      },
+    })
+    setLocomotionAction(Character, 'Rolling')
+    const Events: string[] = []
+
+    setLocomotionMode(Character, 'InAir', {
+      StartRagdolling() {
+        Events.push('StartRagdolling')
+      },
+      StartRolling() {
+        Events.push('StartRolling')
+      },
+      OnLocomotionModeChanged() {
+        Events.push('OnLocomotionModeChanged')
+      },
+    })
+
+    expect(Events).toEqual([
+      'StartRagdolling',
+      'OnLocomotionModeChanged',
+    ])
   })
 
   it('keeps stance action-owned and restores desired stance on action exit', () => {

@@ -63,6 +63,21 @@ export type AlsViewMode = 'FirstPerson' | 'ThirdPerson'
 export { ALS_CHARACTER_SETTINGS }
 export type { AlsCharacterSettings, AlsInAirRotationMode }
 
+/**
+ * Engine-owned action commands and the Blueprint event issued by
+ * `AAlsCharacter::NotifyLocomotionModeChanged()`.
+ *
+ * Character policy selects these calls synchronously. The browser bridge owns
+ * montage playback, ragdoll physics, and any re-entrant movement-mode changes.
+ */
+export interface AlsLocomotionModeChangedLifecycle {
+  StartRagdolling(): void
+  StartRolling(PlayRate: number, TargetYawAngle: number): void
+  OnLocomotionModeChanged(
+    PreviousLocomotionMode: AlsLocomotionMode,
+  ): void
+}
+
 export interface AlsCharacter {
   desiredAiming: boolean
   desiredRotationMode: AlsRotationMode
@@ -482,34 +497,81 @@ export function setLocomotionAction(
 }
 
 /**
- * AAlsCharacter::SetLocomotionMode() / NotifyLocomotionModeChanged() /
- * ApplyDesiredStance(), cpp:503-529 and 810-833.
+ * `AAlsCharacter::NotifyLocomotionModeChanged()`, AlsCharacter.cpp:515-570.
  *
- * An invalid locomotion mode represents MOVE_Custom (mantling). It deliberately leaves stance
- * untouched while an action owns movement.
+ * `LocomotionState.Velocity` is deliberately used instead of the movement
+ * component's current velocity. ALS refreshes this state before physics, so
+ * the landing callback still sees the cached pre-impact vertical speed.
+ */
+export function notifyLocomotionModeChanged(
+  character: AlsCharacter,
+  PreviousLocomotionMode: AlsLocomotionMode,
+  Lifecycle?: AlsLocomotionModeChangedLifecycle,
+): AlsCharacter {
+  applyDesiredStance(character)
+
+  if (
+    character.locomotionMode === 'Grounded'
+    && PreviousLocomotionMode === 'InAir'
+  ) {
+    if (
+      character.settings.Ragdolling.bStartRagdollingOnLand
+      && character.locomotionState.velocity.z
+        <= -character.settings.Ragdolling
+          .RagdollingOnLandSpeedThreshold
+    ) {
+      Lifecycle?.StartRagdolling()
+    } else if (
+      character.settings.Rolling.bStartRollingOnLand
+      && character.locomotionState.velocity.z
+        <= -character.settings.Rolling.RollingOnLandSpeedThreshold
+    ) {
+      Lifecycle?.StartRolling(
+        1.3,
+        character.locomotionState.hasVelocity
+          ? character.locomotionState.velocityYawAngle
+          : unwindDegrees(character.actorYawAngle),
+      )
+    } else {
+      startAlsLandingBrakingFriction(
+        character.movement,
+        character.locomotionState.hasInput,
+      )
+      character.locomotionState
+        .rotationTowardsLastInputDirectionBlocked = true
+    }
+  } else if (
+    character.locomotionMode === 'InAir'
+    && character.locomotionAction === 'Rolling'
+    && character.settings.Rolling.bInterruptRollingWhenInAir
+  ) {
+    Lifecycle?.StartRagdolling()
+  }
+
+  Lifecycle?.OnLocomotionModeChanged(PreviousLocomotionMode)
+  return character
+}
+
+/**
+ * `AAlsCharacter::SetLocomotionMode()`, AlsCharacter.cpp:503-513.
+ *
+ * An invalid locomotion mode represents MOVE_Custom (mantling). It
+ * deliberately leaves stance untouched while an action owns movement.
  */
 export function setLocomotionMode(
   character: AlsCharacter,
   locomotionMode: AlsLocomotionMode,
+  Lifecycle?: AlsLocomotionModeChangedLifecycle,
 ): AlsCharacter {
   if (character.locomotionMode === locomotionMode) return character
 
-  const previousLocomotionMode = character.locomotionMode
+  const PreviousLocomotionMode = character.locomotionMode
   character.locomotionMode = locomotionMode
-  applyDesiredStance(character)
-
-  if (
-    locomotionMode === 'Grounded'
-    && previousLocomotionMode === 'InAir'
-  ) {
-    startAlsLandingBrakingFriction(
-      character.movement,
-      character.locomotionState.hasInput,
-    )
-    // NotifyLocomotionModeChanged() blocks the previous input-facing target after an ordinary
-    // landing so the landing animation cannot twist the legs into a spiral.
-    character.locomotionState.rotationTowardsLastInputDirectionBlocked = true
-  }
+  notifyLocomotionModeChanged(
+    character,
+    PreviousLocomotionMode,
+    Lifecycle,
+  )
   return character
 }
 
@@ -739,5 +801,15 @@ export function setTargetYawAngle(
   character.locomotionState.viewRelativeTargetYawAngle = unwindDegrees(
     character.viewYawAngle - target,
   )
+  return character
+}
+
+/** `AAlsCharacter::SetRotationInstant()`, AlsCharacter.cpp:1904-1912. */
+export function setRotationInstant(
+  character: AlsCharacter,
+  TargetYawAngle: number,
+): AlsCharacter {
+  setTargetYawAngle(character, TargetYawAngle)
+  character.actorYawAngle = unwindDegrees(TargetYawAngle)
   return character
 }
