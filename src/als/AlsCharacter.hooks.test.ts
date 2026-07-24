@@ -2,29 +2,39 @@ import { describe, expect, it } from 'vitest'
 import {
   createAlsCharacter,
   refreshAlsCharacter,
+  setLocomotionAction,
   setLocomotionMode,
   setStance,
 } from './AlsCharacter'
 import {
   ALS_CAPSULE_RADIUS,
   ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
+  ALS_GROUNDED_FLOOR_COMPENSATION,
   ALS_MESH_RELATIVE_LOCATION_Z,
   ALS_PHYSICS_TIMESTEP,
   ALS_RAPIER_GRAVITY,
   ALS_RAPIER_JUMP_SPEED,
   ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
   ALS_STANDING_CAPSULE_HALF_HEIGHT,
+  alsActorYawQuaternion,
+  applyAlsMantlingRotationDelta,
   consumeAlsJumpInput,
   getAlsCapsuleHalfHeight,
   handleAlsJumpInput,
   hasTriggeredSprintHold,
+  prepareRapierAlsMantlingMovementBoundary,
+  preserveAlsActorFeetAcrossFloorCompensation,
   refreshRapierAlsLocomotionMode,
   requestAlsJumpInput,
   publishAlsCharacterAnimationSnapshot,
+  resolveAlsActorFeetLocation,
   resolveAlsActorLocation,
+  resolveAlsActorLocationWithFloorCompensation,
   resolveAlsCameraMovementBaseSnapshot,
+  resolveAlsMantlingOverlayTag,
   resolveAlsMeshRootRelativeY,
   resolveCameraRelativeInput,
+  shouldProbeRapierAlsGround,
   stepGroundedCharacterYaw,
   stepInAirCharacterYaw,
 } from './AlsCharacter.hooks'
@@ -38,6 +48,27 @@ import { calculateMovingSmooth } from './Settings/AlsGeneralAnimationSettings'
 import {
   UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
 } from '../engine/characterMovementFloor'
+import {
+  applyRootMotionSource,
+  createRootMotionSourceGroup,
+  getRootMotionSourceByID,
+} from '../engine/rootMotionSourceGroup'
+import type {
+  CompiledAuthoredRootMotion,
+} from '../engine/rootMotion'
+import {
+  createAlsRootMotionSource_Mantling,
+} from './RootMotionSources/AlsRootMotionSource_Mantling'
+import {
+  ALS_MANTLING_SETTINGS,
+  selectAlsMantlingSettings,
+} from './Settings/AlsMantlingSettings'
+import type {
+  AlsMantlingLifecycleAdapter,
+} from './AlsCharacter_Actions'
+import type {
+  RapierAlsMantlingAdapter,
+} from '../engine/rapierAlsMantling'
 
 function animationControlsFixture(): AlsCharacterAnimationControls {
   return {
@@ -62,6 +93,33 @@ function animationControlsFixture(): AlsCharacterAnimationControls {
     rotateInPlace: false,
     viewYawAngle: 0,
     viewYawSpeed: 0,
+  }
+}
+
+function syntheticMantlingRootMotion(
+  clipName: string,
+  duration: number,
+): CompiledAuthoredRootMotion {
+  return {
+    clipName,
+    duration,
+    bEnableRootMotion: false,
+    bForceRootLock: true,
+    RootMotionRootLock: 'AnimFirstFrame',
+    poseReset: {
+      kind: 'animationFirstFrame',
+      translation: new Float32Array(3),
+      rotation: new Float32Array([0, 0, 0, 1]),
+    },
+    times: new Float32Array([0, duration]),
+    translations: new Float32Array([
+      0, 0, 0,
+      0, 1, 0,
+    ]),
+    rotations: new Float32Array([
+      0, 0, 0, 1,
+      0, 0, 0, 1,
+    ]),
   }
 }
 
@@ -111,6 +169,54 @@ describe('AlsCharacter browser bridge math', () => {
       - ALS_STANDING_CAPSULE_HALF_HEIGHT,
     )
     expect(rapierBodyAnchor).toEqual({ x: 2, y: -3, z: 4 })
+  })
+
+  it('uses the active stance for feet and preserves the 0.0215m Custom-mode boundary', () => {
+    expect(ALS_GROUNDED_FLOOR_COMPENSATION).toBe(0.0215)
+    const bodyAnchor = { x: 2, y: -3, z: 0.9 }
+    const crouchingActor = resolveAlsActorLocationWithFloorCompensation(
+      bodyAnchor,
+      'Crouching',
+      ALS_GROUNDED_FLOOR_COMPENSATION,
+    )
+    expect(crouchingActor.z).toBeCloseTo(0.5815, 12)
+    expect(resolveAlsActorFeetLocation(
+      crouchingActor,
+      'Crouching',
+    ).z).toBeCloseTo(0.0215, 12)
+
+    const enteringCustom =
+      preserveAlsActorFeetAcrossFloorCompensation(
+        bodyAnchor,
+        ALS_GROUNDED_FLOOR_COMPENSATION,
+        ALS_GROUNDED_FLOOR_COMPENSATION,
+      )
+    expect(enteringCustom).toEqual(bodyAnchor)
+
+    const inAirAnchor = { x: 2, y: -3, z: 1.4 }
+    const leavingCustom =
+      preserveAlsActorFeetAcrossFloorCompensation(
+        inAirAnchor,
+        0,
+        ALS_GROUNDED_FLOOR_COMPENSATION,
+      )
+    const feetBefore = resolveAlsActorFeetLocation(
+      resolveAlsActorLocationWithFloorCompensation(
+        inAirAnchor,
+        'Standing',
+        0,
+      ),
+      'Standing',
+    )
+    const feetAfter = resolveAlsActorFeetLocation(
+      resolveAlsActorLocationWithFloorCompensation(
+        leavingCustom,
+        'Standing',
+        ALS_GROUNDED_FLOOR_COMPENSATION,
+      ),
+      'Standing',
+    )
+    expect(feetAfter).toEqual(feetBefore)
   })
 
   it('keeps the rendered mesh fixed while the crouching capsule root lowers', () => {
@@ -234,11 +340,12 @@ describe('AlsCharacter browser bridge math', () => {
     }
 
     const staticBody = supportBody(1, true, { x: 2, y: 3, z: 4 })
+    const staticHit = supportHit(staticBody)
     expect(resolveAlsCameraMovementBaseSnapshot(
       'Grounded',
-      supportHit(staticBody),
+      staticHit,
     )).toEqual({
-      key: staticBody,
+      key: staticHit.collider,
       boneName: '',
       hasRelativeRotation: false,
       location: { x: 2, y: 4, z: 3 },
@@ -246,12 +353,13 @@ describe('AlsCharacter browser bridge math', () => {
     })
 
     const movingBody = supportBody(2, false, { x: 5, y: 6, z: 7 })
+    const movingHit = supportHit(movingBody)
     expect(resolveAlsCameraMovementBaseSnapshot(
       'Grounded',
-      supportHit(movingBody),
+      movingHit,
       true,
     )).toMatchObject({
-      key: movingBody,
+      key: movingHit.collider,
       hasRelativeRotation: true,
       location: { x: 5, y: 7, z: 6 },
     })
@@ -260,7 +368,7 @@ describe('AlsCharacter browser bridge math', () => {
       .toBeNull()
     expect(resolveAlsCameraMovementBaseSnapshot(
       'InAir',
-      supportHit(movingBody),
+      movingHit,
       true,
     )).toBeNull()
   })
@@ -442,6 +550,20 @@ describe('AlsCharacter browser bridge math', () => {
     expect(consumeAlsJumpInput(request)).toBe(false)
   })
 
+  it('attempts a grounded mantle before the crouch and Jump branches', () => {
+    const character = createAlsCharacter({
+      desiredStance: 'Crouching',
+    })
+    const ordering: string[] = []
+    expect(handleAlsJumpInput(character, () => {
+      ordering.push('StartMantlingGrounded')
+      return true
+    })).toBe('Mantled')
+    expect(ordering).toEqual(['StartMantlingGrounded'])
+    expect(character.stance).toBe('Crouching')
+    expect(character.locomotionMode).toBe('Grounded')
+  })
+
   it('uncrouches on the first jump input and jumps only from Grounded Standing', () => {
     const character = createAlsCharacter({
       desiredStance: 'Crouching',
@@ -471,5 +593,168 @@ describe('AlsCharacter browser bridge math', () => {
       .toBe('InAir')
     expect(refreshRapierAlsLocomotionMode(character, true, 0))
       .toBe('Grounded')
+
+    setLocomotionMode(character, null)
+    expect(refreshRapierAlsLocomotionMode(
+      character,
+      true,
+      -10,
+      true,
+    )).toBeNull()
+    expect(character.locomotionMode).toBeNull()
+    expect(shouldProbeRapierAlsGround(null, true)).toBe(false)
+    expect(shouldProbeRapierAlsGround(null, false)).toBe(false)
+    expect(shouldProbeRapierAlsGround('Grounded', false)).toBe(true)
+  })
+
+  it('maps every authored low-mantle overlay and rejects unknown tags', () => {
+    const expected = {
+      Default: 'MS_Als_Low',
+      Injured: 'MS_Als_Low_Left',
+      HandsTied: 'MS_Als_Low_BothHands',
+      Rifle: 'MS_Als_Low_Right',
+      PistolOneHanded: 'MS_Als_Low_Right',
+      PistolTwoHanded: 'MS_Als_Low_Right',
+      Bow: 'MS_Als_Low_Left',
+      Torch: 'MS_Als_Low_Left',
+      Binoculars: 'MS_Als_Low_Right',
+      Box: 'MS_Als_Low_Box',
+      Barrel: 'MS_Als_Low_Left',
+    } as const
+    for (const [overlay, settingsName] of Object.entries(expected)) {
+      const tag = resolveAlsMantlingOverlayTag(overlay)
+      expect(selectAlsMantlingSettings('Low', tag).Name)
+        .toBe(settingsName)
+    }
+    expect(() => resolveAlsMantlingOverlayTag('Unknown'))
+      .toThrow('Unsupported ALS mantling overlay mode')
+  })
+
+  it('prepares and applies one retained mantling RMS exactly once at the movement boundary', () => {
+    const character = createAlsCharacter()
+    const settings = ALS_MANTLING_SETTINGS.MS_Als_Low_Right
+    const targetPrimitive = {}
+    const rootMotionSource = createAlsRootMotionSource_Mantling({
+      MantlingSettings: settings,
+      AuthoredRootMotion: syntheticMantlingRootMotion(
+        settings.Montage.Sequence,
+        settings.Montage.SequenceLength,
+      ),
+      MantlingHeight: 0.75,
+      TargetPrimitive: targetPrimitive,
+      bUseRelativeLocation: false,
+      TargetRelativeLocation: { x: 1, y: 0, z: 1 },
+      TargetRelativeRotation: {
+        Pitch: 0,
+        Yaw: 0,
+        Roll: 0,
+      },
+      ActorFeetLocation: { x: 0, y: 0, z: 0.0215 },
+      ActorRotation: alsActorYawQuaternion(0),
+    })
+    const rootMotionSources =
+      createRootMotionSourceGroup<typeof rootMotionSource>()
+    const rootMotionSourceId = applyRootMotionSource(
+      rootMotionSources,
+      rootMotionSource,
+    )
+    character.mantlingState.RootMotionSourceId =
+      rootMotionSourceId
+    setLocomotionMode(character, null)
+    setLocomotionAction(character, 'Mantling')
+
+    let montageSetPositionCount = 0
+    const Lifecycle: AlsMantlingLifecycleAdapter = {
+      SetNetworkSmoothingMode() {},
+      ResetMeshRelativeTransform() {},
+      SetMovementModeLocked() {},
+      SetBase() {},
+      ApplyRootMotionSource() {
+        throw new Error('unexpected nested root-motion application')
+      },
+      GetRootMotionSourceByID(id) {
+        return getRootMotionSourceByID(rootMotionSources, id)
+      },
+      MantlingMontage: {
+        play() {
+          return null
+        },
+        montageSetPosition() {
+          montageSetPositionCount++
+          return true
+        },
+        montageStop() {
+          return false
+        },
+        stopMontageInstance() {
+          return false
+        },
+        takeNotifyEvents() {
+          return []
+        },
+      },
+      IsTargetPrimitiveValid() {
+        return true
+      },
+      OnMantlingStarted() {},
+      OnMantlingEnded() {},
+      ForceNetUpdate() {},
+      StartRagdolling() {},
+    }
+    const MantlingAdapter = {
+      UseRelativeLocation() {
+        return false
+      },
+      GetTargetPrimitiveTransform() {
+        throw new Error('static target has no relative transform')
+      },
+      IsTargetValid() {
+        return true
+      },
+    } as unknown as RapierAlsMantlingAdapter
+    let translation = { x: 0, y: 0.9, z: 0 }
+    let setTranslationCount = 0
+    let setLinvelCount = 0
+    const Body = {
+      translation: () => translation,
+      setTranslation(value: typeof translation) {
+        setTranslationCount++
+        translation = { ...value }
+      },
+      setLinvel(
+        value: { x: number; y: number; z: number },
+      ) {
+        setLinvelCount++
+        expect(value).toEqual({ x: 0, y: 0, z: 0 })
+      },
+    }
+
+    const result =
+      prepareRapierAlsMantlingMovementBoundary({
+        Character: character,
+        RootMotionSources: rootMotionSources,
+        Lifecycle,
+        MantlingAdapter,
+        Body,
+        ActorFeetLocation: { x: 0, y: 0, z: 0.0215 },
+        DeltaTime: ALS_PHYSICS_TIMESTEP,
+      })
+
+    expect(result.PreparedSourceCount).toBe(1)
+    expect(result.bAppliedDirectTranslation).toBe(true)
+    expect(result.RootMotionResult?.valid).toBe(true)
+    expect(rootMotionSource.Time).toBe(ALS_PHYSICS_TIMESTEP)
+    expect(montageSetPositionCount).toBe(1)
+    expect(setTranslationCount).toBe(1)
+    expect(setLinvelCount).toBe(1)
+    expect(Object.keys(character.mantlingState))
+      .toEqual(['RootMotionSourceId'])
+  })
+
+  it('applies RotationDelta times current actor rotation in UE order', () => {
+    expect(applyAlsMantlingRotationDelta(
+      30,
+      alsActorYawQuaternion(60),
+    )).toBeCloseTo(90, 12)
   })
 })

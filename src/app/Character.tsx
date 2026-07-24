@@ -20,9 +20,13 @@ import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { useAlsAnimationInstance } from '../als/AlsAnimationInstance.hooks'
+import type {
+  AlsMantlingMontageBridge,
+} from '../als/AlsAnimationInstance'
 import {
   ALS_CAPSULE_RADIUS,
   ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
+  ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
   ALS_STANDING_CAPSULE_HALF_HEIGHT,
   resolveAlsMeshRootRelativeY,
   useAlsCharacter,
@@ -32,6 +36,15 @@ import { createRapierAlsCapsuleSweep } from '../engine/rapierAlsCapsuleSweep'
 import {
   createRapierAlsControlRigFootTrace,
 } from '../engine/rapierAlsControlRigFootTrace'
+import {
+  createRapierAlsMantling,
+} from '../engine/rapierAlsMantling'
+import {
+  compileAuthoredRootMotion,
+} from '../engine/rootMotion'
+import type {
+  CompiledAuthoredRootMotion,
+} from '../engine/rootMotion'
 import type { CharacterPoseSample } from './CharacterPoseSample'
 import {
   ALS_RIFLE_OVERLAY_OBJECT_URL,
@@ -40,13 +53,56 @@ import {
 } from '../als/AlsCharacter.overlayObjects'
 import { applyCharacterMaterialOverrides } from '../als/characterMaterials'
 import { ALS_MESH_COMPONENT_YAW_RADIANS } from '../engine/unrealCoordinateSpace'
+import {
+  ALS_MANTLING_SETTINGS,
+} from '../als/Settings/AlsMantlingSettings'
 
 const CHARACTER_URL = '/assets/skm-als.glb'
 const GLB_MAGIC = [0x67, 0x6c, 0x54, 0x46]
+const ALS_VISIBILITY_MANTLING_RESPONSE_CHANNELS = new Set([
+  'WorldStatic',
+  'WorldDynamic',
+  'Destructible',
+])
 
 interface CharacterProps {
   onSizeChange: (size: THREE.Vector3) => void
   poseSample: MutableRefObject<CharacterPoseSample>
+}
+
+function compileAlsMantlingRootMotion(
+  animations: readonly THREE.AnimationClip[],
+): ReadonlyMap<string, CompiledAuthoredRootMotion> {
+  const sequenceNames = new Set(
+    Object.values(ALS_MANTLING_SETTINGS).map(
+      (settings) => settings.Montage.Sequence,
+    ),
+  )
+  if (sequenceNames.size !== 3) {
+    throw new Error(
+      `ALS mantling content must reference exactly three sequences; received ${sequenceNames.size}`,
+    )
+  }
+
+  const clipsByName = new Map(
+    animations.map((clip) => [clip.name, clip]),
+  )
+  const rootMotionBySequence =
+    new Map<string, CompiledAuthoredRootMotion>()
+  for (const sequenceName of sequenceNames) {
+    const clip = clipsByName.get(sequenceName)
+    if (!clip) {
+      throw new Error(`Missing ALS mantling sequence ${sequenceName}`)
+    }
+    const rootMotion = compileAuthoredRootMotion(clip)
+    if (!rootMotion) {
+      throw new Error(
+        `${sequenceName} is missing its authored raw root track`,
+      )
+    }
+    rootMotionBySequence.set(sequenceName, rootMotion)
+  }
+  return rootMotionBySequence
 }
 
 function isGlb(buffer: ArrayBuffer) {
@@ -198,6 +254,12 @@ function LoadedCharacter({
   const rigidBody = useRef<RapierRigidBody>(null)
   const standingCapsule = useRef<RapierCollider>(null)
   const crouchingCapsule = useRef<RapierCollider>(null)
+  const mantlingMontage =
+    useRef<AlsMantlingMontageBridge | null>(null)
+  const mantlingRootMotionBySequence = useMemo(
+    () => compileAlsMantlingRootMotion(gltf.animations),
+    [gltf.animations],
+  )
   const capsuleSweep = useMemo(
     () => createRapierAlsCapsuleSweep({
       world,
@@ -230,6 +292,55 @@ function LoadedCharacter({
     [
       gltf.scene,
       RapierRay,
+      rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+      world,
+    ],
+  )
+  const mantlingAdapter = useMemo(
+    () => createRapierAlsMantling({
+      world,
+      walkableFloorAngleCos:
+        ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
+      queryFilterForChannel(channel, responseChannels) {
+        if (
+          channel !== 'Visibility'
+          || responseChannels.length
+            !== ALS_VISIBILITY_MANTLING_RESPONSE_CHANNELS.size
+          || responseChannels.some(
+            (response) =>
+              !ALS_VISIBILITY_MANTLING_RESPONSE_CHANNELS.has(
+                response,
+              ),
+          )
+        ) {
+          throw new Error(
+            `Unsupported ALS mantling collision response ${channel}:`
+            + responseChannels.join(','),
+          )
+        }
+        /*
+         * ORIGINAL engine adapter policy: Rapier has no UE object-channel table. The standalone
+         * scene maps Visibility's authored WorldStatic/WorldDynamic/Destructible blocking set to
+         * every non-sensor world collider. The adapter separately excludes the owner rigid body
+         * and both owner capsules.
+         */
+        return {
+          flags: rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+        }
+      },
+      getOwnerRigidBody: () => rigidBody.current,
+      getOwnerColliders: () => {
+        const colliders: RapierCollider[] = []
+        if (standingCapsule.current) {
+          colliders.push(standingCapsule.current)
+        }
+        if (crouchingCapsule.current) {
+          colliders.push(crouchingCapsule.current)
+        }
+        return colliders
+      },
+    }),
+    [
       rapier.QueryFilterFlags.EXCLUDE_SENSORS,
       world,
     ],
@@ -267,6 +378,12 @@ function LoadedCharacter({
     characterGroup,
     poseSample,
     capsuleSweep,
+    {
+      adapter: mantlingAdapter,
+      authoredRootMotionBySequence:
+        mantlingRootMotionBySequence,
+      montage: mantlingMontage,
+    },
   )
   // The hook owns clip sampling, pose-space composition, and the one skeleton write per frame.
   // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
@@ -278,6 +395,7 @@ function LoadedCharacter({
     character.onJumped,
     capsuleSweep,
     controlRigFootTrace,
+    mantlingMontage,
   )
 
   useFrame(() => {

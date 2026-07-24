@@ -1,5 +1,6 @@
 import type { AlsOverlayMode } from '../als/AnimGraph/overlayMode'
 import type {
+  AlsLocomotionAction,
   AlsLocomotionMode,
   AlsViewMode,
 } from '../als/AlsCharacter'
@@ -48,6 +49,7 @@ declare global {
       stance: AlsStance
       rotationMode: AlsRotationMode
       locomotionMode: AlsLocomotionMode
+      locomotionAction: AlsLocomotionAction
       speed: number
       direction: number
       moving: boolean
@@ -57,6 +59,22 @@ declare global {
       position: { x: number; y: number; z: number }
       velocity: { x: number; y: number; z: number }
       verticalVelocity: number
+      rootMotionSourceId: number
+      rootMotionSourceStatus:
+        | 'Active'
+        | 'Finished'
+        | 'MarkedForRemoval'
+        | null
+      rootMotionSourceTime: number | null
+      activeMantlingTargetHandle: number | null
+      movementBaseHandle: number | null
+      bodyAnchor: { x: number; y: number; z: number }
+      actorFeet: { x: number; y: number; z: number }
+      floorCompensation: number
+      movementModeLocked: boolean
+      gravityScale: number
+      networkSmoothingMode: 'Disabled' | 'Exponential'
+      ragdollRequestedAfterMantlingTargetDestruction: boolean
     }
     __alsCameraState?: {
       activated: boolean

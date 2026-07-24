@@ -11,12 +11,15 @@ import * as THREE from 'three'
 import { LEVA_ROOTS } from '../app/levaRoots'
 import {
   probeRapierAlsGround,
+  rapierAlsCameraMovementBaseFromPrimitive,
   rapierAlsCameraMovementBase,
+  rapierAlsMovementBaseFromPrimitive,
   rapierAlsMovementBase,
 } from '../engine/rapierAlsCapsuleSweep'
 import type {
   RapierAlsCapsuleSweep,
   RapierAlsCapsuleSweepHit,
+  RapierAlsSupportingCollider,
 } from '../engine/rapierAlsCapsuleSweep'
 import {
   getCharacterMovementFloorOffset,
@@ -26,6 +29,21 @@ import type { AlsBasedMovement } from './State/AlsMovementBaseState'
 import {
   setRapierAlsStanceCapsules,
 } from '../engine/rapierAlsStanceCapsules'
+import type {
+  CompiledAuthoredRootMotion,
+} from '../engine/rootMotion'
+import {
+  applyRootMotionSource,
+  createRootMotionSourceGroup,
+  getRootMotionSourceByID,
+  prepareRootMotionSourceGroup,
+} from '../engine/rootMotionSourceGroup'
+import type {
+  RootMotionSourceGroup,
+} from '../engine/rootMotionSourceGroup'
+import type {
+  RapierAlsMantlingAdapter,
+} from '../engine/rapierAlsMantling'
 import {
   threeToUnrealVector,
   unrealToThreeVector,
@@ -49,12 +67,33 @@ import {
   stepInAirVelocity,
 } from './AlsCharacterMovementComponent'
 import { getRelativeAccelerationAmount } from './AlsAnimationInstance'
-import type { AlsAnimationInstanceControls } from './AlsAnimationInstance'
+import type {
+  AlsAnimationInstanceControls,
+  AlsMantlingMontageBridge,
+} from './AlsAnimationInstance'
+import {
+  prepareCharacterMantling,
+  refreshMantling,
+  startMantlingGrounded,
+  startMantlingImplementation,
+  startMantlingInAir,
+} from './AlsCharacter_Actions'
+import type {
+  AlsMantlingLifecycleAdapter,
+} from './AlsCharacter_Actions'
 import type { CharacterPoseSample } from '../app/CharacterPoseSample'
 import {
   ALS_OVERLAY_MODES,
 } from './AnimGraph/overlayMode'
 import type { AlsOverlayMode } from './AnimGraph/overlayMode'
+import type {
+  AlsMantlingRootMotionResult,
+  AlsRootMotionSource_Mantling,
+} from './RootMotionSources/AlsRootMotionSource_Mantling'
+import {
+  ALS_GENERAL_MANTLING_SETTINGS,
+  selectAlsMantlingSettings,
+} from './Settings/AlsMantlingSettings'
 import {
   ALS_GAITS,
   ALS_ROTATION_MODES,
@@ -67,6 +106,9 @@ import type {
   AlsRotationMode,
   AlsStance,
 } from './Settings/AlsMovementSettings'
+import type {
+  AlsQuaternion,
+} from './State/AlsFeetState'
 import { exponentialDecay } from './State/AlsGroundedState'
 import { unwindDegrees } from './State/AlsLocomotionState'
 import type { AlsVector3 } from './State/AlsLocomotionState'
@@ -87,11 +129,28 @@ export const ALS_PHYSICS_TIMESTEP = 1 / 60
 export const ALS_RAPIER_JUMP_SPEED = 4.2
 export const ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS = 0.71
 export const ALS_RAPIER_GRAVITY = 9.8
+export const ALS_GROUNDED_FLOOR_COMPENSATION =
+  getCharacterMovementFloorOffset(true)
 
 export function getAlsCapsuleHalfHeight(stance: AlsStance): number {
   return stance === 'Crouching'
     ? ALS_CROUCHING_CAPSULE_HALF_HEIGHT
     : ALS_STANDING_CAPSULE_HALF_HEIGHT
+}
+
+export function resolveAlsActorLocationWithFloorCompensation(
+  rapierBodyAnchor: Readonly<AlsVector3>,
+  stance: AlsStance,
+  floorCompensation: number,
+  out: AlsVector3 = { x: 0, y: 0, z: 0 },
+): AlsVector3 {
+  out.x = rapierBodyAnchor.x
+  out.y = rapierBodyAnchor.y
+  out.z = rapierBodyAnchor.z
+    + getAlsCapsuleHalfHeight(stance)
+    - ALS_STANDING_CAPSULE_HALF_HEIGHT
+    + floorCompensation
+  return out
 }
 
 /**
@@ -106,12 +165,27 @@ export function resolveAlsActorLocation(
   locomotionMode: AlsLocomotionMode,
   out: AlsVector3 = { x: 0, y: 0, z: 0 },
 ): AlsVector3 {
-  out.x = rapierBodyAnchor.x
-  out.y = rapierBodyAnchor.y
-  out.z = rapierBodyAnchor.z
-    + getAlsCapsuleHalfHeight(stance)
-    - ALS_STANDING_CAPSULE_HALF_HEIGHT
-    + getCharacterMovementFloorOffset(locomotionMode === 'Grounded')
+  return resolveAlsActorLocationWithFloorCompensation(
+    rapierBodyAnchor,
+    stance,
+    getCharacterMovementFloorOffset(locomotionMode === 'Grounded'),
+    out,
+  )
+}
+
+/**
+ * UCharacterMovementComponent::GetActorFeetLocation() uses the active scaled capsule, including
+ * a crouching capsule. Keeping the subtraction explicit guards the mantling start seam from
+ * accidentally assuming the standing half-height.
+ */
+export function resolveAlsActorFeetLocation(
+  actorLocation: Readonly<AlsVector3>,
+  stance: AlsStance,
+  out: AlsVector3 = { x: 0, y: 0, z: 0 },
+): AlsVector3 {
+  out.x = actorLocation.x
+  out.y = actorLocation.y
+  out.z = actorLocation.z - getAlsCapsuleHalfHeight(stance)
   return out
 }
 
@@ -130,6 +204,233 @@ export function resolveAlsMeshRootRelativeY(
 ): number {
   return ALS_MESH_RELATIVE_LOCATION_Z
     + getCharacterMovementFloorOffset(locomotionMode === 'Grounded')
+}
+
+export function resolveAlsMeshRootRelativeYWithFloorCompensation(
+  floorCompensation: number,
+): number {
+  return ALS_MESH_RELATIVE_LOCATION_Z + floorCompensation
+}
+
+const ALS_MANTLING_OVERLAY_TAGS = new Map<string, string>([
+  ['Default', 'Als.OverlayMode.Default'],
+  ['Als.OverlayMode.Default', 'Als.OverlayMode.Default'],
+  ['Injured', 'Als.OverlayMode.Injured'],
+  ['Als.OverlayMode.Injured', 'Als.OverlayMode.Injured'],
+  ['HandsTied', 'Als.OverlayMode.HandsTied'],
+  ['Als.OverlayMode.HandsTied', 'Als.OverlayMode.HandsTied'],
+  ['Rifle', 'Als.OverlayMode.Rifle'],
+  ['Als.OverlayMode.Rifle', 'Als.OverlayMode.Rifle'],
+  ['PistolOneHanded', 'Als.OverlayMode.PistolOneHanded'],
+  ['Als.OverlayMode.PistolOneHanded', 'Als.OverlayMode.PistolOneHanded'],
+  ['PistolTwoHanded', 'Als.OverlayMode.PistolTwoHanded'],
+  ['Als.OverlayMode.PistolTwoHanded', 'Als.OverlayMode.PistolTwoHanded'],
+  ['Bow', 'Als.OverlayMode.Bow'],
+  ['Als.OverlayMode.Bow', 'Als.OverlayMode.Bow'],
+  ['Torch', 'Als.OverlayMode.Torch'],
+  ['Als.OverlayMode.Torch', 'Als.OverlayMode.Torch'],
+  ['Binoculars', 'Als.OverlayMode.Binoculars'],
+  ['Als.OverlayMode.Binoculars', 'Als.OverlayMode.Binoculars'],
+  ['Box', 'Als.OverlayMode.Box'],
+  ['Als.OverlayMode.Box', 'Als.OverlayMode.Box'],
+  ['Barrel', 'Als.OverlayMode.Barrel'],
+  ['Als.OverlayMode.Barrel', 'Als.OverlayMode.Barrel'],
+])
+
+/** Exact gameplay tags accepted by B_Als_Character's low-mantle overlay switch. */
+export function resolveAlsMantlingOverlayTag(overlayMode: string): string {
+  const tag = ALS_MANTLING_OVERLAY_TAGS.get(overlayMode)
+  if (!tag) {
+    throw new Error(`Unsupported ALS mantling overlay mode "${overlayMode}"`)
+  }
+  return tag
+}
+
+export function alsActorYawQuaternion(
+  actorYawAngle: number,
+): AlsQuaternion {
+  const halfYaw = actorYawAngle * Math.PI / 360
+  return {
+    x: 0,
+    y: 0,
+    z: Math.sin(halfYaw),
+    w: Math.cos(halfYaw),
+  }
+}
+
+function multiplyAlsQuaternions(
+  left: Readonly<AlsQuaternion>,
+  right: Readonly<AlsQuaternion>,
+): AlsQuaternion {
+  return {
+    x: (
+      left.w * right.x + left.x * right.w
+      + left.y * right.z - left.z * right.y
+    ),
+    y: (
+      left.w * right.y - left.x * right.z
+      + left.y * right.w + left.z * right.x
+    ),
+    z: (
+      left.w * right.z + left.x * right.y
+      - left.y * right.x + left.z * right.w
+    ),
+    w: (
+      left.w * right.w - left.x * right.x
+      - left.y * right.y - left.z * right.z
+    ),
+  }
+}
+
+/**
+ * CharacterMovement applies the root source's RotationDelta to the current actor quaternion.
+ * The live character currently retains yaw only, so recover exactly that UE rotator component.
+ */
+export function applyAlsMantlingRotationDelta(
+  actorYawAngle: number,
+  rotationDelta: Readonly<AlsQuaternion>,
+): number {
+  const rotation = multiplyAlsQuaternions(
+    rotationDelta,
+    alsActorYawQuaternion(actorYawAngle),
+  )
+  return unwindDegrees(
+    Math.atan2(
+      2 * (
+        rotation.w * rotation.z
+        + rotation.x * rotation.y
+      ),
+      1 - 2 * (
+        rotation.y * rotation.y
+        + rotation.z * rotation.z
+      ),
+    ) * 180 / Math.PI,
+  )
+}
+
+export function preserveAlsActorFeetAcrossFloorCompensation(
+  rapierBodyAnchor: Readonly<AlsVector3>,
+  previousFloorCompensation: number,
+  nextFloorCompensation: number,
+  out: AlsVector3 = { x: 0, y: 0, z: 0 },
+): AlsVector3 {
+  out.x = rapierBodyAnchor.x
+  out.y = rapierBodyAnchor.y
+  out.z = rapierBodyAnchor.z
+    + previousFloorCompensation
+    - nextFloorCompensation
+  return out
+}
+
+interface RapierAlsMantlingMovementBody {
+  translation(): { x: number; y: number; z: number }
+  setTranslation(
+    translation: { x: number; y: number; z: number },
+    wakeUp: boolean,
+  ): void
+  setLinvel(
+    velocity: { x: number; y: number; z: number },
+    wakeUp: boolean,
+  ): void
+}
+
+export interface PrepareRapierAlsMantlingMovementBoundaryInput {
+  readonly Character: AlsCharacter
+  readonly RootMotionSources:
+    RootMotionSourceGroup<AlsRootMotionSource_Mantling>
+  readonly Lifecycle: AlsMantlingLifecycleAdapter
+  readonly MantlingAdapter: RapierAlsMantlingAdapter
+  readonly Body: RapierAlsMantlingMovementBody
+  readonly ActorFeetLocation: Readonly<AlsVector3>
+  readonly DeltaTime: number
+  readonly MeshScaleZ?: number
+}
+
+export interface PrepareRapierAlsMantlingMovementBoundaryResult {
+  readonly PreparedSourceCount: number
+  readonly RemovedSourceCount: number
+  readonly RootMotionResult: AlsMantlingRootMotionResult | null
+  readonly bAppliedDirectTranslation: boolean
+}
+
+/**
+ * UCharacterMovementComponent's one PerformMovement root-source boundary for live mantling.
+ * The source is prepared once, then its velocity-shaped result is consumed as one direct,
+ * no-sweep translation rather than being left as Rapier velocity.
+ */
+export function prepareRapierAlsMantlingMovementBoundary(
+  input: Readonly<PrepareRapierAlsMantlingMovementBoundaryInput>,
+): PrepareRapierAlsMantlingMovementBoundaryResult {
+  let RootMotionResult: AlsMantlingRootMotionResult | null = null
+  const activeSourceId =
+    input.Character.mantlingState.RootMotionSourceId
+  const prepared = prepareRootMotionSourceGroup(
+    input.RootMotionSources,
+    {
+      PrepareRootMotion(Source, LocalID) {
+        const bUseRelativeLocation =
+          input.MantlingAdapter.UseRelativeLocation(
+            Source.TargetPrimitive,
+          )
+        const result = prepareCharacterMantling({
+          Character: input.Character,
+          Lifecycle: input.Lifecycle,
+          RootMotionSource: Source,
+          SimulationDeltaTime: input.DeltaTime,
+          DeltaTime: input.DeltaTime,
+          bUseRelativeLocation,
+          TargetPrimitiveTransform: bUseRelativeLocation
+            ? input.MantlingAdapter.GetTargetPrimitiveTransform(
+                Source.TargetPrimitive,
+              )
+            : undefined,
+          ActorFeetLocation: input.ActorFeetLocation,
+          ActorRotation: alsActorYawQuaternion(
+            input.Character.actorYawAngle,
+          ),
+          MeshScaleZ: input.MeshScaleZ,
+          GravityDirection: { x: 0, y: 0, z: -1 },
+        })
+        if (LocalID === activeSourceId) RootMotionResult = result
+      },
+    },
+  )
+  const selectedRootMotionResult =
+    RootMotionResult as AlsMantlingRootMotionResult | null
+
+  if (!selectedRootMotionResult?.valid) {
+    input.Body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+    return {
+      ...prepared,
+      RootMotionResult: selectedRootMotionResult,
+      bAppliedDirectTranslation: false,
+    }
+  }
+
+  const translation = input.Body.translation()
+  const delta = unrealToThreeVector({
+    x: selectedRootMotionResult.TranslationVelocity.x
+      * input.DeltaTime,
+    y: selectedRootMotionResult.TranslationVelocity.y
+      * input.DeltaTime,
+    z: selectedRootMotionResult.TranslationVelocity.z
+      * input.DeltaTime,
+  })
+  input.Body.setTranslation({
+    x: translation.x + delta.x,
+    y: translation.y + delta.y,
+    z: translation.z + delta.z,
+  }, true)
+  input.Body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+  input.Character.actorYawAngle = applyAlsMantlingRotationDelta(
+    input.Character.actorYawAngle,
+    selectedRootMotionResult.RotationDelta,
+  )
+  return {
+    ...prepared,
+    RootMotionResult: selectedRootMotionResult,
+    bAppliedDirectTranslation: true,
+  }
 }
 
 // Unreal Enhanced Input's default radial dead-zone lower threshold. The authored IMC mapping
@@ -173,6 +474,16 @@ interface CharacterControlValues {
   rotateInPlace: boolean
   viewYawOverride: boolean
   viewYaw: number
+}
+
+export interface AlsCharacterMantlingBridge {
+  readonly adapter: RapierAlsMantlingAdapter
+  readonly authoredRootMotionBySequence:
+    ReadonlyMap<string, CompiledAuthoredRootMotion>
+  readonly montage:
+    MutableRefObject<AlsMantlingMontageBridge | null>
+  /** Deferred exact AAlsCharacter::StartRagdolling() action seam. */
+  readonly requestStartRagdolling?: () => void
 }
 
 export interface AlsCharacterBridge {
@@ -597,16 +908,24 @@ export function stepInAirCharacterYaw(
   return character.actorYawAngle
 }
 
-export type AlsJumpInputResult = 'Rejected' | 'Uncrouched' | 'Jumped'
+export type AlsJumpInputResult =
+  | 'Rejected'
+  | 'Mantled'
+  | 'Uncrouched'
+  | 'Jumped'
 
 /**
  * AAlsCharacterExample::Input_OnJump() plus AAlsCharacter::Jump().
- * Action systems own the preceding ragdoll/mantle branches. The movement backend applies the
- * inherited UE vertical speed only after this policy returns Jumped.
+ * Ragdoll is not live yet; the next exact branch attempts a Grounded mantle before crouch or
+ * CharacterMovement jump policy. The backend applies inherited UE vertical speed only after
+ * this policy returns Jumped.
  */
 export function handleAlsJumpInput(
   character: AlsCharacter,
+  StartMantlingGrounded: () => boolean = () => false,
 ): AlsJumpInputResult {
+  if (StartMantlingGrounded()) return 'Mantled'
+
   if (character.stance === 'Crouching') {
     character.desiredStance = 'Standing'
     setStance(character, 'Standing')
@@ -630,7 +949,11 @@ export function refreshRapierAlsLocomotionMode(
   character: AlsCharacter,
   groundValid: boolean,
   verticalVelocity: number,
+  bMovementModeLocked = false,
 ): AlsLocomotionMode {
+  if (bMovementModeLocked || character.locomotionMode === null) {
+    return character.locomotionMode
+  }
   if (
     character.locomotionMode === 'InAir'
     && verticalVelocity <= 0
@@ -647,6 +970,13 @@ export function refreshRapierAlsLocomotionMode(
     setLocomotionMode(character, 'InAir')
   }
   return character.locomotionMode
+}
+
+export function shouldProbeRapierAlsGround(
+  locomotionMode: AlsLocomotionMode,
+  bMovementModeLocked: boolean,
+): boolean {
+  return !bMovementModeLocked && locomotionMode !== null
 }
 
 function isTextEntryTarget(target: EventTarget | null) {
@@ -666,6 +996,7 @@ export function useAlsCharacter(
   characterRoot: MutableRefObject<THREE.Group | null>,
   poseSample: MutableRefObject<CharacterPoseSample>,
   sweepCapsule?: RapierAlsCapsuleSweep,
+  mantling?: AlsCharacterMantlingBridge,
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -843,6 +1174,234 @@ export function useAlsCharacter(
   const debugViewYawWorld = useRef(0)
   const previousStance = useRef<AlsStance>('Standing')
   const capsulesInitialized = useRef(false)
+  const movementModeLocked = useRef(false)
+  const networkSmoothingMode =
+    useRef<'Disabled' | 'Exponential'>('Exponential')
+  const mantlingFloorCompensation = useRef(
+    ALS_GROUNDED_FLOOR_COMPENSATION,
+  )
+  const activeMantlingTarget = useRef<RapierCollider | null>(null)
+  const ragdollRequestedAfterMantlingTargetDestruction =
+    useRef(false)
+  const rootMotionSources = useRef(
+    createRootMotionSourceGroup<AlsRootMotionSource_Mantling>(),
+  )
+  const actorFeetLocation = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const floorAdjustedBodyAnchor =
+    useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const floorAdjustedRapierAnchor =
+    useRef({ x: 0, y: 0, z: 0 })
+
+  const mantlingMontageProxy = useRef<AlsMantlingMontageBridge>({
+    play(settings, startTime) {
+      return mantling?.montage.current?.play(settings, startTime) ?? null
+    },
+    montageSetPosition(settings, position) {
+      return mantling?.montage.current?.montageSetPosition(
+        settings,
+        position,
+      ) ?? false
+    },
+    montageStop(settings, blendOutDuration) {
+      return mantling?.montage.current?.montageStop(
+        settings,
+        blendOutDuration,
+      ) ?? false
+    },
+    stopMontageInstance(instanceId, blendOutDuration) {
+      return mantling?.montage.current?.stopMontageInstance(
+        instanceId,
+        blendOutDuration,
+      ) ?? false
+    },
+    takeNotifyEvents() {
+      return mantling?.montage.current?.takeNotifyEvents() ?? []
+    },
+  })
+
+  const preserveFeetWhileSettingFloorCompensation = (
+    nextFloorCompensation: number,
+  ) => {
+    const previousFloorCompensation =
+      mantlingFloorCompensation.current
+    if (previousFloorCompensation === nextFloorCompensation) return
+    const body = rigidBody.current
+    if (body) {
+      threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
+      preserveAlsActorFeetAcrossFloorCompensation(
+        rapierBodyAnchor.current,
+        previousFloorCompensation,
+        nextFloorCompensation,
+        floorAdjustedBodyAnchor.current,
+      )
+      unrealToThreeVector(
+        floorAdjustedBodyAnchor.current,
+        floorAdjustedRapierAnchor.current,
+      )
+      body.setTranslation(floorAdjustedRapierAnchor.current, true)
+    }
+    mantlingFloorCompensation.current = nextFloorCompensation
+  }
+
+  const mantlingLifecycle = useRef<AlsMantlingLifecycleAdapter>({
+    SetNetworkSmoothingMode(mode) {
+      networkSmoothingMode.current = mode
+    },
+    ResetMeshRelativeTransform() {
+      const current = character.current
+      mantlingFloorCompensation.current =
+        getCharacterMovementFloorOffset(
+          current.locomotionMode === 'Grounded',
+        )
+      const root = characterRoot.current
+      if (root) {
+        root.position.y =
+          resolveAlsMeshRootRelativeYWithFloorCompensation(
+            mantlingFloorCompensation.current,
+          )
+        root.rotation.y = unrealYawDegreesToThreeRadians(
+          current.actorYawAngle,
+        )
+      }
+    },
+    SetMovementModeLocked(bLocked) {
+      movementModeLocked.current = bLocked
+      const body = rigidBody.current
+      body?.setGravityScale(bLocked ? 0 : 1, true)
+      if (bLocked) {
+        body?.setLinvel({ x: 0, y: 0, z: 0 }, true)
+      } else {
+        preserveFeetWhileSettingFloorCompensation(
+          ALS_GROUNDED_FLOOR_COMPENSATION,
+        )
+      }
+    },
+    SetBase(TargetPrimitive) {
+      activeMantlingTarget.current =
+        TargetPrimitive as RapierCollider
+    },
+    ApplyRootMotionSource(RootMotionSource) {
+      return applyRootMotionSource(
+        rootMotionSources.current,
+        RootMotionSource,
+      )
+    },
+    GetRootMotionSourceByID(RootMotionSourceId) {
+      return getRootMotionSourceByID(
+        rootMotionSources.current,
+        RootMotionSourceId,
+      )
+    },
+    MantlingMontage: mantlingMontageProxy.current,
+    IsTargetPrimitiveValid(TargetPrimitive) {
+      return mantling?.adapter.IsTargetValid(TargetPrimitive) ?? false
+    },
+    OnMantlingStarted() {},
+    OnMantlingEnded() {
+      activeMantlingTarget.current = null
+    },
+    ForceNetUpdate() {},
+    StartRagdolling() {
+      ragdollRequestedAfterMantlingTargetDestruction.current = true
+      mantling?.requestStartRagdolling?.()
+    },
+  })
+
+  const tryStartMantling = (
+    mode: 'Grounded' | 'InAir',
+  ): boolean => {
+    const runtime = mantling
+    const montage = runtime?.montage.current
+    const body = rigidBody.current
+    if (!runtime || !montage || !body) return false
+
+    const current = character.current
+    threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
+    const floorCompensation = current.locomotionMode === null
+      ? mantlingFloorCompensation.current
+      : getCharacterMovementFloorOffset(
+          current.locomotionMode === 'Grounded',
+        )
+    resolveAlsActorLocationWithFloorCompensation(
+      rapierBodyAnchor.current,
+      current.stance,
+      floorCompensation,
+      actorLocation.current,
+    )
+    const Character = {
+      ActorLocation: actorLocation.current,
+      ActorYawAngle: current.actorYawAngle,
+      CapsuleScale: 1,
+      CapsuleRadius: ALS_CAPSULE_RADIUS,
+      CapsuleHalfHeight: getAlsCapsuleHalfHeight(current.stance),
+      LocalRole: 'Authority' as const,
+      bIsLocallyControlled: true,
+      bIsMantlingAllowedToStart:
+        current.locomotionAction === null,
+      LocomotionMode: current.locomotionMode,
+      LocomotionState: {
+        bHasVelocity: current.locomotionState.hasVelocity,
+        VelocityYawAngle:
+          current.locomotionState.velocityYawAngle,
+        bHasInput: current.locomotionState.hasInput,
+        InputYawAngle: current.locomotionState.inputYawAngle,
+      },
+    }
+    const start = mode === 'Grounded'
+      ? startMantlingGrounded
+      : startMantlingInAir
+    const Parameters = start({
+      Character,
+      MantlingSettings: ALS_GENERAL_MANTLING_SETTINGS,
+      Collision: runtime.adapter.Collision,
+      TargetSpace: runtime.adapter,
+    })
+    if (!Parameters) return false
+
+    const overlayTag = resolveAlsMantlingOverlayTag(
+      values.current.overlayMode,
+    )
+    const settings = selectAlsMantlingSettings(
+      Parameters.MantlingType,
+      overlayTag,
+    )
+    const AuthoredRootMotion =
+      runtime.authoredRootMotionBySequence.get(
+        settings.Montage.Sequence,
+      )
+    if (!AuthoredRootMotion) {
+      throw new Error(
+        `Missing authored root motion for ${settings.Montage.Sequence}`,
+      )
+    }
+    const bUseRelativeLocation =
+      runtime.adapter.UseRelativeLocation(
+        Parameters.TargetPrimitive,
+      )
+    resolveAlsActorFeetLocation(
+      actorLocation.current,
+      current.stance,
+      actorFeetLocation.current,
+    )
+    startMantlingImplementation({
+      Character: current,
+      Parameters,
+      OverlayMode: overlayTag,
+      AuthoredRootMotion,
+      bUseRelativeLocation,
+      TargetPrimitiveTransform: bUseRelativeLocation
+        ? runtime.adapter.GetTargetPrimitiveTransform(
+            Parameters.TargetPrimitive,
+          )
+        : undefined,
+      ActorFeetLocation: actorFeetLocation.current,
+      ActorRotation: alsActorYawQuaternion(
+        current.actorYawAngle,
+      ),
+      Lifecycle: mantlingLifecycle.current,
+    })
+    return true
+  }
 
   useEffect(() => {
     if (viewYawOverride) {
@@ -1044,12 +1603,11 @@ export function useAlsCharacter(
     current.desiredRotationMode = controls.desiredRotationMode
     current.desiredAiming =
       controls.desiredAiming || aimingWithPointer.current || gamepad.aim
-    setStance(
-      current,
-      current.locomotionMode === 'InAir'
-        ? 'Standing'
-        : current.desiredStance,
-    )
+    if (current.locomotionMode === 'InAir') {
+      setStance(current, 'Standing')
+    } else if (current.locomotionMode === 'Grounded') {
+      setStance(current, current.desiredStance)
+    }
 
     if (controls.viewYawOverride) {
       current.viewYawAngle = debugViewYawWorld.current
@@ -1068,21 +1626,32 @@ export function useAlsCharacter(
     const linearVelocity = body.linvel()
     threeToUnrealVector(linearVelocity, actualVelocity.current)
     threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
-    resolveAlsActorLocation(
+    const queryFloorCompensation = current.locomotionMode === null
+      ? mantlingFloorCompensation.current
+      : getCharacterMovementFloorOffset(
+          current.locomotionMode === 'Grounded',
+        )
+    resolveAlsActorLocationWithFloorCompensation(
       rapierBodyAnchor.current,
       current.stance,
-      current.locomotionMode,
+      queryFloorCompensation,
       actorLocation.current,
     )
     const queryCapsuleHalfHeight = getAlsCapsuleHalfHeight(current.stance)
-    const queryLocation = resolveAlsActorLocation(
+    const queryLocation = resolveAlsActorLocationWithFloorCompensation(
       rapierBodyAnchor.current,
       current.stance,
-      current.locomotionMode,
+      queryFloorCompensation,
       groundProbeLocation.current,
     )
     let currentGroundSupport: RapierAlsCapsuleSweepHit | null = null
-    if (sweepCapsule) {
+    if (
+      sweepCapsule
+      && shouldProbeRapierAlsGround(
+        current.locomotionMode,
+        movementModeLocked.current,
+      )
+    ) {
       currentGroundSupport = probeRapierAlsGround(sweepCapsule, {
         location: queryLocation,
         capsuleRadius: ALS_CAPSULE_RADIUS,
@@ -1093,11 +1662,15 @@ export function useAlsCharacter(
         current,
         currentGroundSupport !== null,
         actualVelocity.current.z,
+        movementModeLocked.current,
       )
     }
     groundSupport.current = currentGroundSupport
     if (consumeAlsJumpInput(jumpRequested)) {
-      const jumpResult = handleAlsJumpInput(current)
+      const jumpResult = handleAlsJumpInput(
+        current,
+        () => tryStartMantling('Grounded'),
+      )
       if (jumpResult === 'Uncrouched') {
         values.current.desiredStance = 'Standing'
         setControls({ desiredStance: 'Standing' })
@@ -1125,23 +1698,6 @@ export function useAlsCharacter(
       (current.locomotionState.velocity.z - previousVelocityZ)
       / ALS_PHYSICS_TIMESTEP
     if (current.locomotionMode === 'InAir') {
-      stepInAirVelocity(
-        current.movement,
-        inputDirection.current,
-        ALS_PHYSICS_TIMESTEP,
-      )
-    } else {
-      stepGroundedVelocity(
-        current.movement,
-        inputDirection.current,
-        ALS_PHYSICS_TIMESTEP,
-        current.viewYawAngle,
-      )
-    }
-    unrealToThreeVector(current.movement.velocity, renderedVelocity.current)
-    body.setLinvel(renderedVelocity.current, true)
-
-    if (current.locomotionMode === 'InAir') {
       stepInAirCharacterYaw(current, ALS_PHYSICS_TIMESTEP)
     } else if (current.locomotionMode === 'Grounded') {
       stepGroundedCharacterYaw(
@@ -1151,12 +1707,95 @@ export function useAlsCharacter(
         animationCurves.current.rotationYawSpeed,
       )
     }
+
+    // AAlsCharacter::Tick(): action attempts/refresh happen after both rotation branches and
+    // immediately before Super::Tick() enters CharacterMovement's root-source boundary.
+    if (current.locomotionMode === 'InAir') {
+      tryStartMantling('InAir')
+    }
+    refreshMantling({
+      Character: current,
+      Lifecycle: mantlingLifecycle.current,
+      MantlingSettings: ALS_GENERAL_MANTLING_SETTINGS,
+    })
+
+    const mantlingRuntime = mantling
+    const hasRetainedRootMotionSource =
+      rootMotionSources.current.RootMotionSourceByID.size > 0
+    if (
+      mantlingRuntime
+      && (
+        hasRetainedRootMotionSource
+        || current.locomotionMode === null
+      )
+    ) {
+      threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
+      const movementFloorCompensation =
+        current.locomotionMode === null
+          ? mantlingFloorCompensation.current
+          : getCharacterMovementFloorOffset(
+              current.locomotionMode === 'Grounded',
+            )
+      resolveAlsActorLocationWithFloorCompensation(
+        rapierBodyAnchor.current,
+        current.stance,
+        movementFloorCompensation,
+        actorLocation.current,
+      )
+      resolveAlsActorFeetLocation(
+        actorLocation.current,
+        current.stance,
+        actorFeetLocation.current,
+      )
+      prepareRapierAlsMantlingMovementBoundary({
+        Character: current,
+        RootMotionSources: rootMotionSources.current,
+        Lifecycle: mantlingLifecycle.current,
+        MantlingAdapter: mantlingRuntime.adapter,
+        Body: body,
+        ActorFeetLocation: actorFeetLocation.current,
+        DeltaTime: ALS_PHYSICS_TIMESTEP,
+        MeshScaleZ: 1,
+      })
+    }
+
+    if (current.locomotionMode === null) {
+      body.setGravityScale(0, true)
+      body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+    } else {
+      body.setGravityScale(1, true)
+      if (current.locomotionMode === 'InAir') {
+        stepInAirVelocity(
+          current.movement,
+          inputDirection.current,
+          ALS_PHYSICS_TIMESTEP,
+        )
+      } else {
+        stepGroundedVelocity(
+          current.movement,
+          inputDirection.current,
+          ALS_PHYSICS_TIMESTEP,
+          current.viewYawAngle,
+        )
+      }
+      unrealToThreeVector(
+        current.movement.velocity,
+        renderedVelocity.current,
+      )
+      body.setLinvel(renderedVelocity.current, true)
+    }
+    threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
+
     const root = characterRoot.current
     if (root) {
-      root.position.y = resolveAlsMeshRootRelativeY(
-        current.stance,
-        current.locomotionMode,
-      )
+      root.position.y = current.locomotionMode === null
+        ? resolveAlsMeshRootRelativeYWithFloorCompensation(
+            mantlingFloorCompensation.current,
+          )
+        : resolveAlsMeshRootRelativeY(
+            current.stance,
+            current.locomotionMode,
+          )
       root.rotation.y = unrealYawDegreesToThreeRadians(
         current.actorYawAngle,
       )
@@ -1173,18 +1812,33 @@ export function useAlsCharacter(
 
     const state = current.locomotionState
     const frame = animationControls.current
-    resolveAlsActorLocation(
+    const snapshotFloorCompensation =
+      current.locomotionMode === null
+        ? mantlingFloorCompensation.current
+        : getCharacterMovementFloorOffset(
+            current.locomotionMode === 'Grounded',
+          )
+    resolveAlsActorLocationWithFloorCompensation(
       rapierBodyAnchor.current,
       current.stance,
-      current.locomotionMode,
+      snapshotFloorCompensation,
       actorLocation.current,
     )
+    const mantlingTarget = activeMantlingTarget.current
+    const basedMovement = (
+      current.locomotionMode === null
+      && mantlingTarget !== null
+    )
+      ? rapierAlsMovementBaseFromPrimitive(
+          mantlingTarget as RapierAlsSupportingCollider,
+        )
+      : current.locomotionMode === 'Grounded'
+        ? rapierAlsMovementBase(groundSupport.current)
+        : ALS_NO_BASED_MOVEMENT
     publishAlsCharacterAnimationSnapshot(frame, {
       character: current,
       location: actorLocation.current,
-      basedMovement: current.locomotionMode === 'Grounded'
-        ? rapierAlsMovementBase(groundSupport.current)
-        : ALS_NO_BASED_MOVEMENT,
+      basedMovement,
       acceleration: acceleration.current,
       overlayMode: controls.overlayMode,
       movementOverride: controls.movementOverride,
@@ -1206,6 +1860,15 @@ export function useAlsCharacter(
     const colliderBottomY = bodyTranslation.y
       + (colliderTranslation?.y ?? 0)
       - colliderHalfExtent
+    resolveAlsActorFeetLocation(
+      actorLocation.current,
+      current.stance,
+      actorFeetLocation.current,
+    )
+    const rootMotionSource = getRootMotionSourceByID(
+      rootMotionSources.current,
+      current.mantlingState.RootMotionSourceId,
+    )
     window.__alsCharacterState = {
       actorYawAngle: current.actorYawAngle,
       desiredGait: current.desiredGait,
@@ -1214,6 +1877,7 @@ export function useAlsCharacter(
       stance: current.stance,
       rotationMode: current.rotationMode,
       locomotionMode: current.locomotionMode,
+      locomotionAction: current.locomotionAction,
       speed: state.speed,
       direction: frame.direction,
       moving: state.moving,
@@ -1224,6 +1888,36 @@ export function useAlsCharacter(
       position: bodyTranslation,
       velocity: body.linvel(),
       verticalVelocity: state.velocity.z,
+      rootMotionSourceId:
+        current.mantlingState.RootMotionSourceId,
+      rootMotionSourceStatus:
+        rootMotionSource?.Status ?? null,
+      rootMotionSourceTime:
+        rootMotionSource?.Time ?? null,
+      activeMantlingTargetHandle:
+        activeMantlingTarget.current?.handle ?? null,
+      movementBaseHandle:
+        (
+          basedMovement.primitive as
+            | { readonly handle?: number }
+            | null
+        )?.handle ?? null,
+      bodyAnchor: {
+        x: rapierBodyAnchor.current.x,
+        y: rapierBodyAnchor.current.y,
+        z: rapierBodyAnchor.current.z,
+      },
+      actorFeet: {
+        x: actorFeetLocation.current.x,
+        y: actorFeetLocation.current.y,
+        z: actorFeetLocation.current.z,
+      },
+      floorCompensation: snapshotFloorCompensation,
+      movementModeLocked: movementModeLocked.current,
+      gravityScale: body.gravityScale(),
+      networkSmoothingMode: networkSmoothingMode.current,
+      ragdollRequestedAfterMantlingTargetDestruction:
+        ragdollRequestedAfterMantlingTargetDestruction.current,
     }
   })
 
@@ -1238,13 +1932,25 @@ export function useAlsCharacter(
     threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
     threeToUnrealVector(body.linvel(), actualVelocity.current)
     const queryCapsuleHalfHeight = getAlsCapsuleHalfHeight(current.stance)
-    const queryLocation = resolveAlsActorLocation(
-      rapierBodyAnchor.current,
-      current.stance,
-      current.locomotionMode,
-      groundProbeLocation.current,
+    const queryFloorCompensation = current.locomotionMode === null
+      ? mantlingFloorCompensation.current
+      : getCharacterMovementFloorOffset(
+          current.locomotionMode === 'Grounded',
+        )
+    const queryLocation =
+      resolveAlsActorLocationWithFloorCompensation(
+        rapierBodyAnchor.current,
+        current.stance,
+        queryFloorCompensation,
+        groundProbeLocation.current,
+      )
+    const currentGroundSupport = (
+      sweepCapsule
+      && shouldProbeRapierAlsGround(
+        current.locomotionMode,
+        movementModeLocked.current,
+      )
     )
-    const currentGroundSupport = sweepCapsule
       ? probeRapierAlsGround(sweepCapsule, {
           location: queryLocation,
           capsuleRadius: ALS_CAPSULE_RADIUS,
@@ -1253,18 +1959,48 @@ export function useAlsCharacter(
         })
       : null
     groundSupport.current = currentGroundSupport
-    if (sweepCapsule) {
+    if (
+      sweepCapsule
+      && shouldProbeRapierAlsGround(
+        current.locomotionMode,
+        movementModeLocked.current,
+      )
+    ) {
       refreshRapierAlsLocomotionMode(
         current,
         currentGroundSupport !== null,
         actualVelocity.current.z,
+        movementModeLocked.current,
       )
     }
-    poseSample.current.movementBase =
-      resolveAlsCameraMovementBaseSnapshot(
-        current.locomotionMode,
-        currentGroundSupport,
-      )
+    const mantlingTarget = activeMantlingTarget.current
+    poseSample.current.movementBase = (
+      current.locomotionMode === null
+      && mantlingTarget !== null
+    )
+      ? rapierAlsCameraMovementBaseFromPrimitive(
+          mantlingTarget as RapierAlsSupportingCollider,
+        )
+      : resolveAlsCameraMovementBaseSnapshot(
+          current.locomotionMode,
+          currentGroundSupport,
+        )
+
+    const basedMovement = (
+      current.locomotionMode === null
+      && mantlingTarget !== null
+    )
+      ? rapierAlsMovementBaseFromPrimitive(
+          mantlingTarget as RapierAlsSupportingCollider,
+        )
+      : current.locomotionMode === 'Grounded'
+        ? rapierAlsMovementBase(currentGroundSupport)
+        : ALS_NO_BASED_MOVEMENT
+
+    if (current.locomotionMode === null) {
+      body.setGravityScale(0, true)
+      body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+    }
 
     if (current.stance !== previousStance.current) {
       previousStance.current = current.stance
@@ -1276,10 +2012,14 @@ export function useAlsCharacter(
     }
     const root = characterRoot.current
     if (root) {
-      root.position.y = resolveAlsMeshRootRelativeY(
-        current.stance,
-        current.locomotionMode,
-      )
+      root.position.y = current.locomotionMode === null
+        ? resolveAlsMeshRootRelativeYWithFloorCompensation(
+            mantlingFloorCompensation.current,
+          )
+        : resolveAlsMeshRootRelativeY(
+            current.stance,
+            current.locomotionMode,
+          )
       root.rotation.y = unrealYawDegreesToThreeRadians(
         current.actorYawAngle,
       )
@@ -1288,19 +2028,23 @@ export function useAlsCharacter(
     // UAlsAnimationInstance::NativeUpdateAnimation runs after CharacterMovement. Publish the
     // post-step tags/location/base, but take Speed/Velocity/VelocityYaw/bMoving together from the
     // Character's retained LocomotionState just as RefreshLocomotionOnGameThread() does.
-    resolveAlsActorLocation(
+    const snapshotFloorCompensation =
+      current.locomotionMode === null
+        ? mantlingFloorCompensation.current
+        : getCharacterMovementFloorOffset(
+            current.locomotionMode === 'Grounded',
+          )
+    resolveAlsActorLocationWithFloorCompensation(
       rapierBodyAnchor.current,
       current.stance,
-      current.locomotionMode,
+      snapshotFloorCompensation,
       actorLocation.current,
     )
     const controls = values.current
     publishAlsCharacterAnimationSnapshot(animationControls.current, {
       character: current,
       location: actorLocation.current,
-      basedMovement: current.locomotionMode === 'Grounded'
-        ? rapierAlsMovementBase(currentGroundSupport)
-        : ALS_NO_BASED_MOVEMENT,
+      basedMovement,
       acceleration: acceleration.current,
       overlayMode: controls.overlayMode,
       movementOverride: controls.movementOverride,

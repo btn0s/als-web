@@ -4,7 +4,9 @@ import {
   ALS_RAPIER_GROUND_PROBE_DISTANCE,
   createRapierAlsCapsuleSweep,
   probeRapierAlsGround,
+  rapierAlsCameraMovementBaseFromPrimitive,
   rapierAlsCameraMovementBase,
+  rapierAlsMovementBaseFromPrimitive,
   rapierAlsMovementBase,
 } from './rapierAlsCapsuleSweep'
 
@@ -235,27 +237,29 @@ describe('Rapier ALS capsule sweep', () => {
       collider,
       rigidBody: collider.parent(),
     })
+    const dynamicCollider = colliderFor(dynamicBody)
+    const fixedCollider = colliderFor(fixedBody)
 
-    expect(rapierAlsMovementBase(hitFor(colliderFor(dynamicBody)))).toEqual({
-      primitive: dynamicBody,
+    expect(rapierAlsMovementBase(hitFor(dynamicCollider))).toEqual({
+      primitive: dynamicCollider,
       boneName: '',
       hasRelativeLocation: true,
       relativeRotation: false,
-      location: { x: 1, y: 3, z: 2 },
-      rotation: { x: -0.1, y: -0.3, z: -0.2, w: 0.9 },
+      location: { x: 100, y: 300, z: 200 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
     })
     expect(
-      rapierAlsMovementBase(hitFor(colliderFor(dynamicBody)), true),
+      rapierAlsMovementBase(hitFor(dynamicCollider), true),
     ).toMatchObject({
-      primitive: dynamicBody,
+      primitive: dynamicCollider,
       hasRelativeLocation: true,
       relativeRotation: true,
     })
-    expect(rapierAlsMovementBase(hitFor(colliderFor(fixedBody)))).toMatchObject({
-      primitive: fixedBody,
+    expect(rapierAlsMovementBase(hitFor(fixedCollider))).toMatchObject({
+      primitive: fixedCollider,
       hasRelativeLocation: false,
       relativeRotation: false,
-      location: { x: 4, y: 6, z: 5 },
+      location: { x: 100, y: 300, z: 200 },
     })
     expect(rapierAlsMovementBase(hitFor(standaloneCollider))).toEqual({
       primitive: standaloneCollider,
@@ -290,20 +294,62 @@ describe('Rapier ALS capsule sweep', () => {
     }
 
     expect(rapierAlsCameraMovementBase(hit)).toEqual({
-      key: dynamicBody,
+      key: collider,
       boneName: '',
       hasRelativeRotation: false,
-      location: { x: 1, y: 3, z: 2 },
-      rotation: { x: -0.1, y: -0.3, z: -0.2, w: 0.9 },
+      location: { x: 100, y: 300, z: 200 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
     })
     expect(rapierAlsCameraMovementBase(hit, true)).toMatchObject({
-      key: dynamicBody,
+      key: collider,
       hasRelativeRotation: true,
     })
     expect(rapierAlsCameraMovementBase(null)).toBeNull()
   })
 
-  it('retains real Rapier standalone-collider and parent-body identities', () => {
+  it('retains a SetBase target without inventing a floor-sweep hit', () => {
+    let targetTranslation = { x: 20, y: 30, z: 40 }
+    const movingBody = {
+      handle: 37,
+      translation: () => ({ x: 2, y: 3, z: 4 }),
+      rotation: () => ({ x: 0, y: 0.2, z: 0, w: 0.98 }),
+      isFixed: () => false,
+    }
+    const targetCollider = {
+      handle: 38,
+      translation: () => targetTranslation,
+      rotation: () => ({ x: 0, y: 0, z: 0, w: 1 }),
+      parent: () => movingBody,
+    }
+
+    expect(
+      rapierAlsMovementBaseFromPrimitive(targetCollider),
+    ).toEqual({
+      primitive: targetCollider,
+      boneName: '',
+      hasRelativeLocation: true,
+      relativeRotation: false,
+      location: { x: 20, y: 40, z: 30 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+    })
+    expect(
+      rapierAlsCameraMovementBaseFromPrimitive(
+        targetCollider,
+        true,
+      ),
+    ).toMatchObject({
+      key: targetCollider,
+      hasRelativeRotation: true,
+      location: { x: 20, y: 40, z: 30 },
+    })
+
+    targetTranslation = { x: 21, y: 34, z: 55 }
+    expect(
+      rapierAlsMovementBaseFromPrimitive(targetCollider).location,
+    ).toEqual({ x: 21, y: 55, z: 34 })
+  })
+
+  it('retains real Rapier primitive-component collider identities', () => {
     const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
     const staticCollider = world.createCollider(
       RAPIER.ColliderDesc.cuboid(2, 0.1, 2),
@@ -347,8 +393,8 @@ describe('Rapier ALS capsule sweep', () => {
     expect(movingHit?.rigidBody?.handle).toBe(movingBody.handle)
     const movingBase = rapierAlsMovementBase(movingHit)
     expect(
-      (movingBase.primitive as typeof movingBody).handle,
-    ).toBe(movingBody.handle)
+      (movingBase.primitive as typeof movingCollider).handle,
+    ).toBe(movingCollider.handle)
     expect(movingBase.hasRelativeLocation).toBe(true)
 
     world.free()

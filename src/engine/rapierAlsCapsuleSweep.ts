@@ -228,30 +228,62 @@ function toAlsRotation(value: Readonly<RapierRotation>) {
 }
 
 /**
+ * Maps a known Rapier primitive to the FBasedMovementInfo fields consumed by ALS.
+ *
+ * Mantling calls SetBase() with the hit collider before CharacterMovement enters MOVE_Custom,
+ * so there is no floor-sweep hit to adapt while the root-motion source is active. Keeping this
+ * primitive seam beside the ordinary floor-hit adapter makes both paths use the same identity
+ * and coordinate conversion.
+ */
+export function rapierAlsMovementBaseFromPrimitive(
+  collider: RapierAlsSupportingCollider,
+  relativeRotation = false,
+): Readonly<AlsBasedMovement> {
+  const body = collider.parent()
+  const hasRelativeLocation = body !== null && !body.isFixed()
+  return {
+    primitive: collider,
+    boneName: '',
+    hasRelativeLocation,
+    relativeRotation: hasRelativeLocation && relativeRotation,
+    location: toAlsLocation(collider.translation()),
+    rotation: toAlsRotation(collider.rotation()),
+  }
+}
+
+/**
  * Maps a Rapier floor support to the `FBasedMovementInfo` fields consumed by ALS.
  *
- * UE retains `MovementBase` for static primitives even though `HasRelativeLocation()` is false.
- * The adapter therefore uses a parent rigid body as the primitive when present and the standalone
- * collider otherwise; it returns `ALS_NO_BASED_MOVEMENT` only for an actual miss.
+ * UCharacterMovement stores the supporting UPrimitiveComponent, not its owning actor. A Rapier
+ * collider is that component analog, so an offset or rotated collider retains both its identity
+ * and world transform even when it has a parent body.
  */
 export function rapierAlsMovementBase(
   hit: Readonly<RapierAlsCapsuleSweepHit> | null,
   relativeRotation = false,
 ): Readonly<AlsBasedMovement> {
   if (!hit) return ALS_NO_BASED_MOVEMENT
+  return rapierAlsMovementBaseFromPrimitive(
+    hit.collider,
+    relativeRotation,
+  )
+}
 
-  const primitive = hit.rigidBody ?? hit.collider
-  const hasRelativeLocation =
-    hit.rigidBody !== null && !hit.rigidBody.isFixed()
+export function rapierAlsCameraMovementBaseFromPrimitive(
+  collider: RapierAlsSupportingCollider,
+  relativeRotation = false,
+): AlsCameraMovementBase {
+  const basedMovement = rapierAlsMovementBaseFromPrimitive(
+    collider,
+    relativeRotation,
+  )
   return {
-    primitive,
-    boneName: '',
-    hasRelativeLocation,
-    // UAlsCharacterMovementComponent defaults bIgnoreBaseRotation=true, so the sample's
-    // FBasedMovementInfo::bRelativeRotation remains false unless an adapter explicitly opts in.
-    relativeRotation: hasRelativeLocation && relativeRotation,
-    location: toAlsLocation(primitive.translation()),
-    rotation: toAlsRotation(primitive.rotation()),
+    key: basedMovement.primitive as AlsCameraMovementBase['key'],
+    boneName: basedMovement.boneName,
+    hasRelativeRotation:
+      basedMovement.hasRelativeLocation && basedMovement.relativeRotation,
+    location: basedMovement.location,
+    rotation: basedMovement.rotation,
   }
 }
 
@@ -269,13 +301,8 @@ export function rapierAlsCameraMovementBase(
 ): AlsCameraMovementBase | null {
   const basedMovement = rapierAlsMovementBase(hit, relativeRotation)
   if (basedMovement.primitive === null) return null
-
-  return {
-    key: basedMovement.primitive as AlsCameraMovementBase['key'],
-    boneName: basedMovement.boneName,
-    hasRelativeRotation:
-      basedMovement.hasRelativeLocation && basedMovement.relativeRotation,
-    location: basedMovement.location,
-    rotation: basedMovement.rotation,
-  }
+  return rapierAlsCameraMovementBaseFromPrimitive(
+    hit!.collider,
+    relativeRotation,
+  )
 }

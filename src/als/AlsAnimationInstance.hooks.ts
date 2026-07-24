@@ -22,6 +22,13 @@ import type {
   AlsMantlingMontageBridge,
 } from './AlsAnimationInstance'
 import {
+  createAlsMantlingNotifyRuntime,
+  refreshAlsMantlingNotifyRuntime,
+} from './AlsCharacter_Actions'
+import type {
+  AlsMantlingNotifyRuntime,
+} from './AlsCharacter_Actions'
+import {
   ROTATION_YAW_OFFSET_CURVE_NAME,
   ROTATION_YAW_SPEED_CURVE_NAME,
 } from './Utility/AlsConstants'
@@ -44,6 +51,18 @@ function captureMetadata(frameControls: AlsAnimationInstanceControls) {
       : frameControls.locomotionMode ?? 'Invalid',
     hasInput: frameControls.hasInput ?? false,
   }
+}
+
+export function refreshAlsAnimationMantlingNotifies(
+  runtime: AlsMantlingNotifyRuntime,
+  character: AlsCharacter,
+  montage: AlsMantlingMontageBridge,
+): boolean {
+  return refreshAlsMantlingNotifyRuntime(runtime, {
+    Character: character,
+    MantlingMontage: montage,
+    NotifyEvents: montage.takeNotifyEvents(),
+  })
 }
 
 /**
@@ -75,6 +94,10 @@ export function useAlsAnimationInstance(
   const frameCapture = useMemo(
     () => new AnimationFrameCapture(gltf.scene),
     [gltf.scene],
+  )
+  const mantlingNotifyRuntime = useMemo(
+    createAlsMantlingNotifyRuntime,
+    [animationInstance],
   )
 
   useEffect(() => {
@@ -119,6 +142,12 @@ export function useAlsAnimationInstance(
     const current = character.current
     frameControls.hasInput = current.locomotionState.hasInput
     animationInstance.refresh(delta, frameControls)
+    const montage = animationInstance.mantlingMontage
+    refreshAlsAnimationMantlingNotifies(
+      mantlingNotifyRuntime,
+      current,
+      montage,
+    )
     animationCurves.current.rotationYawOffset =
       animationInstance.getCurveValue(ROTATION_YAW_OFFSET_CURVE_NAME)
     animationCurves.current.rotationYawSpeed =
