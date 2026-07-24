@@ -34,6 +34,14 @@ before feature work.
   mirror the `Public/` tree shape. The two honest deviations are labeled: `AnimGraph/` (UE keeps
   this in Blueprint content; ours must be code) and `src/engine/` (UE's animation runtime itself,
   which the plugin doesn't own either). New systems land at their mirrored path or not at all.
+- **Discovery once, determinism forever:** agent reasoning is for uncertainty — cracking a
+  format, probing an asset, root-causing a bug. The moment a behavior is understood and
+  repeatable, capture it where no one pays for it again: a script (`run.sh`, one command per
+  pack), a validator that asserts the invariant (`validate-glb.mjs`, the test suites), a data
+  file (`clips.manifest`), a persisted research doc consumed as fact by later work, or a rule in
+  this file. Never re-derive what a previous session already verified — cite it. If you catch
+  yourself re-solving a solved problem, the correct output is the tool/check that makes the
+  re-solving impossible, not the solution itself.
 - **Docs philosophy:** code speaks for itself. ROADMAP.md (plan) + this file (orientation) are
   the only standing docs; design rationale lives in code comments at the relevant site. No
   spec/history markdown files.
