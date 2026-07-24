@@ -16,6 +16,7 @@ describe('CS_Als_Default character settings', () => {
       inheritMovementBaseRotationInVelocityDirectionRotationMode: false,
       rotateTowardsDesiredVelocityInVelocityDirectionRotationMode: true,
       autoRotateOnAnyInputWhileNotMovingInViewDirectionRotationMode: true,
+      rollingCrouchOnStart: true,
     })
   })
 

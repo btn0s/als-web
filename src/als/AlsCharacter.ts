@@ -34,8 +34,18 @@ import type {
   AlsLocomotionState,
   AlsVector3,
 } from './State/AlsLocomotionState'
+import {
+  createAlsMantlingState,
+} from './State/AlsMantlingState'
+import type { AlsMantlingState } from './State/AlsMantlingState'
 
-export type AlsLocomotionMode = 'Grounded' | 'InAir'
+export type AlsLocomotionMode = 'Grounded' | 'InAir' | null
+export type AlsLocomotionAction =
+  | 'Mantling'
+  | 'Ragdolling'
+  | 'GettingUp'
+  | 'Rolling'
+  | null
 export type AlsViewMode = 'FirstPerson' | 'ThirdPerson'
 
 export { ALS_CHARACTER_SETTINGS }
@@ -48,6 +58,7 @@ export interface AlsCharacter {
   desiredGait: AlsGait
   viewMode: AlsViewMode
   locomotionMode: AlsLocomotionMode
+  locomotionAction: AlsLocomotionAction
   rotationMode: AlsRotationMode
   stance: AlsStance
   gait: AlsGait
@@ -59,6 +70,7 @@ export interface AlsCharacter {
   readonly inputDirection: AlsVector3
   readonly locomotionState: AlsLocomotionState
   readonly movement: AlsCharacterMovementComponent
+  readonly mantlingState: AlsMantlingState
   readonly settings: AlsCharacterSettings
 }
 
@@ -70,7 +82,7 @@ export interface CreateAlsCharacterOptions {
   readonly desiredStance?: AlsStance
   readonly desiredGait?: AlsGait
   readonly viewMode?: AlsViewMode
-  readonly locomotionMode?: AlsLocomotionMode
+  readonly locomotionMode?: Exclude<AlsLocomotionMode, null>
   readonly velocity?: Readonly<AlsVector3>
   readonly settings?: Partial<AlsCharacterSettings>
 }
@@ -115,6 +127,7 @@ export function createAlsCharacter(
     desiredGait: options.desiredGait ?? 'Running',
     viewMode: options.viewMode ?? 'ThirdPerson',
     locomotionMode: options.locomotionMode ?? 'Grounded',
+    locomotionAction: null,
     rotationMode: movement.rotationMode,
     stance: desiredStance,
     gait: 'Walking',
@@ -126,6 +139,7 @@ export function createAlsCharacter(
     inputDirection: { x: 0, y: 0, z: 0 },
     locomotionState,
     movement,
+    mantlingState: createAlsMantlingState(),
     settings,
   }
   refreshLocomotion(character, movement.velocity)
@@ -412,12 +426,51 @@ export function setStance(
   return character
 }
 
+/** AAlsCharacter::ApplyDesiredStance(), AlsCharacter.cpp:810-833. */
+export function applyDesiredStance(
+  character: AlsCharacter,
+): AlsCharacter {
+  if (character.locomotionAction === null) {
+    if (character.locomotionMode === 'Grounded') {
+      return setStance(character, character.desiredStance)
+    }
+    if (character.locomotionMode === 'InAir') {
+      return setStance(character, 'Standing')
+    }
+    return character
+  }
+
+  if (
+    character.locomotionAction === 'Rolling'
+    && character.settings.rollingCrouchOnStart
+  ) {
+    return setStance(character, 'Crouching')
+  }
+  return character
+}
+
+/**
+ * AAlsCharacter::SetLocomotionAction() / NotifyLocomotionActionChanged(),
+ * AlsCharacter.cpp:1089-1110.
+ */
+export function setLocomotionAction(
+  character: AlsCharacter,
+  locomotionAction: AlsLocomotionAction,
+): AlsCharacter {
+  if (character.locomotionAction === locomotionAction) return character
+  character.locomotionAction = locomotionAction
+  if (locomotionAction === null) {
+    character.movement.inputBlocked = false
+  }
+  return applyDesiredStance(character)
+}
+
 /**
  * AAlsCharacter::SetLocomotionMode() / NotifyLocomotionModeChanged() /
  * ApplyDesiredStance(), cpp:503-529 and 810-833.
  *
- * ALS always uncrouches while InAir and reapplies DesiredStance on Grounded. Ragdolling,
- * rolling-on-land, and their action-owned side effects are outside this character-core seam.
+ * An invalid locomotion mode represents MOVE_Custom (mantling). It deliberately leaves stance
+ * untouched while an action owns movement.
  */
 export function setLocomotionMode(
   character: AlsCharacter,
@@ -427,10 +480,7 @@ export function setLocomotionMode(
 
   const previousLocomotionMode = character.locomotionMode
   character.locomotionMode = locomotionMode
-  setStance(
-    character,
-    locomotionMode === 'InAir' ? 'Standing' : character.desiredStance,
-  )
+  applyDesiredStance(character)
 
   if (
     locomotionMode === 'Grounded'

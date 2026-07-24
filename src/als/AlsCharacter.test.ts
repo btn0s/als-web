@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ALS_ACTUAL_GAIT_SPEED_BUFFER,
   ALS_SPRINT_VIEW_RELATIVE_ANGLE_THRESHOLD,
+  applyDesiredStance,
   applyRotationYawSpeedAnimationCurve,
   calculateActualGait,
   calculateGroundedMovingRotationInterpolationSpeed,
@@ -15,6 +16,7 @@ import {
   refreshLocomotion,
   refreshRotationMode,
   refreshView,
+  setLocomotionAction,
   setLocomotionMode,
   setStance,
   setTargetYawAngle,
@@ -174,6 +176,36 @@ describe('AAlsCharacter input and gait policy', () => {
     ).toBe(true)
     expect(character.movement.brakingFrictionFactor).toBe(3)
     expect(character.movement.brakingFrictionFactorResetTime).toBe(0.5)
+  })
+
+  it('keeps stance action-owned and restores desired stance on action exit', () => {
+    const character = createAlsCharacter({
+      desiredStance: 'Standing',
+    })
+
+    setLocomotionAction(character, 'Mantling')
+    character.desiredStance = 'Crouching'
+    applyDesiredStance(character)
+    expect(character.stance).toBe('Standing')
+
+    setLocomotionMode(character, null)
+    expect(character.stance).toBe('Standing')
+
+    setLocomotionAction(character, null)
+    // MOVE_Custom has no stance branch.
+    expect(character.stance).toBe('Standing')
+
+    setLocomotionMode(character, 'Grounded')
+    expect(character.stance).toBe('Crouching')
+
+    character.desiredStance = 'Standing'
+    setLocomotionAction(character, 'Rolling')
+    expect(character.stance).toBe('Crouching')
+
+    character.movement.inputBlocked = true
+    setLocomotionAction(character, null)
+    expect(character.stance).toBe('Standing')
+    expect(character.movement.inputBlocked).toBe(false)
   })
 })
 

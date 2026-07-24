@@ -68,7 +68,7 @@ const VIEW_MODE_TAGS = {
 const LOCOMOTION_MODE_TAGS = {
   Grounded: 'Als.LocomotionMode.Grounded',
   InAir: 'Als.LocomotionMode.InAir',
-} as const satisfies Record<AlsLocomotionMode, string>
+} as const satisfies Record<Exclude<AlsLocomotionMode, null>, string>
 
 const ROTATION_MODE_TAGS = {
   VelocityDirection: 'Als.RotationMode.VelocityDirection',
@@ -197,7 +197,9 @@ function updateAnimationInput(
   rightShoulder: boolean,
 ) {
   input.ViewMode = VIEW_MODE_TAGS[character.viewMode]
-  input.LocomotionMode = LOCOMOTION_MODE_TAGS[character.locomotionMode]
+  input.LocomotionMode = character.locomotionMode === null
+    ? null
+    : LOCOMOTION_MODE_TAGS[character.locomotionMode]
   input.RotationMode = ROTATION_MODE_TAGS[
     character.viewMode === 'FirstPerson'
       ? character.desiredRotationMode

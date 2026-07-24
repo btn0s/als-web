@@ -24,6 +24,8 @@ export interface AlsCharacterSettings {
     boolean
   readonly autoRotateOnAnyInputWhileNotMovingInViewDirectionRotationMode:
     boolean
+  /** FAlsRollingSettings::bCrouchOnStart. CS_Als_Default does not override the C++ default. */
+  readonly rollingCrouchOnStart: boolean
 }
 
 interface ExtractedCharacterSettings {
@@ -81,4 +83,5 @@ export const ALS_CHARACTER_SETTINGS: Readonly<AlsCharacterSettings> = {
   autoRotateOnAnyInputWhileNotMovingInViewDirectionRotationMode:
     extracted.settings
       .bAutoRotateOnAnyInputWhileNotMovingInViewDirectionRotationMode,
+  rollingCrouchOnStart: true,
 }
