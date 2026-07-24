@@ -69,7 +69,7 @@ Idle/Walking/Running and the Sprinting-arms region rule rides Running — verifi
       *(2026-07-23; licensing settled: the repo's
       blanket MIT names the full author lineage — Sixze, Longmire, Yanıkoğlu — and covers its
       assets; upstream notice ships as `LICENSE-ALS-Refactored.md` beside ported assets)*
-- [x] **Animation metadata extracted** — 361 float curves across 82/117 clips, 60 authored sync
+- [x] **Animation metadata extracted** — 361 float curves across 82/118 clips, 60 authored sync
       markers across 30 clips, and 162 notifies across 65 clips as glTF animation extras
       *(2026-07-23)*. (Architecture review: ALS's runtime is
       curve-driven — `AlsConstants.h` names them all: `FootLeft/RightLock`/`Ik`, `RotationYawSpeed`
@@ -88,7 +88,7 @@ Idle/Walking/Running and the Sprinting-arms region rule rides Running — verifi
       standalone port builds UE4-mannequin-native (SK_Als), period. The UE5 retarget/re-rig
       decision and any non-ALS clip packs leave this repo — they belong to downstream forks
 - [x] `scripts/build-player-anims.mjs` equivalent — `run.sh` + `clips.manifest` + assembler IS
-      the curated merge (single GLB, mesh + 117 clips + curves/markers/notifies, root tracks
+      the curated merge (single GLB, mesh + 118 clips + curves/markers/notifies, root tracks
       preserved) *(2026-07-23)*
 - [x] Clip audit doc-comment: `clips.manifest`, one line per clip keyed to M3 items *(2026-07-23)*
 

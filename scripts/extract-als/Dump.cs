@@ -157,7 +157,18 @@ public static class Dump
                         name = curve.CurveName.Text,
                         flags = curve.CurveTypeFlags,
                         keys = curve.FloatCurve.Keys
-                            .Select(key => new object[] { key.Time, key.Value, (int)key.InterpMode })
+                            .Select(key => new object[]
+                            {
+                                key.Time,
+                                key.Value,
+                                (int)key.InterpMode,
+                                (int)key.TangentMode,
+                                (int)key.TangentWeightMode,
+                                key.ArriveTangent,
+                                key.ArriveTangentWeight,
+                                key.LeaveTangent,
+                                key.LeaveTangentWeight,
+                            })
                             .ToArray(),
                     });
                 }

@@ -310,6 +310,10 @@ for (const name of blendSpaceNames)
 let channelCount = 0;
 let rootTrackCount = 0;
 let curveCount = 0;
+let curveKeyCount = 0;
+let cubicCurveKeyCount = 0;
+let nonzeroCurveTangentCount = 0;
+let weightedCurveKeyCount = 0;
 let syncMarkerCount = 0;
 let notifyCount = 0;
 let rootLockedClipCount = 0;
@@ -563,9 +567,56 @@ for (const anim of anims) {
         continue;
       }
       for (let i = 0; i < curve.keys.length; i++) {
-        const time = curve.keys[i]?.[0];
+        const key = curve.keys[i];
+        if (!Array.isArray(key) || key.length !== 9) {
+          errs.push(
+            `${anim.getName()}/${curve.name} key ${i} does not retain all 9 FRichCurveKey fields`);
+          continue;
+        }
+        const [
+          time,
+          value,
+          interpMode,
+          tangentMode,
+          tangentWeightMode,
+          arriveTangent,
+          arriveTangentWeight,
+          leaveTangent,
+          leaveTangentWeight,
+        ] = key;
+        curveKeyCount++;
         if (!Number.isFinite(time))
           errs.push(`${anim.getName()}/${curve.name} key ${i} has invalid time: ${time}`);
+        for (const [field, fieldValue] of [
+          ['value', value],
+          ['arrive tangent', arriveTangent],
+          ['arrive tangent weight', arriveTangentWeight],
+          ['leave tangent', leaveTangent],
+          ['leave tangent weight', leaveTangentWeight],
+        ]) {
+          if (!Number.isFinite(fieldValue))
+            errs.push(
+              `${anim.getName()}/${curve.name} key ${i} has invalid ${field}: ${fieldValue}`);
+        }
+        if (!Number.isInteger(interpMode) || interpMode < 0 || interpMode > 3)
+          errs.push(
+            `${anim.getName()}/${curve.name} key ${i} has invalid interpolation mode: ` +
+            `${interpMode}`);
+        if (!Number.isInteger(tangentMode) || tangentMode < 0 || tangentMode > 3)
+          errs.push(
+            `${anim.getName()}/${curve.name} key ${i} has invalid tangent mode: ${tangentMode}`);
+        if (
+          !Number.isInteger(tangentWeightMode)
+          || tangentWeightMode < 0
+          || tangentWeightMode > 3
+        ) {
+          errs.push(
+            `${anim.getName()}/${curve.name} key ${i} has invalid tangent weight mode: ` +
+            `${tangentWeightMode}`);
+        }
+        if (interpMode === 2) cubicCurveKeyCount++;
+        if (arriveTangent !== 0 || leaveTangent !== 0) nonzeroCurveTangentCount++;
+        if (tangentWeightMode !== 0) weightedCurveKeyCount++;
         if (i > 0 && time < curve.keys[i - 1]?.[0])
           errs.push(`${anim.getName()}/${curve.name} key times decrease at key ${i}`);
       }
@@ -713,6 +764,16 @@ requireEvents(
   'notify');
 
 const QUICK_STOP_NEAR_ZERO = -9.53674e-8;
+const compactFloat = (value) => Number(Number(value).toPrecision(6));
+const compactCurveInventory = (curves) => curves.map((curve) => ({
+  name: curve.name,
+  flags: curve.flags,
+  keys: curve.keys.map((key) => [
+    compactFloat(key[0]),
+    compactFloat(key[1]),
+    key[2],
+  ]),
+}));
 const QUICK_STOP_SHARED_CURVES = {
   AllowTransitions: {
     flags: 4,
@@ -780,7 +841,10 @@ for (const [clipName, direction] of expectedQuickStopTransitionClips) {
       ...QUICK_STOP_SHARED_CURVES.FootstepSoundBlock,
     },
   ];
-  if (JSON.stringify(extras.alsCurves) !== JSON.stringify(expectedCurves))
+  if (
+    JSON.stringify(compactCurveInventory(extras.alsCurves))
+    !== JSON.stringify(expectedCurves)
+  )
     errs.push(`${clipName} quick-stop curve inventory differs from ALS 4.15`);
   if (JSON.stringify(extras.syncMarkers) !== '[]')
     errs.push(`${clipName} should have no authored sync markers`);
@@ -842,7 +906,10 @@ for (const [clipName, direction] of expectedDynamicTransitionClips) {
       ...DYNAMIC_TRANSITION_SHARED_CURVES.FootstepSoundBlock,
     },
   ];
-  if (JSON.stringify(extras.alsCurves) !== JSON.stringify(expectedCurves))
+  if (
+    JSON.stringify(compactCurveInventory(extras.alsCurves))
+    !== JSON.stringify(expectedCurves)
+  )
     errs.push(`${clipName} dynamic-transition curve inventory differs from ALS 4.15`);
   if (JSON.stringify(extras.syncMarkers) !== '[]')
     errs.push(`${clipName} should have no authored sync markers`);
@@ -867,6 +934,15 @@ for (const [clipName, direction] of expectedDynamicTransitionClips) {
 }
 
 const clipsWithCurves = [...curvesByClip.values()].filter((curves) => curves.length > 0).length;
+if (curveKeyCount !== 1646)
+  errs.push(`rich-curve key count ${curveKeyCount}, expected 1646`);
+if (cubicCurveKeyCount !== 70)
+  errs.push(`cubic rich-curve key count ${cubicCurveKeyCount}, expected 70`);
+if (nonzeroCurveTangentCount !== 4)
+  errs.push(
+    `nonzero rich-curve tangent key count ${nonzeroCurveTangentCount}, expected 4`);
+if (weightedCurveKeyCount !== 0)
+  errs.push(`weighted rich-curve key count ${weightedCurveKeyCount}, expected 0`);
 const clipsWithSyncMarkers =
   [...syncMarkersByClip.values()].filter((markers) => markers.length > 0).length;
 const clipsWithNotifies =

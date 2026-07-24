@@ -220,7 +220,29 @@ const clips = dump.anims.map((a) => {
     curves: (a.curves ?? []).map((curve) => ({
       name: curve.name,
       flags: curve.flags,
-      keys: curve.keys.map(([t, v, interp]) => [compactFloat(t), compactFloat(v), interp]),
+      // FRichCurve::Eval() consumes both sides' authored tangents. Preserve the complete
+      // FRichCurveKey instead of rebuilding auto tangents or assuming a smoothstep.
+      keys: curve.keys.map(([
+        time,
+        value,
+        interpMode,
+        tangentMode,
+        tangentWeightMode,
+        arriveTangent,
+        arriveTangentWeight,
+        leaveTangent,
+        leaveTangentWeight,
+      ]) => [
+        time,
+        value,
+        interpMode,
+        tangentMode,
+        tangentWeightMode,
+        arriveTangent,
+        arriveTangentWeight,
+        leaveTangent,
+        leaveTangentWeight,
+      ]),
     })),
     syncMarkers: (a.syncMarkers ?? []).map(({ name, time }) => ({
       name,
@@ -517,11 +539,11 @@ scene.addChild(meshNode);
 const boneIndex = Object.fromEntries(bones.map((b, i) => [b.name, i]));
 for (const clip of clips) {
   // Runtime contract: animation.extras.alsCurves is
-  // [{ name, flags, keys: [[timeSeconds, value, ueInterpMode], ...] }].
+  // [{ name, flags, keys: [[timeSeconds, value, ueInterpMode, ueTangentMode,
+  // ueTangentWeightMode, arriveTangent, arriveTangentWeight, leaveTangent,
+  // leaveTangentWeight], ...] }].
   // Alongside it, animation.extras.syncMarkers and animation.extras.notifies are
   // [{ name, time }], where time is authored seconds in the UAnimSequence.
-  // UE auto-cubic keys store zero tangents because the editor computes them; preserve the
-  // authored interpolation enum, but consumers intentionally sample t/v linearly for now.
   const extras = {
     alsCurves: clip.curves,
     syncMarkers: clip.syncMarkers,

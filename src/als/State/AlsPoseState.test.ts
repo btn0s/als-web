@@ -76,15 +76,18 @@ describe('ALS authored stance transition curves', () => {
         alsCurves: [
           {
             name: 'PoseCrouching',
-            keys: [[0, 0, 2], [0.833, 1, 0]],
+            keys: [
+              [0, 0, 2, 0, 0, 0, 0, 0, 0],
+              [0.833, 1, 0, 0, 0, 0, 0, 0, 0],
+            ],
           },
           {
             name: 'FootLeftLock',
-            keys: [[0, 0.75, 0]],
+            keys: [[0, 0.75, 0, 0, 0, 0, 0, 0, 0]],
           },
           {
             name: 'FootRightLock',
-            keys: [[0, 0.25, 0]],
+            keys: [[0, 0.25, 0, 0, 0, 0, 0, 0, 0]],
           },
         ],
       },

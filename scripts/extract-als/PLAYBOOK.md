@@ -36,8 +36,9 @@ extracting asset class X from uncooked ALS-Refactored (.uasset only, no .uexp/.u
 │   └─ curves → CurveData is TWO hops: `model.GetOrDefault<FStructFallback?>("CurveData")`
 │       then `new FRawCurveTracks(fallback)`. A one-hop typed `Get<FRawCurveTracks>` returns
 │       silently null. Absent vs empty-array curve set are different states — check both.
-│       Metadata flag bit 16 gates visibility; auto-cubic tangents aren't stored (must be
-│       recomputed downstream, not read).
+│       Metadata flag bit 16 gates visibility. Every FRichCurveKey field is serialized here:
+│       interpolation/tangent/tangent-weight modes, time/value, and independent arrive/leave
+│       tangents and weights. Preserve them; never regenerate the curve shape downstream.
 │
 ├─ X = SkeletalMesh (editor LOD0)
 │   VERIFIED (CUE4Parse source, `USkeletalMesh.Deserialize`): stock reads
@@ -235,10 +236,13 @@ extracting asset class X from uncooked ALS-Refactored (.uasset only, no .uexp/.u
 
 - **VERIFIED — GLB metadata contract.** Beside
   `animation.extras.alsCurves: [{name, flags, keys: [[timeSeconds, value,
-  ueInterpMode], ...]}]`, every animation carries
+  ueInterpMode, ueTangentMode, ueTangentWeightMode, arriveTangent,
+  arriveTangentWeight, leaveTangent, leaveTangentWeight], ...]}]`, every animation carries
   `animation.extras.syncMarkers: [{name: string, time: number}]` and
   `animation.extras.notifies: [{name: string, time: number}]`. Both `time` fields are
-  authored seconds.
+  authored seconds. ALS 4.15's 361 animation curves contain 1,646 keys: 70 cubic keys, four
+  keys with nonzero authored tangents, and zero weighted-tangent keys. The runtime evaluates
+  the unweighted cubic segments with UE's duration-scaled Hermite formula.
 
 - **HYPOTHESIS — an explicitly serialized empty `AuthoredSyncMarkers` or `Notifies`
   tag may occur in other Unreal content.** It was not observed in the three probe assets;

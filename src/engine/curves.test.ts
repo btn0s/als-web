@@ -9,6 +9,26 @@ import {
   sampleClipCurves,
 } from './curves'
 
+function richCurveKey(
+  time: number,
+  value: number,
+  interpolationMode: number,
+  arriveTangent = 0,
+  leaveTangent = 0,
+) {
+  return [
+    time,
+    value,
+    interpolationMode,
+    0,
+    0,
+    arriveTangent,
+    0,
+    leaveTangent,
+    0,
+  ]
+}
+
 describe('float curves', () => {
   it('samples known keys and exposes stable per-clip frame values', () => {
     const frame = createCurveFrame()
@@ -30,7 +50,10 @@ describe('float curves', () => {
       userData: {
         alsCurves: [{
           name: 'PoseGait',
-          keys: [[0, 1, 0], [1, 3, 1]],
+          keys: [
+            richCurveKey(0, 1, 0),
+            richCurveKey(1, 3, 1),
+          ],
         }],
       },
     })
@@ -42,13 +65,56 @@ describe('float curves', () => {
       userData: {
         alsCurves: [{
           name: 'PoseCrouching',
-          keys: [[0, 0, 2], [0.833333, 1, 0]],
+          keys: [
+            richCurveKey(0, 0, 2),
+            richCurveKey(0.833333, 1, 0),
+          ],
         }],
       },
     })
     const quarterTime = 0.833333 * 0.25
     expect(samplers.PoseCrouching(quarterTime)).toBeCloseTo(0.15625)
     expect(samplers.PoseCrouching(0.833333 * 0.5)).toBeCloseTo(0.5)
+  })
+
+  it('uses the authored arriving tangent for ALS landing curves', () => {
+    const samplers = compileClipCurveSamplers({
+      userData: {
+        alsCurves: [{
+          name: 'FootstepSoundBlock',
+          keys: [
+            richCurveKey(0, 1, 2),
+            richCurveKey(0.5, -5.364418e-8, 2, -4.793421),
+          ],
+        }],
+      },
+    })
+    expect(samplers.FootstepSoundBlock(0.25)).toBeCloseTo(
+      0.79958878567791,
+      8,
+    )
+  })
+
+  it('rejects lossy or weighted curve metadata instead of approximating it', () => {
+    expect(() => compileClipCurveSamplers({
+      userData: {
+        alsCurves: [{
+          name: 'Lossy',
+          keys: [[0, 1, 2]],
+        }],
+      },
+    })).toThrow('does not retain all FRichCurveKey fields')
+
+    const weightedKey = richCurveKey(0, 1, 2)
+    weightedKey[4] = 3
+    expect(() => compileClipCurveSamplers({
+      userData: {
+        alsCurves: [{
+          name: 'Weighted',
+          keys: [weightedKey],
+        }],
+      },
+    })).toThrow('uses unsupported weighted tangents')
   })
 
   it('blends authored samples and semantic fallbacks by active graph weight', () => {
