@@ -2,12 +2,13 @@
 //
 // Uncooked (editor-saved) .uassets carry no cooked render/compressed data, so the
 // stock CUE4Parse-Conversion exporters can't run. What uncooked assets DO carry
-// is the full editor source: the skeleton reference pose, SKM_Als editor LOD0,
+// is the full editor source: skeleton reference poses, skeletal-mesh editor LOD0,
 // and every animation's AnimDataModel with raw per-bone key tracks. This stage
 // dumps that source to JSON; assemble-glb.mjs (stage 2) handles basis/unit
 // conversion and GLB writing.
 //
-// Usage: dotnet run -- dump <stage-dir> <out.json> <AnimName> [AnimName...]
+// Usage: dotnet run -- dump <stage-dir> <out.json> <SkeletonName> <MeshName>
+//                          <MaterialInstanceName> [AnimName...]
 
 using System.Text.Json;
 using CUE4Parse.FileProvider;
@@ -17,23 +18,36 @@ using CUE4Parse.UE4.Assets.Exports.Animation;
 using CUE4Parse.UE4.Assets.Exports.SkeletalMesh;
 using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.Assets.Objects.Properties;
+using CUE4Parse.UE4.Objects.Core.Math;
 using CUE4Parse.UE4.Versions;
 
 public static class Dump
 {
-    public static int Run(string srcDir, string outJson, string[] animNames)
+    public static int Run(
+        string srcDir,
+        string outJson,
+        string skeletonName,
+        string meshName,
+        string materialInstanceName,
+        string[] animNames)
     {
         ObjectTypeRegistry.RegisterClass("SkeletalMesh", typeof(UAlsSkeletalMesh));
         var provider = new DefaultFileProvider(srcDir, SearchOption.AllDirectories, new VersionContainer(EGame.GAME_UE5_5));
         provider.Initialize();
         provider.Mount();
 
-        var skelFile = provider.Files.Values.First(f => f.NameWithoutExtension == "SK_Als" && f.Extension == "uasset");
+        var skelFile = provider.Files.Values.First(
+            f => f.NameWithoutExtension == skeletonName && f.Extension == "uasset");
         var skel = provider.LoadPackage(skelFile).GetExports().OfType<USkeleton>().First();
         var refSkel = skel.ReferenceSkeleton;
-        var meshFile = provider.Files.Values.First(f => f.NameWithoutExtension == "SKM_Als" && f.Extension == "uasset");
+        var meshFile = provider.Files.Values.First(
+            f => f.NameWithoutExtension == meshName && f.Extension == "uasset");
         var meshPackage = provider.LoadPackage(meshFile);
         var skeletalMesh = meshPackage.GetExports().OfType<UAlsSkeletalMesh>().First();
+        if (skeletalMesh.ParseError is not null)
+            throw new Exception(
+                $"failed to parse {meshName} editor LOD0",
+                skeletalMesh.ParseError);
         var bones = refSkel.FinalRefBoneInfo.Select((b, i) => new
         {
             name = b.Name.Text,
@@ -91,9 +105,20 @@ public static class Dump
         var influenceCounts = allMeshVertices
             .Select(vertex => vertex.BoneWeights.Count(weight => weight > 0))
             .ToArray();
-        if (weightSums.Any(sum => sum != byte.MaxValue))
+        var expectedWeightSum = weightSums.Max() > byte.MaxValue
+            ? ushort.MaxValue
+            : byte.MaxValue;
+        // The rifle's 16-bit source weights retain up to seven units of
+        // quantization drift around 65535; stage 2 normalizes selected weights.
+        if (weightSums.Any(sum => Math.Abs(sum - expectedWeightSum) > 16))
             throw new Exception(
-                $"skin weights are not normalized bytes: min={weightSums.Min()}, max={weightSums.Max()}");
+                $"skin weights are not normalized: min={weightSums.Min()}, max={weightSums.Max()}");
+
+        var materialFile = provider.Files.Values.First(
+            f => f.NameWithoutExtension == materialInstanceName && f.Extension == "uasset");
+        var materialInstance = provider.LoadPackage(materialFile).GetExports()
+            .First(export => export.Name == materialInstanceName);
+        var baseColor = FindVectorParameter(materialInstance, "Color");
 
         var anims = new List<object>();
         foreach (var animName in animNames)
@@ -153,9 +178,10 @@ public static class Dump
 
         var payload = new
         {
-            skeleton = new { bones },
+            skeleton = new { name = skeletonName, bones },
             mesh = new
             {
+                name = meshName,
                 lod = 0,
                 numVertices = lod0.NumVertices,
                 numTriangles = lod0.Sections.Sum(section => section.NumTriangles),
@@ -164,6 +190,11 @@ public static class Dump
                 verticesOverFourInfluences = influenceCounts.Count(count => count > 4),
                 sections = meshSections,
             },
+            material = new
+            {
+                source = materialInstanceName,
+                baseColor = new[] { baseColor.R, baseColor.G, baseColor.B, baseColor.A },
+            },
             anims,
         };
         File.WriteAllText(outJson, JsonSerializer.Serialize(payload));
@@ -171,8 +202,32 @@ public static class Dump
             $"mesh LOD0: {lod0.NumVertices} vertices, {lod0.Sections.Sum(section => section.NumTriangles)} triangles, " +
             $"{lod0.Sections.Length} sections, max {influenceCounts.Max()} influences, " +
             $"{influenceCounts.Count(count => count > 4)} vertices over four");
-        Console.WriteLine($"dumped {bones.Length} bones, {anims.Count} anims -> {outJson}");
+        Console.WriteLine(
+            $"material: {materialInstanceName} Color=" +
+            $"[{baseColor.R:0.###}, {baseColor.G:0.###}, {baseColor.B:0.###}, {baseColor.A:0.###}]");
+        Console.WriteLine(
+            $"dumped {skeletonName}: {bones.Length} bones, {anims.Count} anims -> {outJson}");
         return 0;
+    }
+
+    static FLinearColor FindVectorParameter(UObject materialInstance, string parameterName)
+    {
+        var parameters = materialInstance.Get<UScriptArray>("VectorParameterValues");
+        foreach (var element in parameters.Properties)
+        {
+            var parameter = (FStructFallback)((StructProperty)element).Value!.StructType;
+            var infoProperty = parameter.Properties.First(property => property.Name.Text == "ParameterInfo");
+            var info = (FStructFallback)((StructProperty)infoProperty.Tag!).Value!.StructType;
+            var name = info.Properties.First(property => property.Name.Text == "Name")
+                .Tag!.GenericValue!.ToString();
+            if (name != parameterName) continue;
+
+            var valueProperty = parameter.Properties.First(property => property.Name.Text == "ParameterValue");
+            return (FLinearColor)((StructProperty)valueProperty.Tag!).Value!.StructType;
+        }
+
+        throw new Exception(
+            $"{materialInstance.Name} has no {parameterName} vector parameter");
     }
 
     static float[] V(CUE4Parse.UE4.Objects.Core.Math.FVector v) => [v.X, v.Y, v.Z];

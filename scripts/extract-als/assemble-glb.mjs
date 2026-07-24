@@ -11,7 +11,7 @@
 //      its own inverse; det(C)=-1 but conjugating a proper rotation stays proper,
 //      so no hand-tuned sign flips. Positions: C·p·0.01.
 //   3. GLB writing — bone nodes, skin with IBMs from the converted bind pose, and
-//      SKM_Als LOD0 primitives. A rigid bone proxy remains available only when an
+//      skeletal-mesh LOD0 primitives. A rigid bone proxy remains available only when an
 //      older dump does not contain mesh geometry.
 //
 // Usage: node assemble-glb.mjs <dump.json> <out.glb>
@@ -197,14 +197,32 @@ const computeSectionNormals = (positions, indices) => {
     return [a[0] / len, a[1] / len, a[2] / len];
   });
 };
+const computeSignedVolume = (positions, indices) => {
+  let volume = 0;
+  for (let index = 0; index < indices.length; index += 3) {
+    const a = positions[indices[index]];
+    const b = positions[indices[index + 1]];
+    const c = positions[indices[index + 2]];
+    volume += (
+      a[0] * (b[1] * c[2] - b[2] * c[1]) +
+      a[1] * (b[2] * c[0] - b[0] * c[2]) +
+      a[2] * (b[0] * c[1] - b[1] * c[0])
+    ) / 6;
+  }
+  return volume;
+};
 let mesh;
 let meshStats;
 if (dump.mesh?.sections?.length) {
-  mesh = doc.createMesh('SKM_Als');
+  mesh = doc.createMesh(dump.mesh.name ?? 'SkeletalMesh');
   const materials = new Map();
+  const baseColor = dump.material?.baseColor ?? [0.55, 0.57, 0.6, 1];
+  if (baseColor.length !== 4 || baseColor.some((value) => !Number.isFinite(value)))
+    throw new Error(`invalid material base color: ${JSON.stringify(baseColor)}`);
   let vertexCount = 0;
   let triangleCount = 0;
   let verticesOverFourInfluences = 0;
+  const signedVolumes = [];
 
   const useComputedNormals = dumpedNormalsAreDegenerate(dump.mesh.sections);
   if (useComputedNormals) console.warn('dumped normals are degenerate — computing smooth normals from geometry');
@@ -253,9 +271,14 @@ if (dump.mesh?.sections?.length) {
     // order is ALREADY front-facing after the C basis swap; reversing it turned the model
     // inside-out (the "see-through" playtest report). Emit source order unchanged.
     const sectionIndices = section.indices.slice();
+    const signedVolume = computeSignedVolume(convertedPositions, sectionIndices);
+    if (!(signedVolume > 1e-10))
+      throw new Error(
+        `section ${sectionIndex} signed volume ${signedVolume} is not positive; winding suspect`);
+    signedVolumes.push(signedVolume);
 
     const material = materials.get(section.materialName) ?? doc.createMaterial(section.materialName)
-      .setBaseColorFactor([0.55, 0.57, 0.6, 1])
+      .setBaseColorFactor(baseColor)
       .setMetallicFactor(0)
       .setRoughnessFactor(0.8);
     materials.set(section.materialName, material);
@@ -293,6 +316,7 @@ if (dump.mesh?.sections?.length) {
     triangleCount,
     sectionCount: dump.mesh.sections.length,
     verticesOverFourInfluences,
+    signedVolumes,
   };
 } else {
   const positions = [], joints = [], weights = [], indices = [];
@@ -350,9 +374,10 @@ const ibms = new Float32Array(bones.length * 16);
 bones.forEach((b, i) => ibms.set(inv4Rigid(world[i]), i * 16));
 const ibmAcc = doc.createAccessor().setType('MAT4').setArray(ibms).setBuffer(buffer);
 const skin = doc.createSkin('SK_Als').setInverseBindMatrices(ibmAcc);
+skin.setName(dump.skeleton.name ?? 'Skeleton');
 nodes.forEach((n) => skin.addJoint(n));
 skin.setSkeleton(nodes[0]);
-const meshNode = doc.createNode('SKM_Als').setMesh(mesh).setSkin(skin);
+const meshNode = doc.createNode(dump.mesh?.name ?? 'SkeletalMesh').setMesh(mesh).setSkin(skin);
 scene.addChild(meshNode);
 
 // ---------- animations ----------
@@ -382,4 +407,6 @@ const clipDesc = clips.map((c) => `${c.name} ${(c.numKeys / c.fps).toFixed(2)}s`
 console.log(
   `wrote ${outPath}: ${bones.length} joints, ${meshStats.vertexCount} ${meshStats.kind} verts, ` +
   `${meshStats.triangleCount} triangles, ${meshStats.sectionCount} sections, ` +
-  `${meshStats.verticesOverFourInfluences} vertices reduced to four influences, clips: ${clipDesc}`);
+  `${meshStats.verticesOverFourInfluences} vertices reduced to four influences, ` +
+  `signed volumes: ${(meshStats.signedVolumes ?? []).map((volume) => volume.toExponential(3)).join(', ') || 'n/a'}, ` +
+  `clips: ${clipDesc || 'none'}`);
