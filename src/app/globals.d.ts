@@ -1,4 +1,6 @@
 import type { AlsOverlayMode } from '../als/AnimGraph/overlayMode'
+import type { AlsViewMode } from '../als/AlsCharacter'
+import type { AnimationFrameCaptureReport } from '../engine/animationFrameCapture'
 import type {
   AlsGait,
   AlsRotationMode,
@@ -25,6 +27,13 @@ declare global {
     __setViewYaw?: (viewYaw: number) => void
     /** Play a named source clip solo, or pass null to resume the ALS graph. */
     __playClip?: (name: string | null) => boolean
+    /**
+     * Capture the current baseline plus subsequent evaluated animation frames. The report names
+     * the largest per-bone delta on every edge and traces key bones in local and world space.
+     */
+    __captureAlsAnimationFrames?: (
+      frameCount?: number,
+    ) => Promise<AnimationFrameCaptureReport>
     /** Live read-only bridge diagnostics for browser verification. */
     __alsCharacterState?: {
       actorYawAngle: number
@@ -35,8 +44,25 @@ declare global {
       speed: number
       direction: number
       moving: boolean
+      capsuleBottomY: number
+      capsuleHalfHeight: number
+      meshBaseOffsetY: number
       position: { x: number; y: number; z: number }
       velocity: { x: number; y: number; z: number }
     }
+    __alsCameraState?: {
+      activated: boolean
+      pointerLocked: boolean
+      rightShoulder: boolean
+      viewMode: AlsViewMode
+      firstPersonOverride: number
+      traceDistanceRatio: number
+      horizontalFieldOfView: number
+      location: { x: number; y: number; z: number }
+      rotation: { pitch: number; yaw: number; roll: number }
+    }
+    __setCameraRightShoulder?: (rightShoulder: boolean) => void
+    __setCameraViewMode?: (viewMode: AlsViewMode) => void
+    __setCameraViewRotation?: (pitch: number, yaw: number) => void
   }
 }
