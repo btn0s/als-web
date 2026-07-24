@@ -23,6 +23,8 @@ public static class AnimationInstanceSettingsDump
 
     static readonly string[] ExpectedCurves =
     [
+        "CF_Als_Aim_In",
+        "CF_Als_Aim_Out",
         "CF_Als_GroundPredictionAmount",
         "CF_Als_LeanAmount_Air",
         "CF_Als_RotationYawOffset_ForwardBackward",
@@ -30,6 +32,12 @@ public static class AnimationInstanceSettingsDump
         "CF_Als_RotationYawOffset_Right",
         "CF_Als_StrideBlendAmount_Run",
         "CF_Als_StrideBlendAmount_Walk",
+    ];
+
+    static readonly string[] CustomTransitionCurves =
+    [
+        "CF_Als_Aim_In",
+        "CF_Als_Aim_Out",
     ];
 
     static readonly JsonSerializer Serializer = JsonSerializer.Create(
@@ -146,6 +154,7 @@ public static class AnimationInstanceSettingsDump
                 rotationYawOffsetLeftCurve,
                 rotationYawOffsetRightCurve,
             }
+            .Concat(CustomTransitionCurves)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -284,6 +293,8 @@ public static class AnimationInstanceSettingsDump
         {
             "CF_Als_GroundPredictionAmount" => "GroundPredictionAmount",
             "CF_Als_LeanAmount_Air" => "LeanAmount",
+            "CF_Als_Aim_In" => "BlendAmount",
+            "CF_Als_Aim_Out" => "BlendAmount",
             "CF_Als_StrideBlendAmount_Run" => "StrideBlendAmount",
             "CF_Als_StrideBlendAmount_Walk" => "StrideBlendAmount",
             "CF_Als_RotationYawOffset_ForwardBackward" => "RotationYawOffset",
@@ -468,6 +479,43 @@ public static class AnimationInstanceSettingsDump
             curves.Properties().Select(curve => curve.Name),
             ExpectedCurves);
 
+        ValidateCurve(
+            errors,
+            curves,
+            "CF_Als_Aim_In",
+            "ALS/Content/ALS/Data/AnimationInstance/Blending/" +
+            "CF_Als_Aim_In.uasset",
+            "BlendAmount",
+            [
+                ExpectedKey("RCIM_Cubic", "RCTM_Auto", 0, 0, 0),
+                ExpectedKeyWithTangentWeights(
+                    "RCIM_Cubic",
+                    "RCTM_User",
+                    0.2,
+                    0.25,
+                    2.523595,
+                    0.9048326,
+                    2.523595,
+                    0.9048368),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 1, 1, 0),
+            ]);
+        ValidateCurve(
+            errors,
+            curves,
+            "CF_Als_Aim_Out",
+            "ALS/Content/ALS/Data/AnimationInstance/Blending/" +
+            "CF_Als_Aim_Out.uasset",
+            "BlendAmount",
+            [
+                ExpectedKey("RCIM_Cubic", "RCTM_Auto", 0, 0, 0),
+                ExpectedKey(
+                    "RCIM_Cubic",
+                    "RCTM_User",
+                    0.5,
+                    0.5,
+                    3.1234927),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 1, 1, 0),
+            ]);
         ValidateCurve(
             errors,
             curves,
@@ -693,6 +741,30 @@ public static class AnimationInstanceSettingsDump
             ["ArriveTangentWeight"] = 0.0,
             ["LeaveTangent"] = leaveTangent,
             ["LeaveTangentWeight"] = 0.0,
+        };
+    }
+
+    static JObject ExpectedKeyWithTangentWeights(
+        string interpolationMode,
+        string tangentMode,
+        double time,
+        double value,
+        double arriveTangent,
+        double arriveTangentWeight,
+        double leaveTangent,
+        double leaveTangentWeight)
+    {
+        return new JObject
+        {
+            ["InterpMode"] = interpolationMode,
+            ["TangentMode"] = tangentMode,
+            ["TangentWeightMode"] = "RCTWM_WeightedNone",
+            ["Time"] = time,
+            ["Value"] = value,
+            ["ArriveTangent"] = arriveTangent,
+            ["ArriveTangentWeight"] = arriveTangentWeight,
+            ["LeaveTangent"] = leaveTangent,
+            ["LeaveTangentWeight"] = leaveTangentWeight,
         };
     }
 

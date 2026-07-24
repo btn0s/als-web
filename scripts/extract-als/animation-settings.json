@@ -37,6 +37,94 @@
     }
   },
   "curves": {
+    "CF_Als_Aim_In": {
+      "assetPath": "ALS/Content/ALS/Data/AnimationInstance/Blending/CF_Als_Aim_In.uasset",
+      "type": "CurveFloat",
+      "channels": {
+        "BlendAmount": {
+          "sourceIndex": 0,
+          "keys": [
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.0,
+              "Value": 0.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.2,
+              "Value": 0.25,
+              "ArriveTangent": 2.523595,
+              "ArriveTangentWeight": 0.9048326,
+              "LeaveTangent": 2.523595,
+              "LeaveTangentWeight": 0.9048368
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 1.0,
+              "Value": 1.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            }
+          ]
+        }
+      }
+    },
+    "CF_Als_Aim_Out": {
+      "assetPath": "ALS/Content/ALS/Data/AnimationInstance/Blending/CF_Als_Aim_Out.uasset",
+      "type": "CurveFloat",
+      "channels": {
+        "BlendAmount": {
+          "sourceIndex": 0,
+          "keys": [
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.0,
+              "Value": 0.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.5,
+              "Value": 0.5,
+              "ArriveTangent": 3.1234927,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 3.1234927,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 1.0,
+              "Value": 1.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            }
+          ]
+        }
+      }
+    },
     "CF_Als_GroundPredictionAmount": {
       "assetPath": "ALS/Content/ALS/Data/AnimationInstance/Air/CF_Als_GroundPredictionAmount.uasset",
       "type": "CurveFloat",
@@ -573,9 +661,9 @@
       "id": "animation-instance-rich-curve-keys",
       "passed": true,
       "values": {
-        "curveCount": 7,
-        "channelCount": 7,
-        "keyCount": 40,
+        "curveCount": 9,
+        "channelCount": 9,
+        "keyCount": 46,
         "errors": []
       }
     }

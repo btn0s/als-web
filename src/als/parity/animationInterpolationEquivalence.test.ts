@@ -27,6 +27,7 @@ const ALS_STEP_INTERPOLATION_SEQUENCES = new Set([
   'A_Als_PistolOneHanded_Poses',
   'A_Als_PistolTwoHanded_Poses',
   'A_Als_Rifle_Poses',
+  'A_Als_Rifle_Poses_NoCurves',
   'A_Als_Torch_Poses',
 ])
 
@@ -55,7 +56,7 @@ describe('ALS UAnimSequence interpolation equivalence', () => {
     gltf = await loadAlsGltf()
   })
 
-  it('keeps the exact 13 authored pose banks discrete and every other sequence linear', () => {
+  it('keeps the exact 14 authored pose banks discrete and every other sequence linear', () => {
     const stepSequences = gltf.animations.filter(
       ({ userData }) => userData.interpolation === 'Step',
     )

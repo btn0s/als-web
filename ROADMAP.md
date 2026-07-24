@@ -69,7 +69,7 @@ Idle/Walking/Running and the Sprinting-arms region rule rides Running — verifi
       *(2026-07-23; licensing settled: the repo's
       blanket MIT names the full author lineage — Sixze, Longmire, Yanıkoğlu — and covers its
       assets; upstream notice ships as `LICENSE-ALS-Refactored.md` beside ported assets)*
-- [x] **Animation metadata extracted** — 361 float curves across 82/118 clips, 60 authored sync
+- [x] **Animation metadata extracted** — 361 float curves across 82/119 clips, 60 authored sync
       markers across 30 clips, and 162 notifies across 65 clips as glTF animation extras
       *(2026-07-23)*. (Architecture review: ALS's runtime is
       curve-driven — `AlsConstants.h` names them all: `FootLeft/RightLock`/`Ik`, `RotationYawSpeed`
@@ -88,7 +88,7 @@ Idle/Walking/Running and the Sprinting-arms region rule rides Running — verifi
       standalone port builds UE4-mannequin-native (SK_Als), period. The UE5 retarget/re-rig
       decision and any non-ALS clip packs leave this repo — they belong to downstream forks
 - [x] `scripts/build-player-anims.mjs` equivalent — `run.sh` + `clips.manifest` + assembler IS
-      the curated merge (single GLB, mesh + 118 clips + curves/markers/notifies, root tracks
+      the curated merge (single GLB, mesh + 119 clips + curves/markers/notifies, root tracks
       preserved) *(2026-07-23)*
 - [x] Clip audit doc-comment: `clips.manifest`, one line per clip keyed to M3 items *(2026-07-23)*
 
@@ -164,7 +164,7 @@ second (flagged) — never from another project's implementation:
       including its mesh-space additive, side-switch curves, and `LookDirectionChange` profile
       *(2026-07-24)*; directional locomotion remains open
 - [x] Turn-in-place + rotate-in-place per spec constants, RotationYawSpeed drives yaw *(2026-07-23)*; start/stop/pivot transitions still open (quick-stop math transliterated, unwired)
-- [x] Overlay states: curve-driven per-region layering + spawning overlay objects (Rifle end-to-end) *(2026-07-23)* — original plan: SEED
+- [x] Overlay states: curve-driven per-region layering + spawning overlay objects (Rifle end-to-end; full `AB_Als_Rifle` state/action graph live 2026-07-24) — original plan: SEED
       rule alphas from the overlay assets' authored `Layer*` curves (dumped in M2), don't hand-tune
       from scratch. (Mesh-space arm layering: previously an accepted mixer limitation — the
       pose-buffer runtime above makes it implementable; do it if parity footage demands it)

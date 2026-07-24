@@ -1,3 +1,5 @@
+import animationInstanceSettingsSource
+  from '../../../scripts/extract-als/animation-settings.json?raw'
 import {
   createInputScaleBiasClampState,
   mapRangeUnclamped,
@@ -12,27 +14,56 @@ import {
 } from '../../engine/uePoseGraph'
 import {
   blendPoseNodesTogether,
+  blendTwoCurvesTogether,
   blendTwoPoseNodesTogether,
   type MutableUePoseNode,
   type UePoseNode,
 } from '../../engine/uePoseBlend'
-import { resetPoseToReference } from '../../engine/poseBuffer'
+import {
+  applyAdditivePose,
+  applyMeshSpaceAdditivePose,
+  blendPoseInPlace,
+  createMeshSpaceBlendScratch,
+  makeDynamicAdditivePose,
+} from '../../engine/blend'
+import {
+  advanceStateMachineTransitionStack,
+  createStateMachineTransitionStack,
+  getStateMachineStateWeight,
+  resetStateMachineTransitionStack,
+  startStateMachineStandardTransition,
+  type StateMachineStandardTransition,
+  type StateMachineTransitionStack,
+} from '../../engine/stateMachineTransitionStack'
+import type {
+  CompiledWeightBlendProfile,
+} from '../../engine/blendProfile'
+import {
+  copyPose,
+  resetPoseToReference,
+} from '../../engine/poseBuffer'
 import type { LocalPoseBuffer } from '../../engine/poseBuffer'
+import {
+  sampleRichCurve,
+  type RichCurveInterpolation,
+  type RichCurveKey,
+} from '../../engine/richCurve'
 import type { RigDefinition } from '../../engine/rig'
 
 const ZERO_ANIMATION_WEIGHT_THRESHOLD = 1e-5
 
 /**
  * VERIFIED from AB_Als_Rifle.uasset compiled nodes 27-48 in
- * scripts/extract-als/abp-graph.json. Node 34's A_Als_Idle local additive is
- * intentionally only identified here; the pose evaluator applies it after
- * this module's node 32 output.
+ * scripts/extract-als/abp-graph.json. The reusable Relaxed subgraph returns
+ * node 32; the full Rifle runtime applies node 34's A_Als_Idle additive at
+ * the state boundary.
  */
 export const ALS_RIFLE_RELAXED_GRAPH = {
   stateName: 'Relaxed',
   stateResultNodeIndex: 48,
   moduleOutputNodeIndex: 32,
-  evaluatorOwnedApplyAdditiveNodeIndex: 34,
+  applyAdditiveNodeIndex: 34,
+  idleAdditiveAlpha: 0.75,
   nodes: {
     node27: {
       type: 'MultiWayBlend',
@@ -576,7 +607,7 @@ function blendNormalizedMultiWay(
 
 /**
  * Evaluates Relaxed nodes 28 -> 41 -> 40 -> 43 -> 47 -> 27 and
- * 30 -> 32 exactly. Node 34's A_Als_Idle additive remains evaluator-owned.
+ * 30 -> 32 exactly. The full state machine evaluates node 34 afterward.
  */
 export function evaluateAlsRifleRelaxedGraph(
   runtime: AlsRifleRelaxedRuntime,
@@ -665,6 +696,926 @@ export function evaluateAlsRifleRelaxedGraph(
     nodes.node30,
     1 - clamp01(state.inAirAmount),
     nodes.node32,
+  )
+  return runtime.output
+}
+
+/** Complete compiled Rifle States machine plus the outer GameplayTagsBlend. */
+export const ALS_RIFLE_GRAPH = {
+  rifleStates: {
+    stateMachineNodeIndex: 49,
+    initialState: 'Relaxed',
+    maxTransitionsPerFrame: 3,
+    skipFirstUpdateTransition: true,
+    reinitializeOnBecomingRelevant: true,
+    transitions: [
+      {
+        index: 0,
+        from: 'Relaxed',
+        to: 'Ready',
+        duration: 0.2,
+        blend: 'HermiteCubic',
+        notify: 'RelaxedToReady',
+      },
+      {
+        index: 1,
+        from: 'Aiming',
+        to: 'Ready',
+        duration: 1,
+        blend: 'Custom',
+        customCurve: 'CF_Als_Aim_Out',
+      },
+      {
+        index: 2,
+        from: 'Ready',
+        to: 'Relaxed',
+        duration: 0.75,
+        blend: 'Cubic',
+        profile: 'QuickFeetBlend',
+        notify: 'ReadyToRelaxed',
+      },
+      {
+        index: 3,
+        from: 'Ready',
+        to: 'Relaxed',
+        duration: 0.75,
+        blend: 'Cubic',
+      },
+      {
+        index: 4,
+        from: 'Ready',
+        to: 'Aiming',
+        duration: 0.2,
+        blend: 'Custom',
+        customCurve: 'CF_Als_Aim_In',
+      },
+      {
+        index: 5,
+        from: 'Ready',
+        to: 'Relaxed',
+        duration: 0.2,
+        blend: 'HermiteCubic',
+        priority: 2,
+      },
+    ],
+  },
+  ready: {
+    stateResultNodeIndex: 14,
+    outputNodeIndex: 9,
+    standingTimes: [0.083333, 0.116667],
+    crouchingTime: 0.25,
+    idleAdditiveAlpha: 0.75,
+  },
+  aiming: {
+    stateResultNodeIndex: 26,
+    outputNodeIndex: 17,
+    standingTimes: [0.15, 0.183333],
+    crouchingTime: 0.283333,
+    standingAimReferenceFrame: 5,
+    crouchingAimReferenceFrame: 9,
+    referenceFrameRate: 30,
+    // The serialized evaluators retain their zero defaults, but the compiled
+    // property-access paths bind both ExplicitTime pins to
+    // GetParent.ViewState.PitchAmount. These clips are one-second aim sweeps.
+    aimExplicitTime: 'PitchAmount',
+    idleAdditiveAlpha: 0.5,
+    meshAdditiveAlpha: 1,
+  },
+  gameplayTagsBlend: {
+    nodeIndex: 53,
+    defaultChild: 'Rifle States',
+    acceptedActions: ['Mantling', 'GettingUp', 'Rolling'],
+    blendTimes: [0.3, 0.3, 0, 0.3],
+    blend: 'Linear',
+    resetChildOnActivation: false,
+    overrides: {
+      Mantling: {
+        nodeIndex: 50,
+        posesTime: 0.383333,
+      },
+      GettingUp: {
+        nodeIndex: 55,
+        posesTime: 0.25,
+        curves: { LayerArmRight: 3 },
+      },
+      Rolling: {
+        nodeIndex: 54,
+        posesTime: 0.316667,
+        curves: {
+          LayerArmLeft: 3,
+          LayerArmLeftAdditive: 0,
+          LayerArmRight: 3,
+          LayerArmRightAdditive: 0,
+        },
+      },
+    },
+  },
+} as const
+
+export type AlsRifleState = 'Relaxed' | 'Ready' | 'Aiming'
+export type AlsRifleAction =
+  | 'Mantling'
+  | 'GettingUp'
+  | 'Rolling'
+  | 'Ragdolling'
+  | null
+type AlsRifleGameplayTagsBlendChild = 0 | 1 | 2 | 3
+
+interface SerializedRichCurveKey {
+  readonly InterpMode: string
+  readonly TangentWeightMode: string
+  readonly Time: number
+  readonly Value: number
+  readonly ArriveTangent: number
+  readonly LeaveTangent: number
+}
+
+interface SerializedAnimationInstanceCurves {
+  readonly curves: Readonly<Record<string, {
+    readonly channels: Readonly<Record<string, {
+      readonly sourceIndex: number
+      readonly keys: readonly SerializedRichCurveKey[]
+    }>>
+  }>>
+}
+
+const animationInstanceCurves = JSON.parse(
+  animationInstanceSettingsSource,
+) as SerializedAnimationInstanceCurves
+
+function compileInterpolation(
+  interpolation: string,
+): RichCurveInterpolation {
+  switch (interpolation) {
+    case 'RCIM_Constant':
+      return 'constant'
+    case 'RCIM_Linear':
+      return 'linear'
+    case 'RCIM_Cubic':
+      return 'cubic'
+    default:
+      throw new Error(
+        `Unsupported AB_Als_Rifle curve interpolation ${interpolation}`,
+      )
+  }
+}
+
+function compileTransitionCurve(
+  curveName: 'CF_Als_Aim_In' | 'CF_Als_Aim_Out',
+): readonly RichCurveKey[] {
+  const channel = animationInstanceCurves.curves[curveName]
+    ?.channels.BlendAmount
+  if (!channel || channel.sourceIndex !== 0) {
+    throw new Error(`Missing authored ${curveName}.BlendAmount curve`)
+  }
+  return channel.keys.map((key) => {
+    if (key.TangentWeightMode !== 'RCTWM_WeightedNone') {
+      throw new Error(`Unsupported weighted ${curveName} curve`)
+    }
+    return {
+      time: key.Time,
+      value: key.Value,
+      interpolation: compileInterpolation(key.InterpMode),
+      arriveTangent: key.ArriveTangent,
+      leaveTangent: key.LeaveTangent,
+    }
+  })
+}
+
+export const ALS_RIFLE_TRANSITION_CURVES = {
+  CF_Als_Aim_In: compileTransitionCurve('CF_Als_Aim_In'),
+  CF_Als_Aim_Out: compileTransitionCurve('CF_Als_Aim_Out'),
+} as const
+
+export function sampleCF_Als_Aim_In(normalizedTime: number) {
+  return sampleRichCurve(
+    ALS_RIFLE_TRANSITION_CURVES.CF_Als_Aim_In,
+    normalizedTime,
+  )
+}
+
+export function sampleCF_Als_Aim_Out(normalizedTime: number) {
+  return sampleRichCurve(
+    ALS_RIFLE_TRANSITION_CURVES.CF_Als_Aim_Out,
+    normalizedTime,
+  )
+}
+
+export interface AlsRifleFullSources extends AlsRifleRelaxedSources {
+  readonly idle: AlsRifleSequencePlayerSource
+  readonly idleReference: UeSequencePoseSource
+  readonly aim: UeSequencePoseSource
+  readonly aimCrouch: UeSequencePoseSource
+  readonly aimReference: UeSequencePoseSource
+}
+
+export interface AlsRifleFullInput extends AlsRifleRelaxedStateInput {
+  readonly rotationMode:
+    | 'Aiming'
+    | 'VelocityDirection'
+    | 'ViewDirection'
+  readonly locomotionMode: 'Grounded' | 'InAir' | null
+  readonly gait: 'Walking' | 'Running' | 'Sprinting'
+  readonly transitionsAllowed: boolean
+  readonly moving: boolean
+  readonly pitchAmount: number
+  readonly locomotionAction?: AlsRifleAction
+}
+
+export interface AlsRifleLifecycleEvent {
+  readonly kind: 'AnimNotify'
+  readonly name: 'RelaxedToReady' | 'ReadyToRelaxed'
+  readonly callSite: 'TransitionStart'
+}
+
+interface AlsRifleRuntimeNodes {
+  readonly readyStandingLow: MutableUePoseNode
+  readonly readyStandingHigh: MutableUePoseNode
+  readonly readyStanding: MutableUePoseNode
+  readonly readyCrouching: MutableUePoseNode
+  readonly aimingStandingLow: MutableUePoseNode
+  readonly aimingStandingHigh: MutableUePoseNode
+  readonly aimingStandingBase: MutableUePoseNode
+  readonly aimingStanding: MutableUePoseNode
+  readonly aimingCrouchingBase: MutableUePoseNode
+  readonly aimingCrouching: MutableUePoseNode
+  readonly aimRaw: MutableUePoseNode
+  readonly aimReference: MutableUePoseNode
+  readonly aimAdditive: MutableUePoseNode
+  readonly idleRaw: MutableUePoseNode
+  readonly idleReference: MutableUePoseNode
+  readonly idleAdditive: MutableUePoseNode
+  readonly rifleStates: MutableUePoseNode
+  readonly rifleTransitionScratchA: MutableUePoseNode
+  readonly rifleTransitionScratchB: MutableUePoseNode
+  readonly mantling: MutableUePoseNode
+  readonly gettingUp: MutableUePoseNode
+  readonly rolling: MutableUePoseNode
+  readonly actionTransitionScratchA: MutableUePoseNode
+  readonly actionTransitionScratchB: MutableUePoseNode
+  readonly output: MutableUePoseNode
+}
+
+export interface AlsRifleEvaluation {
+  readonly pose: LocalPoseBuffer
+  readonly curves: Map<string, number>
+  state: AlsRifleState
+  actionChild: AlsRifleGameplayTagsBlendChild
+  readonly lifecycleEvents: readonly AlsRifleLifecycleEvent[]
+}
+
+export interface AlsRifleFullRuntime {
+  readonly rig: RigDefinition
+  readonly relaxed: AlsRifleRelaxedRuntime
+  readonly rifleStates: StateMachineTransitionStack<AlsRifleState>
+  readonly gameplayTagsBlend:
+    StateMachineTransitionStack<AlsRifleGameplayTagsBlendChild>
+  readonly statePoses: Record<AlsRifleState, MutableUePoseNode>
+  readonly actionPoses: readonly [
+    MutableUePoseNode,
+    MutableUePoseNode,
+    MutableUePoseNode,
+    MutableUePoseNode,
+  ]
+  readonly nodes: AlsRifleRuntimeNodes
+  readonly meshScratch: ReturnType<typeof createMeshSpaceBlendScratch>
+  readonly lifecycleEvents: AlsRifleLifecycleEvent[]
+  readonly quickFeetBlendProfile: CompiledWeightBlendProfile | null
+  readonly output: AlsRifleEvaluation
+  graphRelevant: boolean
+  rifleStatesRelevant: boolean
+  firstRifleStatesUpdate: boolean
+  stateElapsedTime: number
+  transitionsTakenThisFrame: number
+}
+
+function createFullRuntimeNodes(boneCount: number): AlsRifleRuntimeNodes {
+  const node = () => createMutableUePoseNode(boneCount)
+  return {
+    readyStandingLow: node(),
+    readyStandingHigh: node(),
+    readyStanding: node(),
+    readyCrouching: node(),
+    aimingStandingLow: node(),
+    aimingStandingHigh: node(),
+    aimingStandingBase: node(),
+    aimingStanding: node(),
+    aimingCrouchingBase: node(),
+    aimingCrouching: node(),
+    aimRaw: node(),
+    aimReference: node(),
+    aimAdditive: node(),
+    idleRaw: node(),
+    idleReference: node(),
+    idleAdditive: node(),
+    rifleStates: node(),
+    rifleTransitionScratchA: node(),
+    rifleTransitionScratchB: node(),
+    mantling: node(),
+    gettingUp: node(),
+    rolling: node(),
+    actionTransitionScratchA: node(),
+    actionTransitionScratchB: node(),
+    output: node(),
+  }
+}
+
+function copyPoseNode(
+  source: UePoseNode,
+  output: MutableUePoseNode,
+) {
+  copyPose(source.pose, output.pose)
+  output.curves.clear()
+  for (const [name, value] of source.curves) {
+    output.curves.set(name, value)
+  }
+  return output
+}
+
+export function createAlsRifleRuntime(
+  rig: RigDefinition,
+  quickFeetBlendProfile: CompiledWeightBlendProfile | null = null,
+): AlsRifleFullRuntime {
+  const nodes = createFullRuntimeNodes(rig.boneCount)
+  const statePoses = {
+    Relaxed: createMutableUePoseNode(rig.boneCount),
+    Ready: createMutableUePoseNode(rig.boneCount),
+    Aiming: createMutableUePoseNode(rig.boneCount),
+  }
+  const lifecycleEvents: AlsRifleLifecycleEvent[] = []
+  const output: AlsRifleEvaluation = {
+    pose: nodes.output.pose,
+    curves: nodes.output.curves,
+    state: 'Relaxed',
+    actionChild: 0,
+    lifecycleEvents,
+  }
+  return {
+    rig,
+    relaxed: createAlsRifleRelaxedRuntime(rig),
+    rifleStates: createStateMachineTransitionStack(
+      'Relaxed',
+      rig.boneCount,
+      ALS_RIFLE_GRAPH.rifleStates.maxTransitionsPerFrame,
+    ),
+    gameplayTagsBlend: createStateMachineTransitionStack(
+      0 as AlsRifleGameplayTagsBlendChild,
+      rig.boneCount,
+      ALS_RIFLE_GRAPH.gameplayTagsBlend.blendTimes.length,
+    ),
+    statePoses,
+    actionPoses: [
+      nodes.rifleStates,
+      nodes.mantling,
+      nodes.gettingUp,
+      nodes.rolling,
+    ],
+    nodes,
+    meshScratch: createMeshSpaceBlendScratch(rig.boneCount),
+    lifecycleEvents,
+    quickFeetBlendProfile,
+    output,
+    graphRelevant: false,
+    rifleStatesRelevant: false,
+    firstRifleStatesUpdate: true,
+    stateElapsedTime: 0,
+    transitionsTakenThisFrame: 0,
+  }
+}
+
+export function resetAlsRifleRuntime(runtime: AlsRifleFullRuntime) {
+  resetAlsRifleRelaxedRuntime(runtime.relaxed)
+  resetStateMachineTransitionStack(runtime.rifleStates, 'Relaxed')
+  resetStateMachineTransitionStack(runtime.gameplayTagsBlend, 0)
+  runtime.lifecycleEvents.length = 0
+  runtime.graphRelevant = false
+  runtime.rifleStatesRelevant = false
+  runtime.firstRifleStatesUpdate = true
+  runtime.stateElapsedTime = 0
+  runtime.transitionsTakenThisFrame = 0
+  runtime.output.state = 'Relaxed'
+  runtime.output.actionChild = 0
+  return runtime
+}
+
+function gameplayTagsBlendChild(
+  action: AlsRifleAction | undefined,
+): AlsRifleGameplayTagsBlendChild {
+  switch (action) {
+    case 'Mantling':
+      return 1
+    case 'GettingUp':
+      return 2
+    case 'Rolling':
+      return 3
+    default:
+      return 0
+  }
+}
+
+function refreshGameplayTagsBlend(
+  runtime: AlsRifleFullRuntime,
+  input: AlsRifleFullInput,
+) {
+  if (!input.relevant) {
+    runtime.graphRelevant = false
+    return
+  }
+  if (!runtime.graphRelevant) {
+    resetStateMachineTransitionStack(runtime.gameplayTagsBlend, 0)
+    runtime.graphRelevant = true
+  }
+
+  const target = gameplayTagsBlendChild(input.locomotionAction)
+  const from = runtime.gameplayTagsBlend.currentState
+  if (target !== from) {
+    startStateMachineStandardTransition(runtime.gameplayTagsBlend, {
+      from,
+      to: target,
+      duration: ALS_RIFLE_GRAPH.gameplayTagsBlend.blendTimes[target],
+      blendOption: ALS_RIFLE_GRAPH.gameplayTagsBlend.blend,
+    })
+  }
+  advanceStateMachineTransitionStack(
+    runtime.gameplayTagsBlend,
+    Math.max(0, input.deltaTime),
+  )
+}
+
+function nextRifleTransition(
+  runtime: AlsRifleFullRuntime,
+  input: AlsRifleFullInput,
+): 0 | 1 | 2 | 3 | 4 | 5 | null {
+  switch (runtime.rifleStates.currentState) {
+    case 'Relaxed':
+      return input.rotationMode === 'Aiming' ? 0 : null
+    case 'Aiming':
+      return input.rotationMode !== 'Aiming' ? 1 : null
+    case 'Ready':
+      if (
+        input.locomotionMode === 'InAir'
+        || input.gait === 'Sprinting'
+      ) {
+        return 5
+      }
+      if (
+        input.transitionsAllowed
+        && runtime.stateElapsedTime >= 1.75
+      ) {
+        return 2
+      }
+      if (input.moving && runtime.stateElapsedTime >= 1.5) return 3
+      return input.rotationMode === 'Aiming' ? 4 : null
+  }
+}
+
+function takeRifleTransition(
+  runtime: AlsRifleFullRuntime,
+  transitionIndex: 0 | 1 | 2 | 3 | 4 | 5,
+) {
+  const transition =
+    ALS_RIFLE_GRAPH.rifleStates.transitions[transitionIndex]
+  startStateMachineStandardTransition(runtime.rifleStates, {
+    from: transition.from,
+    to: transition.to,
+    duration: transition.duration,
+    blendOption: transition.blend === 'Custom'
+      ? 'Linear'
+      : transition.blend,
+    blendProfile: transitionIndex === 2
+      ? runtime.quickFeetBlendProfile
+      : null,
+  })
+  runtime.transitionsTakenThisFrame++
+  runtime.stateElapsedTime = 0
+  if ('notify' in transition) {
+    runtime.lifecycleEvents.push({
+      kind: 'AnimNotify',
+      name: transition.notify,
+      callSite: 'TransitionStart',
+    })
+  }
+}
+
+function refreshCustomTransitionAlphas(
+  runtime: AlsRifleFullRuntime,
+) {
+  for (const transition of runtime.rifleStates.activeTransitions) {
+    let blendAlpha: number | null = null
+    if (
+      transition.previousState === 'Aiming'
+      && transition.nextState === 'Ready'
+    ) {
+      blendAlpha = sampleCF_Als_Aim_Out(transition.linearAlpha)
+    } else if (
+      transition.previousState === 'Ready'
+      && transition.nextState === 'Aiming'
+    ) {
+      blendAlpha = sampleCF_Als_Aim_In(transition.linearAlpha)
+    }
+    if (blendAlpha === null) continue
+    transition.alpha = clamp01(blendAlpha)
+    transition.previousPoseMask.fill(1 - transition.alpha)
+    transition.nextPoseMask.fill(transition.alpha)
+  }
+}
+
+function refreshRifleStates(
+  runtime: AlsRifleFullRuntime,
+  input: AlsRifleFullInput,
+) {
+  const rifleStatesRelevant = (
+    input.relevant
+    && getStateMachineStateWeight(runtime.gameplayTagsBlend, 0)
+      > ZERO_ANIMATION_WEIGHT_THRESHOLD
+  )
+  if (!rifleStatesRelevant) {
+    runtime.rifleStatesRelevant = false
+    refreshAlsRifleRelaxedState(runtime.relaxed, {
+      ...input,
+      relevant: false,
+    })
+    return
+  }
+
+  if (!runtime.rifleStatesRelevant) {
+    resetStateMachineTransitionStack(runtime.rifleStates, 'Relaxed')
+    resetAlsRifleRelaxedRuntime(runtime.relaxed)
+    runtime.rifleStatesRelevant = true
+    runtime.firstRifleStatesUpdate = true
+    runtime.stateElapsedTime = 0
+  }
+
+  if (!runtime.firstRifleStatesUpdate) {
+    while (
+      runtime.transitionsTakenThisFrame
+        < ALS_RIFLE_GRAPH.rifleStates.maxTransitionsPerFrame
+    ) {
+      const transitionIndex = nextRifleTransition(runtime, input)
+      if (transitionIndex === null) break
+      takeRifleTransition(runtime, transitionIndex)
+    }
+  }
+  runtime.firstRifleStatesUpdate = false
+
+  const deltaTime = Math.max(0, input.deltaTime)
+  advanceStateMachineTransitionStack(runtime.rifleStates, deltaTime)
+  refreshCustomTransitionAlphas(runtime)
+  runtime.stateElapsedTime += deltaTime
+
+  const relaxedRelevant = (
+    getStateMachineStateWeight(runtime.rifleStates, 'Relaxed')
+      > ZERO_ANIMATION_WEIGHT_THRESHOLD
+  )
+  refreshAlsRifleRelaxedState(runtime.relaxed, {
+    ...input,
+    relevant: relaxedRelevant,
+  })
+}
+
+export function refreshAlsRifleRuntime(
+  runtime: AlsRifleFullRuntime,
+  input: AlsRifleFullInput,
+) {
+  runtime.lifecycleEvents.length = 0
+  runtime.transitionsTakenThisFrame = 0
+  refreshGameplayTagsBlend(runtime, input)
+  refreshRifleStates(runtime, input)
+  runtime.output.state = runtime.rifleStates.currentState
+  runtime.output.actionChild = runtime.gameplayTagsBlend.currentState
+  return runtime
+}
+
+function refreshIdleAdditive(
+  runtime: AlsRifleFullRuntime,
+  sources: AlsRifleFullSources,
+) {
+  const { nodes } = runtime
+  sampleSequencePoseNode(
+    runtime.rig,
+    sources.idle,
+    sources.idle.time,
+    sources.idle.loop,
+    nodes.idleRaw,
+  )
+  sampleSequencePoseNode(
+    runtime.rig,
+    sources.idleReference,
+    0,
+    false,
+    nodes.idleReference,
+  )
+  makeDynamicAdditivePose(
+    nodes.idleRaw.pose,
+    nodes.idleReference.pose,
+    runtime.rig,
+    nodes.idleAdditive.pose,
+    'local',
+    runtime.meshScratch,
+  )
+}
+
+function evaluateReadyState(
+  runtime: AlsRifleFullRuntime,
+  input: AlsRifleFullInput,
+  sources: AlsRifleFullSources,
+) {
+  const { nodes } = runtime
+  sampleSequencePoseNode(
+    runtime.rig,
+    sources.poses,
+    ALS_RIFLE_GRAPH.ready.standingTimes[0],
+    false,
+    nodes.readyStandingLow,
+  )
+  sampleSequencePoseNode(
+    runtime.rig,
+    sources.poses,
+    ALS_RIFLE_GRAPH.ready.standingTimes[1],
+    false,
+    nodes.readyStandingHigh,
+  )
+  blendTwoPoseNodesTogether(
+    nodes.readyStandingLow,
+    nodes.readyStandingHigh,
+    1 - clamp01(input.pitchAmount),
+    nodes.readyStanding,
+  )
+  sampleSequencePoseNode(
+    runtime.rig,
+    sources.poses,
+    ALS_RIFLE_GRAPH.ready.crouchingTime,
+    false,
+    nodes.readyCrouching,
+  )
+  blendNormalizedMultiWay(
+    runtime.rig,
+    [nodes.readyStanding, nodes.readyCrouching],
+    runtime.relaxed.state.stanceWeights,
+    runtime.statePoses.Ready,
+  )
+  applyAdditivePose(
+    runtime.statePoses.Ready.pose,
+    nodes.idleAdditive.pose,
+    ALS_RIFLE_GRAPH.ready.idleAdditiveAlpha,
+  )
+}
+
+function applyAimAdditive(
+  runtime: AlsRifleFullRuntime,
+  aimSource: UeSequencePoseSource,
+  aimTime: number,
+  referenceSource: UeSequencePoseSource,
+  referenceTime: number,
+  base: UePoseNode,
+  output: MutableUePoseNode,
+) {
+  const { nodes } = runtime
+  sampleSequencePoseNode(
+    runtime.rig,
+    aimSource,
+    aimTime,
+    false,
+    nodes.aimRaw,
+  )
+  sampleSequencePoseNode(
+    runtime.rig,
+    referenceSource,
+    referenceTime,
+    false,
+    nodes.aimReference,
+  )
+  makeDynamicAdditivePose(
+    nodes.aimRaw.pose,
+    nodes.aimReference.pose,
+    runtime.rig,
+    nodes.aimAdditive.pose,
+    'mesh',
+    runtime.meshScratch,
+  )
+  copyPoseNode(base, output)
+  applyMeshSpaceAdditivePose(
+    output.pose,
+    nodes.aimAdditive.pose,
+    runtime.rig,
+    ALS_RIFLE_GRAPH.aiming.meshAdditiveAlpha,
+    runtime.meshScratch,
+  )
+}
+
+function evaluateAimingState(
+  runtime: AlsRifleFullRuntime,
+  input: AlsRifleFullInput,
+  sources: AlsRifleFullSources,
+) {
+  const { nodes } = runtime
+  sampleSequencePoseNode(
+    runtime.rig,
+    sources.poses,
+    ALS_RIFLE_GRAPH.aiming.standingTimes[0],
+    false,
+    nodes.aimingStandingLow,
+  )
+  sampleSequencePoseNode(
+    runtime.rig,
+    sources.poses,
+    ALS_RIFLE_GRAPH.aiming.standingTimes[1],
+    false,
+    nodes.aimingStandingHigh,
+  )
+  blendTwoPoseNodesTogether(
+    nodes.aimingStandingLow,
+    nodes.aimingStandingHigh,
+    1 - clamp01(input.pitchAmount),
+    nodes.aimingStandingBase,
+  )
+  applyAimAdditive(
+    runtime,
+    sources.aim,
+    input.pitchAmount,
+    sources.aimReference,
+    ALS_RIFLE_GRAPH.aiming.standingAimReferenceFrame
+      / ALS_RIFLE_GRAPH.aiming.referenceFrameRate,
+    nodes.aimingStandingBase,
+    nodes.aimingStanding,
+  )
+
+  sampleSequencePoseNode(
+    runtime.rig,
+    sources.poses,
+    ALS_RIFLE_GRAPH.aiming.crouchingTime,
+    false,
+    nodes.aimingCrouchingBase,
+  )
+  applyAimAdditive(
+    runtime,
+    sources.aimCrouch,
+    input.pitchAmount,
+    sources.aimReference,
+    ALS_RIFLE_GRAPH.aiming.crouchingAimReferenceFrame
+      / ALS_RIFLE_GRAPH.aiming.referenceFrameRate,
+    nodes.aimingCrouchingBase,
+    nodes.aimingCrouching,
+  )
+  blendNormalizedMultiWay(
+    runtime.rig,
+    [nodes.aimingStanding, nodes.aimingCrouching],
+    runtime.relaxed.state.stanceWeights,
+    runtime.statePoses.Aiming,
+  )
+  applyAdditivePose(
+    runtime.statePoses.Aiming.pose,
+    nodes.idleAdditive.pose,
+    ALS_RIFLE_GRAPH.aiming.idleAdditiveAlpha,
+  )
+}
+
+function blendTransitionPoseNodes<State>(
+  previous: UePoseNode,
+  next: UePoseNode,
+  transition: StateMachineStandardTransition<State>,
+  output: MutableUePoseNode,
+) {
+  copyPose(previous.pose, output.pose)
+  blendPoseInPlace(
+    output.pose,
+    next.pose,
+    1,
+    transition.nextPoseMask,
+  )
+  blendTwoCurvesTogether(
+    previous.curves,
+    next.curves,
+    1 - transition.alpha,
+    output.curves,
+  )
+}
+
+function evaluateTransitionStack<State>(
+  stack: StateMachineTransitionStack<State>,
+  poseForState: (state: State) => UePoseNode,
+  scratchA: MutableUePoseNode,
+  scratchB: MutableUePoseNode,
+  output: MutableUePoseNode,
+) {
+  const transitions = stack.activeTransitions
+  if (transitions.length === 0) {
+    copyPoseNode(poseForState(stack.currentState), output)
+    return
+  }
+
+  let transitionOutput = scratchA
+  const first = transitions[0]
+  blendTransitionPoseNodes(
+    poseForState(first.previousState),
+    poseForState(first.nextState),
+    first,
+    transitionOutput,
+  )
+  for (let index = 1; index < transitions.length; index++) {
+    const transition = transitions[index]
+    const nextOutput = transitionOutput === scratchA
+      ? scratchB
+      : scratchA
+    blendTransitionPoseNodes(
+      transitionOutput,
+      poseForState(transition.nextState),
+      transition,
+      nextOutput,
+    )
+    transitionOutput = nextOutput
+  }
+  copyPoseNode(transitionOutput, output)
+}
+
+function evaluateRifleStates(
+  runtime: AlsRifleFullRuntime,
+  input: AlsRifleFullInput,
+  sources: AlsRifleFullSources,
+) {
+  evaluateAlsRifleRelaxedGraph(runtime.relaxed, sources)
+  copyPoseNode(
+    runtime.relaxed.output,
+    runtime.statePoses.Relaxed,
+  )
+  applyAdditivePose(
+    runtime.statePoses.Relaxed.pose,
+    runtime.nodes.idleAdditive.pose,
+    ALS_RIFLE_RELAXED_GRAPH.idleAdditiveAlpha,
+  )
+  evaluateReadyState(runtime, input, sources)
+  evaluateAimingState(runtime, input, sources)
+  evaluateTransitionStack(
+    runtime.rifleStates,
+    (state) => runtime.statePoses[state],
+    runtime.nodes.rifleTransitionScratchA,
+    runtime.nodes.rifleTransitionScratchB,
+    runtime.nodes.rifleStates,
+  )
+}
+
+function evaluateActionPoses(
+  runtime: AlsRifleFullRuntime,
+  sources: AlsRifleFullSources,
+) {
+  const { nodes } = runtime
+  sampleSequencePoseNode(
+    runtime.rig,
+    sources.poses,
+    ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.Mantling.posesTime,
+    false,
+    nodes.mantling,
+  )
+  sampleSequencePoseNode(
+    runtime.rig,
+    sources.poses,
+    ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.GettingUp.posesTime,
+    false,
+    nodes.gettingUp,
+  )
+  for (
+    const [name, value]
+    of Object.entries(
+      ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.GettingUp.curves,
+    )
+  ) {
+    nodes.gettingUp.curves.set(name, value)
+  }
+  sampleSequencePoseNode(
+    runtime.rig,
+    sources.poses,
+    ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.Rolling.posesTime,
+    false,
+    nodes.rolling,
+  )
+  for (
+    const [name, value]
+    of Object.entries(
+      ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.Rolling.curves,
+    )
+  ) {
+    nodes.rolling.curves.set(name, value)
+  }
+}
+
+/**
+ * Evaluates each state's authored additives before the state-machine boundary,
+ * then the outer GameplayTagsBlend.
+ */
+export function evaluateAlsRifleGraph(
+  runtime: AlsRifleFullRuntime,
+  input: AlsRifleFullInput,
+  sources: AlsRifleFullSources,
+): AlsRifleEvaluation {
+  refreshIdleAdditive(runtime, sources)
+  evaluateRifleStates(runtime, input, sources)
+  evaluateActionPoses(runtime, sources)
+  evaluateTransitionStack(
+    runtime.gameplayTagsBlend,
+    (child) => runtime.actionPoses[child],
+    runtime.nodes.actionTransitionScratchA,
+    runtime.nodes.actionTransitionScratchB,
+    runtime.nodes.output,
   )
   return runtime.output
 }

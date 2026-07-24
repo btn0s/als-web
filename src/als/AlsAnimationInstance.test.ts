@@ -1831,6 +1831,45 @@ describe('AlsAnimationInstance playback regression', () => {
     )
   })
 
+  it('drives the Rifle Aiming state and gun elevation from PitchAmount', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const aimingControls: AlsAnimationInstanceControls = {
+      ...controls,
+      overlayMode: 'Rifle',
+      rotationMode: 'Aiming',
+      viewPitchAngle: 0,
+    }
+    const gunForward = new THREE.Vector3()
+    const gunRotation = new THREE.Quaternion()
+    const gunElevation = () => {
+      gltf.scene.updateMatrixWorld(true)
+      bone(gltf.scene, 'VB hand_r_to_ik_hand_gun')
+        .getWorldQuaternion(gunRotation)
+      gunForward
+        .set(0, 0, 1)
+        .applyQuaternion(gunRotation)
+      return THREE.MathUtils.radToDeg(Math.asin(gunForward.y))
+    }
+
+    refreshFrames(instance, 90, aimingControls)
+    expect(window.__weightTable?.RifleStateAiming).toBeCloseTo(1, 7)
+    expect(window.__weightTable?.idleAdditive).toBeCloseTo(0.5, 7)
+    expect(Math.abs(gunElevation())).toBeLessThan(1)
+
+    instance.refresh(1 / 60, {
+      ...aimingControls,
+      viewPitchAngle: 45,
+    })
+    expect(Math.abs(gunElevation() - 45)).toBeLessThan(1)
+
+    instance.refresh(1 / 60, {
+      ...aimingControls,
+      viewPitchAngle: -45,
+    })
+    expect(Math.abs(gunElevation() + 45)).toBeLessThan(1)
+  })
+
   it('keeps the settled Rifle left arm on its authored synchronized source', async () => {
     const gltf = await loadAlsGltf()
     const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)

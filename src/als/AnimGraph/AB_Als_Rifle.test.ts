@@ -9,9 +9,17 @@ import { blendPoseNodesTogether } from '../../engine/uePoseBlend'
 import { createRigDefinition } from '../../engine/rig'
 import {
   ALS_RIFLE_RELAXED_GRAPH,
+  ALS_RIFLE_GRAPH,
+  createAlsRifleRuntime,
   createAlsRifleRelaxedRuntime,
+  evaluateAlsRifleGraph,
   evaluateAlsRifleRelaxedGraph,
+  refreshAlsRifleRuntime,
   refreshAlsRifleRelaxedState,
+  sampleCF_Als_Aim_In,
+  sampleCF_Als_Aim_Out,
+  type AlsRifleFullInput,
+  type AlsRifleFullSources,
   type AlsRifleRelaxedSources,
   type AlsRifleRelaxedStateInput,
   type AlsRifleSequencePlayerSource,
@@ -126,12 +134,50 @@ function evaluateFresh(
   return evaluateAlsRifleRelaxedGraph(runtime, createSources(rig))
 }
 
+function createFullSources(
+  rig: ReturnType<typeof createRig>,
+): AlsRifleFullSources {
+  const relaxed = createSources(rig)
+  const identity = new THREE.Quaternion()
+  return {
+    ...relaxed,
+    // Keep the idle delta neutral so state/action assertions measure only
+    // the compiled Rifle graph nodes under test.
+    idle: createPlayerSource(
+      createSource(rig, 'idle', 0, 0, identity),
+      0,
+      true,
+    ),
+    idleReference: createSource(rig, 'idle-reference', 0, 0, identity),
+    aim: createSource(rig, 'aim', 100, 0, identity),
+    aimCrouch: createSource(rig, 'aim-crouch', 300, 0, identity),
+    aimReference: createSource(rig, 'aim-reference', 200, 0, identity),
+  }
+}
+
+function createFullInput(
+  overrides: Partial<AlsRifleFullInput> = {},
+): AlsRifleFullInput {
+  return {
+    ...createStateInput(),
+    rotationMode: 'ViewDirection',
+    locomotionMode: 'Grounded',
+    gait: 'Walking',
+    transitionsAllowed: true,
+    moving: false,
+    pitchAmount: 0,
+    ...overrides,
+    velocityBlend: overrides.velocityBlend ?? createStateInput().velocityBlend,
+  }
+}
+
 describe('AB_Als_Rifle Relaxed graph', () => {
   it('freezes the exact compiled-node topology and authored sequence times', () => {
     expect(ALS_RIFLE_RELAXED_GRAPH.moduleOutputNodeIndex).toBe(32)
     expect(
-      ALS_RIFLE_RELAXED_GRAPH.evaluatorOwnedApplyAdditiveNodeIndex,
+      ALS_RIFLE_RELAXED_GRAPH.applyAdditiveNodeIndex,
     ).toBe(34)
+    expect(ALS_RIFLE_RELAXED_GRAPH.idleAdditiveAlpha).toBe(0.75)
     expect(ALS_RIFLE_RELAXED_GRAPH.nodes.node27).toMatchObject({
       inputs: [47, 44],
       normalizeAlpha: true,
@@ -407,5 +453,143 @@ describe('AB_Als_Rifle Relaxed graph', () => {
     expect(state.sprintAccelerationAmount).toBe(2)
     expect(output.pose.positions[0]).toBeCloseTo(320)
     expect(output.curves.get('GraphCurve')).toBeCloseTo(302)
+  })
+})
+
+describe('AB_Als_Rifle full state machine', () => {
+  it('skips transition evaluation on the first relevant update, then chains Relaxed → Ready → Aiming', () => {
+    const rig = createRig()
+    const runtime = createAlsRifleRuntime(rig)
+    const input = createFullInput({ rotationMode: 'Aiming' })
+
+    refreshAlsRifleRuntime(runtime, input)
+    expect(runtime.rifleStates.currentState).toBe('Relaxed')
+    expect(runtime.transitionsTakenThisFrame).toBe(0)
+    expect(runtime.lifecycleEvents).toEqual([])
+
+    refreshAlsRifleRuntime(runtime, input)
+    expect(runtime.rifleStates.currentState).toBe('Aiming')
+    expect(runtime.transitionsTakenThisFrame).toBe(2)
+    expect(runtime.rifleStates.activeTransitions).toHaveLength(2)
+    expect(runtime.rifleStates.activeTransitions.map((transition) => [
+      transition.previousState,
+      transition.nextState,
+    ])).toEqual([
+      ['Relaxed', 'Ready'],
+      ['Ready', 'Aiming'],
+    ])
+    expect(runtime.lifecycleEvents).toEqual([{
+      kind: 'AnimNotify',
+      name: 'RelaxedToReady',
+      callSite: 'TransitionStart',
+    }])
+  })
+
+  it('uses the authored custom aim curves, including their asymmetric early ease', () => {
+    expect(sampleCF_Als_Aim_In(0)).toBe(0)
+    expect(sampleCF_Als_Aim_In(0.1)).toBeCloseTo(0.06191, 5)
+    expect(sampleCF_Als_Aim_In(0.2)).toBeCloseTo(0.25)
+    expect(sampleCF_Als_Aim_In(0.5)).toBeGreaterThan(0.25)
+    expect(sampleCF_Als_Aim_In(1)).toBe(1)
+
+    expect(sampleCF_Als_Aim_Out(0)).toBe(0)
+    expect(sampleCF_Als_Aim_Out(0.25)).toBeCloseTo(0.05478, 5)
+    expect(sampleCF_Als_Aim_Out(0.5)).toBeCloseTo(0.5)
+    expect(sampleCF_Als_Aim_Out(0.75)).toBeCloseTo(0.94521829375)
+    expect(sampleCF_Als_Aim_Out(1)).toBe(1)
+  })
+
+  it('takes Ready’s InAir/Sprinting fallback before elapsed Ready exits', () => {
+    const rig = createRig()
+    const runtime = createAlsRifleRuntime(rig)
+    const aiming = createFullInput({ rotationMode: 'Aiming' })
+    refreshAlsRifleRuntime(runtime, aiming)
+    refreshAlsRifleRuntime(runtime, aiming)
+    refreshAlsRifleRuntime(runtime, createFullInput({
+      rotationMode: 'Aiming',
+      deltaTime: 1,
+    }))
+    refreshAlsRifleRuntime(runtime, createFullInput({
+      rotationMode: 'ViewDirection',
+      locomotionMode: 'InAir',
+      gait: 'Sprinting',
+      moving: true,
+      transitionsAllowed: true,
+    }))
+    const latest = runtime.rifleStates.activeTransitions.at(-1)
+    expect(runtime.rifleStates.currentState).toBe('Relaxed')
+    expect(latest).toMatchObject({
+      previousState: 'Ready',
+      nextState: 'Relaxed',
+      crossfadeDuration: ALS_RIFLE_GRAPH.rifleStates.transitions[5].duration,
+    })
+    expect(runtime.lifecycleEvents).toEqual([])
+  })
+
+  it('uses GameplayTagsBlend target-child blend times and authored override curves', () => {
+    const rig = createRig()
+    const sources = createFullSources(rig)
+    const runtime = createAlsRifleRuntime(rig)
+
+    refreshAlsRifleRuntime(runtime, createFullInput({
+      locomotionAction: 'Rolling',
+    }))
+    expect(runtime.gameplayTagsBlend.currentState).toBe(3)
+    expect(runtime.gameplayTagsBlend.activeTransitions[0]).toMatchObject({
+      previousState: 0,
+      nextState: 3,
+      crossfadeDuration: 0.3,
+    })
+    refreshAlsRifleRuntime(runtime, createFullInput({
+      locomotionAction: 'Rolling',
+      deltaTime: 0.3,
+    }))
+    const rolling = evaluateAlsRifleGraph(
+      runtime,
+      createFullInput({ locomotionAction: 'Rolling' }),
+      sources,
+    )
+    expect(rolling.actionChild).toBe(3)
+    expect(rolling.pose.positions[0]).toBeCloseTo(31.6667, 4)
+    expect(rolling.curves.get('LayerArmLeft')).toBe(3)
+    expect(rolling.curves.get('LayerArmLeftAdditive')).toBe(0)
+    expect(rolling.curves.get('LayerArmRight')).toBe(3)
+    expect(rolling.curves.get('LayerArmRightAdditive')).toBe(0)
+
+    const gettingUp = createAlsRifleRuntime(rig)
+    refreshAlsRifleRuntime(gettingUp, createFullInput({
+      locomotionAction: 'GettingUp',
+    }))
+    expect(gettingUp.gameplayTagsBlend.currentState).toBe(2)
+    expect(gettingUp.gameplayTagsBlend.activeTransitions).toHaveLength(0)
+    const gettingUpOutput = evaluateAlsRifleGraph(
+      gettingUp,
+      createFullInput({ locomotionAction: 'GettingUp' }),
+      sources,
+    )
+    expect(gettingUpOutput.actionChild).toBe(2)
+    expect(gettingUpOutput.pose.positions[0]).toBeCloseTo(25)
+    expect(gettingUpOutput.curves.get('LayerArmRight')).toBe(3)
+  })
+
+  it('uses the authored standing aim reference frame for mesh-space additive evaluation', () => {
+    const rig = createRig()
+    const runtime = createAlsRifleRuntime(rig)
+    const sources = createFullSources(rig)
+    const aiming = createFullInput({
+      rotationMode: 'Aiming',
+      pitchAmount: 0.5,
+    })
+    refreshAlsRifleRuntime(runtime, aiming)
+    refreshAlsRifleRuntime(runtime, aiming)
+    evaluateAlsRifleGraph(runtime, aiming, sources)
+
+    expect(ALS_RIFLE_GRAPH.aiming.aimExplicitTime).toBe('PitchAmount')
+    expect(runtime.nodes.aimReference.pose.positions[0]).toBeCloseTo(200 + 100 * (9 / 30))
+    expect(runtime.statePoses.Aiming.pose.positions[0]).toBeCloseTo(
+      (15 + 100 * (1 / 30) * 0.5)
+      + (150 - (200 + 100 * (5 / 30))),
+      4,
+    )
   })
 })

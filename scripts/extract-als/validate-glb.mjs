@@ -162,6 +162,7 @@ const expectedStepInterpolationClips = new Set([
   'A_Als_PistolOneHanded_Poses',
   'A_Als_PistolTwoHanded_Poses',
   'A_Als_Rifle_Poses',
+  'A_Als_Rifle_Poses_NoCurves',
   'A_Als_Torch_Poses',
 ]);
 const expectedActionRootTranslationEnds = new Map([
@@ -298,8 +299,8 @@ for (const materialName of actualSkinJointHistograms.keys()) {
 }
 
 if (anims.length < 1) errs.push('no animations');
-if (manifest.length !== 118)
-  errs.push(`ALS 4.15 content manifest has ${manifest.length} clips, expected 118`);
+if (manifest.length !== 119)
+  errs.push(`ALS 4.15 content manifest has ${manifest.length} clips, expected 119`);
 if (manifestSet.size !== manifest.length) errs.push('duplicate clip names in clips.manifest');
 for (const clip of manifest)
   if (!animNameSet.has(clip)) errs.push(`missing curated clip: ${clip}`);
@@ -735,6 +736,16 @@ const idleCurves = curvesByClip.get('A_Als_Idle');
 if (!idleCurves) errs.push('curve-free sentinel clip missing: A_Als_Idle');
 else if (idleCurves.length !== 0)
   errs.push(`A_Als_Idle should have no curves, found ${idleCurves.length}`);
+const rifleAimReferenceCurves = curvesByClip.get(
+  'A_Als_Rifle_Poses_NoCurves',
+);
+if (!rifleAimReferenceCurves)
+  errs.push('curve-free sentinel clip missing: A_Als_Rifle_Poses_NoCurves');
+else if (rifleAimReferenceCurves.length !== 0)
+  errs.push(
+    'A_Als_Rifle_Poses_NoCurves should have no curves, found ' +
+    `${rifleAimReferenceCurves.length}`,
+  );
 
 const forwardLocomotionCycles = [
   'A_Als_Walk_Forward',

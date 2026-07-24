@@ -106,10 +106,10 @@ const DEFAULT_GRAPH_EVIDENCE = partial(
   ],
 )
 const RIFLE_GRAPH_EVIDENCE = partial(
-  graphDefinition('AB_Als_Rifle', 'evaluateAlsRifleRelaxedGraph'),
+  graphDefinition('AB_Als_Rifle', 'evaluateAlsRifleGraph'),
   [
     'src/als/AlsAnimationInstance.ts',
-    'evaluateAlsRifleRelaxedGraph(',
+    'evaluateAlsRifleGraph(',
   ],
 )
 const CROUCHING_GRAPH_EVIDENCE = partial(
@@ -171,7 +171,11 @@ export const ALS_PARITY_ASSET_COVERAGE = [
   unportedAsset('AB_Als_Masculine'),
   unportedAsset('AB_Als_PistolOneHanded'),
   unportedAsset('AB_Als_PistolTwoHanded'),
-  partialAsset('AB_Als_Rifle', RIFLE_GRAPH_EVIDENCE),
+  {
+    asset: 'AB_Als_Rifle',
+    status: 'live',
+    evidence: RIFLE_GRAPH_EVIDENCE,
+  },
   unportedAsset('AB_Als_Torch'),
   partialAsset('AB_Als_Crouching', CROUCHING_GRAPH_EVIDENCE),
   partialAsset('AB_Als_Standing', STANDING_GRAPH_EVIDENCE),
@@ -250,10 +254,11 @@ export const ALS_PARITY_MACHINE_COVERAGE = [
     0,
     'unported',
   ),
-  partialMachine(
+  machine(
     'AB_Als_Rifle',
     'Rifle States',
     0,
+    'live',
     RIFLE_GRAPH_EVIDENCE,
   ),
   partialMachine(

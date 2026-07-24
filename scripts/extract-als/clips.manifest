@@ -107,6 +107,7 @@ A_Als_PistolTwoHanded_Poses|Two-handed pistol multi-frame overlay pose bank|M3 O
 A_Als_PistolTwoHanded_Aim|Standing two-handed pistol aim additive source|M3 Rotation modes and Overlay states: complete authored ABP coverage
 A_Als_PistolTwoHanded_Aim_Crouch|Crouched two-handed pistol aim additive source|M3 Rotation modes and Overlay states: complete authored ABP coverage
 A_Als_Rifle_Poses|Rifle multi-frame overlay pose bank|M3 Overlay states: item/pose overlays
+A_Als_Rifle_Poses_NoCurves|Authored additive reference pose bank for rifle aim clips|M3 Rotation modes and Overlay states: exact mesh-space aiming bases
 A_Als_Rifle_Aim|Standing rifle aim additive source|M3 Rotation modes and Overlay states: aiming
 A_Als_Rifle_Aim_Crouch|Crouched rifle aim additive source|M3 Rotation modes and Overlay states across stances
 A_Als_Rifle_Run_Arms|Upper-body rifle run source for region masking|M3 Overlay states: masked per-bone moving overlay

@@ -34,6 +34,9 @@ import {
   createPoseEvaluator,
   evaluatePose,
 } from '../engine/evaluator'
+import {
+  getStateMachineStateWeight,
+} from '../engine/stateMachineTransitionStack'
 import type {
   EvaluatePoseInput,
   EvaluatorAuthoredAdditiveEntry,
@@ -200,10 +203,13 @@ import {
   refreshAlsDefaultOverlayGraph,
 } from './AnimGraph/AB_Als_Default'
 import {
-  createAlsRifleRelaxedRuntime,
-  evaluateAlsRifleRelaxedGraph,
-  refreshAlsRifleRelaxedState,
-  resetAlsRifleRelaxedRuntime,
+  ALS_RIFLE_GRAPH,
+  ALS_RIFLE_RELAXED_GRAPH,
+  createAlsRifleRuntime,
+  evaluateAlsRifleGraph,
+  refreshAlsRifleRuntime,
+  resetAlsRifleRuntime,
+  type AlsRifleFullInput,
 } from './AnimGraph/AB_Als_Rifle'
 import {
   ALS_CROUCHING_GRAPH_STATE_ORDER,
@@ -1439,8 +1445,14 @@ export function createAlsAnimationInstance(gltf: {
   const crouchingTransitionRightClip = clipsByName.get(
     'A_Als_Crouch_Transition_Right',
   )
+  const crouchingTransitionLeftClip = clipsByName.get(
+    'A_Als_Crouch_Transition_Left',
+  )
   const standingTransitionRightClip = clipsByName.get(
     'A_Als_Stand_Transition_Right',
+  )
+  const standingTransitionLeftClip = clipsByName.get(
+    'A_Als_Stand_Transition_Left',
   )
   const crouchingMovementClips: Readonly<
     Record<AlsHipsDirection, RuntimeClip | undefined>
@@ -1728,8 +1740,14 @@ export function createAlsAnimationInstance(gltf: {
   if (crouchingTransitionRightClip) {
     montageClips.add(crouchingTransitionRightClip)
   }
+  if (crouchingTransitionLeftClip) {
+    montageClips.add(crouchingTransitionLeftClip)
+  }
   if (standingTransitionRightClip) {
     montageClips.add(standingTransitionRightClip)
+  }
+  if (standingTransitionLeftClip) {
+    montageClips.add(standingTransitionLeftClip)
   }
   const rifleOverlaySources = (
     Object.entries(RIFLE_OVERLAY_CLIPS) as [
@@ -1779,7 +1797,10 @@ export function createAlsAnimationInstance(gltf: {
         evaluator.referencePose,
       )
     : undefined
-  const rifleRelaxedRuntime = createAlsRifleRelaxedRuntime(rig)
+  const rifleRuntime = createAlsRifleRuntime(
+    rig,
+    quickFeetBlendProfile,
+  )
   const riflePosesSource = rifleOverlaySources.find(
     ({ key }) => key === 'poses',
   )
@@ -1791,6 +1812,13 @@ export function createAlsAnimationInstance(gltf: {
   )
   const rifleSprintImpulseArmsSource = rifleOverlaySources.find(
     ({ key }) => key === 'sprintImpulseArms',
+  )
+  const rifleAimReferenceClip = clipsByName.get(
+    'A_Als_Rifle_Poses_NoCurves',
+  )
+  const rifleAimClip = clipsByName.get('A_Als_Rifle_Aim')
+  const rifleAimCrouchClip = clipsByName.get(
+    'A_Als_Rifle_Aim_Crouch',
   )
   const rifleRelaxedSources =
     riflePosesSource
@@ -1851,6 +1879,69 @@ export function createAlsAnimationInstance(gltf: {
           additiveSpace: idleAdditiveMetadata.additiveSpace,
         }
       : undefined
+  const rifleAimMetadata = rifleAimClip
+    ? compileAuthoredAdditive(rifleAimClip.sampler.clip)
+    : undefined
+  const rifleAimCrouchMetadata = rifleAimCrouchClip
+    ? compileAuthoredAdditive(rifleAimCrouchClip.sampler.clip)
+    : undefined
+  if (
+    (
+      rifleAimClip
+      && (
+        rifleAimMetadata?.additiveSpace !== 'mesh'
+        || rifleAimMetadata.refPoseSeq
+          !== 'A_Als_Rifle_Poses_NoCurves'
+        || rifleAimMetadata.refFrameIndex !== 5
+      )
+    )
+    || (
+      rifleAimCrouchClip
+      && (
+        rifleAimCrouchMetadata?.additiveSpace !== 'mesh'
+        || rifleAimCrouchMetadata.refPoseSeq
+          !== 'A_Als_Rifle_Poses_NoCurves'
+        || rifleAimCrouchMetadata.refFrameIndex !== 9
+      )
+    )
+  ) {
+    throw new Error(
+      'AB_Als_Rifle aim additive metadata differs from ALS',
+    )
+  }
+  const rifleSources =
+    rifleRelaxedSources
+    && idleAdditiveClip
+    && standPose
+    && rifleAimReferenceClip
+    && rifleAimClip
+    && rifleAimCrouchClip
+      ? {
+          ...rifleRelaxedSources,
+          idle: {
+            sampler: idleAdditiveClip.sampler,
+            curves: idleAdditiveClip.curves,
+            time: 0,
+            loop: true,
+          },
+          idleReference: {
+            sampler: standPose.sampler,
+            curves: standPose.curves,
+          },
+          aim: {
+            sampler: rifleAimClip.sampler,
+            curves: rifleAimClip.curves,
+          },
+          aimCrouch: {
+            sampler: rifleAimCrouchClip.sampler,
+            curves: rifleAimCrouchClip.curves,
+          },
+          aimReference: {
+            sampler: rifleAimReferenceClip.sampler,
+            curves: rifleAimReferenceClip.curves,
+          },
+        }
+      : undefined
 
   const fallbackSource = pickClip(gltf.animations)
   const fallbackClip = fallbackSource ? clipsByName.get(fallbackSource.name) : undefined
@@ -1909,6 +2000,8 @@ export function createAlsAnimationInstance(gltf: {
       (clip): clip is RuntimeClip => clip !== undefined,
     )
     && standingTransitionRightClip !== undefined
+    && standingTransitionLeftClip !== undefined
+    && crouchingTransitionLeftClip !== undefined
     && rollClip !== undefined
     && rollPoseSampler !== undefined
     && rollAuthoredRootMotion !== undefined
@@ -1916,7 +2009,7 @@ export function createAlsAnimationInstance(gltf: {
     && quickFeetBlendProfile !== null
     && defaultOverlayGraphRuntime !== undefined
     && rifleOverlaySources.length === Object.keys(RIFLE_OVERLAY_CLIPS).length
-    && rifleRelaxedSources !== undefined
+    && rifleSources !== undefined
     && idleAdditiveEntry !== undefined
     && locomotionPoseGraphSourceComplete
   const locomotionRoles = (Object.keys(CLIP_ROLES) as ClipRole[]).filter(
@@ -2070,6 +2163,7 @@ export function createAlsAnimationInstance(gltf: {
   const postLocomotionSlotCurveScratch = new Map<string, number>()
   let activeLocomotionGraphInput:
     AlsLocomotionPoseGraphInput | null = null
+  let activeRifleGraphInput: AlsRifleFullInput | null = null
   let activeOverlayMode: AlsOverlayMode = 'Default'
   let defaultOverlayGraphSample = refreshAlsDefaultOverlayGraph(
     defaultOverlayGraphState,
@@ -2161,10 +2255,15 @@ export function createAlsAnimationInstance(gltf: {
       overlay: overlayInertialization,
     },
     overlayGraph(context) {
-      if (activeOverlayMode === 'Rifle' && rifleRelaxedSources) {
-        const result = evaluateAlsRifleRelaxedGraph(
-          rifleRelaxedRuntime,
-          rifleRelaxedSources,
+      if (
+        activeOverlayMode === 'Rifle'
+        && rifleSources
+        && activeRifleGraphInput
+      ) {
+        const result = evaluateAlsRifleGraph(
+          rifleRuntime,
+          activeRifleGraphInput,
+          rifleSources,
         )
         copyPose(result.pose, context.outputPose)
         context.outputCurves.clear()
@@ -2548,6 +2647,36 @@ export function createAlsAnimationInstance(gltf: {
       if (event.kind === 'AnimNotify' && event.name === 'StopQuick') {
         stopQuickNotifyCount++
       }
+    }
+  }
+
+  function processRifleLifecycleEvents(
+    controls: AlsAnimationInstanceControls,
+  ) {
+    for (const event of rifleRuntime.lifecycleEvents) {
+      if (
+        event.kind !== 'AnimNotify'
+        || (
+          event.name !== 'RelaxedToReady'
+          && event.name !== 'ReadyToRelaxed'
+        )
+      ) {
+        continue
+      }
+
+      // AB_Als_Rifle's transition-start notifies call
+      // PlayTransitionLeftAnimation() with its native defaults.
+      const clip = controls.stance === 'Crouching'
+        ? crouchingTransitionLeftClip
+        : standingTransitionLeftClip
+      if (!clip) continue
+      queueTransitionAnimation(transitionsState, {
+        clip: clip.sampler.clip.name,
+        blendInDuration: 0.2,
+        blendOutDuration: 0.2,
+        playRate: 1,
+        startTime: 0,
+      })
     }
   }
 
@@ -5118,19 +5247,18 @@ export function createAlsAnimationInstance(gltf: {
     activeOverlayMode = controls.overlayMode
     if (idleAdditiveEntry && idleAdditiveClip) {
       idleAdditiveEntry.time = idleAdditiveClip.time
-      // Both authored linked overlays apply A_Als_Idle at node-local alpha 0.75, independently of
-      // the locomotion turn slot.
+      // AB_Als_Default's node 1 remains evaluator-owned. AB_Als_Rifle applies
+      // the same source inside each state before its outer transitions because
+      // Aiming uses a distinct authored alpha.
       idleAdditiveEntry.weight =
-        defaultActive || rifleActive ? IDLE_ADDITIVE_WEIGHT : 0
+        defaultActive ? IDLE_ADDITIVE_WEIGHT : 0
     }
     if (previousOverlayMode === null) {
       previousOverlayMode = controls.overlayMode
     } else if (controls.overlayMode !== previousOverlayMode) {
       previousOverlayMode = controls.overlayMode
       if (controls.overlayMode === 'Rifle') {
-        // AB_Als_Rifle's outer state machine is authored with
-        // bReinitializeOnBecomingRelevant=true.
-        resetAlsRifleRelaxedRuntime(rifleRelaxedRuntime)
+        resetAlsRifleRuntime(rifleRuntime)
       }
       // AB_Als_Default and AB_Als_Rifle both author 0.2s GraphBlendOptions for the Overlay linked
       // layer. Their request belongs to AB_Als node 11, never the final output inertializer.
@@ -5151,34 +5279,41 @@ export function createAlsAnimationInstance(gltf: {
       },
     )
 
-    const rifleGraphState = refreshAlsRifleRelaxedState(
-      rifleRelaxedRuntime,
-      {
-        relevant: rifleActive,
-        deltaTime: delta,
-        standingAmount: gaitAmounts.standingAmount,
-        crouchingAmount: gaitAmounts.crouchingAmount,
-        gaitWalkingAmount: gaitAmounts.walking,
-        gaitRunningAmount: gaitAmounts.running,
-        gaitSprintingAmount: gaitAmounts.sprinting,
-        inAirAmount: gaitAmounts.inAirAmount,
-        groundPredictionAmount: inAirState.groundPredictionAmount,
-        sprintAccelerationAmount:
-          state.standingSprint.sprintAccelerationAmount,
-        velocityBlend: {
-          forwardAmount: velocityBlend.forwardAmount,
-          backwardAmount: velocityBlend.backwardAmount,
-          leftAmount: velocityBlend.leftAmount,
-          rightAmount: velocityBlend.rightAmount,
-        },
+    activeRifleGraphInput = {
+      relevant: rifleActive,
+      deltaTime: delta,
+      rotationMode: controls.rotationMode,
+      locomotionMode,
+      locomotionAction: controls.locomotionAction ?? null,
+      gait: controls.gait,
+      transitionsAllowed: transitionsState.transitionsAllowed,
+      moving: controls.moving,
+      pitchAmount: viewAnimationState.pitchAmount,
+      standingAmount: gaitAmounts.standingAmount,
+      crouchingAmount: gaitAmounts.crouchingAmount,
+      gaitWalkingAmount: gaitAmounts.walking,
+      gaitRunningAmount: gaitAmounts.running,
+      gaitSprintingAmount: gaitAmounts.sprinting,
+      inAirAmount: gaitAmounts.inAirAmount,
+      groundPredictionAmount: inAirState.groundPredictionAmount,
+      sprintAccelerationAmount:
+        state.standingSprint.sprintAccelerationAmount,
+      velocityBlend: {
+        forwardAmount: velocityBlend.forwardAmount,
+        backwardAmount: velocityBlend.backwardAmount,
+        leftAmount: velocityBlend.leftAmount,
+        rightAmount: velocityBlend.rightAmount,
       },
-    )
+    }
+    refreshAlsRifleRuntime(rifleRuntime, activeRifleGraphInput)
+    processRifleLifecycleEvents(controls)
+    const rifleGraphState = rifleRuntime.relaxed.state
 
     for (const source of rifleOverlaySources) {
       const syncMember = overlayLocomotionMembers.get(source)
       if (syncMember) syncMember.weight = 0
     }
-    if (rifleActive) {
+    if (rifleActive && rifleGraphState.relevant) {
       const groundedStandingWeight =
         (1 - clamp01(rifleGraphState.inAirAmount))
         * rifleGraphState.stanceWeights[0]
@@ -5325,13 +5460,14 @@ export function createAlsAnimationInstance(gltf: {
         ? 0
         : overlayLocomotionMembers.get(source)?.time ?? 0
     }
-    if (rifleRelaxedSources) {
-      rifleRelaxedSources.runArms.time =
+    if (rifleSources) {
+      rifleSources.runArms.time =
         rifleRunArmsSource?.time ?? 0
-      rifleRelaxedSources.sprintArms.time =
+      rifleSources.sprintArms.time =
         rifleSprintArmsSource?.time ?? 0
-      rifleRelaxedSources.sprintImpulseArms.time =
+      rifleSources.sprintImpulseArms.time =
         rifleSprintImpulseArmsSource?.time ?? 0
+      rifleSources.idle.time = idleAdditiveClip?.time ?? 0
     }
 
     if (
@@ -5999,7 +6135,34 @@ export function createAlsAnimationInstance(gltf: {
       gaitAmounts.unweightedRunning
     normalDebugWeights.unweightedGaitSprintingAmount =
       gaitAmounts.unweightedSprinting
-    normalDebugWeights.idleAdditive = idleAdditiveEntry?.weight ?? 0
+    const rifleStatesChildWeight = rifleActive
+      ? getStateMachineStateWeight(
+          rifleRuntime.gameplayTagsBlend,
+          0,
+        )
+      : 0
+    const rifleRelaxedWeight = getStateMachineStateWeight(
+      rifleRuntime.rifleStates,
+      'Relaxed',
+    )
+    const rifleReadyWeight = getStateMachineStateWeight(
+      rifleRuntime.rifleStates,
+      'Ready',
+    )
+    const rifleAimingWeight = getStateMachineStateWeight(
+      rifleRuntime.rifleStates,
+      'Aiming',
+    )
+    const rifleIdleAdditiveWeight = rifleStatesChildWeight * (
+      rifleRelaxedWeight
+        * ALS_RIFLE_RELAXED_GRAPH.idleAdditiveAlpha
+      + rifleReadyWeight
+        * ALS_RIFLE_GRAPH.ready.idleAdditiveAlpha
+      + rifleAimingWeight
+        * ALS_RIFLE_GRAPH.aiming.idleAdditiveAlpha
+    )
+    normalDebugWeights.idleAdditive =
+      (idleAdditiveEntry?.weight ?? 0) + rifleIdleAdditiveWeight
     normalDebugWeights['clipTime.idleAdditive'] =
       idleAdditiveEntry?.time ?? 0
     normalDebugWeights['clipPhase.idleAdditive'] =
@@ -6008,6 +6171,16 @@ export function createAlsAnimationInstance(gltf: {
         : 0
     normalDebugWeights['clipTime.defaultOverlay'] = 0
     normalDebugWeights.defaultOverlay = defaultActive ? 1 : 0
+    normalDebugWeights.RifleStateRelaxed =
+      rifleStatesChildWeight * rifleRelaxedWeight
+    normalDebugWeights.RifleStateReady =
+      rifleStatesChildWeight * rifleReadyWeight
+    normalDebugWeights.RifleStateAiming =
+      rifleStatesChildWeight * rifleAimingWeight
+    normalDebugWeights.RifleActionChild =
+      rifleRuntime.output.actionChild
+    normalDebugWeights.RifleTransitionsTakenThisFrame =
+      rifleRuntime.transitionsTakenThisFrame
     normalDebugWeights.locomotionMarkerSync = syncResult.usedMarkerSync ? 1 : 0
     normalDebugWeights[POSE_CROUCHING_CURVE_NAME] = state.crouchingAmount
     normalDebugWeights.GroundedStanceTransitionDirect =
