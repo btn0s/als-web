@@ -4,6 +4,7 @@ import type {
   AlsMantlingMontageNotifyEvent,
 } from './AlsAnimationInstance'
 import {
+  dispatchAlsQueuedAnimationEvents,
   refreshAlsAnimationMantlingNotifies,
 } from './AlsAnimationInstance.hooks'
 import { createAlsCharacter } from './AlsCharacter'
@@ -73,5 +74,34 @@ describe('UAlsAnimationInstance live mantling hook seam', () => {
       montage,
     )
     expect(character.locomotionAction).toBeNull()
+  })
+})
+
+describe('UAnimInstance queued-notify frame seam', () => {
+  it('dispatches the held queue through the camera-manager interface', () => {
+    const events: unknown[] = []
+    const cameraManager = {
+      StartCameraShake(
+        CameraShakeClass: string | null,
+        Scale = 1,
+      ) {
+        events.push([CameraShakeClass, Scale])
+        return null
+      },
+    }
+    const animationInstance = {
+      dispatchQueuedAnimEvents(sink: typeof cameraManager) {
+        sink.StartCameraShake('B_Als_CameraShake_Sprint_C', 1.25)
+        return 1
+      },
+    }
+
+    expect(dispatchAlsQueuedAnimationEvents(
+      animationInstance,
+      cameraManager,
+    )).toBe(1)
+    expect(events).toEqual([
+      ['B_Als_CameraShake_Sprint_C', 1.25],
+    ])
   })
 })

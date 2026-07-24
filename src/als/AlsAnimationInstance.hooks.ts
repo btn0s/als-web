@@ -21,6 +21,9 @@ import type {
   AlsAnimationInstanceControls,
   AlsMantlingMontageBridge,
 } from './AlsAnimationInstance'
+import type {
+  AlsPlayerCameraManager,
+} from './AlsCamera/Notifies/AlsAnimNotify_CameraShake'
 import {
   createAlsMantlingNotifyRuntime,
   refreshAlsMantlingNotifyRuntime,
@@ -65,6 +68,17 @@ export function refreshAlsAnimationMantlingNotifies(
   })
 }
 
+export function dispatchAlsQueuedAnimationEvents(
+  animationInstance: {
+    dispatchQueuedAnimEvents(
+      sink: AlsPlayerCameraManager,
+    ): number
+  },
+  cameraManager: AlsPlayerCameraManager,
+): number {
+  return animationInstance.dispatchQueuedAnimEvents(cameraManager)
+}
+
 /**
  * Thin React binding for the framework-free AlsAnimationInstance frame brain. Character policy
  * and physics own the controls; this hook owns pose evaluation and publishes the resulting curves
@@ -81,6 +95,7 @@ export function useAlsAnimationInstance(
   onJumped: MutableRefObject<(() => void) | null>,
   groundPredictionSweep: AlsGroundPredictionCapsuleSweep,
   controlRigFootTrace: AlsControlRigFootOffsetTrace,
+  cameraManager: AlsPlayerCameraManager,
   mantlingMontage?: MutableRefObject<AlsMantlingMontageBridge | null>,
 ) {
   const animationInstance = useMemo(
@@ -154,4 +169,11 @@ export function useAlsAnimationInstance(
       animationInstance.getCurveValue(ROTATION_YAW_SPEED_CURVE_NAME)
     frameCapture.recordFrame(delta, captureMetadata(frameControls))
   }, ALS_FRAME_PRIORITY.Animation)
+
+  useFrame(() => {
+    dispatchAlsQueuedAnimationEvents(
+      animationInstance,
+      cameraManager,
+    )
+  }, ALS_FRAME_PRIORITY.AnimNotifyDispatch)
 }

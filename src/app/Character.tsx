@@ -395,6 +395,7 @@ function LoadedCharacter({
     character.onJumped,
     capsuleSweep,
     controlRigFootTrace,
+    poseSample.current.cameraShakeRequests,
     mantlingMontage,
   )
 
