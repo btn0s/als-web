@@ -110,7 +110,36 @@ describe('ALS authored mantling settings', () => {
         StartTime: expect.closeTo(2.1333334, 6),
         Duration: expect.closeTo(0.5333333, 6),
         BlendOutDuration: 0.4,
+        bCheckInput: true,
+        bCheckLocomotionMode: true,
+        bCheckRotationMode: true,
+        bCheckStance: true,
+        LocomotionModeEquals: 'Als.LocomotionMode.InAir',
+        RotationModeEquals: 'Als.RotationMode.Aiming',
+        StanceEquals: 'Als.Stance.Crouching',
       }),
+    ])
+    expect(high.Montage.BranchingPointMarkers).toEqual([
+      {
+        NotifyIndex: 0,
+        TriggerTime: expect.closeTo(-0.0001, 8),
+        NotifyEventType: 'Begin',
+      },
+      {
+        NotifyIndex: 0,
+        TriggerTime: expect.closeTo(2.0665665, 6),
+        NotifyEventType: 'End',
+      },
+      {
+        NotifyIndex: 1,
+        TriggerTime: expect.closeTo(2.1333334, 6),
+        NotifyEventType: 'Begin',
+      },
+      {
+        NotifyIndex: 1,
+        TriggerTime: expect.closeTo(2.6665668, 6),
+        NotifyEventType: 'End',
+      },
     ])
 
     const low = ALS_MANTLING_SETTINGS.MS_Als_Low
@@ -138,6 +167,11 @@ describe('ALS authored mantling settings', () => {
       StartTime: 1,
       Duration: 0.5,
       BlendOutDuration: 0.35,
+    })
+    expect(low.Montage.BranchingPointMarkers[1]).toEqual({
+      NotifyIndex: 0,
+      TriggerTime: expect.closeTo(0.9665666, 7),
+      NotifyEventType: 'End',
     })
   })
 

@@ -56,6 +56,19 @@ export interface AlsMantlingMontageNotify {
   readonly StateClassType: string
   readonly LocomotionAction?: string
   readonly BlendOutDuration?: number
+  readonly bCheckInput?: boolean
+  readonly bCheckLocomotionMode?: boolean
+  readonly bCheckRotationMode?: boolean
+  readonly bCheckStance?: boolean
+  readonly LocomotionModeEquals?: string
+  readonly RotationModeEquals?: string
+  readonly StanceEquals?: string
+}
+
+export interface AlsMantlingMontageBranchingPointMarker {
+  readonly NotifyIndex: number
+  readonly TriggerTime: number
+  readonly NotifyEventType: 'Begin' | 'End'
 }
 
 export interface AlsMantlingMontage {
@@ -84,6 +97,8 @@ export interface AlsMantlingMontage {
   readonly AnimPlayRate: number
   readonly LoopingCount: number
   readonly Notifies: readonly AlsMantlingMontageNotify[]
+  readonly BranchingPointMarkers:
+    readonly AlsMantlingMontageBranchingPointMarker[]
 }
 
 export interface AlsMantlingSettings {
@@ -126,6 +141,19 @@ interface SerializedNotify {
         readonly TagName: string
       }
       readonly BlendOutDuration?: number
+      readonly bCheckInput?: boolean
+      readonly bCheckLocomotionMode?: boolean
+      readonly bCheckRotationMode?: boolean
+      readonly bCheckStance?: boolean
+      readonly LocomotionModeEquals?: {
+        readonly TagName: string
+      }
+      readonly RotationModeEquals?: {
+        readonly TagName: string
+      }
+      readonly StanceEquals?: {
+        readonly TagName: string
+      }
     }
   }
 }
@@ -158,6 +186,11 @@ interface SerializedMontage {
     readonly LoopingCount: number
   }
   readonly notifies: readonly SerializedNotify[]
+  readonly branchingPointMarkers: readonly {
+    readonly NotifyIndex: number
+    readonly TriggerTime: number
+    readonly NotifyEventType: 'Begin' | 'End'
+  }[]
 }
 
 interface SerializedSettings {
@@ -295,22 +328,54 @@ function compileMontage(name: string): AlsMantlingMontage {
     AnimEndTime: serialized.slot.AnimEndTime,
     AnimPlayRate: serialized.slot.AnimPlayRate,
     LoopingCount: serialized.slot.LoopingCount,
-    Notifies: serialized.notifies.map((notify) => ({
-      NotifyName: notify.NotifyName,
-      StartTime: notify.startTime,
-      Duration: notify.duration,
-      EndTime: notify.endTime,
-      TriggerTimeOffset: notify.TriggerTimeOffset,
-      EndTriggerTimeOffset: notify.EndTriggerTimeOffset,
-      MontageTickType: notify.MontageTickType,
-      TrackIndex: notify.TrackIndex,
-      StateClassName: notify.stateClass.name,
-      StateClassType: notify.stateClass.type,
-      LocomotionAction:
-        notify.stateClass.properties.LocomotionAction?.TagName,
-      BlendOutDuration:
-        notify.stateClass.properties.BlendOutDuration,
-    })),
+    Notifies: serialized.notifies.map((notify) => {
+      const properties = notify.stateClass.properties
+      const earlyBlendOut =
+        notify.stateClass.type === 'AlsAnimNotifyState_EarlyBlendOut'
+      return {
+        NotifyName: notify.NotifyName,
+        StartTime: notify.startTime,
+        Duration: notify.duration,
+        EndTime: notify.endTime,
+        TriggerTimeOffset: notify.TriggerTimeOffset,
+        EndTriggerTimeOffset: notify.EndTriggerTimeOffset,
+        MontageTickType: notify.MontageTickType,
+        TrackIndex: notify.TrackIndex,
+        StateClassName: notify.stateClass.name,
+        StateClassType: notify.stateClass.type,
+        LocomotionAction: properties.LocomotionAction?.TagName,
+        BlendOutDuration: properties.BlendOutDuration,
+        // Effective UAlsAnimNotifyState_EarlyBlendOut values. Tagged uassets omit these
+        // true/default-tag fields, so preserve the 4.15 class defaults at this data boundary.
+        bCheckInput: earlyBlendOut
+          ? properties.bCheckInput ?? true
+          : undefined,
+        bCheckLocomotionMode: earlyBlendOut
+          ? properties.bCheckLocomotionMode ?? true
+          : undefined,
+        bCheckRotationMode: earlyBlendOut
+          ? properties.bCheckRotationMode ?? true
+          : undefined,
+        bCheckStance: earlyBlendOut
+          ? properties.bCheckStance ?? true
+          : undefined,
+        LocomotionModeEquals: earlyBlendOut
+          ? properties.LocomotionModeEquals?.TagName
+            ?? 'Als.LocomotionMode.InAir'
+          : undefined,
+        RotationModeEquals: earlyBlendOut
+          ? properties.RotationModeEquals?.TagName
+            ?? 'Als.RotationMode.Aiming'
+          : undefined,
+        StanceEquals: earlyBlendOut
+          ? properties.StanceEquals?.TagName
+            ?? 'Als.Stance.Crouching'
+          : undefined,
+      }
+    }),
+    BranchingPointMarkers: serialized.branchingPointMarkers.map(
+      (marker) => ({ ...marker }),
+    ),
   }
 }
 

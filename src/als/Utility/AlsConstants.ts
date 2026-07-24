@@ -21,6 +21,8 @@ export const TRANSITION_SLOT_NAME = 'Transition'
 export const TURN_IN_PLACE_STANDING_SLOT_NAME = 'TurnInPlaceStanding'
 export const TURN_IN_PLACE_CROUCHING_SLOT_NAME = 'TurnInPlaceCrouching'
 export const GROUNDED_SLOT_GROUP_NAME = 'Grounded'
+export const POST_LOCOMOTION_SLOT_NAME = 'PostLocomotion'
+export const LOCOMOTION_SLOT_GROUP_NAME = 'Locomotion'
 
 /**
  * Returns a NEW `THREE.AnimationClip` containing only the tracks of `clip` whose target bone
