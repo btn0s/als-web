@@ -8,13 +8,16 @@ using CUE4Parse.UE4.Objects.Engine;
 using CUE4Parse.UE4.Objects.Meshes;
 using CUE4Parse.UE4.Objects.RenderCore;
 
-// SKM_Als's UE 5.5 editor serialization differs from CUE4Parse 1.2.2.202607 at
-// four seams: an extra model strip-flags field; 12 bone indices (uint8 or uint16,
-// according to the serialized bUse16BitBoneIndex) plus 12 uint8 weights per soft
-// vertex; the 49-byte FSkelMeshSourceSectionUserData map; and a plain uint32
-// index array followed by a retained legacy vertex-count field. Keep this asset
-// compatibility shim at the extraction seam rather than patching the vendored
-// library.
+// UE 5.5 editor skeletal-mesh serialization differs from CUE4Parse 1.2.2.202607 at
+// four seams: an extra model strip-flags field; a PER-SECTION, VARIABLE influence
+// slot count (12 for SKM_Als, 16 for SKM_Als_Rifle — never hardcode; ProbeInfluenceLayout
+// brute-forces it) with bone indices uint8-or-uint16 per the serialized
+// bUse16BitBoneIndex and weights ALWAYS uint16-wide (FSkelMeshSection has no
+// weight-width flag; the main body merely uses byte-scale values inside the wider
+// field — verified against source + probe 2026-07-23); the 49-byte
+// FSkelMeshSourceSectionUserData map; and a plain uint32 index array followed by a
+// retained legacy vertex-count field. Keep this asset compatibility shim at the
+// extraction seam rather than patching the vendored library.
 public sealed class UAlsSkeletalMesh : UObject
 {
     public FBoxSphereBounds ImportedBounds { get; private set; } = null!;

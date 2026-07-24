@@ -159,6 +159,13 @@ it up.
 
 ## Guardrails
 
+- **Extraction scope facts (recon 2026-07-23, verified):** uncooked SoundWave assets contain NO
+  audio payload (streaming bulk exists only in cooked builds) — footstep SFX must be sourced
+  independently if ever wanted. Uncooked StaticMesh geometry needs a new custom bulk-data parser
+  (real unstarted work — budget before scoping env props). OverlayObjects skeletal meshes parse
+  via the existing probe-based shim, no changes expected. Full decision tree in session memory
+  (uasset-serialization-playbook).
+
 - **Never ship Epic-published content** (Manny/Quinn mannequin packs, MetaHumans, and other
   Epic-designated UE-only assets). Local experiments with Epic content stay local.
 - **ALS Refactored content is cleared** (settled 2026-07-23): its blanket MIT — copyright Sixze,
