@@ -82,7 +82,8 @@ export function refreshTurnInPlace(
     input.viewYawAngle,
     settings,
   )
-  state.activationDelay = 0
+  // ALS retains the delay when it queues a turn. The frame latch blocks duplicate graph calls;
+  // the montage's following AllowTransitions gate clears the retained delay.
   return {
     ...selection,
     queuedTurnYawAngle: input.viewYawAngle,

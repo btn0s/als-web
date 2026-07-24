@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ExponentialDecay,
   GetRelativeAccelerationAmount,
   PlayQuickStopAnimation,
   ProcessFootLockBaseChange,
@@ -34,8 +35,14 @@ import type {
 import {
   createAlsRotateInPlaceState,
 } from '../State/AlsRotateInPlaceState'
-import { createAlsTurnInPlaceState } from '../State/AlsTurnInPlaceState'
-import { createVelocityBlend } from '../State/AlsGroundedState'
+import {
+  createAlsTurnInPlaceState,
+  resetTurnInPlaceFrame,
+} from '../State/AlsTurnInPlaceState'
+import {
+  createVelocityBlend,
+  exponentialDecay,
+} from '../State/AlsGroundedState'
 import {
   ALS_PARITY_DELTA_REPORT,
   getAlsParityDelta,
@@ -177,9 +184,8 @@ describe('ALS C++ differential oracle', () => {
     }
   })
 
-  it(`characterizes the exact-exp vs InvExpApprox delta across ${PROPERTY_CASES} damped cases`, () => {
+  it(`RefreshVelocityBlend damped path matches for ${PROPERTY_CASES} seeded cases`, () => {
     const random = seededRandom(0xdecafbad)
-    let maximumDelta = 0
     for (let index = 0; index < PROPERTY_CASES; index++) {
       const yaw = range(random, -Math.PI, Math.PI)
       const velocity = {
@@ -207,23 +213,27 @@ describe('ALS C++ differential oracle', () => {
         VelocityBlendInterpolationSpeed: 12,
       })
 
-      maximumDelta = Math.max(
-        maximumDelta,
-        Math.abs(runtime.forwardAmount - reference.ForwardAmount),
-        Math.abs(runtime.backwardAmount - reference.BackwardAmount),
-        Math.abs(runtime.leftAmount - reference.LeftAmount),
-        Math.abs(runtime.rightAmount - reference.RightAmount),
-      )
+      expectClose(runtime.forwardAmount, reference.ForwardAmount)
+      expectClose(runtime.backwardAmount, reference.BackwardAmount)
+      expectClose(runtime.leftAmount, reference.LeftAmount)
+      expectClose(runtime.rightAmount, reference.RightAmount)
     }
-
-    expect(getAlsParityDelta('cpp-exp-decay').category).toBe('designed deviation')
-    expect(maximumDelta).toBeGreaterThan(EPSILON)
-    expect(maximumDelta).toBeLessThan(0.1)
   })
 
-  it.skip('DESIGNED DEVIATION cpp-exp-decay: exact Math.exp differs from ALS InvExpApprox by up to 0.0175116885 in the seeded sweep', () => {
-    // Unskip only when the runtime intentionally adopts Unreal's approximation.
-    expect(getAlsParityDelta('cpp-exp-decay').category).toBe('designed deviation')
+  it(`UAlsMath::ExponentialDecay matches across ${PROPERTY_CASES} seeded cases`, () => {
+    const random = seededRandom(0x1eafcafe)
+    const deltaEdges = [0, 1e-8, 1 / 240, 1 / 60, 0.25, 1]
+    const lambdaEdges = [0, 1e-8, 1, 12, 100]
+
+    for (let index = 0; index < PROPERTY_CASES; index++) {
+      const delta = deltaEdges[index] ?? range(random, 0, 1)
+      const lambda = lambdaEdges[index] ?? range(random, 0, 100)
+      expectClose(
+        exponentialDecay(delta, lambda),
+        ExponentialDecay(delta, lambda),
+        Number.EPSILON,
+      )
+    }
   })
 
   it('cpp-velocity-normalize-tolerance: near-zero velocity matches ALS GetSafeNormal semantics (fixed)', () => {
@@ -349,22 +359,74 @@ describe('ALS C++ differential oracle', () => {
         expect(runtime.direction).toBe(reference.Direction)
         expect(runtime.settings.clip).toBe(reference.Settings.clip)
         expectClose(runtime.playRate, reference.PlayRate)
-        expect(runtimeState.activationDelay).toBe(0)
-        expect(referenceState.ActivationDelay).toBeGreaterThan(0)
-      } else {
-        expectClose(runtimeState.activationDelay, referenceState.ActivationDelay)
       }
+      expectClose(runtimeState.activationDelay, referenceState.ActivationDelay)
     }
 
     expect(triggeredCases).toBeGreaterThan(0)
-    expect(getAlsParityDelta('cpp-turn-delay-reset').category)
-      .toBe('designed deviation')
   })
 
-  it.skip('DESIGNED DEVIATION cpp-turn-delay-reset: emitted runtime requests clear delay while ALS retains up to 0.98898691s in the seeded sweep', () => {
-    // Unskip only if repeated-request suppression moves to the same next-frame gate as ALS.
-    expect(getAlsParityDelta('cpp-turn-delay-reset').category)
-      .toBe('designed deviation')
+  it('RefreshTurnInPlace retains emitted delay, suppresses duplicate graph calls, and resets at the next transition gate', () => {
+    const runtimeState = createAlsTurnInPlaceState()
+    const referenceState = {
+      bUpdatedThisFrame: false,
+      ActivationDelay: 0.75,
+    }
+    runtimeState.activationDelay = referenceState.ActivationDelay
+    const input = {
+      delta: 0.01,
+      transitionsAllowed: true,
+      viewYawAngle: 180,
+      viewYawSpeed: 0,
+      stance: 'Standing' as const,
+    }
+    const settings = referenceTurnSettings()
+
+    const runtimeRequest = refreshTurnInPlace(runtimeState, input)
+    const referenceRequest = RefreshTurnInPlaceReference({
+      TurnInPlaceState: referenceState,
+      bTransitionsAllowed: input.transitionsAllowed,
+      bTurnInPlaceAllowed: true,
+      ViewYawAngle: input.viewYawAngle,
+      ViewYawSpeed: input.viewYawSpeed,
+      DeltaTime: input.delta,
+      Stance: input.stance,
+      Settings: settings,
+    })
+    expect(runtimeRequest === null).toBe(referenceRequest === null)
+    expectClose(runtimeState.activationDelay, referenceState.ActivationDelay)
+
+    expect(refreshTurnInPlace(runtimeState, input)).toBeNull()
+    expect(RefreshTurnInPlaceReference({
+      TurnInPlaceState: referenceState,
+      bTransitionsAllowed: input.transitionsAllowed,
+      bTurnInPlaceAllowed: true,
+      ViewYawAngle: input.viewYawAngle,
+      ViewYawSpeed: input.viewYawSpeed,
+      DeltaTime: input.delta,
+      Stance: input.stance,
+      Settings: settings,
+    })).toBeNull()
+    expectClose(runtimeState.activationDelay, referenceState.ActivationDelay)
+
+    resetTurnInPlaceFrame(runtimeState)
+    referenceState.bUpdatedThisFrame = false
+    expect(refreshTurnInPlace(runtimeState, {
+      ...input,
+      transitionsAllowed: false,
+    })).toBeNull()
+    expect(RefreshTurnInPlaceReference({
+      TurnInPlaceState: referenceState,
+      bTransitionsAllowed: false,
+      bTurnInPlaceAllowed: true,
+      ViewYawAngle: input.viewYawAngle,
+      ViewYawSpeed: input.viewYawSpeed,
+      DeltaTime: input.delta,
+      Stance: input.stance,
+      Settings: settings,
+    })).toBeNull()
+    expect(runtimeState.activationDelay).toBe(0)
+    expect(runtimeState.activationDelay).toBe(referenceState.ActivationDelay)
   })
 
   it.skip('UNPORTED SYSTEM cpp-relative-acceleration: GetRelativeAccelerationAmount has no runtime seam', () => {
@@ -407,10 +469,19 @@ describe('ALS C++ differential oracle', () => {
   })
 
   it('delta report categorizes every final C++ mismatch and skip', () => {
-    const cppDeltas = ALS_PARITY_DELTA_REPORT.filter(
-      (entry) => entry.oracle === 'C++ differential',
-    )
-    expect(cppDeltas).toHaveLength(11)
-    expect(new Set(cppDeltas.map((entry) => entry.id)).size).toBe(11)
+    const cppDeltaIds = ALS_PARITY_DELTA_REPORT
+      .filter((entry) => entry.oracle === 'C++ differential')
+      .map((entry) => entry.id)
+      .sort()
+    expect(cppDeltaIds).toEqual([
+      'cpp-foot-lock',
+      'cpp-ground-prediction',
+      'cpp-lean',
+      'cpp-look',
+      'cpp-pose-unweighted',
+      'cpp-quick-stop',
+      'cpp-relative-acceleration',
+      'cpp-spine',
+    ])
   })
 })

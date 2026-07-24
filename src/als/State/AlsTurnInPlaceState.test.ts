@@ -50,6 +50,33 @@ describe('ALS turn in place', () => {
     resetTurnInPlaceFrame(state)
     const request = refreshTurnInPlace(state, { ...input, delta: 0.001 })
     expect(request?.settings.clip).toBe('A_Als_Turn_90_Right')
+    expect(state.activationDelay).toBeCloseTo(0.251)
+  })
+
+  it('retains activation delay on request and lets the transition gate clear it next frame', () => {
+    const state = createAlsTurnInPlaceState()
+    const input = {
+      delta: 0.01,
+      transitionsAllowed: true,
+      viewYawAngle: 180,
+      viewYawSpeed: 0,
+      stance: 'Standing' as const,
+    }
+
+    state.activationDelay = 0.75
+    expect(refreshTurnInPlace(state, input)).not.toBeNull()
+    expect(state.activationDelay).toBeCloseTo(0.76)
+
+    // The per-frame latch prevents duplicate graph calls from queuing the montage twice.
+    expect(refreshTurnInPlace(state, input)).toBeNull()
+    expect(state.activationDelay).toBeCloseTo(0.76)
+
+    resetTurnInPlaceFrame(state)
+    expect(refreshTurnInPlace(state, {
+      ...input,
+      transitionsAllowed: false,
+    })).toBeNull()
+    expect(state.activationDelay).toBe(0)
   })
 
   it('selects stance, angle, and direction including the near-180 CCW bias', () => {

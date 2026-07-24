@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createVelocityBlend,
+  exponentialDecay,
   stepVelocityBlend,
   velocityBlendTarget,
 } from './AlsGroundedState'
@@ -40,14 +41,26 @@ describe('ALS velocity blend', () => {
     })
   })
 
-  it('snaps on initialization and follows the exact 12/s exponential-decay curve afterward', () => {
+  it('matches Unreal InvExpApprox at its exact and adjusted-coefficient anchors', () => {
+    expect(exponentialDecay(0, 12)).toBe(0)
+    expect(exponentialDecay(1 / 12, 12)).toBeCloseTo(
+      0.6316758747697974,
+      15,
+    )
+    expect(exponentialDecay(0.25, 12)).toBeCloseTo(
+      0.9318104330037505,
+      15,
+    )
+  })
+
+  it('snaps on initialization and follows ALS 12/s exponential decay afterward', () => {
     const current = createVelocityBlend()
     const scratch = createVelocityBlend()
     stepVelocityBlend(current, { x: 1, y: 0, z: 0 }, 0, 1 / 60, true, scratch)
     expect(current.forwardAmount).toBe(1)
 
     stepVelocityBlend(current, { x: 0, y: 1, z: 0 }, 0, 0.1, false, scratch)
-    const retained = Math.exp(-12 * 0.1)
+    const retained = 1 - exponentialDecay(0.1, 12)
     expect(current.forwardAmount).toBeCloseTo(retained, 8)
     expect(current.rightAmount).toBeCloseTo(1 - retained, 8)
   })

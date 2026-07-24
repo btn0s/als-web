@@ -21,16 +21,6 @@ export interface AlsParityDelta {
 
 export const ALS_PARITY_DELTA_REPORT: readonly AlsParityDelta[] = [
   {
-    id: 'cpp-velocity-normalize-tolerance', // RESOLVED 2026-07-23: UE_SMALL_NUMBER squared-length check in AlsGroundedState
-    category: 'bug-in-ours',
-    oracle: 'C++ differential',
-    source: 'AlsAnimationInstance.cpp:743-751 (FVector3f::Normalize)',
-    observed:
-      'At |velocity|=5e-5 cm/s, ALS returns ForwardAmount=0 while ours returns 1 (delta 1.0).',
-    reason:
-      'The runtime compares vector length with Number.EPSILON; Unreal Normalize compares squared length with SMALL_NUMBER (1e-8).',
-  },
-  {
     id: 'cpp-relative-acceleration',
     category: 'unported system',
     oracle: 'C++ differential',
@@ -103,26 +93,6 @@ export const ALS_PARITY_DELTA_REPORT: readonly AlsParityDelta[] = [
     observed: 'No runtime sweep vector or GroundPredictionAmount exists to compare.',
     reason:
       'No runtime RefreshGroundPrediction mapping seam exists; Rapier sweep integration is also absent.',
-  },
-  {
-    id: 'cpp-exp-decay',
-    category: 'designed deviation',
-    oracle: 'C++ differential',
-    source: 'AlsAnimationInstance.cpp:767; AlsMath.h:103-115',
-    observed:
-      'The seeded damped velocity sweep reaches a maximum component delta of 0.0175116885.',
-    reason:
-      'Runtime uses exact Math.exp decay; ALS calls Unreal InvExpApprox. Target/snap math matches, while damped values differ slightly at finite dt.',
-  },
-  {
-    id: 'cpp-turn-delay-reset',
-    category: 'designed deviation',
-    oracle: 'C++ differential',
-    source: 'AlsAnimationInstance.cpp:1736-1805',
-    observed:
-      'On emitted requests ours resets to 0 while the seeded C++ oracle retains up to 0.98898691s.',
-    reason:
-      'Runtime clears activationDelay immediately when it emits a turn request; C++ retains it until the transitions gate resets it on a following frame.',
   },
 ] as const
 

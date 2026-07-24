@@ -5,6 +5,18 @@
 
 export const VELOCITY_BLEND_DAMP_RATE = 12
 
+/**
+ * ALS `UAlsMath::ExponentialDecay()` interpolation amount.
+ *
+ * Unreal's `FMath::InvExpApprox()` intentionally uses this adjusted reciprocal cubic instead of
+ * the exact exponential. Keeping it here also gives non-animation callers the same frame-rate
+ * independent interpolation scalar used by ALS.
+ */
+export function exponentialDecay(deltaTime: number, lambda: number): number {
+  const x = lambda * deltaTime
+  return 1 - 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x)
+}
+
 export interface Velocity3 {
   x: number
   y: number
@@ -39,7 +51,7 @@ export function velocityBlendTarget(
 
   // UE FVector::GetSafeNormal treats squared length <= SMALL_NUMBER (1e-8) as zero —
   // i.e. |v| <= 1e-4 cm/s. Number.EPSILON here flipped ForwardAmount to 1 at |v|=5e-5
-  // (parity delta cpp-velocity-normalize-tolerance, now un-skipped).
+  // (verified by the near-zero velocity differential case).
   const UE_SMALL_NUMBER = 1e-8
   if (length * length <= UE_SMALL_NUMBER) {
     out.forwardAmount = 0
@@ -65,7 +77,7 @@ export function velocityBlendTarget(
 
 /**
  * Advances a persistent velocity blend in place. ALS snaps on initialization, otherwise it uses
- * exponential decay `lerp(current, target, 1 - exp(-12 * dt))` rather than `FInterpTo`.
+ * `UAlsMath::ExponentialDecay()` rather than `FInterpTo`.
  */
 export function stepVelocityBlend(
   current: AlsVelocityBlendState,
@@ -78,7 +90,7 @@ export function stepVelocityBlend(
   velocityBlendTarget(velocity, actorYaw, target)
   const alpha = initialize
     ? 1
-    : 1 - Math.exp(-VELOCITY_BLEND_DAMP_RATE * Math.max(0, deltaTime))
+    : exponentialDecay(deltaTime, VELOCITY_BLEND_DAMP_RATE)
 
   current.forwardAmount += (target.forwardAmount - current.forwardAmount) * alpha
   current.backwardAmount += (target.backwardAmount - current.backwardAmount) * alpha
