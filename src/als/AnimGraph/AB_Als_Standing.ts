@@ -1279,9 +1279,9 @@ export function refreshAlsStandingGraphRuntime(
     return runtime
   }
 
-  advanceMachine(runtime.standing, input.deltaTime)
-  refreshRotateClocks(runtime, input)
-
+  // FAnimNode_StateMachine::Update_AnyThread resolves rules before updating any asset player or
+  // active transition. Automatic remaining-time rules therefore observe the previous player
+  // clock, while every standard transition created below is still advanced by this frame's delta.
   while (
     runtime.standingTransitionsTakenThisFrame
     < AB_ALS_STANDING_GRAPH.standingStates.maxTransitionsPerFrame
@@ -1310,6 +1310,8 @@ export function refreshAlsStandingGraphRuntime(
     if (!transition) break
     startStandingTransition(runtime, transition)
   }
+  advanceMachine(runtime.standing, input.deltaTime)
+  refreshRotateClocks(runtime, input)
 
   const movementDetailsRelevant =
     runtime.standing.stack.currentState === 'Move'
@@ -1327,8 +1329,6 @@ export function refreshAlsStandingGraphRuntime(
       'InitializeStandingMovement',
       'OnBecomeRelevant',
     )
-  } else if (runtime.movementDetails.relevant) {
-    advanceMachine(runtime.movementDetails, input.deltaTime)
   }
 
   refreshAlsGroundedDirectionRuntime(
@@ -1353,8 +1353,6 @@ export function refreshAlsStandingGraphRuntime(
       })
     },
   )
-
-  refreshAccelerationClocks(runtime, input.deltaTime)
 
   if (runtime.movementDetails.relevant) {
     const movementInput: AlsMovementDetailsTransitionInput = {
@@ -1382,22 +1380,20 @@ export function refreshAlsStandingGraphRuntime(
       if (!transition) break
       startMovementDetailsTransition(runtime, transition)
     }
-    // An incoming acceleration state becomes relevant at its authored start position on the
-    // transition frame. It does not receive delta twice.
-    refreshAccelerationClocks(runtime, 0)
+    advanceMachine(runtime.movementDetails, input.deltaTime)
   }
+  // Incoming acceleration players initialize at their authored start position and receive this
+  // update exactly once after the rule scan, matching UpdateAssetPlayer ordering.
+  refreshAccelerationClocks(runtime, input.deltaTime)
 
   const stopRelevant =
     runtime.standing.stack.currentState === 'Stop'
     || runtime.standing.stateWeights.Stop > 0.00001
-  const stopBecameRelevant = setMachineRelevant(
+  setMachineRelevant(
     runtime.stop,
     stopRelevant,
     'Entry',
   )
-  if (!stopBecameRelevant && runtime.stop.relevant) {
-    advanceMachine(runtime.stop, input.deltaTime)
-  }
   if (runtime.stop.relevant) {
     while (
       runtime.stopTransitionsTakenThisFrame
@@ -1409,6 +1405,7 @@ export function refreshAlsStandingGraphRuntime(
         selectStopTransition(input.footPlantedAmount),
       )
     }
+    advanceMachine(runtime.stop, input.deltaTime)
   }
 
   if (runtime.stop.relevant) {
@@ -1478,6 +1475,8 @@ export interface AlsStandingPoseGraphRuntime {
   readonly stopRightMask: Float32Array
   readonly layeredBoneBlendScratch: LayeredBoneBlendScratch
   readonly curveBlendScratch: Map<string, number>
+  readonly turnInPlaceSlotSources: UePoseNode[]
+  readonly turnInPlaceSlotWeights: number[]
   readonly movementDetailsInertialization:
     AlsRetainedInertialization
   readonly standingInertialization: AlsRetainedInertialization
@@ -1560,6 +1559,8 @@ export function createAlsStandingPoseGraphRuntime(
     layeredBoneBlendScratch:
       createLayeredBoneBlendScratch(rig.boneCount),
     curveBlendScratch: new Map(),
+    turnInPlaceSlotSources: [],
+    turnInPlaceSlotWeights: [],
     movementDetailsInertialization:
       createRetainedInertialization(rig.boneCount),
     standingInertialization:
@@ -1734,6 +1735,12 @@ export interface AlsStandingPoseGraphInput {
   readonly accelerationPoses: AlsAccelerationPoseInputs
   /** Node61 A_Als_Stand_Pose at explicit time zero. */
   readonly idlePose: UePoseNode
+  /** Every live non-additive FMontageEvaluationState for TurnInPlaceStanding. */
+  readonly turnInPlaceMontages?: readonly {
+    readonly pose: UePoseNode
+    readonly weight: number
+  }[]
+  /** Legacy single-instance adapter retained for pure call sites. */
   readonly turnInPlaceMontagePose?: UePoseNode
   readonly turnInPlaceMontageWeight: number
   readonly turnInPlacePlayRate: number
@@ -1975,19 +1982,42 @@ function evaluateIdle(
   graph.nodes.idleSource.curves.set('FootRightLock', 1)
   graph.nodes.idleSource.curves.set('AllowTransitions', 1)
 
-  const montageWeight = Math.max(
-    0,
-    Math.min(1, input.turnInPlaceMontageWeight),
-  )
-  if (input.turnInPlaceMontagePose && montageWeight > 0) {
-    blendTwoPoseNodesTogether(
-      graph.nodes.idleSource,
-      input.turnInPlaceMontagePose,
-      1 - montageWeight,
+  const montages = input.turnInPlaceMontages
+    ?? (
+      input.turnInPlaceMontagePose
+        ? [{
+            pose: input.turnInPlaceMontagePose,
+            weight: input.turnInPlaceMontageWeight,
+          }]
+        : []
+    )
+  let totalNodeWeight = 0
+  for (const montage of montages) {
+    totalNodeWeight += Math.max(0, montage.weight)
+  }
+  if (totalNodeWeight <= 0) {
+    copyPoseNode(graph.nodes.idleSource, graph.nodes.idle)
+  } else {
+    const normalization = Math.max(1, totalNodeWeight)
+    graph.turnInPlaceSlotSources.length = 0
+    graph.turnInPlaceSlotWeights.length = 0
+    const sourceWeight = 1 - totalNodeWeight / normalization
+    if (sourceWeight > 0) {
+      graph.turnInPlaceSlotSources.push(graph.nodes.idleSource)
+      graph.turnInPlaceSlotWeights.push(sourceWeight)
+    }
+    for (const montage of montages) {
+      if (montage.weight <= 0) continue
+      graph.turnInPlaceSlotSources.push(montage.pose)
+      graph.turnInPlaceSlotWeights.push(
+        montage.weight / normalization,
+      )
+    }
+    blendPoseNodesTogether(
+      graph.turnInPlaceSlotSources,
+      graph.turnInPlaceSlotWeights,
       graph.nodes.idle,
     )
-  } else {
-    copyPoseNode(graph.nodes.idleSource, graph.nodes.idle)
   }
   graph.nodes.idle.curves.set(
     'RotationYawSpeed',
@@ -2038,9 +2068,10 @@ export function evaluateAlsStandingPoseGraph(
     )
   }
 
-  const velocityWeights = normalizedVelocityWeights(
-    input.velocityBlend,
-  )
+  const velocityWeights =
+    runtime.movementDetails.relevant || runtime.stop.relevant
+      ? normalizedVelocityWeights(input.velocityBlend)
+      : new Float32Array([1, 0, 0, 0])
   if (runtime.movementDetails.relevant) {
     evaluateMovementDetails(
       graph,

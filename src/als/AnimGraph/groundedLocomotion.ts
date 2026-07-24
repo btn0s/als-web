@@ -896,7 +896,9 @@ function startGroundedDirectionTransition(
  *
  * A rising relevance edge reinitializes Forward, invokes its OnBecomeRelevant
  * SetHipsDirection(), and consumes bSkipFirstUpdateTransition. Later updates advance every
- * retained transition oldest-to-newest, then follow at most three authored outgoing edges.
+ * retained transition oldest-to-newest after following at most three authored outgoing edges.
+ * FAnimNode_StateMachine resolves rules from the pre-update player/state snapshot, then advances
+ * every active transition, including transitions created by this update.
  */
 export function refreshAlsGroundedDirectionRuntime(
   runtime: AlsGroundedDirectionRuntime,
@@ -932,12 +934,6 @@ export function refreshAlsGroundedDirectionRuntime(
     return runtime
   }
 
-  advanceStateMachineTransitionStack(
-    runtime.transitionStack,
-    deltaTime,
-  )
-  refreshGroundedDirectionStateWeights(runtime)
-
   while (
     runtime.transitionsTakenThisFrame
     < ALS_GROUNDED_DIRECTION_MACHINE.maxTransitionsPerFrame
@@ -958,6 +954,12 @@ export function refreshAlsGroundedDirectionRuntime(
       transitionStarted,
     )
   }
+
+  advanceStateMachineTransitionStack(
+    runtime.transitionStack,
+    deltaTime,
+  )
+  refreshGroundedDirectionStateWeights(runtime)
 
   return runtime
 }

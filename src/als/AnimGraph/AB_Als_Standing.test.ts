@@ -640,6 +640,13 @@ describe('VERIFIED retained AB_Als_Standing runtime', () => {
       gait: 'Running',
     }))
     expect(runtime.accelerationClocks['Run Start From Walk'].time).toBe(1)
+    // Automatic remaining time is queried before this frame advances the sequence to its end.
+    expect(runtime.movementDetails.stack.currentState)
+      .toBe('Run Start From Walk')
+    refreshAlsStandingGraphRuntime(runtime, runtimeInput({
+      movingSmooth: true,
+      gait: 'Running',
+    }))
     expect(runtime.movementDetails.stack.currentState).toBe('Run')
   })
 
@@ -682,7 +689,8 @@ describe('VERIFIED retained AB_Als_Standing runtime', () => {
       speedCmPerSecond: 150,
     }))
     expect(runtime.movementDetails.stack.currentState).toBe('Second Pivot')
-    expect(runtime.accelerationClocks['Second Pivot'].time).toBe(0.25)
+    expect(runtime.accelerationClocks['Second Pivot'].time)
+      .toBeCloseTo(0.3875, 7)
   })
 
   it('enters the nested stop foot state before blending Stop back to Idle', () => {
@@ -737,8 +745,61 @@ describe('VERIFIED retained AB_Als_Standing runtime', () => {
       rotatingLeft: false,
     }))
     expect(runtime.rotateClocks.left.time).toBe(1)
+    expect(runtime.standing.stack.currentState).toBe('Rotate Left')
+    refreshAlsStandingGraphRuntime(runtime, runtimeInput())
     expect(runtime.standing.stack.currentState).toBe('Idle')
     expect(runtime.standing.stack.activeTransitions).toHaveLength(0)
+  })
+
+  it('advances newly selected outer, Movement Details, and Stop transitions in the same frame', () => {
+    const outer = createAlsStandingGraphRuntime()
+    refreshAlsStandingGraphRuntime(outer, runtimeInput())
+    refreshAlsStandingGraphRuntime(outer, runtimeInput({
+      deltaTime: 0.1,
+      movingSmooth: true,
+      gait: 'Walking',
+    }))
+    expect(outer.standing.stack.activeTransitions[0]).toMatchObject({
+      previousState: 'Idle',
+      nextState: 'Move',
+      linearAlpha: 0.5,
+      alpha: 0.5,
+    })
+
+    const movementDetails = createAlsStandingGraphRuntime()
+    refreshAlsStandingGraphRuntime(movementDetails, runtimeInput())
+    refreshAlsStandingGraphRuntime(movementDetails, runtimeInput({
+      deltaTime: 0.1,
+      movingSmooth: true,
+      gait: 'Running',
+      poseGroundedAmount: 0,
+    }))
+    expect(
+      movementDetails.movementDetails.stack.activeTransitions[0],
+    ).toMatchObject({
+      previousState: 'Walk',
+      nextState: 'Run',
+      linearAlpha: 0.5,
+      alpha: 0.5,
+    })
+
+    const stop = createAlsStandingGraphRuntime()
+    refreshAlsStandingGraphRuntime(stop, runtimeInput())
+    refreshAlsStandingGraphRuntime(stop, runtimeInput({
+      deltaTime: 0.2,
+      movingSmooth: true,
+    }))
+    refreshAlsStandingGraphRuntime(stop, runtimeInput({
+      deltaTime: 0.05,
+      movingSmooth: false,
+      footPlantedAmount: 0,
+    }))
+    expect(stop.stop.stack.activeTransitions[0]).toMatchObject({
+      previousState: 'Entry',
+      nextState: 'Plant Right Foot',
+      linearAlpha: 0.5,
+      alpha: 0.5,
+    })
   })
 
   it('resets every retained machine and clock without replacing storage', () => {
@@ -930,6 +991,43 @@ describe('VERIFIED retained AB_Als_Standing pose evaluation', () => {
     expect(output.curves.get('AllowTransitions')).toBeCloseTo(0.75, 7)
     expect(output.curves.get('RotationYawSpeed')).toBe(4)
     expect(output.curves.get('PoseStanding')).toBe(1)
+  })
+
+  it('normalizes every retained TurnInPlaceStanding montage pose as one Slot node', () => {
+    const rig = makeRig()
+    const runtime = createAlsStandingGraphRuntime(rig.boneCount)
+    const poseGraph = createAlsStandingPoseGraphRuntime(rig)
+    refreshAlsStandingGraphRuntime(runtime, runtimeInput())
+    const output = evaluateAlsStandingPoseGraph(
+      poseGraph,
+      runtime,
+      poseInput(rig.boneCount, {
+        turnInPlaceMontages: [
+          {
+            pose: poseNode(
+              rig.boneCount,
+              4,
+              { RotationYawSpeed: 8 },
+            ),
+            weight: 0.75,
+          },
+          {
+            pose: poseNode(
+              rig.boneCount,
+              8,
+              { RotationYawSpeed: 4 },
+            ),
+            weight: 0.75,
+          },
+        ],
+        turnInPlacePlayRate: 2,
+      }),
+    )
+
+    expect(output.pose.positions[0]).toBeCloseTo(6, 7)
+    expect(output.curves.get('RotationYawSpeed')).toBeCloseTo(12, 7)
+    expect(poseGraph.turnInPlaceSlotSources).toHaveLength(2)
+    expect(poseGraph.turnInPlaceSlotWeights).toEqual([0.5, 0.5])
   })
 
   it('retains direction and Movement Details transitions before applying acceleration additive', () => {

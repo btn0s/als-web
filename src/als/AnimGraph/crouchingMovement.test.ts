@@ -497,14 +497,14 @@ describe('crouching Movement States runtime', () => {
       {
         from: 'RightForward',
         to: 'LeftBackward',
-        alpha: 0,
+        alpha: 0.5,
         intermediate: true,
       },
     ])
     expect(runtime.stateWeights).toMatchObject({
-      Forward: 0.5,
-      RightForward: 0.5,
-      LeftBackward: 0,
+      Forward: 0.25,
+      RightForward: 0.25,
+      LeftBackward: 0.5,
     })
     expect(entered).toEqual(['Forward', 'RightForward', 'LeftBackward'])
 
@@ -512,16 +512,25 @@ describe('crouching Movement States runtime', () => {
       ...forward,
       movementDirection: 'Left',
     }, 0.35)
-    expect(runtime.activeTransitions).toHaveLength(1)
+    expect(runtime.activeTransitions).toHaveLength(0)
+    expect(runtime.baseState).toBe('LeftBackward')
+    expect(runtime.stateWeights.RightForward).toBe(0)
+    expect(runtime.stateWeights.LeftBackward).toBe(1)
+  })
+
+  it('advances a newly selected direction transition during its first update', () => {
+    const runtime = createAlsCrouchingMovementRuntime()
+    refreshAlsCrouchingMovementRuntime(runtime, forward, 0)
+    refreshAlsCrouchingMovementRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Right',
+    }, 0.35)
     expect(runtime.activeTransitions[0]).toMatchObject({
-      previousState: 'RightForward',
-      nextState: 'LeftBackward',
+      previousState: 'Forward',
+      nextState: 'RightForward',
+      linearAlpha: 0.5,
       alpha: 0.5,
-      usesIntermediatePose: false,
     })
-    expect(runtime.baseState).toBe('RightForward')
-    expect(runtime.stateWeights.RightForward).toBe(0.5)
-    expect(runtime.stateWeights.LeftBackward).toBe(0.5)
   })
 
   it('takes at most the authored three transitions in one frame', () => {

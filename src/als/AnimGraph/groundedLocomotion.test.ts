@@ -1017,7 +1017,7 @@ describe('VERIFIED AB_Als_Standing Movement States runtime', () => {
       {
         from: 'RightForward',
         to: 'LeftBackward',
-        alpha: 0,
+        alpha: 0.7839999999999999,
         intermediate: true,
       },
     ])
@@ -1027,14 +1027,23 @@ describe('VERIFIED AB_Als_Standing Movement States runtime', () => {
       ...forward,
       movementDirection: 'Left',
     }, 0.35)
-    expect(runtime.activeTransitions).toHaveLength(1)
+    expect(runtime.activeTransitions).toHaveLength(0)
+    expect(runtime.baseState).toBe('LeftBackward')
+  })
+
+  it('advances a newly selected direction transition during its first update', () => {
+    const runtime = createAlsGroundedDirectionRuntime()
+    refreshAlsGroundedDirectionRuntime(runtime, forward, 0)
+    refreshAlsGroundedDirectionRuntime(runtime, {
+      ...forward,
+      movementDirection: 'Backward',
+    }, 0.25)
     expect(runtime.activeTransitions[0]).toMatchObject({
-      previousState: 'RightForward',
-      nextState: 'LeftBackward',
-      usesIntermediatePose: false,
+      previousState: 'Forward',
+      nextState: 'Backward',
+      linearAlpha: 0.5,
+      alpha: 0.5,
     })
-    expect(runtime.activeTransitions[0].alpha).toBeCloseTo(0.784, 7)
-    expect(runtime.baseState).toBe('RightForward')
   })
 
   it('uses authored QuadraticInOut neutral transitions and resets after relevance loss', () => {

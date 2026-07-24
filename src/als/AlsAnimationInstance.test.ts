@@ -329,6 +329,19 @@ describe('AlsAnimationInstance playback regression', () => {
     instance.refresh(1 / 60, requestTurn)
     const inertializationRequests = requestCount()
     instance.refresh(1 / 60, requestTurn)
+    instance.refresh(1 / 60, idle)
+
+    expect(
+      window.__weightTable?.TurnInPlaceStandingRetainedInstanceCount,
+    ).toBe(2)
+    expect(window.__weightTable?.SlotMontageDistinctCurveKeyCount).toBe(2)
+    expect(window.__weightTable?.TurnInPlaceStandingOldestInstanceId)
+      .not.toBe(window.__weightTable?.TurnInPlaceStandingNewestInstanceId)
+    expect(window.__weightTable?.TurnInPlaceStandingOldestSequenceTime)
+      .toBeCloseTo(0.04, 12)
+    expect(window.__weightTable?.TurnInPlaceStandingNewestSequenceTime)
+      .toBeCloseTo(0.02, 12)
+
     instance.refresh(2 / 1.2 - 1 / 60, idle)
 
     const terminalSequenceTime = 2 - 0.00005
@@ -370,6 +383,7 @@ describe('AlsAnimationInstance playback regression', () => {
     instance.refresh(1 / 60, requestTurn)
     instance.refresh(1 / 60, requestTurn)
     instance.refresh(0.2 - 1 / 60, idle)
+    instance.refresh(1 / 60, idle)
     expect(window.__weightTable?.TurnInPlaceMontageWeight).toBe(1)
     const requestsBeforeStanceEntry = requestCount()
 
@@ -754,6 +768,7 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(instance.state.directionTransitionRequest).toBeNull()
 
     instance.refresh(1 / 60, leftControls)
+    instance.refresh(0, leftControls)
     expect(instance.state.hipsDirection).toBe('LeftForward')
     expect(instance.state.directionTransitionRequest).toMatchObject({
       transitionIndex: 1,
@@ -783,12 +798,29 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.runRightBwd).toBe(0)
   })
 
+  it('samples MovementDirection and RotationYawOffset in ALS view-relative space', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+
+    // `direction` is velocity relative to the actor, while viewYawAngle is view relative to the
+    // actor. ALS RefreshGroundedMovement subtracts them before querying its authored curves.
+    refreshFrames(instance, 60, {
+      ...controls,
+      direction: 0,
+      viewYawAngle: 45,
+    })
+
+    expect(instance.state.movementDirection).toBe('Forward')
+    expect(window.__weightTable?.RotationYawOffset).toBe(-45)
+  })
+
   it('applies authored pivot timing and the MoveDirectionChange profile', async () => {
     const gltf = await loadAlsGltf()
     const instance = createAlsAnimationInstance(gltf)
     instance.refresh(0, controls)
 
     instance.refresh(1 / 60, { ...controls, direction: 180 })
+    instance.refresh(0, { ...controls, direction: 180 })
     expect(instance.state.hipsDirection).toBe('Backward')
     expect(instance.state.directionTransitionRequest).toMatchObject({
       transitionIndex: 2,
@@ -820,11 +852,14 @@ describe('AlsAnimationInstance playback regression', () => {
     const instance = createAlsAnimationInstance(gltf)
     const rightControls = { ...controls, direction: 90 }
     instance.refresh(0, rightControls)
+    instance.refresh(0, rightControls)
+    instance.refresh(0, rightControls)
+    instance.refresh(0.7, rightControls)
+    expect(instance.state.hipsDirection).toBe('RightForward')
 
-    instance.setHipsDirection('RightForward')
     instance.state.hipsDirectionLockAmount = -0.5
     instance.state.feetCrossingAmount = 0
-    instance.refresh(1 / 60, rightControls)
+    instance.refresh(0, rightControls)
     expect(instance.state.hipsDirection).toBe('RightBackward')
     expect(instance.state.directionTransitionRequest).toMatchObject({
       transitionIndex: 9,
@@ -880,17 +915,10 @@ describe('AlsAnimationInstance playback regression', () => {
 
     movingInstance.refresh(0.3, movingCrouch)
     expect(window.__weightTable?.runFwd).toBe(0)
-    expect(window.__weightTable?.crouchIdle).toBe(1)
-    expect(window.__weightTable?.crouchFwd).toBe(0)
-    expect(window.__weightTable?.CrouchingActiveTransitionIndex).toBe(0)
-
-    movingInstance.refresh(0.1, movingCrouch)
-    expect(window.__weightTable?.crouchIdle).toBeCloseTo(0.5, 7)
-    expect(window.__weightTable?.crouchFwd).toBeCloseTo(0.5, 7)
-
-    movingInstance.refresh(0.1, movingCrouch)
     expect(window.__weightTable?.crouchIdle).toBe(0)
     expect(window.__weightTable?.crouchFwd).toBeCloseTo(1, 7)
+    expect(window.__weightTable?.CrouchingStateMove).toBe(1)
+    expect(window.__weightTable?.CrouchingActiveTransitionIndex).toBe(-1)
 
     const idleGltf = await loadAlsGltf()
     const idleInstance = createAlsAnimationInstance(idleGltf)
@@ -1003,6 +1031,12 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.TransitionMontageWeight).toBeGreaterThan(0)
     expect(window.__weightTable?.TransitionSequenceTime).toBeCloseTo(0.275, 12)
     instance.refresh(0.05, idleCrouching)
+    expect(window.__weightTable?.CrouchingActiveTransitionIndex).toBe(-1)
+    expect(window.__weightTable?.CrouchingStateStop).toBe(1)
+
+    // Rules resolve before the active Move-to-Stop transition advances, so Stop-to-Idle begins
+    // on the next update after Stop first owns the full state weight.
+    instance.refresh(0, idleCrouching)
     expect(window.__weightTable?.CrouchingActiveTransitionIndex).toBe(11)
     expect(window.__weightTable?.CrouchingStateStop).toBe(1)
 

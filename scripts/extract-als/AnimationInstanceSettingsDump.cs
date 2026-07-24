@@ -12,6 +12,8 @@ public static class AnimationInstanceSettingsDump
 {
     const string SettingsAsset = "AIS_Als_Default";
     const string AnimationInstancePath = "/Content/ALS/Data/AnimationInstance/";
+    const string GroundedSettingsHeader =
+        "Source/ALS/Public/Settings/AlsGroundedSettings.h";
     const string StandingSettingsHeader =
         "Source/ALS/Public/Settings/AlsStandingSettings.h";
     const string CrouchingSettingsHeader =
@@ -23,6 +25,9 @@ public static class AnimationInstanceSettingsDump
     [
         "CF_Als_GroundPredictionAmount",
         "CF_Als_LeanAmount_Air",
+        "CF_Als_RotationYawOffset_ForwardBackward",
+        "CF_Als_RotationYawOffset_Left",
+        "CF_Als_RotationYawOffset_Right",
         "CF_Als_StrideBlendAmount_Run",
         "CF_Als_StrideBlendAmount_Walk",
     ];
@@ -51,6 +56,7 @@ public static class AnimationInstanceSettingsDump
 
         var serializedSettings = settingsExport["Properties"] as JObject
                                  ?? throw new Exception($"{SettingsAsset} has no properties");
+        var grounded = RequiredObject(serializedSettings, "Grounded");
         var standing = RequiredObject(serializedSettings, "Standing");
         var crouching = RequiredObject(serializedSettings, "Crouching");
         var inAir = RequiredObject(serializedSettings, "InAir");
@@ -74,6 +80,14 @@ public static class AnimationInstanceSettingsDump
             srcDir,
             CrouchingSettingsHeader,
             "AnimatedCrouchSpeed");
+        var rotationYawOffsetForwardCurve =
+            ReadReferenceName(grounded, "RotationYawOffsetForwardCurve");
+        var rotationYawOffsetBackwardCurve =
+            ReadReferenceName(grounded, "RotationYawOffsetBackwardCurve");
+        var rotationYawOffsetLeftCurve =
+            ReadReferenceName(grounded, "RotationYawOffsetLeftCurve");
+        var rotationYawOffsetRightCurve =
+            ReadReferenceName(grounded, "RotationYawOffsetRightCurve");
         var strideBlendAmountWalkCurve =
             ReadReferenceName(standing, "StrideBlendAmountWalkCurve");
         var strideBlendAmountRunCurve =
@@ -89,6 +103,17 @@ public static class AnimationInstanceSettingsDump
         {
             ["asset"] = SettingsAsset,
             ["nativeSpeedUnit"] = "cm/s",
+            ["grounded"] = new JObject
+            {
+                ["RotationYawOffsetForwardCurve"] =
+                    rotationYawOffsetForwardCurve,
+                ["RotationYawOffsetBackwardCurve"] =
+                    rotationYawOffsetBackwardCurve,
+                ["RotationYawOffsetLeftCurve"] =
+                    rotationYawOffsetLeftCurve,
+                ["RotationYawOffsetRightCurve"] =
+                    rotationYawOffsetRightCurve,
+            },
             ["standing"] = new JObject
             {
                 ["AnimatedWalkSpeed"] = animatedWalkSpeed,
@@ -116,6 +141,10 @@ public static class AnimationInstanceSettingsDump
                 crouchingStrideBlendAmountCurve,
                 groundPredictionAmountCurve,
                 leanAmountCurve,
+                rotationYawOffsetForwardCurve,
+                rotationYawOffsetBackwardCurve,
+                rotationYawOffsetLeftCurve,
+                rotationYawOffsetRightCurve,
             }
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
@@ -140,6 +169,7 @@ public static class AnimationInstanceSettingsDump
                 ["settingsAssetPath"] = settingsPath,
                 ["cppDefaults"] = new JObject
                 {
+                    ["grounded"] = GroundedSettingsHeader,
                     ["standing"] = StandingSettingsHeader,
                     ["crouching"] = CrouchingSettingsHeader,
                 },
@@ -256,6 +286,9 @@ public static class AnimationInstanceSettingsDump
             "CF_Als_LeanAmount_Air" => "LeanAmount",
             "CF_Als_StrideBlendAmount_Run" => "StrideBlendAmount",
             "CF_Als_StrideBlendAmount_Walk" => "StrideBlendAmount",
+            "CF_Als_RotationYawOffset_ForwardBackward" => "RotationYawOffset",
+            "CF_Als_RotationYawOffset_Left" => "RotationYawOffset",
+            "CF_Als_RotationYawOffset_Right" => "RotationYawOffset",
             _ => throw new Exception($"{curveName} has no normalized channel name"),
         };
     }
@@ -316,6 +349,11 @@ public static class AnimationInstanceSettingsDump
         ExpectString(
             errors,
             payload,
+            "source.cppDefaults.grounded",
+            GroundedSettingsHeader);
+        ExpectString(
+            errors,
+            payload,
             "source.cppDefaults.standing",
             StandingSettingsHeader);
         ExpectString(
@@ -330,6 +368,26 @@ public static class AnimationInstanceSettingsDump
             CurveConsumptionSource);
         ExpectString(errors, payload, "settings.asset", SettingsAsset);
         ExpectString(errors, payload, "settings.nativeSpeedUnit", "cm/s");
+        ExpectString(
+            errors,
+            payload,
+            "settings.grounded.RotationYawOffsetForwardCurve",
+            "CF_Als_RotationYawOffset_ForwardBackward");
+        ExpectString(
+            errors,
+            payload,
+            "settings.grounded.RotationYawOffsetBackwardCurve",
+            "CF_Als_RotationYawOffset_ForwardBackward");
+        ExpectString(
+            errors,
+            payload,
+            "settings.grounded.RotationYawOffsetLeftCurve",
+            "CF_Als_RotationYawOffset_Left");
+        ExpectString(
+            errors,
+            payload,
+            "settings.grounded.RotationYawOffsetRightCurve",
+            "CF_Als_RotationYawOffset_Right");
 
         ExpectNumber(
             errors,
@@ -406,10 +464,64 @@ public static class AnimationInstanceSettingsDump
         var curves = payload["curves"] as JObject ?? new JObject();
         ValidateNameSet(
             errors,
-            "stride curves",
+            "animation-instance curves",
             curves.Properties().Select(curve => curve.Name),
             ExpectedCurves);
 
+        ValidateCurve(
+            errors,
+            curves,
+            "CF_Als_RotationYawOffset_ForwardBackward",
+            "ALS/Content/ALS/Data/AnimationInstance/Grounded/" +
+            "CF_Als_RotationYawOffset_ForwardBackward.uasset",
+            "RotationYawOffset",
+            [
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", -180, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", -120, 60, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", -90, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", -60, -60, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 0, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 60, 60, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 90, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 120, -60, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 180, 0, 0),
+            ]);
+        ValidateCurve(
+            errors,
+            curves,
+            "CF_Als_RotationYawOffset_Left",
+            "ALS/Content/ALS/Data/AnimationInstance/Grounded/" +
+            "CF_Als_RotationYawOffset_Left.uasset",
+            "RotationYawOffset",
+            [
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", -180, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", -135, -45, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", -90, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", -45, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 0, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 45, -45, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 90, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 135, 45, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 180, 0, 0),
+            ]);
+        ValidateCurve(
+            errors,
+            curves,
+            "CF_Als_RotationYawOffset_Right",
+            "ALS/Content/ALS/Data/AnimationInstance/Grounded/" +
+            "CF_Als_RotationYawOffset_Right.uasset",
+            "RotationYawOffset",
+            [
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", -180, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", -135, -45, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", -90, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", -45, 45, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 0, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 45, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 90, 0, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 135, 45, 0),
+                ExpectedKey("RCIM_Linear", "RCTM_Auto", 180, 0, 0),
+            ]);
         ValidateCurve(
             errors,
             curves,

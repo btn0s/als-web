@@ -37,6 +37,7 @@ import type {
   StateMachineTransitionStack,
 } from '../../engine/stateMachineTransitionStack'
 import {
+  blendPoseNodesTogether,
   blendTwoPoseNodesTogether,
 } from '../../engine/uePoseBlend'
 import type {
@@ -844,8 +845,6 @@ export function refreshAlsCrouchingStateRuntime(
     return runtime
   }
 
-  advanceStandardTransition(runtime, input.deltaTime)
-
   const transitionInput: AlsCrouchingTransitionInput = {
     movingSmooth: input.movingSmooth,
     rotatingLeft: input.rotatingLeft,
@@ -880,6 +879,11 @@ export function refreshAlsCrouchingStateRuntime(
   ) {
     runtime.transitionLimitReached = true
   }
+
+  // FAnimNode_StateMachine resolves rules against the pre-update snapshot, then ticks the whole
+  // ActiveTransitionArray. This includes a standard transition created above, so its first
+  // evaluated frame already contains this update's delta instead of an extra alpha-zero hold.
+  advanceStandardTransition(runtime, input.deltaTime)
 
   return runtime
 }
@@ -959,6 +963,8 @@ export interface AlsCrouchingPoseGraphRuntime {
   readonly stopLeftMask: Float32Array
   readonly stopRightMask: Float32Array
   readonly layeredBoneBlendScratch: LayeredBoneBlendScratch
+  readonly turnInPlaceSlotSources: UePoseNode[]
+  readonly turnInPlaceSlotWeights: number[]
 }
 
 export function createAlsCrouchingPoseGraphRuntime(
@@ -994,6 +1000,8 @@ export function createAlsCrouchingPoseGraphRuntime(
     ),
     layeredBoneBlendScratch:
       createLayeredBoneBlendScratch(rig.boneCount),
+    turnInPlaceSlotSources: [],
+    turnInPlaceSlotWeights: [],
   }
 }
 
@@ -1035,7 +1043,12 @@ export interface AlsCrouchingPoseGraphInput {
   readonly leanAdditivePose: UePoseNode
   /** Node31, A_Als_Crouch_Pose at explicit time zero. */
   readonly idlePose: UePoseNode
-  /** Active montage source for node28, if any. */
+  /** Every live non-additive FMontageEvaluationState for TurnInPlaceCrouching. */
+  readonly turnInPlaceMontages?: readonly {
+    readonly pose: UePoseNode
+    readonly weight: number
+  }[]
+  /** Legacy single-instance adapter retained for pure call sites. */
   readonly turnInPlaceMontagePose?: UePoseNode
   readonly turnInPlaceMontageWeight: number
   readonly turnInPlacePlayRate: number
@@ -1087,16 +1100,42 @@ function evaluateIdle(
   runtime.nodes.idleSource.curves.set('FootRightLock', 1)
   runtime.nodes.idleSource.curves.set('AllowTransitions', 1)
 
-  const montageWeight = clamp01(input.turnInPlaceMontageWeight)
-  if (input.turnInPlaceMontagePose && montageWeight > 0) {
-    blendTwoPoseNodesTogether(
-      runtime.nodes.idleSource,
-      input.turnInPlaceMontagePose,
-      1 - montageWeight,
+  const montages = input.turnInPlaceMontages
+    ?? (
+      input.turnInPlaceMontagePose
+        ? [{
+            pose: input.turnInPlaceMontagePose,
+            weight: input.turnInPlaceMontageWeight,
+          }]
+        : []
+    )
+  let totalNodeWeight = 0
+  for (const montage of montages) {
+    totalNodeWeight += Math.max(0, montage.weight)
+  }
+  if (totalNodeWeight <= 0) {
+    copyPoseNode(runtime.nodes.idleSource, runtime.nodes.idle)
+  } else {
+    const normalization = Math.max(1, totalNodeWeight)
+    runtime.turnInPlaceSlotSources.length = 0
+    runtime.turnInPlaceSlotWeights.length = 0
+    const sourceWeight = 1 - totalNodeWeight / normalization
+    if (sourceWeight > 0) {
+      runtime.turnInPlaceSlotSources.push(runtime.nodes.idleSource)
+      runtime.turnInPlaceSlotWeights.push(sourceWeight)
+    }
+    for (const montage of montages) {
+      if (montage.weight <= 0) continue
+      runtime.turnInPlaceSlotSources.push(montage.pose)
+      runtime.turnInPlaceSlotWeights.push(
+        montage.weight / normalization,
+      )
+    }
+    blendPoseNodesTogether(
+      runtime.turnInPlaceSlotSources,
+      runtime.turnInPlaceSlotWeights,
       runtime.nodes.idle,
     )
-  } else {
-    copyPoseNode(runtime.nodes.idleSource, runtime.nodes.idle)
   }
   scaleRotationYawSpeed(
     runtime.nodes.idle,

@@ -588,8 +588,6 @@ export function refreshAlsCrouchingMovementRuntime(
     return runtime
   }
 
-  advanceTransitions(runtime, deltaTime)
-
   while (
     runtime.transitionsTakenThisFrame
     < ALS_CROUCHING_MOVEMENT_MACHINE.maxTransitionsPerFrame
@@ -604,6 +602,10 @@ export function refreshAlsCrouchingMovementRuntime(
     if (!transition) break
     startTransition(runtime, transition, setHipsDirection)
   }
+
+  // UE resolves outgoing rules from the pre-update state snapshot and only then advances the
+  // complete transition array, including a transition created by this update.
+  advanceTransitions(runtime, deltaTime)
 
   return runtime
 }

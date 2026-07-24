@@ -585,6 +585,9 @@ describe('Crouching States retained runtime', () => {
     refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
       deltaTime: 0.1,
     }))
+    expect(runtime.currentState).toBe('Stop')
+    expect(runtime.activeStandardTransitions).toHaveLength(0)
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput())
     expect(runtime.currentState).toBe('Idle')
     expect(runtime.activeStandardTransitions[0]).toMatchObject({
       previousState: 'Stop',
@@ -603,8 +606,11 @@ describe('Crouching States retained runtime', () => {
     }))
 
     refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
-      movingSmooth: false,
+      movingSmooth: true,
       deltaTime: 0.05,
+    }))
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      movingSmooth: false,
     }))
     expect(runtime.activeStandardTransitions).toHaveLength(2)
     expect(runtime.activeStandardTransitions[0]).toMatchObject({
@@ -676,6 +682,7 @@ describe('Crouching States retained runtime', () => {
     refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
       deltaTime: 0.1,
     }))
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput())
     refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
       deltaTime: 0.25,
     }))
@@ -706,8 +713,11 @@ describe('Crouching States retained runtime', () => {
       movingSmooth: true,
     }))
     refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
-      movingSmooth: false,
+      movingSmooth: true,
       deltaTime: 0.05,
+    }))
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      movingSmooth: false,
     }))
     expect(runtime.activeStandardTransitions).toHaveLength(2)
 
@@ -763,6 +773,25 @@ describe('Crouching States retained runtime', () => {
       kind: 'CallFunction',
       functionName: 'InitializeTurnInPlace',
       callSite: 'OnBecomeRelevant',
+    })
+  })
+
+  it('advances a newly selected standard transition during its first update', () => {
+    const runtime = createAlsCrouchingStateRuntime()
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput())
+    refreshAlsCrouchingStateRuntime(runtime, runtimeInput({
+      movingSmooth: true,
+      deltaTime: 0.1,
+    }))
+    expect(runtime.activeStandardTransitions[0]).toMatchObject({
+      previousState: 'Idle',
+      nextState: 'Move',
+      linearAlpha: 0.5,
+      alpha: 0.5,
+    })
+    expect(runtime.stateWeights).toMatchObject({
+      Idle: 0.5,
+      Move: 0.5,
     })
   })
 
@@ -936,6 +965,49 @@ describe('retained AB_Als_Crouching pose nodes', () => {
     expect(publishAlsCrouchingOutputCurve(poses.Stop))
       .toBe(poses.Stop)
     expect(poses.Stop.curves.get('PoseCrouching')).toBe(1)
+  })
+
+  it('normalizes every retained TurnInPlaceCrouching montage pose as one Slot node', () => {
+    const rig = createTestRig()
+    const runtime = createAlsCrouchingPoseGraphRuntime(rig)
+    const source = poseNode(rig.boneCount, 0)
+    const poses = evaluateAlsCrouchingPoseGraph(runtime, {
+      fixedCrouchWalkPose: source,
+      movementStatesPose: source,
+      leanAdditivePose: additivePoseNode(rig.boneCount, 0),
+      idlePose: source,
+      turnInPlaceMontages: [
+        {
+          pose: poseNode(
+            rig.boneCount,
+            4,
+            { RotationYawSpeed: 8 },
+          ),
+          weight: 0.75,
+        },
+        {
+          pose: poseNode(
+            rig.boneCount,
+            8,
+            { RotationYawSpeed: 4 },
+          ),
+          weight: 0.75,
+        },
+      ],
+      turnInPlaceMontageWeight: 0,
+      turnInPlacePlayRate: 2,
+      rotateLeftPose: source,
+      rotateRightPose: source,
+      rotateInPlacePlayRate: 1,
+      stopLeftFixedPose: source,
+      stopRightFixedPose: source,
+      strideBlendAlpha: 0,
+    })
+
+    expect(poses.Idle.pose.positions[0]).toBeCloseTo(6, 7)
+    expect(poses.Idle.curves.get('RotationYawSpeed')).toBeCloseTo(12, 7)
+    expect(runtime.turnInPlaceSlotSources).toHaveLength(2)
+    expect(runtime.turnInPlaceSlotWeights).toEqual([0.5, 0.5])
   })
 
   it('rejects non-authored lean curves at the input seam', () => {
