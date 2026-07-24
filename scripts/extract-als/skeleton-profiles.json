@@ -1,12 +1,27 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "source": {
     "release": "ALS-Refactored 4.15",
     "engineVersion": "UE5.5",
-    "assetPath": "ALS/Content/ALS/Character/SK_Als.uasset"
+    "assetPath": "ALS/Content/ALS/Character/SK_Als.uasset",
+    "authoringOracle": {
+      "assetPath": "ALS/Content/ALSExtras/Editor/B_Als_SkeletonAssetActions.uasset",
+      "sourcePath": "Source/ALSEditor/Private/AlsSkeletonUtility.cpp",
+      "setupGraph": "SetupAlsSkeleton",
+      "function": "UAlsSkeletonUtility::AddOrReplaceWeightBlendProfile",
+      "modeAssignment": "EBlendProfileMode::WeightFactor",
+      "modeSerializedInSkeletonAsset": false,
+      "profileNames": [
+        "LookDirectionChange",
+        "MoveDirectionChange",
+        "QuickFeetBlend"
+      ]
+    }
   },
   "profiles": {
     "LookDirectionChange": {
+      "mode": "WeightFactor",
+      "modeSource": "authoringOracle",
       "entries": [
         {
           "bone": "neck_01",
@@ -19,6 +34,8 @@
       ]
     },
     "MoveDirectionChange": {
+      "mode": "WeightFactor",
+      "modeSource": "authoringOracle",
       "entries": [
         {
           "bone": "thigh_l",
@@ -95,6 +112,8 @@
       ]
     },
     "QuickFeetBlend": {
+      "mode": "WeightFactor",
+      "modeSource": "authoringOracle",
       "entries": [
         {
           "bone": "thigh_l",
@@ -188,6 +207,22 @@
         "expectedEntryCount": 18,
         "actualEntryCount": 18,
         "expectedBlendScale": 2.0,
+        "errors": []
+      }
+    },
+    {
+      "id": "als-4.15-weight-blend-profile-authoring-oracle",
+      "passed": true,
+      "details": {
+        "expectedAssetPath": "ALS/Content/ALSExtras/Editor/B_Als_SkeletonAssetActions.uasset",
+        "expectedSourcePath": "Source/ALSEditor/Private/AlsSkeletonUtility.cpp",
+        "expectedFunction": "UAlsSkeletonUtility::AddOrReplaceWeightBlendProfile",
+        "expectedMode": "WeightFactor",
+        "expectedProfileNames": [
+          "LookDirectionChange",
+          "MoveDirectionChange",
+          "QuickFeetBlend"
+        ],
         "errors": []
       }
     }
