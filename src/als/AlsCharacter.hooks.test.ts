@@ -21,7 +21,7 @@ import {
   consumeAlsJumpInput,
   getAlsCapsuleHalfHeight,
   handleAlsJumpInput,
-  hasTriggeredSprintHold,
+  prepareRapierAlsAnimRootMotionVelocity,
   prepareRapierAlsMantlingMovementBoundary,
   preserveAlsActorFeetAcrossFloorCompensation,
   refreshRapierAlsLocomotionMode,
@@ -41,6 +41,9 @@ import {
 import type {
   AlsCharacterAnimationControls,
 } from './AlsCharacter.hooks'
+import type {
+  AlsLocomotionModeChangedLifecycle,
+} from './AlsCharacter'
 import { exponentialDecay } from './State/AlsGroundedState'
 import { unwindDegrees } from './State/AlsLocomotionState'
 import { ALS_NO_BASED_MOVEMENT } from './State/AlsMovementBaseState'
@@ -55,6 +58,9 @@ import {
 } from '../engine/rootMotionSourceGroup'
 import type {
   CompiledAuthoredRootMotion,
+} from '../engine/rootMotion'
+import {
+  createRootMotionMovementParams,
 } from '../engine/rootMotion'
 import {
   createAlsRootMotionSource_Mantling,
@@ -254,6 +260,7 @@ describe('AlsCharacter browser bridge math', () => {
       { x: 0, y: 6.5, z: 0 },
     )
     setLocomotionMode(character, 'Grounded')
+    setLocomotionAction(character, 'Rolling')
     const location = { x: 2, y: -3, z: 4 }
     const basedMovement = {
       ...ALS_NO_BASED_MOVEMENT,
@@ -276,6 +283,7 @@ describe('AlsCharacter browser bridge math', () => {
 
     expect(output).toMatchObject({
       locomotionMode: 'Grounded',
+      locomotionAction: 'Rolling',
       stance: 'Crouching',
       gait: 'Walking',
       rotationMode: 'ViewDirection',
@@ -373,14 +381,6 @@ describe('AlsCharacter browser bridge math', () => {
     )).toBeNull()
   })
 
-  it('fires the authored 0.1s Sprint Hold on the sixth fixed physics tick', () => {
-    let heldTime = 0
-    for (let tick = 0; tick < 5; tick++) heldTime += ALS_PHYSICS_TIMESTEP
-    expect(hasTriggeredSprintHold(heldTime)).toBe(false)
-    heldTime += ALS_PHYSICS_TIMESTEP
-    expect(hasTriggeredSprintHold(heldTime)).toBe(true)
-  })
-
   it('builds camera-relative input in ALS X-forward/Y-right coordinates', () => {
     expect(resolveCameraRelativeInput(
       { right: 0, forward: 1 },
@@ -397,6 +397,49 @@ describe('AlsCharacter browser bridge math', () => {
     )
     expect(rotated.x).toBeCloseTo(0, 12)
     expect(rotated.y).toBeCloseTo(1, 12)
+  })
+
+  it('applies Character root-motion scale once, maps mesh forward, and preserves falling Z', () => {
+    const grounded = createRootMotionMovementParams()
+    grounded.valid = true
+    grounded.blendWeight = 1
+    grounded.translation.set([0, 0, 0.1])
+    const groundedVelocity = { x: 99, y: 99, z: 99 }
+
+    expect(prepareRapierAlsAnimRootMotionVelocity(
+      grounded,
+      1.3,
+      90,
+      0.1,
+      'Grounded',
+      { x: 2, y: 3, z: -4 },
+      groundedVelocity,
+    )).toBe(true)
+    expect(grounded.translation[0]).toBe(0)
+    expect(grounded.translation[1]).toBe(0)
+    expect(grounded.translation[2]).toBeCloseTo(0.13, 6)
+    expect(groundedVelocity.x).toBeCloseTo(0, 12)
+    expect(groundedVelocity.y).toBeCloseTo(1.3, 6)
+    expect(groundedVelocity.z).toBeCloseTo(0, 12)
+
+    const falling = createRootMotionMovementParams()
+    falling.valid = true
+    falling.translation.set([0, 0, 0.1])
+    const fallingVelocity = { x: 0, y: 0, z: 0 }
+    prepareRapierAlsAnimRootMotionVelocity(
+      falling,
+      1.3,
+      90,
+      0.1,
+      'InAir',
+      { x: 2, y: 3, z: -4 },
+      fallingVelocity,
+    )
+    expect(fallingVelocity).toMatchObject({
+      z: -4,
+    })
+    expect(fallingVelocity.x).toBeCloseTo(0, 12)
+    expect(fallingVelocity.y).toBeCloseTo(1.3, 6)
   })
 
   it('applies ALS extra-smooth target rotation before actor exponential decay', () => {
@@ -605,6 +648,40 @@ describe('AlsCharacter browser bridge math', () => {
     expect(shouldProbeRapierAlsGround(null, true)).toBe(false)
     expect(shouldProbeRapierAlsGround(null, false)).toBe(false)
     expect(shouldProbeRapierAlsGround('Grounded', false)).toBe(true)
+  })
+
+  it('keeps the exact landing action lifecycle on the Rapier mode edge', () => {
+    const character = createAlsCharacter({
+      locomotionMode: 'InAir',
+      velocity: { x: 3, y: 0, z: -7 },
+    })
+    const events: unknown[] = []
+    const lifecycle: AlsLocomotionModeChangedLifecycle = {
+      StartRagdolling() {
+        events.push('StartRagdolling')
+      },
+      StartRolling(PlayRate, TargetYawAngle) {
+        events.push(['StartRolling', PlayRate, TargetYawAngle])
+      },
+      OnLocomotionModeChanged(PreviousLocomotionMode) {
+        events.push([
+          'OnLocomotionModeChanged',
+          PreviousLocomotionMode,
+        ])
+      },
+    }
+
+    expect(refreshRapierAlsLocomotionMode(
+      character,
+      true,
+      0,
+      false,
+      lifecycle,
+    )).toBe('Grounded')
+    expect(events).toEqual([
+      ['StartRolling', 1.3, 0],
+      ['OnLocomotionModeChanged', 'InAir'],
+    ])
   })
 
   it('maps every authored low-mantle overlay and rejects unknown tags', () => {

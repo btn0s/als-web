@@ -4,6 +4,10 @@ import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { AnimationFrameCapture } from '../engine/animationFrameCapture'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import {
+  getAnimRootMotionTranslationScale,
+  setAnimRootMotionTranslationScale,
+} from './AlsCharacter'
 import type { AlsCharacter } from './AlsCharacter'
 import type {
   AlsCharacterAnimationCurves,
@@ -20,6 +24,7 @@ import {
 import type {
   AlsAnimationInstanceControls,
   AlsMantlingMontageBridge,
+  AlsRollingMontageBridge,
 } from './AlsAnimationInstance'
 import type {
   AlsPlayerCameraManager,
@@ -31,6 +36,17 @@ import {
 import type {
   AlsMantlingNotifyRuntime,
 } from './AlsCharacter_Actions'
+import {
+  notifyAlsAnimNotifySetGroundedEntryMode,
+} from './Notifies/AlsAnimNotify_SetGroundedEntryMode'
+import {
+  notifyAlsAnimNotifyStateSetLocomotionActionBegin,
+  notifyAlsAnimNotifyStateSetLocomotionActionEnd,
+} from './Notifies/AlsAnimNotifyState_SetLocomotionAction'
+import {
+  notifyAlsAnimNotifyStateSetRootMotionScaleBegin,
+  notifyAlsAnimNotifyStateSetRootMotionScaleEnd,
+} from './Notifies/AlsAnimNotifyState_SetRootMotionScale'
 import {
   ROTATION_YAW_OFFSET_CURVE_NAME,
   ROTATION_YAW_SPEED_CURVE_NAME,
@@ -68,6 +84,79 @@ export function refreshAlsAnimationMantlingNotifies(
   })
 }
 
+/**
+ * Dispatches the retained Roll montage's branching points in the exact order
+ * emitted by `FAnimMontageInstance`.
+ *
+ * Standalone owns the character as Authority. Translation scale remains
+ * character state, while GroundedEntryMode remains animation-instance state,
+ * matching the two native notify targets.
+ */
+export function refreshAlsAnimationRollingNotifies(
+  animationInstance: {
+    SetGroundedEntryMode(
+      GroundedEntryMode:
+        'Als.GroundedEntryMode.FromRoll' | null,
+    ): void
+  },
+  character: AlsCharacter,
+  montage: AlsRollingMontageBridge,
+): number {
+  const events = montage.takeNotifyEvents()
+  if (events.length === 0) return 0
+
+  const rootMotionCharacter = {
+    LocalRole: 'Authority' as const,
+    GetAnimRootMotionTranslationScale() {
+      return getAnimRootMotionTranslationScale(character)
+    },
+    SetAnimRootMotionTranslationScale(TranslationScale: number) {
+      setAnimRootMotionTranslationScale(
+        character,
+        TranslationScale,
+      )
+    },
+  }
+
+  for (const event of events) {
+    switch (event.notifyClass) {
+      case 'AlsAnimNotifyState_SetLocomotionAction':
+        if (event.notifyEventType === 'Begin') {
+          notifyAlsAnimNotifyStateSetLocomotionActionBegin(
+            character,
+            event,
+          )
+        } else {
+          notifyAlsAnimNotifyStateSetLocomotionActionEnd(
+            character,
+            event,
+          )
+        }
+        break
+      case 'AlsAnimNotifyState_SetRootMotionScale':
+        if (event.notifyEventType === 'Begin') {
+          notifyAlsAnimNotifyStateSetRootMotionScaleBegin(
+            rootMotionCharacter,
+            event,
+          )
+        } else {
+          notifyAlsAnimNotifyStateSetRootMotionScaleEnd(
+            rootMotionCharacter,
+            event,
+          )
+        }
+        break
+      case 'AlsAnimNotify_SetGroundedEntryMode':
+        notifyAlsAnimNotifySetGroundedEntryMode(
+          animationInstance,
+          event,
+        )
+        break
+    }
+  }
+  return events.length
+}
+
 export function dispatchAlsQueuedAnimationEvents(
   animationInstance: {
     dispatchQueuedAnimEvents(
@@ -97,6 +186,7 @@ export function useAlsAnimationInstance(
   controlRigFootTrace: AlsControlRigFootOffsetTrace,
   cameraManager: AlsPlayerCameraManager,
   mantlingMontage?: MutableRefObject<AlsMantlingMontageBridge | null>,
+  rollingMontage?: MutableRefObject<AlsRollingMontageBridge | null>,
 ) {
   const animationInstance = useMemo(
     () => createAlsAnimationInstance({
@@ -136,6 +226,17 @@ export function useAlsAnimationInstance(
   }, [animationInstance, mantlingMontage])
 
   useEffect(() => {
+    if (!rollingMontage) return
+    const bridge = animationInstance.rollingMontage
+    rollingMontage.current = bridge
+    return () => {
+      if (rollingMontage.current === bridge) {
+        rollingMontage.current = null
+      }
+    }
+  }, [animationInstance, rollingMontage])
+
+  useEffect(() => {
     window.__playClip = animationInstance.playClip
     window.__captureAlsAnimationFrames = (frameCount) => {
       const report = frameCapture.start(frameCount)
@@ -162,6 +263,11 @@ export function useAlsAnimationInstance(
       mantlingNotifyRuntime,
       current,
       montage,
+    )
+    refreshAlsAnimationRollingNotifies(
+      animationInstance,
+      current,
+      animationInstance.rollingMontage,
     )
     animationCurves.current.rotationYawOffset =
       animationInstance.getCurveValue(ROTATION_YAW_OFFSET_CURVE_NAME)

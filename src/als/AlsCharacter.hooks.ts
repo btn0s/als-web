@@ -24,14 +24,28 @@ import type {
 import {
   getCharacterMovementFloorOffset,
 } from '../engine/characterMovementFloor'
+import {
+  FInputActionInstance,
+  UInputTriggerHold,
+  UInputTriggerPressed,
+  UInputTriggerReleased,
+  UInputTriggerTap,
+} from '../engine/InputTriggers'
 import { ALS_NO_BASED_MOVEMENT } from './State/AlsMovementBaseState'
 import type { AlsBasedMovement } from './State/AlsMovementBaseState'
 import {
   setRapierAlsStanceCapsules,
 } from '../engine/rapierAlsStanceCapsules'
+import {
+  createRootMotionMovementParams,
+} from '../engine/rootMotion'
 import type {
   CompiledAuthoredRootMotion,
+  RootMotionMovementParams,
 } from '../engine/rootMotion'
+import {
+  constrainAnimRootMotionVelocity,
+} from '../engine/characterMovementRootMotion'
 import {
   applyRootMotionSource,
   createRootMotionSourceGroup,
@@ -45,6 +59,7 @@ import type {
   RapierAlsMantlingAdapter,
 } from '../engine/rapierAlsMantling'
 import {
+  alsMeshRootTranslationToUnrealWorld,
   threeToUnrealVector,
   unrealToThreeVector,
   unrealYawDegreesToThreeRadians,
@@ -60,9 +75,11 @@ import {
 } from './AlsCharacter'
 import type {
   AlsCharacter,
+  AlsLocomotionModeChangedLifecycle,
   AlsLocomotionMode,
 } from './AlsCharacter'
 import {
+  setMovementVelocity,
   stepGroundedVelocity,
   stepInAirVelocity,
 } from './AlsCharacterMovementComponent'
@@ -70,16 +87,20 @@ import { getRelativeAccelerationAmount } from './AlsAnimationInstance'
 import type {
   AlsAnimationInstanceControls,
   AlsMantlingMontageBridge,
+  AlsRollingMontageBridge,
 } from './AlsAnimationInstance'
 import {
   prepareCharacterMantling,
   refreshMantling,
+  refreshRollingPhysics,
+  startRolling,
   startMantlingGrounded,
   startMantlingImplementation,
   startMantlingInAir,
 } from './AlsCharacter_Actions'
 import type {
   AlsMantlingLifecycleAdapter,
+  AlsRollingPhysicsAdapter,
 } from './AlsCharacter_Actions'
 import type { CharacterPoseSample } from '../app/CharacterPoseSample'
 import {
@@ -437,16 +458,10 @@ export function prepareRapierAlsMantlingMovementBoundary(
 // dump owns buttons/axes; this engine-level normalization only suppresses browser gamepad drift.
 const GAMEPAD_DEAD_ZONE = 0.2
 const COUNTER_CLOCKWISE_ROTATION_ANGLE_THRESHOLD = 5
-const SPRINT_HOLD_TIME_THRESHOLD = 0.1
 const IN_AIR_ROTATION_INTERPOLATION_SPEED = 5
 const IN_AIR_AIMING_ROTATION_INTERPOLATION_SPEED = 15
 const MIN_AIMING_YAW_ANGLE_LIMIT = 70
 const UE_KINDA_SMALL_NUMBER = 1e-4
-
-/** Enhanced Input `UInputTriggerHold` threshold check for IMC_Als_Default's Sprint mapping. */
-export function hasTriggeredSprintHold(heldTime: number): boolean {
-  return heldTime + Number.EPSILON >= SPRINT_HOLD_TIME_THRESHOLD
-}
 
 interface InputAxes {
   right: number
@@ -456,6 +471,7 @@ interface InputAxes {
 interface GamepadInput extends InputAxes {
   jump: boolean
   sprint: boolean
+  ragdoll: boolean
   walk: boolean
   crouch: boolean
   aim: boolean
@@ -482,8 +498,18 @@ export interface AlsCharacterMantlingBridge {
     ReadonlyMap<string, CompiledAuthoredRootMotion>
   readonly montage:
     MutableRefObject<AlsMantlingMontageBridge | null>
-  /** Deferred exact AAlsCharacter::StartRagdolling() action seam. */
-  readonly requestStartRagdolling?: () => void
+}
+
+export interface AlsCharacterActionBridge {
+  readonly RollingMontage:
+    MutableRefObject<AlsRollingMontageBridge | null>
+  /** Exact AAlsCharacter::StartRagdolling() runtime seam. */
+  readonly StartRagdolling?: () => void
+  /** Exact AAlsCharacter::StopRagdolling() runtime seam. */
+  readonly StopRagdolling?: () => boolean
+  readonly OnLocomotionModeChanged?: (
+    PreviousLocomotionMode: AlsLocomotionMode,
+  ) => void
 }
 
 export interface AlsCharacterBridge {
@@ -550,6 +576,7 @@ export function publishAlsCharacterAnimationSnapshot(
   const state = character.locomotionState
 
   output.locomotionMode = character.locomotionMode
+  output.locomotionAction = character.locomotionAction
   output.rotationMode = character.rotationMode
   output.stance = character.stance
   output.gait = input.movementOverride
@@ -686,6 +713,7 @@ function sampleGamepad(out: GamepadInput): GamepadInput {
   // IMC_Als_Default: FaceButtonBottom/Right, RightShoulder, LeftThumbstick, LeftShoulder, DPadLeft.
   out.jump = gamepad.buttons[0]?.pressed ?? false
   out.sprint = gamepad.buttons[1]?.pressed ?? false
+  out.ragdoll = gamepad.buttons[2]?.pressed ?? false
   out.walk = gamepad.buttons[5]?.pressed ?? false
   out.crouch = gamepad.buttons[10]?.pressed ?? false
   out.aim = gamepad.buttons[4]?.pressed ?? false
@@ -950,6 +978,7 @@ export function refreshRapierAlsLocomotionMode(
   groundValid: boolean,
   verticalVelocity: number,
   bMovementModeLocked = false,
+  Lifecycle?: AlsLocomotionModeChangedLifecycle,
 ): AlsLocomotionMode {
   if (bMovementModeLocked || character.locomotionMode === null) {
     return character.locomotionMode
@@ -959,7 +988,7 @@ export function refreshRapierAlsLocomotionMode(
     && verticalVelocity <= 0
     && groundValid
   ) {
-    setLocomotionMode(character, 'Grounded')
+    setLocomotionMode(character, 'Grounded', Lifecycle)
   } else if (
     character.locomotionMode === 'Grounded'
     // Resting Rapier contacts can oscillate by floating-point ulps; match UE's
@@ -967,7 +996,7 @@ export function refreshRapierAlsLocomotionMode(
     && verticalVelocity < -UE_KINDA_SMALL_NUMBER
     && !groundValid
   ) {
-    setLocomotionMode(character, 'InAir')
+    setLocomotionMode(character, 'InAir', Lifecycle)
   }
   return character.locomotionMode
 }
@@ -986,6 +1015,51 @@ function isTextEntryTarget(target: EventTarget | null) {
 }
 
 /**
+ * `UCharacterMovementComponent::TickCharacterPose()` →
+ * `ConstrainAnimRootMotionVelocity()` at the standalone Rapier boundary.
+ *
+ * `ConsumeExtractedRootMotion()` returns mesh-space metres without
+ * ACharacter's scale. Native ACharacter scales translation in place, rotates
+ * it through the mesh component and actor, divides by movement DeltaTime, and
+ * preserves physics Z while falling.
+ */
+export function prepareRapierAlsAnimRootMotionVelocity(
+  RootMotion: RootMotionMovementParams,
+  AnimRootMotionTranslationScale: number,
+  ActorYawAngle: number,
+  DeltaTime: number,
+  LocomotionMode: AlsLocomotionMode,
+  CurrentVelocity: Readonly<AlsVector3>,
+  Out: AlsVector3 = { x: 0, y: 0, z: 0 },
+): boolean {
+  if (!RootMotion.valid) return false
+  if (!(DeltaTime > 0) || !Number.isFinite(DeltaTime)) {
+    throw new Error(
+      'ALS animation root motion requires a positive finite DeltaTime',
+    )
+  }
+
+  RootMotion.translation[0] *= AnimRootMotionTranslationScale
+  RootMotion.translation[1] *= AnimRootMotionTranslationScale
+  RootMotion.translation[2] *= AnimRootMotionTranslationScale
+  alsMeshRootTranslationToUnrealWorld(
+    RootMotion.translation,
+    ActorYawAngle,
+    Out,
+  )
+  Out.x /= DeltaTime
+  Out.y /= DeltaTime
+  Out.z /= DeltaTime
+  constrainAnimRootMotionVelocity(
+    Out,
+    CurrentVelocity,
+    LocomotionMode === 'InAir',
+    Out,
+  )
+  return true
+}
+
+/**
  * React/Rapier boundary for the framework-free AAlsCharacter and movement-component analogs.
  * Physics vectors are converted once here; all policy and state remain in ALS coordinates.
  */
@@ -997,6 +1071,7 @@ export function useAlsCharacter(
   poseSample: MutableRefObject<CharacterPoseSample>,
   sweepCapsule?: RapierAlsCapsuleSweep,
   mantling?: AlsCharacterMantlingBridge,
+  actions?: AlsCharacterActionBridge,
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1077,6 +1152,61 @@ export function useAlsCharacter(
   )
 
   const character = useRef(createAlsCharacter())
+  const actionBridge = useRef(actions)
+  actionBridge.current = actions
+  const locomotionModeChangedLifecycle =
+    useRef<AlsLocomotionModeChangedLifecycle>({
+      StartRagdolling() {
+        actionBridge.current?.StartRagdolling?.()
+      },
+      StartRolling(PlayRate, TargetYawAngle) {
+        const Animation =
+          actionBridge.current?.RollingMontage.current
+        if (Animation) {
+          startRolling(
+            character.current,
+            PlayRate,
+            TargetYawAngle,
+            Animation,
+          )
+        }
+      },
+      OnLocomotionModeChanged(PreviousLocomotionMode) {
+        actionBridge.current?.OnLocomotionModeChanged?.(
+          PreviousLocomotionMode,
+        )
+      },
+    })
+  const rollingPhysics = useRef<AlsRollingPhysicsAdapter>({
+    GetUpdatedComponentRotation() {
+      return {
+        Pitch: 0,
+        Yaw: character.current.actorYawAngle,
+        Roll: 0,
+      }
+    },
+    MoveUpdatedComponent(
+      Delta,
+      NewRotation,
+      bSweep,
+      _Teleport,
+    ) {
+      if (
+        bSweep
+        || Delta.x !== 0
+        || Delta.y !== 0
+        || Delta.z !== 0
+      ) {
+        throw new Error(
+          'ALS rolling rotation must use a zero, non-swept move',
+        )
+      }
+      // The Rapier capsule is rotationally symmetric and locked. Its
+      // UpdatedComponent rotation is therefore the character-owned yaw.
+      character.current.actorYawAngle =
+        unwindDegrees(NewRotation.Yaw)
+    },
+  })
   poseSample.current.character = character.current
   useEffect(() => () => {
     if (poseSample.current.character === character.current) {
@@ -1146,6 +1276,7 @@ export function useAlsCharacter(
     forward: 0,
     jump: false,
     sprint: false,
+    ragdoll: false,
     walk: false,
     crouch: false,
     aim: false,
@@ -1157,9 +1288,21 @@ export function useAlsCharacter(
     crouch: false,
     rotationMode: false,
   })
-  const sprintHoldTime = useRef(0)
-  const sprintActionActive = useRef(false)
+  const sprintAction = useRef(new FInputActionInstance([
+    new UInputTriggerHold({
+      HoldTimeThreshold: 0.1,
+      bIsOneShot: true,
+    }),
+    new UInputTriggerReleased(),
+  ]))
+  const rollAction = useRef(new FInputActionInstance([
+    new UInputTriggerTap({ TapReleaseTimeThreshold: 0.3 }),
+  ]))
+  const ragdollAction = useRef(new FInputActionInstance([
+    new UInputTriggerPressed(),
+  ]))
   const jumpRequested = useRef(false)
+  const rollRequested = useRef(false)
   const onJumped = useRef<(() => void) | null>(null)
   const inputAxes = useRef<InputAxes>({ right: 0, forward: 0 })
   const inputDirection = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
@@ -1171,6 +1314,11 @@ export function useAlsCharacter(
   const acceleration = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const desiredVelocity = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const renderedVelocity = useRef({ x: 0, y: 0, z: 0 })
+  const extractedAnimRootMotion = useRef(
+    createRootMotionMovementParams(),
+  )
+  const animRootMotionVelocity =
+    useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const debugViewYawWorld = useRef(0)
   const previousStance = useRef<AlsStance>('Standing')
   const capsulesInitialized = useRef(false)
@@ -1303,7 +1451,7 @@ export function useAlsCharacter(
     ForceNetUpdate() {},
     StartRagdolling() {
       ragdollRequestedAfterMantlingTargetDestruction.current = true
-      mantling?.requestStartRagdolling?.()
+      locomotionModeChangedLifecycle.current.StartRagdolling()
     },
   })
 
@@ -1459,6 +1607,12 @@ export function useAlsCharacter(
       pressedKeys.current.clear()
       aimingWithPointer.current = false
       jumpRequested.current = false
+      rollRequested.current = false
+      sprintAction.current.reset()
+      rollAction.current.reset()
+      ragdollAction.current.reset()
+      values.current.desiredGait = 'Running'
+      setControls({ desiredGait: 'Running' })
     }
     const onPointerDown = (event: PointerEvent) => {
       if (event.button === 2) aimingWithPointer.current = true
@@ -1512,6 +1666,9 @@ export function useAlsCharacter(
     window.__triggerJump = () => {
       requestAlsJumpInput(jumpRequested)
     }
+    window.__triggerRoll = () => {
+      rollRequested.current = true
+    }
     return () => {
       delete window.__setSpeed
       delete window.__setGait
@@ -1521,6 +1678,7 @@ export function useAlsCharacter(
       delete window.__setViewYaw
       delete window.__setMovementOverride
       delete window.__triggerJump
+      delete window.__triggerRoll
     }
   }, [setControls])
 
@@ -1582,23 +1740,53 @@ export function useAlsCharacter(
       + gamepad.forward
     clampMagnitude(axes)
 
-    const sprintHeld =
+    const sprintRollValue =
       keys.has('ShiftLeft') || gamepad.sprint
-    if (sprintHeld) {
-      sprintHoldTime.current += ALS_PHYSICS_TIMESTEP
-      sprintActionActive.current =
-        hasTriggeredSprintHold(sprintHoldTime.current)
-    } else {
-      if (sprintActionActive.current) {
-        // AAlsCharacterExample::Input_OnSprint(false) returns to Running.
-        setControls({ desiredGait: 'Running' })
-      }
-      sprintHoldTime.current = 0
-      sprintActionActive.current = false
+    const sprintTick = sprintAction.current.update(
+      sprintRollValue,
+      ALS_PHYSICS_TIMESTEP,
+    )
+    const rollTick = rollAction.current.update(
+      sprintRollValue,
+      ALS_PHYSICS_TIMESTEP,
+    )
+    if (
+      sprintTick.triggerEvents.includes('Triggered')
+      || sprintTick.triggerEvents.includes('Canceled')
+    ) {
+      // AAlsCharacterExample::Input_OnSprint() is bound to both Triggered and
+      // Canceled and writes the action value straight into DesiredGait.
+      const nextDesiredGait = sprintTick.value === true
+        ? 'Sprinting'
+        : 'Running'
+      values.current.desiredGait = nextDesiredGait
+      setControls({ desiredGait: nextDesiredGait })
     }
-    current.desiredGait = sprintActionActive.current
-      ? 'Sprinting'
-      : controls.desiredGait
+    current.desiredGait = values.current.desiredGait
+
+    const ragdollValue =
+      keys.has('KeyX') || gamepad.ragdoll
+    const ragdollTick = ragdollAction.current.update(
+      ragdollValue,
+      ALS_PHYSICS_TIMESTEP,
+    )
+    if (ragdollTick.triggerEvents.includes('Triggered')) {
+      if (!actionBridge.current?.StopRagdolling?.()) {
+        locomotionModeChangedLifecycle.current.StartRagdolling()
+      }
+    }
+
+    if (
+      rollRequested.current
+      || rollTick.triggerEvents.includes('Triggered')
+    ) {
+      rollRequested.current = false
+      const Animation =
+        actionBridge.current?.RollingMontage.current
+      if (Animation) {
+        startRolling(current, 1.3, Animation)
+      }
+    }
     current.desiredStance = controls.desiredStance
     current.desiredRotationMode = controls.desiredRotationMode
     current.desiredAiming =
@@ -1663,6 +1851,7 @@ export function useAlsCharacter(
         currentGroundSupport !== null,
         actualVelocity.current.z,
         movementModeLocked.current,
+        locomotionModeChangedLifecycle.current,
       )
     }
     groundSupport.current = currentGroundSupport
@@ -1718,6 +1907,38 @@ export function useAlsCharacter(
       Lifecycle: mantlingLifecycle.current,
       MantlingSettings: ALS_GENERAL_MANTLING_SETTINGS,
     })
+    refreshRollingPhysics(
+      current,
+      ALS_PHYSICS_TIMESTEP,
+      rollingPhysics.current,
+    )
+
+    // CharacterMovement consumes the animation instance exactly once at its
+    // movement boundary. Multiple fixed substeps before another animation
+    // refresh therefore cannot replay the same Roll displacement.
+    const rollingAnimation =
+      actionBridge.current?.RollingMontage.current
+    const consumedAnimRootMotion =
+      rollingAnimation?.ConsumeExtractedRootMotion(
+        extractedAnimRootMotion.current,
+      )
+    const animRootMotionApplied = consumedAnimRootMotion
+      ? prepareRapierAlsAnimRootMotionVelocity(
+          consumedAnimRootMotion,
+          current.animRootMotionTranslationScale,
+          current.actorYawAngle,
+          ALS_PHYSICS_TIMESTEP,
+          current.locomotionMode,
+          actualVelocity.current,
+          animRootMotionVelocity.current,
+        )
+      : false
+    if (animRootMotionApplied) {
+      setMovementVelocity(
+        current.movement,
+        animRootMotionVelocity.current,
+      )
+    }
 
     const mantlingRuntime = mantling
     const hasRetainedRootMotionSource =
@@ -1764,13 +1985,16 @@ export function useAlsCharacter(
       body.setLinvel({ x: 0, y: 0, z: 0 }, true)
     } else {
       body.setGravityScale(1, true)
-      if (current.locomotionMode === 'InAir') {
+      if (
+        !animRootMotionApplied
+        && current.locomotionMode === 'InAir'
+      ) {
         stepInAirVelocity(
           current.movement,
           inputDirection.current,
           ALS_PHYSICS_TIMESTEP,
         )
-      } else {
+      } else if (!animRootMotionApplied) {
         stepGroundedVelocity(
           current.movement,
           inputDirection.current,
@@ -1878,6 +2102,13 @@ export function useAlsCharacter(
       rotationMode: current.rotationMode,
       locomotionMode: current.locomotionMode,
       locomotionAction: current.locomotionAction,
+      animRootMotionTranslationScale:
+        current.animRootMotionTranslationScale,
+      animRootMotionApplied,
+      animRootMotionBlendWeight:
+        consumedAnimRootMotion?.blendWeight ?? 0,
+      rollingTargetYawAngle:
+        current.rollingState.TargetYawAngle,
       speed: state.speed,
       direction: frame.direction,
       moving: state.moving,
@@ -1971,6 +2202,7 @@ export function useAlsCharacter(
         currentGroundSupport !== null,
         actualVelocity.current.z,
         movementModeLocked.current,
+        locomotionModeChangedLifecycle.current,
       )
     }
     const mantlingTarget = activeMantlingTarget.current

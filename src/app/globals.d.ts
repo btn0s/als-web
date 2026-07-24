@@ -33,6 +33,8 @@ declare global {
     __playClip?: (name: string | null) => boolean
     /** Queue ALS's authored Jump input for the next fixed character update. */
     __triggerJump?: () => void
+    /** Queue AAlsCharacterExample::Input_OnRoll() for the next fixed character update. */
+    __triggerRoll?: () => void
     /**
      * Capture the current baseline plus subsequent evaluated animation frames. The report names
      * the largest per-bone delta on every edge and traces key bones in local and world space.
@@ -50,6 +52,10 @@ declare global {
       rotationMode: AlsRotationMode
       locomotionMode: AlsLocomotionMode
       locomotionAction: AlsLocomotionAction
+      animRootMotionTranslationScale: number
+      animRootMotionApplied: boolean
+      animRootMotionBlendWeight: number
+      rollingTargetYawAngle: number
       speed: number
       direction: number
       moving: boolean

@@ -22,6 +22,7 @@ import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { useAlsAnimationInstance } from '../als/AlsAnimationInstance.hooks'
 import type {
   AlsMantlingMontageBridge,
+  AlsRollingMontageBridge,
 } from '../als/AlsAnimationInstance'
 import {
   ALS_CAPSULE_RADIUS,
@@ -256,6 +257,8 @@ function LoadedCharacter({
   const crouchingCapsule = useRef<RapierCollider>(null)
   const mantlingMontage =
     useRef<AlsMantlingMontageBridge | null>(null)
+  const rollingMontage =
+    useRef<AlsRollingMontageBridge | null>(null)
   const mantlingRootMotionBySequence = useMemo(
     () => compileAlsMantlingRootMotion(gltf.animations),
     [gltf.animations],
@@ -384,6 +387,9 @@ function LoadedCharacter({
         mantlingRootMotionBySequence,
       montage: mantlingMontage,
     },
+    {
+      RollingMontage: rollingMontage,
+    },
   )
   // The hook owns clip sampling, pose-space composition, and the one skeleton write per frame.
   // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
@@ -397,6 +403,7 @@ function LoadedCharacter({
     controlRigFootTrace,
     poseSample.current.cameraShakeRequests,
     mantlingMontage,
+    rollingMontage,
   )
 
   useFrame(() => {

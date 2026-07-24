@@ -3,11 +3,16 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  ALS_PHYSICS_TIMESTEP,
-  hasTriggeredSprintHold,
   resolveCameraRelativeInput,
 } from '../AlsCharacter.hooks'
 import { resolveDesiredGaitSpeed } from '../Settings/AlsMovementSettings'
+import {
+  FInputActionInstance,
+  UInputTriggerHold,
+  UInputTriggerPressed,
+  UInputTriggerReleased,
+  UInputTriggerTap,
+} from '../../engine/InputTriggers'
 
 interface ExtractedInputObject {
   readonly type: string
@@ -93,6 +98,10 @@ const IMPLEMENTED_MAPPING_CONTRACTS = [
   ['IA_Als_Crouch', 'Gamepad_LeftThumbstick', []],
   ['IA_Als_Aim', 'RightMouseButton', []],
   ['IA_Als_Aim', 'Gamepad_LeftShoulder', []],
+  ['IA_Als_Ragdoll', 'X', []],
+  ['IA_Als_Ragdoll', 'Gamepad_FaceButton_Left', []],
+  ['IA_Als_Roll', 'LeftShift', []],
+  ['IA_Als_Roll', 'Gamepad_FaceButton_Right', []],
   ['IA_Als_RotationMode', 'One', []],
   ['IA_Als_RotationMode', 'Gamepad_DPad_Left', []],
 ] as const
@@ -164,6 +173,7 @@ describe('ALS content oracle: implemented character inputs', () => {
     for (const actionName of [
       'IA_Als_Walk',
       'IA_Als_Crouch',
+      'IA_Als_Ragdoll',
       'IA_Als_RotationMode',
     ]) {
       expect(extractedInput.actions[actionName].triggers).toEqual([
@@ -181,6 +191,14 @@ describe('ALS content oracle: implemented character inputs', () => {
       expect.objectContaining({
         type: 'InputTriggerReleased',
         serializedProperties: {},
+      }),
+    ])
+    expect(extractedInput.actions.IA_Als_Roll.triggers).toEqual([
+      expect.objectContaining({
+        type: 'InputTriggerTap',
+        serializedProperties: {
+          TapReleaseTimeThreshold: 0.3,
+        },
       }),
     ])
   })
@@ -258,6 +276,9 @@ describe('ALS content oracle: implemented character inputs', () => {
       /out\.sprint = gamepad\.buttons\[1\]\?\.pressed/,
     )
     expect(controllerSource).toMatch(
+      /out\.ragdoll = gamepad\.buttons\[2\]\?\.pressed/,
+    )
+    expect(controllerSource).toMatch(
       /out\.walk = gamepad\.buttons\[5\]\?\.pressed/,
     )
     expect(controllerSource).toMatch(
@@ -272,21 +293,59 @@ describe('ALS content oracle: implemented character inputs', () => {
   })
 
   it('implements Hold Sprint, Released Sprint, and Pressed toggles', () => {
-    let heldTime = 0
+    const sprintTriggers =
+      extractedInput.actions.IA_Als_Sprint.triggers
+    const holdProperties = sprintTriggers[0].serializedProperties
+    const sprint = new FInputActionInstance([
+      new UInputTriggerHold({
+        HoldTimeThreshold: Number(
+          holdProperties.HoldTimeThreshold,
+        ),
+        bIsOneShot: Boolean(holdProperties.bIsOneShot),
+      }),
+      new UInputTriggerReleased(),
+    ])
     for (let frame = 1; frame <= 5; frame += 1) {
-      heldTime += ALS_PHYSICS_TIMESTEP
-      expect(hasTriggeredSprintHold(heldTime)).toBe(false)
+      expect(sprint.update(true, 1 / 60).triggerEvent)
+        .not.toBe('Triggered')
     }
-    heldTime += ALS_PHYSICS_TIMESTEP
-    expect(hasTriggeredSprintHold(heldTime)).toBe(true)
+    expect(sprint.update(true, 1 / 60)).toMatchObject({
+      triggerEvent: 'Triggered',
+      value: true,
+    })
+    expect(sprint.update(false, 1 / 60)).toMatchObject({
+      triggerEvent: 'Triggered',
+      value: false,
+    })
+
+    const tapProperties =
+      extractedInput.actions.IA_Als_Roll
+        .triggers[0].serializedProperties
+    const roll = new FInputActionInstance([
+      new UInputTriggerTap({
+        TapReleaseTimeThreshold: Number(
+          tapProperties.TapReleaseTimeThreshold,
+        ),
+      }),
+    ])
+    roll.update(true, 1 / 60)
+    expect(roll.update(false, 1 / 60).triggerEvent)
+      .toBe('Triggered')
+
+    const ragdoll = new FInputActionInstance([
+      new UInputTriggerPressed(),
+    ])
+    expect(ragdoll.update(true, 1 / 60).triggerEvent)
+      .toBe('Triggered')
+
     expect(compactControllerSource).toContain(
-      'hasTriggeredSprintHold(sprintHoldTime.current)',
+      'const sprintTick = sprintAction.current.update',
     )
     expect(compactControllerSource).toContain(
-      "current.desiredGait = sprintActionActive.current ? 'Sprinting' : controls.desiredGait",
+      'const rollTick = rollAction.current.update',
     )
     expect(compactControllerSource).toContain(
-      "setControls({ desiredGait: 'Running' })",
+      'const ragdollTick = ragdollAction.current.update',
     )
     for (const actionName of ['walk', 'crouch', 'rotationMode']) {
       expect(compactControllerSource).toContain(
