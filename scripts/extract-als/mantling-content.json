@@ -1,0 +1,1857 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "engineVersion": "UE5.5",
+    "referenceRelease": "ALS Refactored 4.15",
+    "characterSettingsAssetPath": "ALS/Content/ALS/Data/Character/CS_Als_Default.uasset",
+    "characterBlueprintAssetPath": "ALS/Content/ALS/Character/B_Als_Character.uasset",
+    "cppDefaults": [
+      "Source/ALS/Public/Settings/AlsMantlingSettings.h",
+      "Source/ALS/Private/Settings/AlsCharacterSettings.cpp"
+    ],
+    "characterActions": "Source/ALS/Private/AlsCharacter_Actions.cpp",
+    "rootMotionSource": "Source/ALS/Private/RootMotionSources/AlsRootMotionSource_Mantling.cpp"
+  },
+  "general": {
+    "bAllowMantling": true,
+    "TraceAngleThreshold": 110.0,
+    "MaxReachAngle": 50.0,
+    "SlopeAngleThreshold": 35.0,
+    "SlopeAngleThresholdCos": 0.8191520442889918,
+    "TargetPrimitiveSpeedThreshold": 10.0,
+    "MantlingHighHeightThreshold": 125.0,
+    "GroundedTrace": {
+      "LedgeHeight": [
+        50.0,
+        225.0
+      ],
+      "ReachDistance": 75.0,
+      "TargetLocationOffset": 15.0,
+      "StartLocationOffset": 55.0,
+      "bDrawFailedTraces": true
+    },
+    "InAirTrace": {
+      "LedgeHeight": [
+        50.0,
+        150.0
+      ],
+      "ReachDistance": 70.0,
+      "TargetLocationOffset": 15.0,
+      "StartLocationOffset": 55.0,
+      "bDrawFailedTraces": false
+    },
+    "MantlingTraceChannel": "Visibility",
+    "MantlingTraceResponseChannels": [
+      "WorldStatic",
+      "WorldDynamic",
+      "Destructible"
+    ],
+    "BlendOutDuration": 0.3,
+    "bStartRagdollingOnTargetPrimitiveDestruction": true,
+    "asset": "CS_Als_Default",
+    "nativeDistanceUnit": "cm",
+    "nativeSpeedUnit": "cm/s",
+    "nativeAngleUnit": "deg"
+  },
+  "selection": {
+    "asset": "B_Als_Character",
+    "assetPath": "ALS/Content/ALS/Character/B_Als_Character.uasset",
+    "High": "MS_Als_High",
+    "Low": {
+      "Default": "MS_Als_Low",
+      "Als.OverlayMode.Injured": "MS_Als_Low_Left",
+      "Als.OverlayMode.HandsTied": "MS_Als_Low_BothHands",
+      "Als.OverlayMode.Rifle": "MS_Als_Low_Right",
+      "Als.OverlayMode.PistolOneHanded": "MS_Als_Low_Right",
+      "Als.OverlayMode.PistolTwoHanded": "MS_Als_Low_Right",
+      "Als.OverlayMode.Bow": "MS_Als_Low_Left",
+      "Als.OverlayMode.Torch": "MS_Als_Low_Left",
+      "Als.OverlayMode.Binoculars": "MS_Als_Low_Right",
+      "Als.OverlayMode.Box": "MS_Als_Low_Box",
+      "Als.OverlayMode.Barrel": "MS_Als_Low_Left"
+    },
+    "InAir": "MS_Als_High",
+    "evidence": {
+      "enumSwitchNode": "K2Node_SwitchEnum_0",
+      "lowOverlaySwitchNode": "GameplayTagsK2Node_SwitchGameplayTag_0",
+      "lowResultNodes": {
+        "Default": "K2Node_FunctionResult_5",
+        "Als.OverlayMode.Injured": "K2Node_FunctionResult_4",
+        "Als.OverlayMode.HandsTied": "K2Node_FunctionResult_6",
+        "Als.OverlayMode.Rifle": "K2Node_FunctionResult_0",
+        "Als.OverlayMode.PistolOneHanded": "K2Node_FunctionResult_0",
+        "Als.OverlayMode.PistolTwoHanded": "K2Node_FunctionResult_0",
+        "Als.OverlayMode.Bow": "K2Node_FunctionResult_4",
+        "Als.OverlayMode.Torch": "K2Node_FunctionResult_4",
+        "Als.OverlayMode.Binoculars": "K2Node_FunctionResult_0",
+        "Als.OverlayMode.Box": "K2Node_FunctionResult_3",
+        "Als.OverlayMode.Barrel": "K2Node_FunctionResult_4"
+      }
+    }
+  },
+  "settings": {
+    "MS_Als_High": {
+      "asset": "MS_Als_High",
+      "nativeDistanceUnit": "cm",
+      "Montage": "AM_Als_Mantle_High",
+      "bAutoCalculateStartTime": false,
+      "StartTimeReferenceHeight": [
+        125.0,
+        200.0
+      ],
+      "StartTime": [
+        0.6000000238418579,
+        0.0
+      ],
+      "HorizontalCorrectionCurve": "CF_Als_Mantle_High_HorizontalCorrection",
+      "VerticalCorrectionCurve": "CF_Als_Mantle_High_VerticalCorrection"
+    },
+    "MS_Als_Low": {
+      "asset": "MS_Als_Low",
+      "nativeDistanceUnit": "cm",
+      "Montage": "AM_Als_Mantle_Low",
+      "bAutoCalculateStartTime": false,
+      "StartTimeReferenceHeight": [
+        50.0,
+        100.0
+      ],
+      "StartTime": [
+        0.5,
+        0.0
+      ],
+      "HorizontalCorrectionCurve": "CF_Als_Mantle_Low_HorizontalCorrection",
+      "VerticalCorrectionCurve": "CF_Als_Mantle_Low_VerticalCorrection"
+    },
+    "MS_Als_Low_BothHands": {
+      "asset": "MS_Als_Low_BothHands",
+      "nativeDistanceUnit": "cm",
+      "Montage": "AM_Als_Mantle_Low_BothArms",
+      "bAutoCalculateStartTime": false,
+      "StartTimeReferenceHeight": [
+        50.0,
+        100.0
+      ],
+      "StartTime": [
+        0.5,
+        0.0
+      ],
+      "HorizontalCorrectionCurve": "CF_Als_Mantle_Low_HorizontalCorrection",
+      "VerticalCorrectionCurve": "CF_Als_Mantle_Low_VerticalCorrection"
+    },
+    "MS_Als_Low_Box": {
+      "asset": "MS_Als_Low_Box",
+      "nativeDistanceUnit": "cm",
+      "Montage": "AM_Als_Mantle_Low_Box",
+      "bAutoCalculateStartTime": false,
+      "StartTimeReferenceHeight": [
+        50.0,
+        100.0
+      ],
+      "StartTime": [
+        0.5,
+        0.0
+      ],
+      "HorizontalCorrectionCurve": "CF_Als_Mantle_Low_HorizontalCorrection",
+      "VerticalCorrectionCurve": "CF_Als_Mantle_Low_VerticalCorrection"
+    },
+    "MS_Als_Low_Left": {
+      "asset": "MS_Als_Low_Left",
+      "nativeDistanceUnit": "cm",
+      "Montage": "AM_Als_Mantle_Low_Left",
+      "bAutoCalculateStartTime": false,
+      "StartTimeReferenceHeight": [
+        50.0,
+        100.0
+      ],
+      "StartTime": [
+        0.5,
+        0.0
+      ],
+      "HorizontalCorrectionCurve": "CF_Als_Mantle_Low_HorizontalCorrection",
+      "VerticalCorrectionCurve": "CF_Als_Mantle_Low_VerticalCorrection"
+    },
+    "MS_Als_Low_Right": {
+      "asset": "MS_Als_Low_Right",
+      "nativeDistanceUnit": "cm",
+      "Montage": "AM_Als_Mantle_Low_Right",
+      "bAutoCalculateStartTime": false,
+      "StartTimeReferenceHeight": [
+        50.0,
+        100.0
+      ],
+      "StartTime": [
+        0.5,
+        0.0
+      ],
+      "HorizontalCorrectionCurve": "CF_Als_Mantle_Low_HorizontalCorrection",
+      "VerticalCorrectionCurve": "CF_Als_Mantle_Low_VerticalCorrection"
+    }
+  },
+  "montages": {
+    "AM_Als_Mantle_High": {
+      "asset": "AM_Als_Mantle_High",
+      "assetPath": "ALS/Content/ALS/Animations/Actions/Mantle/AM_Als_Mantle_High.uasset",
+      "SequenceLength": 2.6666667461395264,
+      "RateScale": 1.2000000476837158,
+      "SamplingFrameRate": {
+        "Numerator": 30,
+        "Denominator": 1
+      },
+      "BlendIn": {
+        "BlendTime": 0.20000000298023224,
+        "BlendOption": "HermiteCubic"
+      },
+      "BlendOut": {
+        "BlendTime": 0.20000000298023224,
+        "BlendOption": "Cubic"
+      },
+      "BlendOutTriggerTime": 0.0,
+      "section": {
+        "SectionName": "Default",
+        "NextSectionName": "None",
+        "SlotIndex": 0,
+        "SegmentIndex": 0,
+        "LinkMethod": "Absolute",
+        "SegmentBeginTime": 0.0,
+        "SegmentLength": 2.6666667461395264,
+        "LinkValue": 0.0
+      },
+      "slot": {
+        "SlotName": "PostLocomotion",
+        "sequence": "A_Als_Mantle_High",
+        "sequenceAssetPath": "ALS/Content/ALS/Animations/Actions/Mantle/A_Als_Mantle_High.uasset",
+        "SequenceLength": 2.6666667461395264,
+        "SequenceRateScale": 1.0,
+        "StartPos": 0.0,
+        "AnimStartTime": 0.0,
+        "AnimEndTime": 2.6666667461395264,
+        "AnimPlayRate": 1.0,
+        "LoopingCount": 1
+      },
+      "notifies": [
+        {
+          "NotifyName": "BMNotifyStateMovementAction",
+          "startTime": 0.0,
+          "duration": 2.066666603088379,
+          "endTime": 2.066666603088379,
+          "TriggerTimeOffset": -9.999999747378752E-05,
+          "EndTriggerTimeOffset": 0.0,
+          "MontageTickType": "Queued",
+          "TrackIndex": 0,
+          "stateClass": {
+            "name": "BMNotifyStateMovementAction_0",
+            "type": "AlsAnimNotifyState_SetLocomotionAction",
+            "properties": {
+              "LocomotionAction": {
+                "TagName": "Als.LocomotionAction.Mantling"
+              }
+            }
+          }
+        },
+        {
+          "NotifyName": "BMNotifyStateEarlyBlendOut",
+          "startTime": 2.133333444595337,
+          "duration": 0.5333333015441895,
+          "endTime": 2.6666667461395264,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": -9.999999747378752E-05,
+          "MontageTickType": "Queued",
+          "TrackIndex": 1,
+          "stateClass": {
+            "name": "BMNotifyStateEarlyBlendOut_0",
+            "type": "AlsAnimNotifyState_EarlyBlendOut",
+            "properties": {
+              "BlendOutDuration": 0.4
+            }
+          }
+        }
+      ],
+      "branchingPointMarkers": [
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": -9.999999747378752E-05,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": 2.0665667057037354,
+          "NotifyEventType": "End"
+        },
+        {
+          "NotifyIndex": 1,
+          "TriggerTime": 2.133333444595337,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 1,
+          "TriggerTime": 2.666566848754883,
+          "NotifyEventType": "End"
+        }
+      ]
+    },
+    "AM_Als_Mantle_Low": {
+      "asset": "AM_Als_Mantle_Low",
+      "assetPath": "ALS/Content/ALS/Animations/Actions/Mantle/AM_Als_Mantle_Low.uasset",
+      "SequenceLength": 1.5,
+      "RateScale": 1.0,
+      "SamplingFrameRate": {
+        "Numerator": 30,
+        "Denominator": 1
+      },
+      "BlendIn": {
+        "BlendTime": 0.20000000298023224,
+        "BlendOption": "HermiteCubic"
+      },
+      "BlendOut": {
+        "BlendTime": 0.20000000298023224,
+        "BlendOption": "HermiteCubic"
+      },
+      "BlendOutTriggerTime": 0.0,
+      "section": {
+        "SectionName": "Default",
+        "NextSectionName": "None",
+        "SlotIndex": 0,
+        "SegmentIndex": 0,
+        "LinkMethod": "Proportional",
+        "SegmentBeginTime": 0.0,
+        "SegmentLength": 1.5,
+        "LinkValue": 0.0
+      },
+      "slot": {
+        "SlotName": "PostLocomotion",
+        "sequence": "A_Als_Mantle_Low_Right",
+        "sequenceAssetPath": "ALS/Content/ALS/Animations/Actions/Mantle/A_Als_Mantle_Low_Right.uasset",
+        "SequenceLength": 1.5,
+        "SequenceRateScale": 1.0,
+        "StartPos": 0.0,
+        "AnimStartTime": 0.0,
+        "AnimEndTime": 1.5,
+        "AnimPlayRate": 1.0,
+        "LoopingCount": 1
+      },
+      "notifies": [
+        {
+          "NotifyName": "BMNotifyStateMovementAction",
+          "startTime": 0.0,
+          "duration": 0.9666666388511658,
+          "endTime": 0.9666666388511658,
+          "TriggerTimeOffset": -9.999999747378752E-05,
+          "EndTriggerTimeOffset": 0.0,
+          "MontageTickType": "Queued",
+          "TrackIndex": 0,
+          "stateClass": {
+            "name": "BMNotifyStateMovementAction_0",
+            "type": "AlsAnimNotifyState_SetLocomotionAction",
+            "properties": {
+              "LocomotionAction": {
+                "TagName": "Als.LocomotionAction.Mantling"
+              }
+            }
+          }
+        },
+        {
+          "NotifyName": "BMNotifyStateEarlyBlendOut",
+          "startTime": 1.0,
+          "duration": 0.5,
+          "endTime": 1.5,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": -9.999999747378752E-05,
+          "MontageTickType": "Queued",
+          "TrackIndex": 1,
+          "stateClass": {
+            "name": "BMNotifyStateEarlyBlendOut_0",
+            "type": "AlsAnimNotifyState_EarlyBlendOut",
+            "properties": {
+              "BlendOutDuration": 0.35
+            }
+          }
+        }
+      ],
+      "branchingPointMarkers": [
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": -9.999999747378752E-05,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": 0.9665666222572327,
+          "NotifyEventType": "End"
+        },
+        {
+          "NotifyIndex": 1,
+          "TriggerTime": 1.0,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 1,
+          "TriggerTime": 1.499899983406067,
+          "NotifyEventType": "End"
+        }
+      ]
+    },
+    "AM_Als_Mantle_Low_BothArms": {
+      "asset": "AM_Als_Mantle_Low_BothArms",
+      "assetPath": "ALS/Content/ALS/Animations/Actions/Mantle/AM_Als_Mantle_Low_BothArms.uasset",
+      "SequenceLength": 1.5,
+      "RateScale": 1.0,
+      "SamplingFrameRate": {
+        "Numerator": 30,
+        "Denominator": 1
+      },
+      "BlendIn": {
+        "BlendTime": 0.20000000298023224,
+        "BlendOption": "HermiteCubic"
+      },
+      "BlendOut": {
+        "BlendTime": 0.20000000298023224,
+        "BlendOption": "HermiteCubic"
+      },
+      "BlendOutTriggerTime": 0.0,
+      "section": {
+        "SectionName": "Default",
+        "NextSectionName": "None",
+        "SlotIndex": 0,
+        "SegmentIndex": 0,
+        "LinkMethod": "Proportional",
+        "SegmentBeginTime": 0.0,
+        "SegmentLength": 1.5,
+        "LinkValue": 0.0
+      },
+      "slot": {
+        "SlotName": "PostLocomotion",
+        "sequence": "A_Als_Mantle_Low_Right",
+        "sequenceAssetPath": "ALS/Content/ALS/Animations/Actions/Mantle/A_Als_Mantle_Low_Right.uasset",
+        "SequenceLength": 1.5,
+        "SequenceRateScale": 1.0,
+        "StartPos": 0.0,
+        "AnimStartTime": 0.0,
+        "AnimEndTime": 1.5,
+        "AnimPlayRate": 1.0,
+        "LoopingCount": 1
+      },
+      "notifies": [
+        {
+          "NotifyName": "BMNotifyStateMovementAction",
+          "startTime": 0.0,
+          "duration": 0.9666666388511658,
+          "endTime": 0.9666666388511658,
+          "TriggerTimeOffset": -9.999999747378752E-05,
+          "EndTriggerTimeOffset": 0.0,
+          "MontageTickType": "Queued",
+          "TrackIndex": 0,
+          "stateClass": {
+            "name": "BMNotifyStateMovementAction_0",
+            "type": "AlsAnimNotifyState_SetLocomotionAction",
+            "properties": {
+              "LocomotionAction": {
+                "TagName": "Als.LocomotionAction.Mantling"
+              }
+            }
+          }
+        },
+        {
+          "NotifyName": "BMNotifyStateEarlyBlendOut",
+          "startTime": 1.0,
+          "duration": 0.5,
+          "endTime": 1.5,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": -9.999999747378752E-05,
+          "MontageTickType": "Queued",
+          "TrackIndex": 1,
+          "stateClass": {
+            "name": "BMNotifyStateEarlyBlendOut_0",
+            "type": "AlsAnimNotifyState_EarlyBlendOut",
+            "properties": {
+              "BlendOutDuration": 0.35
+            }
+          }
+        }
+      ],
+      "branchingPointMarkers": [
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": -9.999999747378752E-05,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": 0.9665666222572327,
+          "NotifyEventType": "End"
+        },
+        {
+          "NotifyIndex": 1,
+          "TriggerTime": 1.0,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 1,
+          "TriggerTime": 1.499899983406067,
+          "NotifyEventType": "End"
+        }
+      ]
+    },
+    "AM_Als_Mantle_Low_Box": {
+      "asset": "AM_Als_Mantle_Low_Box",
+      "assetPath": "ALS/Content/ALS/Animations/Actions/Mantle/AM_Als_Mantle_Low_Box.uasset",
+      "SequenceLength": 1.5,
+      "RateScale": 1.0,
+      "SamplingFrameRate": {
+        "Numerator": 30,
+        "Denominator": 1
+      },
+      "BlendIn": {
+        "BlendTime": 0.20000000298023224,
+        "BlendOption": "HermiteCubic"
+      },
+      "BlendOut": {
+        "BlendTime": 0.20000000298023224,
+        "BlendOption": "HermiteCubic"
+      },
+      "BlendOutTriggerTime": 0.0,
+      "section": {
+        "SectionName": "Default",
+        "NextSectionName": "None",
+        "SlotIndex": 0,
+        "SegmentIndex": 0,
+        "LinkMethod": "Proportional",
+        "SegmentBeginTime": 0.0,
+        "SegmentLength": 1.5,
+        "LinkValue": 0.0
+      },
+      "slot": {
+        "SlotName": "PostLocomotion",
+        "sequence": "A_Als_Mantle_Low_Right",
+        "sequenceAssetPath": "ALS/Content/ALS/Animations/Actions/Mantle/A_Als_Mantle_Low_Right.uasset",
+        "SequenceLength": 1.5,
+        "SequenceRateScale": 1.0,
+        "StartPos": 0.0,
+        "AnimStartTime": 0.0,
+        "AnimEndTime": 1.5,
+        "AnimPlayRate": 1.0,
+        "LoopingCount": 1
+      },
+      "notifies": [
+        {
+          "NotifyName": "BMNotifyStateMovementAction",
+          "startTime": 0.0,
+          "duration": 0.9666666388511658,
+          "endTime": 0.9666666388511658,
+          "TriggerTimeOffset": -9.999999747378752E-05,
+          "EndTriggerTimeOffset": 0.0,
+          "MontageTickType": "Queued",
+          "TrackIndex": 0,
+          "stateClass": {
+            "name": "BMNotifyStateMovementAction_0",
+            "type": "AlsAnimNotifyState_SetLocomotionAction",
+            "properties": {
+              "LocomotionAction": {
+                "TagName": "Als.LocomotionAction.Mantling"
+              }
+            }
+          }
+        },
+        {
+          "NotifyName": "BMNotifyStateEarlyBlendOut",
+          "startTime": 1.0,
+          "duration": 0.5,
+          "endTime": 1.5,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": -9.999999747378752E-05,
+          "MontageTickType": "Queued",
+          "TrackIndex": 1,
+          "stateClass": {
+            "name": "BMNotifyStateEarlyBlendOut_0",
+            "type": "AlsAnimNotifyState_EarlyBlendOut",
+            "properties": {
+              "BlendOutDuration": 0.35
+            }
+          }
+        }
+      ],
+      "branchingPointMarkers": [
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": -9.999999747378752E-05,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": 0.9665666222572327,
+          "NotifyEventType": "End"
+        },
+        {
+          "NotifyIndex": 1,
+          "TriggerTime": 1.0,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 1,
+          "TriggerTime": 1.499899983406067,
+          "NotifyEventType": "End"
+        }
+      ]
+    },
+    "AM_Als_Mantle_Low_Left": {
+      "asset": "AM_Als_Mantle_Low_Left",
+      "assetPath": "ALS/Content/ALS/Animations/Actions/Mantle/AM_Als_Mantle_Low_Left.uasset",
+      "SequenceLength": 1.5,
+      "RateScale": 1.0,
+      "SamplingFrameRate": {
+        "Numerator": 30,
+        "Denominator": 1
+      },
+      "BlendIn": {
+        "BlendTime": 0.20000000298023224,
+        "BlendOption": "HermiteCubic"
+      },
+      "BlendOut": {
+        "BlendTime": 0.20000000298023224,
+        "BlendOption": "HermiteCubic"
+      },
+      "BlendOutTriggerTime": 0.0,
+      "section": {
+        "SectionName": "Default",
+        "NextSectionName": "None",
+        "SlotIndex": 0,
+        "SegmentIndex": 0,
+        "LinkMethod": "Proportional",
+        "SegmentBeginTime": 0.0,
+        "SegmentLength": 1.5,
+        "LinkValue": 0.0
+      },
+      "slot": {
+        "SlotName": "PostLocomotion",
+        "sequence": "A_Als_Mantle_Low_Left",
+        "sequenceAssetPath": "ALS/Content/ALS/Animations/Actions/Mantle/A_Als_Mantle_Low_Left.uasset",
+        "SequenceLength": 1.5,
+        "SequenceRateScale": 1.0,
+        "StartPos": 0.0,
+        "AnimStartTime": 0.0,
+        "AnimEndTime": 1.5,
+        "AnimPlayRate": 1.0,
+        "LoopingCount": 1
+      },
+      "notifies": [
+        {
+          "NotifyName": "BMNotifyStateMovementAction",
+          "startTime": 0.0,
+          "duration": 0.9666666388511658,
+          "endTime": 0.9666666388511658,
+          "TriggerTimeOffset": -9.999999747378752E-05,
+          "EndTriggerTimeOffset": 0.0,
+          "MontageTickType": "Queued",
+          "TrackIndex": 0,
+          "stateClass": {
+            "name": "BMNotifyStateMovementAction_0",
+            "type": "AlsAnimNotifyState_SetLocomotionAction",
+            "properties": {
+              "LocomotionAction": {
+                "TagName": "Als.LocomotionAction.Mantling"
+              }
+            }
+          }
+        },
+        {
+          "NotifyName": "BMNotifyStateEarlyBlendOut",
+          "startTime": 1.0,
+          "duration": 0.5,
+          "endTime": 1.5,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": -9.999999747378752E-05,
+          "MontageTickType": "Queued",
+          "TrackIndex": 1,
+          "stateClass": {
+            "name": "BMNotifyStateEarlyBlendOut_0",
+            "type": "AlsAnimNotifyState_EarlyBlendOut",
+            "properties": {
+              "BlendOutDuration": 0.35
+            }
+          }
+        }
+      ],
+      "branchingPointMarkers": [
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": -9.999999747378752E-05,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": 0.9665666222572327,
+          "NotifyEventType": "End"
+        },
+        {
+          "NotifyIndex": 1,
+          "TriggerTime": 1.0,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 1,
+          "TriggerTime": 1.499899983406067,
+          "NotifyEventType": "End"
+        }
+      ]
+    },
+    "AM_Als_Mantle_Low_Right": {
+      "asset": "AM_Als_Mantle_Low_Right",
+      "assetPath": "ALS/Content/ALS/Animations/Actions/Mantle/AM_Als_Mantle_Low_Right.uasset",
+      "SequenceLength": 1.5,
+      "RateScale": 1.0,
+      "SamplingFrameRate": {
+        "Numerator": 30,
+        "Denominator": 1
+      },
+      "BlendIn": {
+        "BlendTime": 0.20000000298023224,
+        "BlendOption": "HermiteCubic"
+      },
+      "BlendOut": {
+        "BlendTime": 0.20000000298023224,
+        "BlendOption": "HermiteCubic"
+      },
+      "BlendOutTriggerTime": 0.0,
+      "section": {
+        "SectionName": "Default",
+        "NextSectionName": "None",
+        "SlotIndex": 0,
+        "SegmentIndex": 0,
+        "LinkMethod": "Proportional",
+        "SegmentBeginTime": 0.0,
+        "SegmentLength": 1.5,
+        "LinkValue": 0.0
+      },
+      "slot": {
+        "SlotName": "PostLocomotion",
+        "sequence": "A_Als_Mantle_Low_Right",
+        "sequenceAssetPath": "ALS/Content/ALS/Animations/Actions/Mantle/A_Als_Mantle_Low_Right.uasset",
+        "SequenceLength": 1.5,
+        "SequenceRateScale": 1.0,
+        "StartPos": 0.0,
+        "AnimStartTime": 0.0,
+        "AnimEndTime": 1.5,
+        "AnimPlayRate": 1.0,
+        "LoopingCount": 1
+      },
+      "notifies": [
+        {
+          "NotifyName": "BMNotifyStateMovementAction",
+          "startTime": 0.0,
+          "duration": 0.9666666388511658,
+          "endTime": 0.9666666388511658,
+          "TriggerTimeOffset": -9.999999747378752E-05,
+          "EndTriggerTimeOffset": 0.0,
+          "MontageTickType": "Queued",
+          "TrackIndex": 0,
+          "stateClass": {
+            "name": "BMNotifyStateMovementAction_0",
+            "type": "AlsAnimNotifyState_SetLocomotionAction",
+            "properties": {
+              "LocomotionAction": {
+                "TagName": "Als.LocomotionAction.Mantling"
+              }
+            }
+          }
+        },
+        {
+          "NotifyName": "BMNotifyStateEarlyBlendOut",
+          "startTime": 1.0,
+          "duration": 0.5,
+          "endTime": 1.5,
+          "TriggerTimeOffset": 0.0,
+          "EndTriggerTimeOffset": -9.999999747378752E-05,
+          "MontageTickType": "Queued",
+          "TrackIndex": 1,
+          "stateClass": {
+            "name": "BMNotifyStateEarlyBlendOut_0",
+            "type": "AlsAnimNotifyState_EarlyBlendOut",
+            "properties": {
+              "BlendOutDuration": 0.35
+            }
+          }
+        }
+      ],
+      "branchingPointMarkers": [
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": -9.999999747378752E-05,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 0,
+          "TriggerTime": 0.9665666222572327,
+          "NotifyEventType": "End"
+        },
+        {
+          "NotifyIndex": 1,
+          "TriggerTime": 1.0,
+          "NotifyEventType": "Begin"
+        },
+        {
+          "NotifyIndex": 1,
+          "TriggerTime": 1.499899983406067,
+          "NotifyEventType": "End"
+        }
+      ]
+    }
+  },
+  "curves": {
+    "CF_Als_Mantle_High_HorizontalCorrection": {
+      "asset": "CF_Als_Mantle_High_HorizontalCorrection",
+      "assetPath": "ALS/Content/ALS/Data/Character/Mantle/CF_Als_Mantle_High_HorizontalCorrection.uasset",
+      "keys": [
+        {
+          "InterpMode": "RCIM_Cubic",
+          "TangentMode": "RCTM_User",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 0.0,
+          "Value": 0.0,
+          "ArriveTangent": 0.0,
+          "ArriveTangentWeight": 0.1666666716337204,
+          "LeaveTangent": 0.0,
+          "LeaveTangentWeight": 0.0
+        },
+        {
+          "InterpMode": "RCIM_Linear",
+          "TangentMode": "RCTM_Auto",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 0.30000001192092896,
+          "Value": 1.0,
+          "ArriveTangent": 0.0,
+          "ArriveTangentWeight": 0.0,
+          "LeaveTangent": 0.0,
+          "LeaveTangentWeight": 0.0
+        }
+      ]
+    },
+    "CF_Als_Mantle_High_VerticalCorrection": {
+      "asset": "CF_Als_Mantle_High_VerticalCorrection",
+      "assetPath": "ALS/Content/ALS/Data/Character/Mantle/CF_Als_Mantle_High_VerticalCorrection.uasset",
+      "keys": [
+        {
+          "InterpMode": "RCIM_Cubic",
+          "TangentMode": "RCTM_User",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 0.3330000042915344,
+          "Value": 0.0,
+          "ArriveTangent": 0.0,
+          "ArriveTangentWeight": 0.0,
+          "LeaveTangent": 0.0,
+          "LeaveTangentWeight": 0.0
+        },
+        {
+          "InterpMode": "RCIM_Linear",
+          "TangentMode": "RCTM_Auto",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 0.699999988079071,
+          "Value": 1.0,
+          "ArriveTangent": 0.0,
+          "ArriveTangentWeight": 0.0,
+          "LeaveTangent": 0.0,
+          "LeaveTangentWeight": 0.0
+        }
+      ]
+    },
+    "CF_Als_Mantle_Low_HorizontalCorrection": {
+      "asset": "CF_Als_Mantle_Low_HorizontalCorrection",
+      "assetPath": "ALS/Content/ALS/Data/Character/Mantle/CF_Als_Mantle_Low_HorizontalCorrection.uasset",
+      "keys": [
+        {
+          "InterpMode": "RCIM_Cubic",
+          "TangentMode": "RCTM_User",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 0.10000000149011612,
+          "Value": 0.0,
+          "ArriveTangent": 0.0,
+          "ArriveTangentWeight": 0.1666666716337204,
+          "LeaveTangent": 0.0,
+          "LeaveTangentWeight": 0.0
+        },
+        {
+          "InterpMode": "RCIM_Linear",
+          "TangentMode": "RCTM_Auto",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 0.4000000059604645,
+          "Value": 1.0,
+          "ArriveTangent": 0.0,
+          "ArriveTangentWeight": 0.0,
+          "LeaveTangent": 0.0,
+          "LeaveTangentWeight": 0.0
+        }
+      ]
+    },
+    "CF_Als_Mantle_Low_VerticalCorrection": {
+      "asset": "CF_Als_Mantle_Low_VerticalCorrection",
+      "assetPath": "ALS/Content/ALS/Data/Character/Mantle/CF_Als_Mantle_Low_VerticalCorrection.uasset",
+      "keys": [
+        {
+          "InterpMode": "RCIM_Cubic",
+          "TangentMode": "RCTM_User",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 0.30000001192092896,
+          "Value": 0.0,
+          "ArriveTangent": 0.0,
+          "ArriveTangentWeight": 0.0,
+          "LeaveTangent": 0.0,
+          "LeaveTangentWeight": 0.0
+        },
+        {
+          "InterpMode": "RCIM_Linear",
+          "TangentMode": "RCTM_Auto",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 0.6000000238418579,
+          "Value": 1.0,
+          "ArriveTangent": 0.0,
+          "ArriveTangentWeight": 0.0,
+          "LeaveTangent": 0.0,
+          "LeaveTangentWeight": 0.0
+        }
+      ]
+    }
+  },
+  "validations": [
+    {
+      "name": "mantling-content-inventory",
+      "pass": true,
+      "details": {
+        "settings": [
+          "MS_Als_High",
+          "MS_Als_Low",
+          "MS_Als_Low_BothHands",
+          "MS_Als_Low_Box",
+          "MS_Als_Low_Left",
+          "MS_Als_Low_Right"
+        ],
+        "curves": [
+          "CF_Als_Mantle_High_HorizontalCorrection",
+          "CF_Als_Mantle_High_VerticalCorrection",
+          "CF_Als_Mantle_Low_HorizontalCorrection",
+          "CF_Als_Mantle_Low_VerticalCorrection"
+        ]
+      }
+    },
+    {
+      "name": "CS_Als_Default-general-mantling",
+      "pass": true,
+      "details": {
+        "bAllowMantling": true,
+        "TraceAngleThreshold": 110.0,
+        "MaxReachAngle": 50.0,
+        "SlopeAngleThreshold": 35.0,
+        "SlopeAngleThresholdCos": 0.8191520442889918,
+        "TargetPrimitiveSpeedThreshold": 10.0,
+        "MantlingHighHeightThreshold": 125.0,
+        "GroundedTrace": {
+          "LedgeHeight": [
+            50.0,
+            225.0
+          ],
+          "ReachDistance": 75.0,
+          "TargetLocationOffset": 15.0,
+          "StartLocationOffset": 55.0,
+          "bDrawFailedTraces": true
+        },
+        "InAirTrace": {
+          "LedgeHeight": [
+            50.0,
+            150.0
+          ],
+          "ReachDistance": 70.0,
+          "TargetLocationOffset": 15.0,
+          "StartLocationOffset": 55.0,
+          "bDrawFailedTraces": false
+        },
+        "MantlingTraceChannel": "Visibility",
+        "MantlingTraceResponseChannels": [
+          "WorldStatic",
+          "WorldDynamic",
+          "Destructible"
+        ],
+        "BlendOutDuration": 0.3,
+        "bStartRagdollingOnTargetPrimitiveDestruction": true,
+        "asset": "CS_Als_Default",
+        "nativeDistanceUnit": "cm",
+        "nativeSpeedUnit": "cm/s",
+        "nativeAngleUnit": "deg"
+      }
+    },
+    {
+      "name": "B_Als_Character-mantling-selection",
+      "pass": true,
+      "details": {
+        "asset": "B_Als_Character",
+        "assetPath": "ALS/Content/ALS/Character/B_Als_Character.uasset",
+        "High": "MS_Als_High",
+        "Low": {
+          "Default": "MS_Als_Low",
+          "Als.OverlayMode.Injured": "MS_Als_Low_Left",
+          "Als.OverlayMode.HandsTied": "MS_Als_Low_BothHands",
+          "Als.OverlayMode.Rifle": "MS_Als_Low_Right",
+          "Als.OverlayMode.PistolOneHanded": "MS_Als_Low_Right",
+          "Als.OverlayMode.PistolTwoHanded": "MS_Als_Low_Right",
+          "Als.OverlayMode.Bow": "MS_Als_Low_Left",
+          "Als.OverlayMode.Torch": "MS_Als_Low_Left",
+          "Als.OverlayMode.Binoculars": "MS_Als_Low_Right",
+          "Als.OverlayMode.Box": "MS_Als_Low_Box",
+          "Als.OverlayMode.Barrel": "MS_Als_Low_Left"
+        },
+        "InAir": "MS_Als_High",
+        "evidence": {
+          "enumSwitchNode": "K2Node_SwitchEnum_0",
+          "lowOverlaySwitchNode": "GameplayTagsK2Node_SwitchGameplayTag_0",
+          "lowResultNodes": {
+            "Default": "K2Node_FunctionResult_5",
+            "Als.OverlayMode.Injured": "K2Node_FunctionResult_4",
+            "Als.OverlayMode.HandsTied": "K2Node_FunctionResult_6",
+            "Als.OverlayMode.Rifle": "K2Node_FunctionResult_0",
+            "Als.OverlayMode.PistolOneHanded": "K2Node_FunctionResult_0",
+            "Als.OverlayMode.PistolTwoHanded": "K2Node_FunctionResult_0",
+            "Als.OverlayMode.Bow": "K2Node_FunctionResult_4",
+            "Als.OverlayMode.Torch": "K2Node_FunctionResult_4",
+            "Als.OverlayMode.Binoculars": "K2Node_FunctionResult_0",
+            "Als.OverlayMode.Box": "K2Node_FunctionResult_3",
+            "Als.OverlayMode.Barrel": "K2Node_FunctionResult_4"
+          }
+        }
+      }
+    },
+    {
+      "name": "mantling-settings-values",
+      "pass": true,
+      "details": {
+        "MS_Als_High": {
+          "asset": "MS_Als_High",
+          "nativeDistanceUnit": "cm",
+          "Montage": "AM_Als_Mantle_High",
+          "bAutoCalculateStartTime": false,
+          "StartTimeReferenceHeight": [
+            125.0,
+            200.0
+          ],
+          "StartTime": [
+            0.6000000238418579,
+            0.0
+          ],
+          "HorizontalCorrectionCurve": "CF_Als_Mantle_High_HorizontalCorrection",
+          "VerticalCorrectionCurve": "CF_Als_Mantle_High_VerticalCorrection"
+        },
+        "MS_Als_Low": {
+          "asset": "MS_Als_Low",
+          "nativeDistanceUnit": "cm",
+          "Montage": "AM_Als_Mantle_Low",
+          "bAutoCalculateStartTime": false,
+          "StartTimeReferenceHeight": [
+            50.0,
+            100.0
+          ],
+          "StartTime": [
+            0.5,
+            0.0
+          ],
+          "HorizontalCorrectionCurve": "CF_Als_Mantle_Low_HorizontalCorrection",
+          "VerticalCorrectionCurve": "CF_Als_Mantle_Low_VerticalCorrection"
+        },
+        "MS_Als_Low_BothHands": {
+          "asset": "MS_Als_Low_BothHands",
+          "nativeDistanceUnit": "cm",
+          "Montage": "AM_Als_Mantle_Low_BothArms",
+          "bAutoCalculateStartTime": false,
+          "StartTimeReferenceHeight": [
+            50.0,
+            100.0
+          ],
+          "StartTime": [
+            0.5,
+            0.0
+          ],
+          "HorizontalCorrectionCurve": "CF_Als_Mantle_Low_HorizontalCorrection",
+          "VerticalCorrectionCurve": "CF_Als_Mantle_Low_VerticalCorrection"
+        },
+        "MS_Als_Low_Box": {
+          "asset": "MS_Als_Low_Box",
+          "nativeDistanceUnit": "cm",
+          "Montage": "AM_Als_Mantle_Low_Box",
+          "bAutoCalculateStartTime": false,
+          "StartTimeReferenceHeight": [
+            50.0,
+            100.0
+          ],
+          "StartTime": [
+            0.5,
+            0.0
+          ],
+          "HorizontalCorrectionCurve": "CF_Als_Mantle_Low_HorizontalCorrection",
+          "VerticalCorrectionCurve": "CF_Als_Mantle_Low_VerticalCorrection"
+        },
+        "MS_Als_Low_Left": {
+          "asset": "MS_Als_Low_Left",
+          "nativeDistanceUnit": "cm",
+          "Montage": "AM_Als_Mantle_Low_Left",
+          "bAutoCalculateStartTime": false,
+          "StartTimeReferenceHeight": [
+            50.0,
+            100.0
+          ],
+          "StartTime": [
+            0.5,
+            0.0
+          ],
+          "HorizontalCorrectionCurve": "CF_Als_Mantle_Low_HorizontalCorrection",
+          "VerticalCorrectionCurve": "CF_Als_Mantle_Low_VerticalCorrection"
+        },
+        "MS_Als_Low_Right": {
+          "asset": "MS_Als_Low_Right",
+          "nativeDistanceUnit": "cm",
+          "Montage": "AM_Als_Mantle_Low_Right",
+          "bAutoCalculateStartTime": false,
+          "StartTimeReferenceHeight": [
+            50.0,
+            100.0
+          ],
+          "StartTime": [
+            0.5,
+            0.0
+          ],
+          "HorizontalCorrectionCurve": "CF_Als_Mantle_Low_HorizontalCorrection",
+          "VerticalCorrectionCurve": "CF_Als_Mantle_Low_VerticalCorrection"
+        }
+      }
+    },
+    {
+      "name": "mantling-montage-timing",
+      "pass": true,
+      "details": {
+        "montages": {
+          "AM_Als_Mantle_High": {
+            "asset": "AM_Als_Mantle_High",
+            "assetPath": "ALS/Content/ALS/Animations/Actions/Mantle/AM_Als_Mantle_High.uasset",
+            "SequenceLength": 2.6666667461395264,
+            "RateScale": 1.2000000476837158,
+            "SamplingFrameRate": {
+              "Numerator": 30,
+              "Denominator": 1
+            },
+            "BlendIn": {
+              "BlendTime": 0.20000000298023224,
+              "BlendOption": "HermiteCubic"
+            },
+            "BlendOut": {
+              "BlendTime": 0.20000000298023224,
+              "BlendOption": "Cubic"
+            },
+            "BlendOutTriggerTime": 0.0,
+            "section": {
+              "SectionName": "Default",
+              "NextSectionName": "None",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "LinkMethod": "Absolute",
+              "SegmentBeginTime": 0.0,
+              "SegmentLength": 2.6666667461395264,
+              "LinkValue": 0.0
+            },
+            "slot": {
+              "SlotName": "PostLocomotion",
+              "sequence": "A_Als_Mantle_High",
+              "sequenceAssetPath": "ALS/Content/ALS/Animations/Actions/Mantle/A_Als_Mantle_High.uasset",
+              "SequenceLength": 2.6666667461395264,
+              "SequenceRateScale": 1.0,
+              "StartPos": 0.0,
+              "AnimStartTime": 0.0,
+              "AnimEndTime": 2.6666667461395264,
+              "AnimPlayRate": 1.0,
+              "LoopingCount": 1
+            },
+            "notifies": [
+              {
+                "NotifyName": "BMNotifyStateMovementAction",
+                "startTime": 0.0,
+                "duration": 2.066666603088379,
+                "endTime": 2.066666603088379,
+                "TriggerTimeOffset": -9.999999747378752E-05,
+                "EndTriggerTimeOffset": 0.0,
+                "MontageTickType": "Queued",
+                "TrackIndex": 0,
+                "stateClass": {
+                  "name": "BMNotifyStateMovementAction_0",
+                  "type": "AlsAnimNotifyState_SetLocomotionAction",
+                  "properties": {
+                    "LocomotionAction": {
+                      "TagName": "Als.LocomotionAction.Mantling"
+                    }
+                  }
+                }
+              },
+              {
+                "NotifyName": "BMNotifyStateEarlyBlendOut",
+                "startTime": 2.133333444595337,
+                "duration": 0.5333333015441895,
+                "endTime": 2.6666667461395264,
+                "TriggerTimeOffset": 0.0,
+                "EndTriggerTimeOffset": -9.999999747378752E-05,
+                "MontageTickType": "Queued",
+                "TrackIndex": 1,
+                "stateClass": {
+                  "name": "BMNotifyStateEarlyBlendOut_0",
+                  "type": "AlsAnimNotifyState_EarlyBlendOut",
+                  "properties": {
+                    "BlendOutDuration": 0.4
+                  }
+                }
+              }
+            ],
+            "branchingPointMarkers": [
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": -9.999999747378752E-05,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 2.0665667057037354,
+                "NotifyEventType": "End"
+              },
+              {
+                "NotifyIndex": 1,
+                "TriggerTime": 2.133333444595337,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 1,
+                "TriggerTime": 2.666566848754883,
+                "NotifyEventType": "End"
+              }
+            ]
+          },
+          "AM_Als_Mantle_Low": {
+            "asset": "AM_Als_Mantle_Low",
+            "assetPath": "ALS/Content/ALS/Animations/Actions/Mantle/AM_Als_Mantle_Low.uasset",
+            "SequenceLength": 1.5,
+            "RateScale": 1.0,
+            "SamplingFrameRate": {
+              "Numerator": 30,
+              "Denominator": 1
+            },
+            "BlendIn": {
+              "BlendTime": 0.20000000298023224,
+              "BlendOption": "HermiteCubic"
+            },
+            "BlendOut": {
+              "BlendTime": 0.20000000298023224,
+              "BlendOption": "HermiteCubic"
+            },
+            "BlendOutTriggerTime": 0.0,
+            "section": {
+              "SectionName": "Default",
+              "NextSectionName": "None",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "LinkMethod": "Proportional",
+              "SegmentBeginTime": 0.0,
+              "SegmentLength": 1.5,
+              "LinkValue": 0.0
+            },
+            "slot": {
+              "SlotName": "PostLocomotion",
+              "sequence": "A_Als_Mantle_Low_Right",
+              "sequenceAssetPath": "ALS/Content/ALS/Animations/Actions/Mantle/A_Als_Mantle_Low_Right.uasset",
+              "SequenceLength": 1.5,
+              "SequenceRateScale": 1.0,
+              "StartPos": 0.0,
+              "AnimStartTime": 0.0,
+              "AnimEndTime": 1.5,
+              "AnimPlayRate": 1.0,
+              "LoopingCount": 1
+            },
+            "notifies": [
+              {
+                "NotifyName": "BMNotifyStateMovementAction",
+                "startTime": 0.0,
+                "duration": 0.9666666388511658,
+                "endTime": 0.9666666388511658,
+                "TriggerTimeOffset": -9.999999747378752E-05,
+                "EndTriggerTimeOffset": 0.0,
+                "MontageTickType": "Queued",
+                "TrackIndex": 0,
+                "stateClass": {
+                  "name": "BMNotifyStateMovementAction_0",
+                  "type": "AlsAnimNotifyState_SetLocomotionAction",
+                  "properties": {
+                    "LocomotionAction": {
+                      "TagName": "Als.LocomotionAction.Mantling"
+                    }
+                  }
+                }
+              },
+              {
+                "NotifyName": "BMNotifyStateEarlyBlendOut",
+                "startTime": 1.0,
+                "duration": 0.5,
+                "endTime": 1.5,
+                "TriggerTimeOffset": 0.0,
+                "EndTriggerTimeOffset": -9.999999747378752E-05,
+                "MontageTickType": "Queued",
+                "TrackIndex": 1,
+                "stateClass": {
+                  "name": "BMNotifyStateEarlyBlendOut_0",
+                  "type": "AlsAnimNotifyState_EarlyBlendOut",
+                  "properties": {
+                    "BlendOutDuration": 0.35
+                  }
+                }
+              }
+            ],
+            "branchingPointMarkers": [
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": -9.999999747378752E-05,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 0.9665666222572327,
+                "NotifyEventType": "End"
+              },
+              {
+                "NotifyIndex": 1,
+                "TriggerTime": 1.0,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 1,
+                "TriggerTime": 1.499899983406067,
+                "NotifyEventType": "End"
+              }
+            ]
+          },
+          "AM_Als_Mantle_Low_BothArms": {
+            "asset": "AM_Als_Mantle_Low_BothArms",
+            "assetPath": "ALS/Content/ALS/Animations/Actions/Mantle/AM_Als_Mantle_Low_BothArms.uasset",
+            "SequenceLength": 1.5,
+            "RateScale": 1.0,
+            "SamplingFrameRate": {
+              "Numerator": 30,
+              "Denominator": 1
+            },
+            "BlendIn": {
+              "BlendTime": 0.20000000298023224,
+              "BlendOption": "HermiteCubic"
+            },
+            "BlendOut": {
+              "BlendTime": 0.20000000298023224,
+              "BlendOption": "HermiteCubic"
+            },
+            "BlendOutTriggerTime": 0.0,
+            "section": {
+              "SectionName": "Default",
+              "NextSectionName": "None",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "LinkMethod": "Proportional",
+              "SegmentBeginTime": 0.0,
+              "SegmentLength": 1.5,
+              "LinkValue": 0.0
+            },
+            "slot": {
+              "SlotName": "PostLocomotion",
+              "sequence": "A_Als_Mantle_Low_Right",
+              "sequenceAssetPath": "ALS/Content/ALS/Animations/Actions/Mantle/A_Als_Mantle_Low_Right.uasset",
+              "SequenceLength": 1.5,
+              "SequenceRateScale": 1.0,
+              "StartPos": 0.0,
+              "AnimStartTime": 0.0,
+              "AnimEndTime": 1.5,
+              "AnimPlayRate": 1.0,
+              "LoopingCount": 1
+            },
+            "notifies": [
+              {
+                "NotifyName": "BMNotifyStateMovementAction",
+                "startTime": 0.0,
+                "duration": 0.9666666388511658,
+                "endTime": 0.9666666388511658,
+                "TriggerTimeOffset": -9.999999747378752E-05,
+                "EndTriggerTimeOffset": 0.0,
+                "MontageTickType": "Queued",
+                "TrackIndex": 0,
+                "stateClass": {
+                  "name": "BMNotifyStateMovementAction_0",
+                  "type": "AlsAnimNotifyState_SetLocomotionAction",
+                  "properties": {
+                    "LocomotionAction": {
+                      "TagName": "Als.LocomotionAction.Mantling"
+                    }
+                  }
+                }
+              },
+              {
+                "NotifyName": "BMNotifyStateEarlyBlendOut",
+                "startTime": 1.0,
+                "duration": 0.5,
+                "endTime": 1.5,
+                "TriggerTimeOffset": 0.0,
+                "EndTriggerTimeOffset": -9.999999747378752E-05,
+                "MontageTickType": "Queued",
+                "TrackIndex": 1,
+                "stateClass": {
+                  "name": "BMNotifyStateEarlyBlendOut_0",
+                  "type": "AlsAnimNotifyState_EarlyBlendOut",
+                  "properties": {
+                    "BlendOutDuration": 0.35
+                  }
+                }
+              }
+            ],
+            "branchingPointMarkers": [
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": -9.999999747378752E-05,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 0.9665666222572327,
+                "NotifyEventType": "End"
+              },
+              {
+                "NotifyIndex": 1,
+                "TriggerTime": 1.0,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 1,
+                "TriggerTime": 1.499899983406067,
+                "NotifyEventType": "End"
+              }
+            ]
+          },
+          "AM_Als_Mantle_Low_Box": {
+            "asset": "AM_Als_Mantle_Low_Box",
+            "assetPath": "ALS/Content/ALS/Animations/Actions/Mantle/AM_Als_Mantle_Low_Box.uasset",
+            "SequenceLength": 1.5,
+            "RateScale": 1.0,
+            "SamplingFrameRate": {
+              "Numerator": 30,
+              "Denominator": 1
+            },
+            "BlendIn": {
+              "BlendTime": 0.20000000298023224,
+              "BlendOption": "HermiteCubic"
+            },
+            "BlendOut": {
+              "BlendTime": 0.20000000298023224,
+              "BlendOption": "HermiteCubic"
+            },
+            "BlendOutTriggerTime": 0.0,
+            "section": {
+              "SectionName": "Default",
+              "NextSectionName": "None",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "LinkMethod": "Proportional",
+              "SegmentBeginTime": 0.0,
+              "SegmentLength": 1.5,
+              "LinkValue": 0.0
+            },
+            "slot": {
+              "SlotName": "PostLocomotion",
+              "sequence": "A_Als_Mantle_Low_Right",
+              "sequenceAssetPath": "ALS/Content/ALS/Animations/Actions/Mantle/A_Als_Mantle_Low_Right.uasset",
+              "SequenceLength": 1.5,
+              "SequenceRateScale": 1.0,
+              "StartPos": 0.0,
+              "AnimStartTime": 0.0,
+              "AnimEndTime": 1.5,
+              "AnimPlayRate": 1.0,
+              "LoopingCount": 1
+            },
+            "notifies": [
+              {
+                "NotifyName": "BMNotifyStateMovementAction",
+                "startTime": 0.0,
+                "duration": 0.9666666388511658,
+                "endTime": 0.9666666388511658,
+                "TriggerTimeOffset": -9.999999747378752E-05,
+                "EndTriggerTimeOffset": 0.0,
+                "MontageTickType": "Queued",
+                "TrackIndex": 0,
+                "stateClass": {
+                  "name": "BMNotifyStateMovementAction_0",
+                  "type": "AlsAnimNotifyState_SetLocomotionAction",
+                  "properties": {
+                    "LocomotionAction": {
+                      "TagName": "Als.LocomotionAction.Mantling"
+                    }
+                  }
+                }
+              },
+              {
+                "NotifyName": "BMNotifyStateEarlyBlendOut",
+                "startTime": 1.0,
+                "duration": 0.5,
+                "endTime": 1.5,
+                "TriggerTimeOffset": 0.0,
+                "EndTriggerTimeOffset": -9.999999747378752E-05,
+                "MontageTickType": "Queued",
+                "TrackIndex": 1,
+                "stateClass": {
+                  "name": "BMNotifyStateEarlyBlendOut_0",
+                  "type": "AlsAnimNotifyState_EarlyBlendOut",
+                  "properties": {
+                    "BlendOutDuration": 0.35
+                  }
+                }
+              }
+            ],
+            "branchingPointMarkers": [
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": -9.999999747378752E-05,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 0.9665666222572327,
+                "NotifyEventType": "End"
+              },
+              {
+                "NotifyIndex": 1,
+                "TriggerTime": 1.0,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 1,
+                "TriggerTime": 1.499899983406067,
+                "NotifyEventType": "End"
+              }
+            ]
+          },
+          "AM_Als_Mantle_Low_Left": {
+            "asset": "AM_Als_Mantle_Low_Left",
+            "assetPath": "ALS/Content/ALS/Animations/Actions/Mantle/AM_Als_Mantle_Low_Left.uasset",
+            "SequenceLength": 1.5,
+            "RateScale": 1.0,
+            "SamplingFrameRate": {
+              "Numerator": 30,
+              "Denominator": 1
+            },
+            "BlendIn": {
+              "BlendTime": 0.20000000298023224,
+              "BlendOption": "HermiteCubic"
+            },
+            "BlendOut": {
+              "BlendTime": 0.20000000298023224,
+              "BlendOption": "HermiteCubic"
+            },
+            "BlendOutTriggerTime": 0.0,
+            "section": {
+              "SectionName": "Default",
+              "NextSectionName": "None",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "LinkMethod": "Proportional",
+              "SegmentBeginTime": 0.0,
+              "SegmentLength": 1.5,
+              "LinkValue": 0.0
+            },
+            "slot": {
+              "SlotName": "PostLocomotion",
+              "sequence": "A_Als_Mantle_Low_Left",
+              "sequenceAssetPath": "ALS/Content/ALS/Animations/Actions/Mantle/A_Als_Mantle_Low_Left.uasset",
+              "SequenceLength": 1.5,
+              "SequenceRateScale": 1.0,
+              "StartPos": 0.0,
+              "AnimStartTime": 0.0,
+              "AnimEndTime": 1.5,
+              "AnimPlayRate": 1.0,
+              "LoopingCount": 1
+            },
+            "notifies": [
+              {
+                "NotifyName": "BMNotifyStateMovementAction",
+                "startTime": 0.0,
+                "duration": 0.9666666388511658,
+                "endTime": 0.9666666388511658,
+                "TriggerTimeOffset": -9.999999747378752E-05,
+                "EndTriggerTimeOffset": 0.0,
+                "MontageTickType": "Queued",
+                "TrackIndex": 0,
+                "stateClass": {
+                  "name": "BMNotifyStateMovementAction_0",
+                  "type": "AlsAnimNotifyState_SetLocomotionAction",
+                  "properties": {
+                    "LocomotionAction": {
+                      "TagName": "Als.LocomotionAction.Mantling"
+                    }
+                  }
+                }
+              },
+              {
+                "NotifyName": "BMNotifyStateEarlyBlendOut",
+                "startTime": 1.0,
+                "duration": 0.5,
+                "endTime": 1.5,
+                "TriggerTimeOffset": 0.0,
+                "EndTriggerTimeOffset": -9.999999747378752E-05,
+                "MontageTickType": "Queued",
+                "TrackIndex": 1,
+                "stateClass": {
+                  "name": "BMNotifyStateEarlyBlendOut_0",
+                  "type": "AlsAnimNotifyState_EarlyBlendOut",
+                  "properties": {
+                    "BlendOutDuration": 0.35
+                  }
+                }
+              }
+            ],
+            "branchingPointMarkers": [
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": -9.999999747378752E-05,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 0.9665666222572327,
+                "NotifyEventType": "End"
+              },
+              {
+                "NotifyIndex": 1,
+                "TriggerTime": 1.0,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 1,
+                "TriggerTime": 1.499899983406067,
+                "NotifyEventType": "End"
+              }
+            ]
+          },
+          "AM_Als_Mantle_Low_Right": {
+            "asset": "AM_Als_Mantle_Low_Right",
+            "assetPath": "ALS/Content/ALS/Animations/Actions/Mantle/AM_Als_Mantle_Low_Right.uasset",
+            "SequenceLength": 1.5,
+            "RateScale": 1.0,
+            "SamplingFrameRate": {
+              "Numerator": 30,
+              "Denominator": 1
+            },
+            "BlendIn": {
+              "BlendTime": 0.20000000298023224,
+              "BlendOption": "HermiteCubic"
+            },
+            "BlendOut": {
+              "BlendTime": 0.20000000298023224,
+              "BlendOption": "HermiteCubic"
+            },
+            "BlendOutTriggerTime": 0.0,
+            "section": {
+              "SectionName": "Default",
+              "NextSectionName": "None",
+              "SlotIndex": 0,
+              "SegmentIndex": 0,
+              "LinkMethod": "Proportional",
+              "SegmentBeginTime": 0.0,
+              "SegmentLength": 1.5,
+              "LinkValue": 0.0
+            },
+            "slot": {
+              "SlotName": "PostLocomotion",
+              "sequence": "A_Als_Mantle_Low_Right",
+              "sequenceAssetPath": "ALS/Content/ALS/Animations/Actions/Mantle/A_Als_Mantle_Low_Right.uasset",
+              "SequenceLength": 1.5,
+              "SequenceRateScale": 1.0,
+              "StartPos": 0.0,
+              "AnimStartTime": 0.0,
+              "AnimEndTime": 1.5,
+              "AnimPlayRate": 1.0,
+              "LoopingCount": 1
+            },
+            "notifies": [
+              {
+                "NotifyName": "BMNotifyStateMovementAction",
+                "startTime": 0.0,
+                "duration": 0.9666666388511658,
+                "endTime": 0.9666666388511658,
+                "TriggerTimeOffset": -9.999999747378752E-05,
+                "EndTriggerTimeOffset": 0.0,
+                "MontageTickType": "Queued",
+                "TrackIndex": 0,
+                "stateClass": {
+                  "name": "BMNotifyStateMovementAction_0",
+                  "type": "AlsAnimNotifyState_SetLocomotionAction",
+                  "properties": {
+                    "LocomotionAction": {
+                      "TagName": "Als.LocomotionAction.Mantling"
+                    }
+                  }
+                }
+              },
+              {
+                "NotifyName": "BMNotifyStateEarlyBlendOut",
+                "startTime": 1.0,
+                "duration": 0.5,
+                "endTime": 1.5,
+                "TriggerTimeOffset": 0.0,
+                "EndTriggerTimeOffset": -9.999999747378752E-05,
+                "MontageTickType": "Queued",
+                "TrackIndex": 1,
+                "stateClass": {
+                  "name": "BMNotifyStateEarlyBlendOut_0",
+                  "type": "AlsAnimNotifyState_EarlyBlendOut",
+                  "properties": {
+                    "BlendOutDuration": 0.35
+                  }
+                }
+              }
+            ],
+            "branchingPointMarkers": [
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": -9.999999747378752E-05,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 0,
+                "TriggerTime": 0.9665666222572327,
+                "NotifyEventType": "End"
+              },
+              {
+                "NotifyIndex": 1,
+                "TriggerTime": 1.0,
+                "NotifyEventType": "Begin"
+              },
+              {
+                "NotifyIndex": 1,
+                "TriggerTime": 1.499899983406067,
+                "NotifyEventType": "End"
+              }
+            ]
+          }
+        },
+        "errors": []
+      }
+    },
+    {
+      "name": "mantling-correction-curves",
+      "pass": true,
+      "details": {
+        "curves": {
+          "CF_Als_Mantle_High_HorizontalCorrection": {
+            "asset": "CF_Als_Mantle_High_HorizontalCorrection",
+            "assetPath": "ALS/Content/ALS/Data/Character/Mantle/CF_Als_Mantle_High_HorizontalCorrection.uasset",
+            "keys": [
+              {
+                "InterpMode": "RCIM_Cubic",
+                "TangentMode": "RCTM_User",
+                "TangentWeightMode": "RCTWM_WeightedNone",
+                "Time": 0.0,
+                "Value": 0.0,
+                "ArriveTangent": 0.0,
+                "ArriveTangentWeight": 0.1666666716337204,
+                "LeaveTangent": 0.0,
+                "LeaveTangentWeight": 0.0
+              },
+              {
+                "InterpMode": "RCIM_Linear",
+                "TangentMode": "RCTM_Auto",
+                "TangentWeightMode": "RCTWM_WeightedNone",
+                "Time": 0.30000001192092896,
+                "Value": 1.0,
+                "ArriveTangent": 0.0,
+                "ArriveTangentWeight": 0.0,
+                "LeaveTangent": 0.0,
+                "LeaveTangentWeight": 0.0
+              }
+            ]
+          },
+          "CF_Als_Mantle_High_VerticalCorrection": {
+            "asset": "CF_Als_Mantle_High_VerticalCorrection",
+            "assetPath": "ALS/Content/ALS/Data/Character/Mantle/CF_Als_Mantle_High_VerticalCorrection.uasset",
+            "keys": [
+              {
+                "InterpMode": "RCIM_Cubic",
+                "TangentMode": "RCTM_User",
+                "TangentWeightMode": "RCTWM_WeightedNone",
+                "Time": 0.3330000042915344,
+                "Value": 0.0,
+                "ArriveTangent": 0.0,
+                "ArriveTangentWeight": 0.0,
+                "LeaveTangent": 0.0,
+                "LeaveTangentWeight": 0.0
+              },
+              {
+                "InterpMode": "RCIM_Linear",
+                "TangentMode": "RCTM_Auto",
+                "TangentWeightMode": "RCTWM_WeightedNone",
+                "Time": 0.699999988079071,
+                "Value": 1.0,
+                "ArriveTangent": 0.0,
+                "ArriveTangentWeight": 0.0,
+                "LeaveTangent": 0.0,
+                "LeaveTangentWeight": 0.0
+              }
+            ]
+          },
+          "CF_Als_Mantle_Low_HorizontalCorrection": {
+            "asset": "CF_Als_Mantle_Low_HorizontalCorrection",
+            "assetPath": "ALS/Content/ALS/Data/Character/Mantle/CF_Als_Mantle_Low_HorizontalCorrection.uasset",
+            "keys": [
+              {
+                "InterpMode": "RCIM_Cubic",
+                "TangentMode": "RCTM_User",
+                "TangentWeightMode": "RCTWM_WeightedNone",
+                "Time": 0.10000000149011612,
+                "Value": 0.0,
+                "ArriveTangent": 0.0,
+                "ArriveTangentWeight": 0.1666666716337204,
+                "LeaveTangent": 0.0,
+                "LeaveTangentWeight": 0.0
+              },
+              {
+                "InterpMode": "RCIM_Linear",
+                "TangentMode": "RCTM_Auto",
+                "TangentWeightMode": "RCTWM_WeightedNone",
+                "Time": 0.4000000059604645,
+                "Value": 1.0,
+                "ArriveTangent": 0.0,
+                "ArriveTangentWeight": 0.0,
+                "LeaveTangent": 0.0,
+                "LeaveTangentWeight": 0.0
+              }
+            ]
+          },
+          "CF_Als_Mantle_Low_VerticalCorrection": {
+            "asset": "CF_Als_Mantle_Low_VerticalCorrection",
+            "assetPath": "ALS/Content/ALS/Data/Character/Mantle/CF_Als_Mantle_Low_VerticalCorrection.uasset",
+            "keys": [
+              {
+                "InterpMode": "RCIM_Cubic",
+                "TangentMode": "RCTM_User",
+                "TangentWeightMode": "RCTWM_WeightedNone",
+                "Time": 0.30000001192092896,
+                "Value": 0.0,
+                "ArriveTangent": 0.0,
+                "ArriveTangentWeight": 0.0,
+                "LeaveTangent": 0.0,
+                "LeaveTangentWeight": 0.0
+              },
+              {
+                "InterpMode": "RCIM_Linear",
+                "TangentMode": "RCTM_Auto",
+                "TangentWeightMode": "RCTWM_WeightedNone",
+                "Time": 0.6000000238418579,
+                "Value": 1.0,
+                "ArriveTangent": 0.0,
+                "ArriveTangentWeight": 0.0,
+                "LeaveTangent": 0.0,
+                "LeaveTangentWeight": 0.0
+              }
+            ]
+          }
+        },
+        "errors": []
+      }
+    }
+  ]
+}

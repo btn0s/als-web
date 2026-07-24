@@ -448,6 +448,47 @@ dotnet run -- validate-blend-spaces blend-spaces.json
   emitted root tracks and preserves all three settings in animation extras. Typed extraction
   and independent generic uasset inspection agree on the Roll/Mantle values.
 
+## Mantling settings, selection, montages, and curves
+
+Run:
+
+```sh
+dotnet run -- dump-mantling-content "$ALS_WORK/stage" mantling-content.json
+dotnet run -- validate-mantling-content mantling-content.json
+```
+
+- **VERIFIED — `CS_Als_Default` changes one general mantling value.** Every runtime value comes
+  from `FAlsGeneralMantlingSettings` / `FAlsMantlingTraceSettings` defaults except
+  `GroundedTrace.bDrawFailedTraces=true`. The oracle merges that tagged override with the pinned
+  4.15 headers and constructor response channels, preserving centimetres in JSON.
+
+- **VERIFIED — `B_Als_Character::SelectMantlingSettings` selects `MS_Als_High` for `High` and
+  `InAir`, then dispatches every authored `Low` overlay branch.** Default uses `MS_Als_Low`;
+  Injured, Bow, Torch, and Barrel use `MS_Als_Low_Left`; HandsTied uses
+  `MS_Als_Low_BothHands`; Rifle, both Pistol modes, and Binoculars use
+  `MS_Als_Low_Right`; Box uses `MS_Als_Low_Box`. Editor K2 nodes otherwise deserialize as
+  generic `UObject`s and hide their native pin arrays. The dumper registers the concrete node
+  class names with CUE4Parse's `UK2Node` reader, then follows the actual `K2Node_SwitchEnum` /
+  gameplay-tag-switch pin links from all 11 output pins to each result pin's `DefaultObject`.
+
+- **VERIFIED — `MS_Als_High` uses height `125..200` cm → time `0.6..0` seconds; `MS_Als_Low`
+  inherits the C++ defaults `50..100` cm → `0.5..0`.** Both keep
+  `bAutoCalculateStartTime=false`. High references `AM_Als_Mantle_High`; default Low references
+  `AM_Als_Mantle_Low` and its right-leading sequence.
+
+- **VERIFIED — montage clocks are content, not inferred from sequences.** High is length
+  `2.6666667`, `RateScale=1.2`, Hermite-cubic `0.2` blend-in, cubic `0.2` blend-out. All five
+  authored Low variants are length `1.5`, default `RateScale=1`, and Hermite-cubic `0.2`
+  in/out. Every montage has one `PostLocomotion` segment at play rate 1; High's section link is
+  `Absolute` and the Low variants are `Proportional`. The oracle retains each montage clock,
+  its referenced sequence clock and `RateScale`, the two notify-state windows,
+  branching-point trigger offsets, locomotion-action tag, and authored early-blend-out duration.
+
+- **VERIFIED — all four correction curves are two-key unweighted rich curves.** High horizontal
+  is `(0,0)→(0.3,1)`, High vertical `(0.333,0)→(0.7,1)`, Low horizontal
+  `(0.1,0)→(0.4,1)`, and Low vertical `(0.3,0)→(0.6,1)`, with every interpolation/tangent field
+  retained in the generated oracle.
+
 ## Enhanced Input mappings
 
 Run:
