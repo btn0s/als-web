@@ -27,6 +27,13 @@ before feature work.
   GaitAmount, curve names verbatim (FootLeftLock, RotationYawSpeed, …). Concepts ALS doesn't
   have are DEFERRED BY DEFAULT to the downstream stealth fork (user 2026-07-23) — crawl/prone/
   sneak/tuck don't live here at all; legacy non-ALS vocabulary is deleted on contact, not renamed.
+  **Parity extends to the file tree**: `src/als/` mirrors `Source/ALS/` 1:1 as closely as the
+  stack allows — same directory names and casing (`Settings/`, `State/`, `Utility/`, `AlsCamera/`
+  as its module), same file names (`AlsMovementSettings.ts` ↔ `AlsMovementSettings.h`), the
+  `Refresh*` families living under `AlsAnimationInstance`. TS has no Public/Private header split —
+  mirror the `Public/` tree shape. The two honest deviations are labeled: `AnimGraph/` (UE keeps
+  this in Blueprint content; ours must be code) and `src/engine/` (UE's animation runtime itself,
+  which the plugin doesn't own either). New systems land at their mirrored path or not at all.
 - **Docs philosophy:** code speaks for itself. ROADMAP.md (plan) + this file (orientation) are
   the only standing docs; design rationale lives in code comments at the relevant site. No
   spec/history markdown files.
