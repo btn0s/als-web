@@ -51,6 +51,11 @@ before feature work.
   Epic-designated UE-only). ALS Refactored's assets are cleared under its MIT (settled 2026-07-23,
   see ROADMAP guardrails; ship the upstream notice). Purchased Fab content is gitignored, never
   committed. Verify per-listing before any new asset enters the pack.
+- **Agent sandboxes cannot bind ports.** Never run `pnpm e2e`, launch dev servers, or attempt
+  browser checks from an agent sandbox — they fail with EPERM after wasted effort, every time.
+  Agent gates are exactly `pnpm test` + `pnpm build` (or `pnpm check` once it exists); browser
+  verification is the orchestrator's job, outside the sandbox. State in your report that e2e was
+  left to the orchestrator and move on.
 - **Playtesting:** the user playtests feel LIVE in the browser — no headless feel-comparison
   smokes beyond the sanctioned Playwright gate.
 
