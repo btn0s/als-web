@@ -6,6 +6,7 @@ import {
   setMovementRotationMode,
   setMovementStance,
   setMovementVelocity,
+  startAlsLandingBrakingFriction,
 } from './AlsCharacterMovementComponent'
 import type {
   AlsCharacterMovementComponent,
@@ -455,6 +456,10 @@ export function setLocomotionMode(
     locomotionMode === 'Grounded'
     && previousLocomotionMode === 'InAir'
   ) {
+    startAlsLandingBrakingFriction(
+      character.movement,
+      character.locomotionState.hasInput,
+    )
     // NotifyLocomotionModeChanged() blocks the previous input-facing target after an ordinary
     // landing so the landing animation cannot twist the legs into a spiral.
     character.locomotionState.rotationTowardsLastInputDirectionBlocked = true

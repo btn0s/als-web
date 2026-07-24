@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { AlsMovementGaitSettings } from './Settings/AlsMovementSettings'
 import {
   ALS_AIR_CONTROL,
+  ALS_BRAKING_FRICTION_FACTOR_RESET_DELAY,
+  ALS_HAS_INPUT_BRAKING_FRICTION_FACTOR,
   ALS_MAX_ACCELERATION,
+  ALS_MIN_ANALOG_WALK_SPEED,
+  ALS_NO_INPUT_BRAKING_FRICTION_FACTOR,
+  UE_CHARACTER_MOVEMENT_AIR_CONTROL_BOOST_MULTIPLIER,
+  UE_CHARACTER_MOVEMENT_AIR_CONTROL_BOOST_VELOCITY_THRESHOLD,
   calculateDirectionDependentGaitSpeeds,
   calculateGaitAmount,
   createAlsCharacterMovementComponent,
@@ -11,12 +17,25 @@ import {
   setMovementRotationMode,
   setMovementStance,
   setMovementVelocity,
+  startAlsLandingBrakingFriction,
   stepGroundedVelocity,
   stepInAirVelocity,
 } from './AlsCharacterMovementComponent'
 import type { AlsCharacterMovementGaitSettings } from './AlsCharacterMovementComponent'
 
 describe('UAlsCharacterMovementComponent grounded policy', () => {
+  it('pins ALS and inherited CharacterMovement constructor values', () => {
+    const component = createAlsCharacterMovementComponent()
+    expect(component.airControl).toBe(ALS_AIR_CONTROL)
+    expect(component.maxAcceleration).toBe(ALS_MAX_ACCELERATION)
+    expect(component.minAnalogWalkSpeed).toBe(ALS_MIN_ANALOG_WALK_SPEED)
+    expect(component.airControlBoostMultiplier)
+      .toBe(UE_CHARACTER_MOVEMENT_AIR_CONTROL_BOOST_MULTIPLIER)
+    expect(component.airControlBoostVelocityThreshold)
+      .toBe(UE_CHARACTER_MOVEMENT_AIR_CONTROL_BOOST_VELOCITY_THRESHOLD)
+    expect(component.brakingFrictionFactor).toBe(0)
+  })
+
   it('refreshes gait settings when rotation mode or stance changes', () => {
     // AlsCharacterMovementComponent.cpp:914-944 indexes settings by RotationMode × Stance.
     const component = createAlsCharacterMovementComponent()
@@ -122,8 +141,7 @@ describe('UAlsCharacterMovementComponent grounded policy', () => {
   })
 
   it('uses ground friction to steer while accelerating', () => {
-    // ORIGINAL WEB RUNTIME regression pin: ALS supplies the coefficients but delegates the
-    // integration formula to UE's absent UCharacterMovementComponent::CalcVelocity().
+    // UCharacterMovementComponent::CalcVelocity() frictional steering branch.
     const component = createAlsCharacterMovementComponent({
       velocity: { x: 1, y: 0, z: 0 },
     })
@@ -160,6 +178,48 @@ describe('UAlsCharacterMovementComponent grounded policy', () => {
     stepGroundedVelocity(component, { x: 1, y: 0, z: 0 }, 0.05, 0)
     expect(component.velocity.x).toBeCloseTo(0.25, 12)
   })
+
+  it('uses UE MinAnalogWalkSpeed for low-amplitude input', () => {
+    const component = createAlsCharacterMovementComponent()
+
+    stepGroundedVelocity(component, { x: 0.05, y: 0, z: 0 }, 1, 0)
+
+    expect(component.velocity.x).toBe(ALS_MIN_ANALOG_WALK_SPEED)
+    expect(component.velocity.y).toBe(0)
+  })
+
+  it('applies ALS landing friction factors and resets them after 0.5 seconds', () => {
+    const withInput = createAlsCharacterMovementComponent({
+      velocity: { x: 3.75, y: 0, z: 0 },
+    })
+    startAlsLandingBrakingFriction(withInput, true)
+    expect(withInput.brakingFrictionFactor)
+      .toBe(ALS_HAS_INPUT_BRAKING_FRICTION_FACTOR)
+    expect(withInput.brakingFrictionFactorResetTime)
+      .toBe(ALS_BRAKING_FRICTION_FACTOR_RESET_DELAY)
+    stepGroundedVelocity(withInput, { x: 0, y: 0, z: 0 }, 1 / 60, 0)
+    expect(withInput.velocity.x).toBeCloseTo(3.4166666666666665, 12)
+
+    const withoutInput = createAlsCharacterMovementComponent({
+      velocity: { x: 3.75, y: 0, z: 0 },
+    })
+    startAlsLandingBrakingFriction(withoutInput, false)
+    expect(withoutInput.brakingFrictionFactor)
+      .toBe(ALS_NO_INPUT_BRAKING_FRICTION_FACTOR)
+    stepGroundedVelocity(withoutInput, { x: 0, y: 0, z: 0 }, 1 / 60, 0)
+    expect(withoutInput.velocity.x).toBeCloseTo(2.7916666666666665, 12)
+
+    for (let tick = 1; tick < 30; tick += 1) {
+      stepGroundedVelocity(
+        withoutInput,
+        { x: 0, y: 0, z: 0 },
+        1 / 60,
+        0,
+      )
+    }
+    expect(withoutInput.brakingFrictionFactorResetTime).toBe(0)
+    expect(withoutInput.brakingFrictionFactor).toBe(0)
+  })
 })
 
 describe('UAlsCharacterMovementComponent falling policy', () => {
@@ -176,6 +236,15 @@ describe('UAlsCharacterMovementComponent falling policy', () => {
     expect(component.velocity.x).toBe(1)
     expect(component.velocity.y).toBeCloseTo(0.3, 12)
     expect(component.velocity.z).toBe(4.2)
+  })
+
+  it('uses inherited low-speed AirControlBoost before the 25 cm/s threshold', () => {
+    const component = createAlsCharacterMovementComponent()
+
+    stepInAirVelocity(component, { x: 1, y: 0, z: 0 }, 0.1)
+
+    expect(component.velocity.x).toBeCloseTo(0.6, 12)
+    expect(component.velocity.y).toBe(0)
   })
 
   it('normalizes analog input without snapping inherited overspeed', () => {

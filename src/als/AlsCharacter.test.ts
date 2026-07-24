@@ -170,6 +170,8 @@ describe('AAlsCharacter input and gait policy', () => {
     expect(
       character.locomotionState.rotationTowardsLastInputDirectionBlocked,
     ).toBe(true)
+    expect(character.movement.brakingFrictionFactor).toBe(3)
+    expect(character.movement.brakingFrictionFactorResetTime).toBe(0.5)
   })
 })
 
