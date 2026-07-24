@@ -28,6 +28,7 @@ import {
   refreshTurnInPlace,
   refreshVelocityBlend,
 } from '../AlsAnimationInstance'
+import { playQuickStopAnimation } from '../AnimGraph/quickStop'
 import { ALS_ROTATE_IN_PLACE_SETTINGS } from '../Settings/AlsRotateInPlaceSettings'
 import { ALS_TURN_IN_PLACE_SETTINGS } from '../Settings/AlsTurnInPlaceSettings'
 import type {
@@ -782,8 +783,40 @@ describe('ALS C++ differential oracle', () => {
     void RefreshFootLock
   })
 
-  it.skip('UNPORTED SYSTEM cpp-quick-stop: PlayQuickStopAnimation play-rate math has no runtime seam', () => {
-    void PlayQuickStopAnimation
+  it(`PlayQuickStopAnimation matches for ${PROPERTY_CASES} seeded and angle-edge cases`, () => {
+    const random = seededRandom(0x5105709)
+    const angleEdges = [-540, -180, -175, 0, 175, 175.000_001, 180, 540]
+    const rotationModes = [
+      'VelocityDirection',
+      'ViewDirection',
+      'Aiming',
+    ] as const
+    for (let index = 0; index < PROPERTY_CASES; index++) {
+      const input = {
+        rotationMode: rotationModes[index % rotationModes.length],
+        stance: index % 2 === 0 ? 'Standing' as const : 'Crouching' as const,
+        hasInput: random() < 0.5,
+        inputYawAngle:
+          angleEdges[index] ?? range(random, -2_000, 2_000),
+        targetYawAngle: range(random, -2_000, 2_000),
+        actorYawAngle: range(random, -2_000, 2_000),
+      }
+      const runtime = playQuickStopAnimation(input)
+      const reference = PlayQuickStopAnimation({
+        RotationMode: input.rotationMode,
+        bHasInput: input.hasInput,
+        InputYawAngle: input.inputYawAngle,
+        TargetYawAngle: input.targetYawAngle,
+        ActorYawAngle: input.actorYawAngle,
+        QuickStopPlayRate: [1.75, 3],
+      })
+
+      expect(runtime.direction).toBe(reference.Direction)
+      expectClose(runtime.playRate, reference.PlayRate)
+      expect(runtime.blendInDuration).toBe(0.1)
+      expect(runtime.blendOutDuration).toBe(0.2)
+      expect(runtime.startTime).toBe(0.3)
+    }
   })
 
   it.skip('UNPORTED SYSTEM cpp-ground-prediction: RefreshGroundPrediction mapping and sweep have no runtime seam', () => {
@@ -798,7 +831,6 @@ describe('ALS C++ differential oracle', () => {
     expect(cppDeltaIds).toEqual([
       'cpp-foot-lock',
       'cpp-ground-prediction',
-      'cpp-quick-stop',
     ])
   })
 })

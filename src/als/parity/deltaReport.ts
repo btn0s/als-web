@@ -31,15 +31,6 @@ export const ALS_PARITY_DELTA_REPORT: readonly AlsParityDelta[] = [
       'Runtime samples FootLock curves for debug state but has no ALS latch/decrease/capture/angle-limit state machine.',
   },
   {
-    id: 'cpp-quick-stop',
-    category: 'unported system',
-    oracle: 'C++ differential',
-    source: 'AlsAnimationInstance.cpp:1378-1414',
-    observed: 'No runtime quick-stop request or play-rate value exists to compare.',
-    reason:
-      'PlayQuickStopAnimation yaw-remap, side selection, and unclamped play-rate mapping are not ported.',
-  },
-  {
     id: 'cpp-ground-prediction',
     category: 'unported system',
     oracle: 'C++ differential',
