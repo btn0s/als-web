@@ -6,6 +6,12 @@
     "settingsAssetPath": "ALS/Content/ALSCamera/Data/CS_Als_Default.uasset",
     "cameraComponentAssetPath": "ALS/Content/ALSCamera/B_Als_CameraComponent.uasset",
     "cameraBlueprintAssetPath": "ALS/Content/ALSCamera/AB_Als_Camera.uasset",
+    "cameraShakeAssetPath": "ALS/Content/ALSCamera/Data/B_Als_CameraShake_Sprint.uasset",
+    "cameraShakeSequenceAssetPaths": [
+      "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint.uasset",
+      "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint_Acceleration.uasset",
+      "ALS/Content/ALS/Animations/Actions/Roll/A_Als_Roll.uasset"
+    ],
     "skeletonAssetPath": "ALS/Content/ALS/Character/SK_Als.uasset",
     "cpp": {
       "settingsDefaults": "Source/ALSCamera/Public/AlsCameraSettings.h",
@@ -13,7 +19,8 @@
       "boneNames": "Source/ALS/Public/Utility/AlsConstants.h",
       "curveNames": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
       "solver": "Source/ALSCamera/Private/AlsCameraComponent.cpp",
-      "stateInputs": "Source/ALSCamera/Private/AlsCameraAnimationInstance.cpp"
+      "stateInputs": "Source/ALSCamera/Private/AlsCameraAnimationInstance.cpp",
+      "cameraShakeNotify": "Source/ALSCamera/Private/Notifies/AlsAnimNotify_CameraShake.cpp"
     }
   },
   "settings": {
@@ -499,6 +506,270 @@
       }
     }
   ],
+  "cameraShake": {
+    "asset": "B_Als_CameraShake_Sprint",
+    "assetPath": "ALS/Content/ALSCamera/Data/B_Als_CameraShake_Sprint.uasset",
+    "rootPattern": {
+      "type": "WaveOscillatorCameraShakePattern",
+      "export": "WaveOscillatorCameraShakePattern_0",
+      "serializedProperties": [
+        "BlendInTime",
+        "BlendOutTime",
+        "Duration",
+        "Pitch",
+        "Roll",
+        "RotationAmplitudeMultiplier",
+        "Yaw"
+      ],
+      "values": {
+        "RotationAmplitudeMultiplier": 1.0,
+        "Pitch": {
+          "Amplitude": 0.1,
+          "Frequency": 0.1
+        },
+        "Yaw": {
+          "Amplitude": 0.1,
+          "Frequency": 0.1
+        },
+        "Roll": {
+          "Amplitude": 0.1,
+          "Frequency": 0.1
+        },
+        "Duration": 0.2,
+        "BlendInTime": 0.1,
+        "BlendOutTime": 0.1
+      }
+    },
+    "notifyDefaults": {
+      "CameraShakeScale": {
+        "value": 1.0,
+        "source": {
+          "kind": "cppDefault",
+          "path": "Source/ALSCamera/Public/Notifies/AlsAnimNotify_CameraShake.h",
+          "line": 19
+        },
+        "unit": "x"
+      }
+    },
+    "notifies": [
+      {
+        "sequence": "A_Als_Sprint",
+        "assetPath": "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint.uasset",
+        "sequenceLength": 0.6000000238418579,
+        "loop": true,
+        "notifyName": "AlsCameraShake",
+        "notifyExport": "AlsAnimNotify_CameraShake_0",
+        "time": 0.06666667014360428,
+        "triggerWeightThreshold": 0.5,
+        "montageTickType": "EMontageNotifyTickType::Queued",
+        "notifyTriggerChance": 1.0,
+        "notifyFilterType": "ENotifyFilterType::NoFiltering",
+        "notifyFilterLod": 0,
+        "triggerOnDedicatedServer": false,
+        "triggerOnFollower": false,
+        "cameraShakeClass": {
+          "value": "B_Als_CameraShake_Sprint_C",
+          "source": {
+            "kind": "serializedAsset",
+            "path": "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint.uasset",
+            "export": "AlsAnimNotify_CameraShake_0"
+          }
+        },
+        "cameraShakeScale": {
+          "value": 0.5,
+          "source": {
+            "kind": "serializedAsset",
+            "path": "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint.uasset",
+            "export": "AlsAnimNotify_CameraShake_0"
+          }
+        },
+        "serializedProperties": [
+          "CameraShakeClass",
+          "CameraShakeScale"
+        ]
+      },
+      {
+        "sequence": "A_Als_Sprint",
+        "assetPath": "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint.uasset",
+        "sequenceLength": 0.6000000238418579,
+        "loop": true,
+        "notifyName": "AlsCameraShake",
+        "notifyExport": "AlsAnimNotify_CameraShake_1",
+        "time": 0.36666667461395264,
+        "triggerWeightThreshold": 0.5,
+        "montageTickType": "EMontageNotifyTickType::Queued",
+        "notifyTriggerChance": 1.0,
+        "notifyFilterType": "ENotifyFilterType::NoFiltering",
+        "notifyFilterLod": 0,
+        "triggerOnDedicatedServer": false,
+        "triggerOnFollower": false,
+        "cameraShakeClass": {
+          "value": "B_Als_CameraShake_Sprint_C",
+          "source": {
+            "kind": "serializedAsset",
+            "path": "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint.uasset",
+            "export": "AlsAnimNotify_CameraShake_1"
+          }
+        },
+        "cameraShakeScale": {
+          "value": 0.5,
+          "source": {
+            "kind": "serializedAsset",
+            "path": "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint.uasset",
+            "export": "AlsAnimNotify_CameraShake_1"
+          }
+        },
+        "serializedProperties": [
+          "CameraShakeClass",
+          "CameraShakeScale"
+        ]
+      },
+      {
+        "sequence": "A_Als_Sprint_Acceleration",
+        "assetPath": "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint_Acceleration.uasset",
+        "sequenceLength": 0.6000000238418579,
+        "loop": true,
+        "notifyName": "AlsCameraShake",
+        "notifyExport": "AlsAnimNotify_CameraShake_0",
+        "time": 0.06666667014360428,
+        "triggerWeightThreshold": 0.5,
+        "montageTickType": "EMontageNotifyTickType::Queued",
+        "notifyTriggerChance": 1.0,
+        "notifyFilterType": "ENotifyFilterType::NoFiltering",
+        "notifyFilterLod": 0,
+        "triggerOnDedicatedServer": false,
+        "triggerOnFollower": false,
+        "cameraShakeClass": {
+          "value": "B_Als_CameraShake_Sprint_C",
+          "source": {
+            "kind": "serializedAsset",
+            "path": "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint_Acceleration.uasset",
+            "export": "AlsAnimNotify_CameraShake_0"
+          }
+        },
+        "cameraShakeScale": {
+          "value": 1.25,
+          "source": {
+            "kind": "serializedAsset",
+            "path": "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint_Acceleration.uasset",
+            "export": "AlsAnimNotify_CameraShake_0"
+          }
+        },
+        "serializedProperties": [
+          "CameraShakeClass",
+          "CameraShakeScale"
+        ]
+      },
+      {
+        "sequence": "A_Als_Sprint_Acceleration",
+        "assetPath": "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint_Acceleration.uasset",
+        "sequenceLength": 0.6000000238418579,
+        "loop": true,
+        "notifyName": "AlsCameraShake",
+        "notifyExport": "AlsAnimNotify_CameraShake_1",
+        "time": 0.36666667461395264,
+        "triggerWeightThreshold": 0.5,
+        "montageTickType": "EMontageNotifyTickType::Queued",
+        "notifyTriggerChance": 1.0,
+        "notifyFilterType": "ENotifyFilterType::NoFiltering",
+        "notifyFilterLod": 0,
+        "triggerOnDedicatedServer": false,
+        "triggerOnFollower": false,
+        "cameraShakeClass": {
+          "value": "B_Als_CameraShake_Sprint_C",
+          "source": {
+            "kind": "serializedAsset",
+            "path": "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint_Acceleration.uasset",
+            "export": "AlsAnimNotify_CameraShake_1"
+          }
+        },
+        "cameraShakeScale": {
+          "value": 1.25,
+          "source": {
+            "kind": "serializedAsset",
+            "path": "ALS/Content/ALS/Animations/Grounded/Sprint/A_Als_Sprint_Acceleration.uasset",
+            "export": "AlsAnimNotify_CameraShake_1"
+          }
+        },
+        "serializedProperties": [
+          "CameraShakeClass",
+          "CameraShakeScale"
+        ]
+      },
+      {
+        "sequence": "A_Als_Roll",
+        "assetPath": "ALS/Content/ALS/Animations/Actions/Roll/A_Als_Roll.uasset",
+        "sequenceLength": 1.5,
+        "loop": false,
+        "notifyName": "AlsCameraShake",
+        "notifyExport": "AlsAnimNotify_CameraShake_0",
+        "time": 0.10000000894069672,
+        "triggerWeightThreshold": 9.999999747378752E-06,
+        "montageTickType": "EMontageNotifyTickType::Queued",
+        "notifyTriggerChance": 1.0,
+        "notifyFilterType": "ENotifyFilterType::NoFiltering",
+        "notifyFilterLod": 0,
+        "triggerOnDedicatedServer": false,
+        "triggerOnFollower": false,
+        "cameraShakeClass": {
+          "value": "B_Als_CameraShake_Sprint_C",
+          "source": {
+            "kind": "serializedAsset",
+            "path": "ALS/Content/ALS/Animations/Actions/Roll/A_Als_Roll.uasset",
+            "export": "AlsAnimNotify_CameraShake_0"
+          }
+        },
+        "cameraShakeScale": {
+          "value": 1.0,
+          "source": {
+            "kind": "cppDefault",
+            "path": "Source/ALSCamera/Public/Notifies/AlsAnimNotify_CameraShake.h",
+            "line": 19
+          },
+          "unit": "x"
+        },
+        "serializedProperties": [
+          "CameraShakeClass"
+        ]
+      },
+      {
+        "sequence": "A_Als_Roll",
+        "assetPath": "ALS/Content/ALS/Animations/Actions/Roll/A_Als_Roll.uasset",
+        "sequenceLength": 1.5,
+        "loop": false,
+        "notifyName": "AlsCameraShake",
+        "notifyExport": "AlsAnimNotify_CameraShake_1",
+        "time": 0.46666669845581055,
+        "triggerWeightThreshold": 9.999999747378752E-06,
+        "montageTickType": "EMontageNotifyTickType::Queued",
+        "notifyTriggerChance": 1.0,
+        "notifyFilterType": "ENotifyFilterType::NoFiltering",
+        "notifyFilterLod": 0,
+        "triggerOnDedicatedServer": false,
+        "triggerOnFollower": false,
+        "cameraShakeClass": {
+          "value": "B_Als_CameraShake_Sprint_C",
+          "source": {
+            "kind": "serializedAsset",
+            "path": "ALS/Content/ALS/Animations/Actions/Roll/A_Als_Roll.uasset",
+            "export": "AlsAnimNotify_CameraShake_1"
+          }
+        },
+        "cameraShakeScale": {
+          "value": 2.0,
+          "source": {
+            "kind": "serializedAsset",
+            "path": "ALS/Content/ALS/Animations/Actions/Roll/A_Als_Roll.uasset",
+            "export": "AlsAnimNotify_CameraShake_1"
+          }
+        },
+        "serializedProperties": [
+          "CameraShakeClass",
+          "CameraShakeScale"
+        ]
+      }
+    ]
+  },
   "animGraph": {
     "asset": "AB_Als_Camera",
     "compiledNodeCount": 83,
@@ -3270,6 +3541,11 @@
     },
     {
       "name": "authored camera skeleton sockets",
+      "status": "pass",
+      "errors": []
+    },
+    {
+      "name": "authored camera shake pattern and six notify payloads",
       "status": "pass",
       "errors": []
     },

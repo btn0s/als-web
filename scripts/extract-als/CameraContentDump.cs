@@ -16,9 +16,11 @@ public static class CameraContentDump
 {
     const string CameraContentPath = "/Content/ALSCamera/";
     const string CharacterContentPath = "/Content/ALS/Character/";
+    const string AnimationContentPath = "/Content/ALS/Animations/";
     const string SettingsAsset = "CS_Als_Default";
     const string CameraBlueprintAsset = "AB_Als_Camera";
     const string CameraComponentAsset = "B_Als_CameraComponent";
+    const string CameraShakeAsset = "B_Als_CameraShake_Sprint";
     const string SkeletonAsset = "SK_Als";
     const string SettingsHeader = "Source/ALSCamera/Public/AlsCameraSettings.h";
     const string ComponentHeader = "Source/ALSCamera/Public/AlsCameraComponent.h";
@@ -27,6 +29,10 @@ public static class CameraContentDump
     const string SolverSource = "Source/ALSCamera/Private/AlsCameraComponent.cpp";
     const string AnimationInstanceSource =
         "Source/ALSCamera/Private/AlsCameraAnimationInstance.cpp";
+    const string CameraShakeNotifyHeader =
+        "Source/ALSCamera/Public/Notifies/AlsAnimNotify_CameraShake.h";
+    const string CameraShakeNotifySource =
+        "Source/ALSCamera/Private/Notifies/AlsAnimNotify_CameraShake.cpp";
 
     static readonly string[] ExpectedCurveNames =
     [
@@ -67,6 +73,13 @@ public static class CameraContentDump
     [
         "CF_Als_CameraBlend_Quick",
         "CF_Als_CameraBlend_Smooth",
+    ];
+
+    static readonly string[] CameraShakeSequenceAssets =
+    [
+        "A_Als_Sprint",
+        "A_Als_Sprint_Acceleration",
+        "A_Als_Roll",
     ];
 
     static readonly string[] ExpectedCameraSockets =
@@ -178,6 +191,23 @@ public static class CameraContentDump
             SkeletonAsset,
             CharacterContentPath);
         var sockets = NormalizeCameraSockets(skeletonExports);
+        var (cameraShakeAssetPath, cameraShakeExports) =
+            LoadPackageExports(provider, CameraShakeAsset);
+        var cameraShakeSequences = CameraShakeSequenceAssets.Select(
+                sequence =>
+                {
+                    var loaded = LoadPackageExports(
+                        provider,
+                        sequence,
+                        AnimationContentPath);
+                    return (Name: sequence, loaded.AssetPath, loaded.Exports);
+                })
+            .ToArray();
+        var cameraShake = NormalizeCameraShake(
+            srcDir,
+            cameraShakeAssetPath,
+            cameraShakeExports,
+            cameraShakeSequences);
 
         var payload = new JObject
         {
@@ -189,6 +219,9 @@ public static class CameraContentDump
                 ["settingsAssetPath"] = settingsAssetPath,
                 ["cameraComponentAssetPath"] = componentAssetPath,
                 ["cameraBlueprintAssetPath"] = cameraBlueprintPath,
+                ["cameraShakeAssetPath"] = cameraShakeAssetPath,
+                ["cameraShakeSequenceAssetPaths"] = new JArray(
+                    cameraShakeSequences.Select(sequence => sequence.AssetPath)),
                 ["skeletonAssetPath"] = skeletonAssetPath,
                 ["cpp"] = new JObject
                 {
@@ -198,6 +231,7 @@ public static class CameraContentDump
                     ["curveNames"] = ConstantsHeader,
                     ["solver"] = SolverSource,
                     ["stateInputs"] = AnimationInstanceSource,
+                    ["cameraShakeNotify"] = CameraShakeNotifySource,
                 },
             },
             ["settings"] = new JObject
@@ -215,6 +249,7 @@ public static class CameraContentDump
             ["curveNames"] = curveNames,
             ["blendCurves"] = blendCurves,
             ["sockets"] = sockets,
+            ["cameraShake"] = cameraShake,
             ["animGraph"] = new JObject
             {
                 ["asset"] = CameraBlueprintAsset,
@@ -243,7 +278,9 @@ public static class CameraContentDump
         ThrowOnValidationFailure(validations);
         Console.WriteLine(
             $"dumped ALS camera settings, {curveNames.Count} curve names, " +
-            $"{blendCurves.Count} blend curves, and {nodes.Count} graph nodes " +
+            $"{blendCurves.Count} blend curves, " +
+            $"{cameraShake.SelectToken("notifies")?.Count() ?? 0} camera-shake notifies, " +
+            $"and {nodes.Count} graph nodes " +
             $"-> {outJson} ({new FileInfo(outJson).Length:N0} bytes)");
         return 0;
     }
@@ -523,6 +560,182 @@ public static class CameraContentDump
         return new JArray(
             sockets.OrderBy(socket => socket.Value<string>("name"),
                 StringComparer.Ordinal));
+    }
+
+    static JObject NormalizeCameraShake(
+        string srcDir,
+        string cameraShakeAssetPath,
+        IEnumerable<UObject> cameraShakeExports,
+        IEnumerable<(string Name, string AssetPath, UObject[] Exports)> sequences)
+    {
+        var shakeExports = cameraShakeExports.ToArray();
+        var cameraShakeCdo = shakeExports.Single(
+            export => export.Flags.HasFlag(EObjectFlags.RF_ClassDefaultObject));
+        var serializedCdo = JObject.FromObject(cameraShakeCdo, Serializer);
+        var rootPatternReference =
+            serializedCdo.SelectToken("Properties.RootShakePattern.ObjectName")
+                ?.Value<string>()
+            ?? throw new Exception(
+                $"{CameraShakeAsset} has no RootShakePattern reference");
+        var rootPattern = shakeExports.Single(
+            export => export.ExportType == "WaveOscillatorCameraShakePattern");
+        if (ObjectLeafName(rootPatternReference) != rootPattern.Name)
+        {
+            throw new Exception(
+                $"{CameraShakeAsset} RootShakePattern does not reference " +
+                rootPattern.Name);
+        }
+
+        var serializedPattern = JObject.FromObject(rootPattern, Serializer);
+        var patternProperties = serializedPattern["Properties"] as JObject
+                                ?? throw new Exception(
+                                    $"{CameraShakeAsset} root pattern has no properties");
+        var notifyDefaults = ReadCameraShakeNotifyDefaults(srcDir);
+        var defaultScale = notifyDefaults.SelectToken("CameraShakeScale.value")
+                               ?.Value<double>()
+                           ?? throw new Exception(
+                               "AlsAnimNotify_CameraShake has no scale default");
+        var notifies = new JArray();
+
+        foreach (var sequence in sequences)
+        {
+            var sequenceExport = SameNamedExport(sequence.Exports, sequence.Name);
+            if (sequenceExport.ExportType != "AnimSequence")
+                throw new Exception($"{sequence.Name} is not an AnimSequence");
+            var serializedSequence = JObject.FromObject(sequenceExport, Serializer);
+            var sequenceProperties = serializedSequence["Properties"] as JObject
+                                     ?? throw new Exception(
+                                         $"{sequence.Name} has no properties");
+            var sequenceNotifies = sequenceProperties["Notifies"] as JArray
+                                   ?? throw new Exception(
+                                       $"{sequence.Name} has no Notifies");
+            var exportsByName = sequence.Exports.ToDictionary(
+                export => export.Name,
+                StringComparer.Ordinal);
+
+            foreach (var notifyEvent in sequenceNotifies.OfType<JObject>()
+                         .Where(
+                             notify =>
+                                 notify.Value<string>("NotifyName")
+                                 == "AlsCameraShake"))
+            {
+                var notifyReference =
+                    notifyEvent.SelectToken("Notify.ObjectName")?.Value<string>()
+                    ?? throw new Exception(
+                        $"{sequence.Name} camera shake has no notify object");
+                var notifyName = ObjectLeafName(notifyReference);
+                if (!exportsByName.TryGetValue(notifyName, out var notifyExport)
+                    || notifyExport.ExportType != "AlsAnimNotify_CameraShake")
+                {
+                    throw new Exception(
+                        $"{sequence.Name} camera shake references invalid export " +
+                        notifyName);
+                }
+
+                var serializedNotify = JObject.FromObject(notifyExport, Serializer);
+                var notifyProperties = serializedNotify["Properties"] as JObject
+                                       ?? new JObject();
+                var classReference =
+                    notifyProperties.SelectToken("CameraShakeClass.ObjectName")
+                        ?.Value<string>()
+                    ?? throw new Exception(
+                        $"{sequence.Name}:{notifyName} has no CameraShakeClass");
+                var scaleWasSerialized =
+                    notifyProperties["CameraShakeScale"]?.Type
+                    is JTokenType.Float or JTokenType.Integer;
+                var scale = scaleWasSerialized
+                    ? notifyProperties.Value<double>("CameraShakeScale")
+                    : defaultScale;
+
+                notifies.Add(
+                    new JObject
+                    {
+                        ["sequence"] = sequence.Name,
+                        ["assetPath"] = sequence.AssetPath,
+                        ["sequenceLength"] =
+                            RequiredNumber(sequenceProperties, "SequenceLength"),
+                        ["loop"] = sequenceProperties.Value<bool?>("bLoop") ?? false,
+                        ["notifyName"] =
+                            RequiredString(notifyEvent, "NotifyName"),
+                        ["notifyExport"] = notifyName,
+                        ["time"] = RequiredNumber(notifyEvent, "LinkValue"),
+                        ["triggerWeightThreshold"] = RequiredNumber(
+                            notifyEvent,
+                            "TriggerWeightThreshold"),
+                        ["montageTickType"] =
+                            RequiredString(notifyEvent, "MontageTickType"),
+                        ["notifyTriggerChance"] = RequiredNumber(
+                            notifyEvent,
+                            "NotifyTriggerChance"),
+                        ["notifyFilterType"] =
+                            RequiredString(notifyEvent, "NotifyFilterType"),
+                        ["notifyFilterLod"] =
+                            notifyEvent.Value<int>("NotifyFilterLOD"),
+                        ["triggerOnDedicatedServer"] =
+                            notifyEvent.Value<bool>("bTriggerOnDedicatedServer"),
+                        ["triggerOnFollower"] =
+                            notifyEvent.Value<bool>("bTriggerOnFollower"),
+                        ["cameraShakeClass"] = new JObject
+                        {
+                            ["value"] = ReferenceName(classReference),
+                            ["source"] = new JObject
+                            {
+                                ["kind"] = "serializedAsset",
+                                ["path"] = sequence.AssetPath,
+                                ["export"] = notifyName,
+                            },
+                        },
+                        ["cameraShakeScale"] = scaleWasSerialized
+                            ? new JObject
+                            {
+                                ["value"] = scale,
+                                ["source"] = new JObject
+                                {
+                                    ["kind"] = "serializedAsset",
+                                    ["path"] = sequence.AssetPath,
+                                    ["export"] = notifyName,
+                                },
+                            }
+                            : notifyDefaults["CameraShakeScale"]!.DeepClone(),
+                        ["serializedProperties"] = new JArray(
+                            notifyProperties.Properties()
+                                .Select(property => property.Name)
+                                .Order(StringComparer.Ordinal)),
+                    });
+            }
+        }
+
+        return new JObject
+        {
+            ["asset"] = CameraShakeAsset,
+            ["assetPath"] = cameraShakeAssetPath,
+            ["rootPattern"] = new JObject
+            {
+                ["type"] = rootPattern.ExportType,
+                ["export"] = rootPattern.Name,
+                ["serializedProperties"] = new JArray(
+                    patternProperties.Properties()
+                        .Select(property => property.Name)
+                        .Order(StringComparer.Ordinal)),
+                ["values"] = patternProperties.DeepClone(),
+            },
+            ["notifyDefaults"] = notifyDefaults,
+            ["notifies"] = notifies,
+        };
+    }
+
+    static JObject ReadCameraShakeNotifyDefaults(string srcDir)
+    {
+        var source = ReadSource(srcDir, CameraShakeNotifyHeader);
+        var notifyClass = ExtractBlock(source, "UAlsAnimNotify_CameraShake");
+        return new JObject
+        {
+            ["CameraShakeScale"] = ReadNumberDefault(
+                source,
+                notifyClass,
+                "CameraShakeScale",
+                "x"),
+        };
     }
 
     static JObject NormalizeRichCurveKey(JObject key)
@@ -972,6 +1185,7 @@ public static class CameraContentDump
             ValidateDefaults(payload),
             ValidateCurveContract(payload),
             ValidateCameraSockets(payload),
+            ValidateCameraShake(payload),
             ValidateBlendCurves(payload),
             ValidateGraphTopology(payload),
             ValidateLookProfiles(payload),
@@ -1176,6 +1390,200 @@ public static class CameraContentDump
                 "unserialized USkeletalMeshSocket unit-scale default");
         }
         return Validation("authored camera skeleton sockets", errors);
+    }
+
+    static JObject ValidateCameraShake(JObject payload)
+    {
+        var errors = new JArray();
+        ExpectValue(
+            errors,
+            payload,
+            "cameraShake.asset",
+            CameraShakeAsset);
+        ExpectValue(
+            errors,
+            payload,
+            "cameraShake.rootPattern.type",
+            "WaveOscillatorCameraShakePattern");
+        ExpectArray(
+            errors,
+            payload,
+            "cameraShake.rootPattern.serializedProperties",
+            [
+                "BlendInTime",
+                "BlendOutTime",
+                "Duration",
+                "Pitch",
+                "Roll",
+                "RotationAmplitudeMultiplier",
+                "Yaw",
+            ]);
+        ExpectNumber(
+            errors,
+            payload,
+            "cameraShake.rootPattern.values.RotationAmplitudeMultiplier",
+            1);
+        foreach (var axis in new[] { "Pitch", "Yaw", "Roll" })
+        {
+            ExpectNumber(
+                errors,
+                payload,
+                $"cameraShake.rootPattern.values.{axis}.Amplitude",
+                0.1);
+            ExpectNumber(
+                errors,
+                payload,
+                $"cameraShake.rootPattern.values.{axis}.Frequency",
+                0.1);
+        }
+        ExpectNumber(
+            errors,
+            payload,
+            "cameraShake.rootPattern.values.Duration",
+            0.2);
+        ExpectNumber(
+            errors,
+            payload,
+            "cameraShake.rootPattern.values.BlendInTime",
+            0.1);
+        ExpectNumber(
+            errors,
+            payload,
+            "cameraShake.rootPattern.values.BlendOutTime",
+            0.1);
+        ExpectNumber(
+            errors,
+            payload,
+            "cameraShake.notifyDefaults.CameraShakeScale.value",
+            1);
+        ExpectValue(
+            errors,
+            payload,
+            "cameraShake.notifyDefaults.CameraShakeScale.source.path",
+            CameraShakeNotifyHeader);
+
+        var notifies =
+            (payload.SelectToken("cameraShake.notifies") as JArray)
+                ?.OfType<JObject>()
+                .ToArray()
+            ?? [];
+        var expected = new[]
+        {
+            (
+                Sequence: "A_Als_Sprint",
+                Length: 0.6,
+                Loop: true,
+                Time: 0.06666667,
+                Threshold: 0.5,
+                Scale: 0.5,
+                SerializedScale: true),
+            (
+                Sequence: "A_Als_Sprint",
+                Length: 0.6,
+                Loop: true,
+                Time: 0.36666667,
+                Threshold: 0.5,
+                Scale: 0.5,
+                SerializedScale: true),
+            (
+                Sequence: "A_Als_Sprint_Acceleration",
+                Length: 0.6,
+                Loop: true,
+                Time: 0.06666667,
+                Threshold: 0.5,
+                Scale: 1.25,
+                SerializedScale: true),
+            (
+                Sequence: "A_Als_Sprint_Acceleration",
+                Length: 0.6,
+                Loop: true,
+                Time: 0.36666667,
+                Threshold: 0.5,
+                Scale: 1.25,
+                SerializedScale: true),
+            (
+                Sequence: "A_Als_Roll",
+                Length: 1.5,
+                Loop: false,
+                Time: 0.10000001,
+                Threshold: 0.00001,
+                Scale: 1.0,
+                SerializedScale: false),
+            (
+                Sequence: "A_Als_Roll",
+                Length: 1.5,
+                Loop: false,
+                Time: 0.4666667,
+                Threshold: 0.00001,
+                Scale: 2.0,
+                SerializedScale: true),
+        };
+        if (notifies.Length != expected.Length)
+        {
+            errors.Add(
+                $"camera shake notify count is {notifies.Length}, expected " +
+                expected.Length);
+        }
+        else
+        {
+            for (var index = 0; index < expected.Length; index++)
+            {
+                var actual = notifies[index];
+                var item = expected[index];
+                if (actual.Value<string>("sequence") != item.Sequence
+                    || !NearlyEqual(
+                        actual.Value<double>("sequenceLength"),
+                        item.Length)
+                    || actual.Value<bool>("loop") != item.Loop
+                    || !NearlyEqual(actual.Value<double>("time"), item.Time)
+                    || !NearlyEqual(
+                        actual.Value<double>("triggerWeightThreshold"),
+                        item.Threshold)
+                    || !NearlyEqual(
+                        actual.SelectToken("cameraShakeScale.value")!
+                            .Value<double>(),
+                        item.Scale))
+                {
+                    errors.Add(
+                        $"camera shake notify {index} changed: " +
+                        actual.ToString(Formatting.None));
+                }
+
+                var serializedProperties =
+                    actual["serializedProperties"]?.Values<string>().ToArray()
+                    ?? [];
+                var expectedProperties = item.SerializedScale
+                    ? new[] { "CameraShakeClass", "CameraShakeScale" }
+                    : new[] { "CameraShakeClass" };
+                if (!serializedProperties.SequenceEqual(expectedProperties))
+                {
+                    errors.Add(
+                        $"camera shake notify {index} serialized properties " +
+                        $"changed: {string.Join(", ", serializedProperties)}");
+                }
+                if (actual.Value<string>("notifyName") != "AlsCameraShake"
+                    || actual.SelectToken("cameraShakeClass.value")?.Value<string>()
+                    != "B_Als_CameraShake_Sprint_C"
+                    || actual.Value<string>("montageTickType")
+                    != "EMontageNotifyTickType::Queued"
+                    || !NearlyEqual(
+                        actual.Value<double>("notifyTriggerChance"),
+                        1)
+                    || actual.Value<string>("notifyFilterType")
+                    != "ENotifyFilterType::NoFiltering"
+                    || actual.Value<int>("notifyFilterLod") != 0
+                    || actual.Value<bool>("triggerOnDedicatedServer")
+                    || actual.Value<bool>("triggerOnFollower"))
+                {
+                    errors.Add(
+                        $"camera shake notify {index} firing contract changed");
+                }
+            }
+        }
+
+        return Validation(
+            "authored camera shake pattern and six notify payloads",
+            errors);
     }
 
     static JObject ValidateBlendCurves(JObject payload)
@@ -2167,6 +2575,15 @@ public static class CameraContentDump
         return firstQuote >= 0 && lastQuote > firstQuote
             ? objectName[(firstQuote + 1)..lastQuote]
             : objectName;
+    }
+
+    static string ObjectLeafName(string objectName)
+    {
+        var referenceName = ReferenceName(objectName);
+        var separator = Math.Max(
+            referenceName.LastIndexOf(':'),
+            referenceName.LastIndexOf('.'));
+        return separator >= 0 ? referenceName[(separator + 1)..] : referenceName;
     }
 
     static void CopyOptional(JObject target, JObject source, string property)
