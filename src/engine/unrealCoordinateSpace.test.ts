@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
   ALS_MESH_COMPONENT_YAW_RADIANS,
+  alsMeshRootTranslationToUnrealWorld,
   threeOrbitAzimuthToUnrealViewRelativeYawDegrees,
   threeToUnrealVector,
   threeViewRelativeYawToUnrealDegrees,
@@ -31,6 +32,27 @@ describe('Unreal to three.js coordinate space', () => {
 
     expect(rawMeshForward.x).toBeCloseTo(1, 7)
     expect(rawMeshForward.z).toBeCloseTo(0, 7)
+  })
+
+  it('maps extracted SK_Als root motion through mesh yaw and actor yaw exactly once', () => {
+    expect(alsMeshRootTranslationToUnrealWorld(
+      [0, 0, 0.1],
+      0,
+    )).toEqual({ x: 0.1, y: 0, z: 0 })
+
+    const right = alsMeshRootTranslationToUnrealWorld(
+      [0, 0, 0.1],
+      90,
+    )
+    expect(right.x).toBeCloseTo(0, 12)
+    expect(right.y).toBeCloseTo(0.1, 12)
+    expect(right.z).toBe(0)
+
+    const lateral = alsMeshRootTranslationToUnrealWorld(
+      [0.2, 0.3, 0],
+      0,
+    )
+    expect(lateral).toEqual({ x: 0, y: -0.2, z: 0.3 })
   })
 
   it('maps extractor vectors and round-trips the reflected basis', () => {

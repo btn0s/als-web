@@ -45,6 +45,29 @@ export function unrealYawDegreesToThreeRadians(yawDegrees: number): number {
 }
 
 /**
+ * Converts an extracted SK_Als root-bone translation into actor-world ALS axes.
+ *
+ * The sampled root is in the glTF mesh basis. AAlsCharacter's authored mesh yaw
+ * (-90° in UE, +90° after the extractor reflection) maps local glTF +Z to actor
+ * +X before the actor yaw is applied.
+ */
+export function alsMeshRootTranslationToUnrealWorld(
+  translation: ArrayLike<number>,
+  actorYawDegrees: number,
+  out: UnrealVector3 = { x: 0, y: 0, z: 0 },
+): UnrealVector3 {
+  const actorLocalX = translation[2] ?? 0
+  const actorLocalY = -(translation[0] ?? 0)
+  const yaw = actorYawDegrees * DEGREES_TO_RADIANS
+  const cosine = Math.cos(yaw)
+  const sine = Math.sin(yaw)
+  out.x = cosine * actorLocalX - sine * actorLocalY
+  out.y = sine * actorLocalX + cosine * actorLocalY
+  out.z = translation[1] ?? 0
+  return out
+}
+
+/**
  * Converts a three.js world-view yaw delta and rendered actor yaw into ALS's actor-relative view
  * yaw. Both arguments are radians in the three.js basis; the result is unwound ALS degrees.
  */
