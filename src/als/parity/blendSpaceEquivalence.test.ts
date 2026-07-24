@@ -450,7 +450,9 @@ describe('UE5.5 FBlendSpaceData equivalence', () => {
       const evaluator = createBlendSpaceEvaluator(compileBlendSpace(authored))
       let oracleCache = -1
       let randomState = 0x9e3779b9
-      const normalizedPoints: [number, number][] = [...fixedNormalizedPoints]
+      const normalizedPoints: [number, number][] = fixedNormalizedPoints.map(
+        ([x, y]) => [x, y],
+      )
       for (let index = 0; index < 512; index++) {
         randomState = (Math.imul(randomState, 1664525) + 1013904223) >>> 0
         const x = randomState / 0x1_0000_0000 * 1.5 - 0.25
