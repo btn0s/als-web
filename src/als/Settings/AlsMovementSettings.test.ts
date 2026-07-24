@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
   ALS_AUTHORED_GAIT_SPEEDS,
   ALS_GAITS,
+  ALS_MOVEMENT_SETTINGS,
   ALS_STANCES,
   buildLocomotionProfile,
   resolveDesiredGaitSpeed,
   resolveGaitSpeeds,
+  sampleGroundedMovementParameters,
 } from './AlsMovementSettings'
 
 function clip(name: string, duration: number) {
@@ -36,6 +38,10 @@ describe('ALS locomotion profile', () => {
       standing: { walk: 1.75, run: 3.75, sprint: 6.5 },
       crouching: { walk: 1.5, run: 2.0 },
     })
+  })
+
+  it('uses the authored Aiming walk speed from MS_Als_Normal', () => {
+    expect(resolveDesiredGaitSpeed('Walking', 'Standing', 'Aiming')).toBe(1.65)
   })
 
   it('derives each loaded gait stride from its authored speed and clip duration', () => {
@@ -79,5 +85,64 @@ describe('ALS locomotion profile', () => {
       crouchWalk: 4.5,
       crouchRun: 2,
     })
+  })
+})
+
+describe('MS_Als_Normal movement curves', () => {
+  it('selects the authored curve families by rotation mode and stance', () => {
+    expect(ALS_MOVEMENT_SETTINGS.VelocityDirection.Standing).toMatchObject({
+      movementCurve: 'normal',
+      rotationCurve: 'responsive',
+    })
+    expect(ALS_MOVEMENT_SETTINGS.ViewDirection.Standing).toMatchObject({
+      movementCurve: 'normal',
+      rotationCurve: 'normal',
+    })
+    expect(ALS_MOVEMENT_SETTINGS.ViewDirection.Crouching).toMatchObject({
+      movementCurve: 'responsive',
+      rotationCurve: 'normal',
+    })
+  })
+
+  it('matches authored Normal curve anchors with cm-to-m conversion', () => {
+    const settings = ALS_MOVEMENT_SETTINGS.ViewDirection.Standing
+    expect(sampleGroundedMovementParameters(settings, 1)).toEqual({
+      maxAcceleration: 20,
+      brakingDeceleration: 15,
+      groundFriction: 5,
+      rotationInterpolationSpeed: 4,
+    })
+    expect(sampleGroundedMovementParameters(settings, 3)).toEqual({
+      maxAcceleration: 7.5,
+      brakingDeceleration: 5,
+      groundFriction: 0.5,
+      rotationInterpolationSpeed: 20,
+    })
+  })
+
+  it('matches authored Responsive curve anchors', () => {
+    const settings = ALS_MOVEMENT_SETTINGS.ViewDirection.Crouching
+    expect(sampleGroundedMovementParameters(settings, 1)).toEqual({
+      maxAcceleration: 25,
+      brakingDeceleration: 20,
+      groundFriction: 10,
+      rotationInterpolationSpeed: 4,
+    })
+    expect(sampleGroundedMovementParameters(settings, 3)).toEqual({
+      maxAcceleration: 5,
+      brakingDeceleration: 8,
+      groundFriction: 5,
+      rotationInterpolationSpeed: 20,
+    })
+  })
+
+  it('preserves the authored cubic movement-curve segment', () => {
+    const parameters = sampleGroundedMovementParameters(
+      ALS_MOVEMENT_SETTINGS.ViewDirection.Standing,
+      2.5,
+    )
+    expect(parameters.maxAcceleration).toBeCloseTo(9.197035, 6)
+    expect(parameters.brakingDeceleration).toBeCloseTo(8.75, 6)
+    expect(parameters.groundFriction).toBeCloseTo(2.25, 6)
   })
 })

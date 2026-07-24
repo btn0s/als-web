@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import * as THREE from 'three'
 import { useGLTF } from '@react-three/drei'
+import { sampleRichCurve } from '../../engine/richCurve'
+import type { RichCurveKey } from '../../engine/richCurve'
 
 /**
  * The single source of truth for ALS locomotion tuning.
@@ -36,20 +38,265 @@ export type AlsGait = (typeof ALS_GAITS)[number]
 export const ALS_STANCES = ['Standing', 'Crouching'] as const
 export type AlsStance = (typeof ALS_STANCES)[number]
 
+export const ALS_ROTATION_MODES = [
+  'VelocityDirection',
+  'ViewDirection',
+  'Aiming',
+] as const
+export type AlsRotationMode = (typeof ALS_ROTATION_MODES)[number]
+
+export interface AlsMovementGaitSettings {
+  readonly walkForwardSpeed: number
+  readonly walkBackwardSpeed: number
+  readonly runForwardSpeed: number
+  readonly runBackwardSpeed: number
+  readonly sprintSpeed: number
+  readonly movementCurve: 'normal' | 'responsive'
+  readonly rotationCurve: 'normal' | 'responsive'
+}
+
+const STANDING_NORMAL_SPEEDS = {
+  walkForwardSpeed: 1.75,
+  walkBackwardSpeed: 1.75,
+  runForwardSpeed: 3.75,
+  runBackwardSpeed: 3.75,
+  sprintSpeed: 6.5,
+} as const
+
+const STANDING_AIMING_SPEEDS = {
+  ...STANDING_NORMAL_SPEEDS,
+  walkForwardSpeed: 1.65,
+  walkBackwardSpeed: 1.65,
+} as const
+
+const CROUCHING_SPEEDS = {
+  walkForwardSpeed: 1.5,
+  walkBackwardSpeed: 1.5,
+  runForwardSpeed: 2,
+  runBackwardSpeed: 2,
+  sprintSpeed: 3,
+} as const
+
+/**
+ * Direct content transcription of MS_Als_Normal.uasset. Speeds are converted from cm/s to m/s;
+ * curve names preserve the data asset's references verbatim.
+ */
+export const ALS_MOVEMENT_SETTINGS: Readonly<
+  Record<AlsRotationMode, Readonly<Record<AlsStance, AlsMovementGaitSettings>>>
+> = {
+  VelocityDirection: {
+    Standing: {
+      ...STANDING_NORMAL_SPEEDS,
+      movementCurve: 'normal',
+      rotationCurve: 'responsive',
+    },
+    Crouching: {
+      ...CROUCHING_SPEEDS,
+      movementCurve: 'responsive',
+      rotationCurve: 'normal',
+    },
+  },
+  ViewDirection: {
+    Standing: {
+      ...STANDING_NORMAL_SPEEDS,
+      movementCurve: 'normal',
+      rotationCurve: 'normal',
+    },
+    Crouching: {
+      ...CROUCHING_SPEEDS,
+      movementCurve: 'responsive',
+      rotationCurve: 'normal',
+    },
+  },
+  Aiming: {
+    Standing: {
+      ...STANDING_AIMING_SPEEDS,
+      movementCurve: 'normal',
+      rotationCurve: 'normal',
+    },
+    Crouching: {
+      ...CROUCHING_SPEEDS,
+      movementCurve: 'responsive',
+      rotationCurve: 'normal',
+    },
+  },
+}
+
+interface AlsMovementCurve {
+  readonly acceleration: readonly RichCurveKey[]
+  readonly brakingDeceleration: readonly RichCurveKey[]
+  readonly groundFriction: readonly RichCurveKey[]
+}
+
+/**
+ * CV_Als_AccelerationAndDecelerationAndGroundFriction_{Normal,Responsive}.uasset, converted from
+ * cm/s² to m/s² for the first two channels. Tangents receive the same unit conversion.
+ */
+const ALS_MOVEMENT_CURVES: Readonly<Record<'normal' | 'responsive', AlsMovementCurve>> = {
+  normal: {
+    acceleration: [
+      { time: 0, value: 20, interpolation: 'linear' },
+      { time: 1, value: 20, interpolation: 'linear' },
+      {
+        time: 2,
+        value: 20,
+        interpolation: 'cubic',
+        leaveTangent: -36.42372,
+      },
+      { time: 3, value: 7.5, interpolation: 'linear', arriveTangent: 0 },
+    ],
+    brakingDeceleration: [
+      { time: 0, value: 15, interpolation: 'linear' },
+      { time: 1, value: 15, interpolation: 'linear' },
+      { time: 2, value: 12.5, interpolation: 'linear' },
+      { time: 3, value: 5, interpolation: 'linear' },
+    ],
+    groundFriction: [
+      { time: 0, value: 5, interpolation: 'linear' },
+      { time: 1, value: 5, interpolation: 'linear' },
+      { time: 2, value: 4, interpolation: 'linear' },
+      { time: 3, value: 0.5, interpolation: 'linear' },
+    ],
+  },
+  responsive: {
+    acceleration: [
+      { time: 0, value: 25, interpolation: 'linear' },
+      { time: 1, value: 25, interpolation: 'linear' },
+      {
+        time: 2,
+        value: 25,
+        interpolation: 'cubic',
+        leaveTangent: -58.63394,
+      },
+      { time: 3, value: 5, interpolation: 'cubic', arriveTangent: 0 },
+    ],
+    brakingDeceleration: [
+      { time: 0, value: 20, interpolation: 'linear' },
+      { time: 1, value: 20, interpolation: 'linear' },
+      {
+        time: 2,
+        value: 20,
+        interpolation: 'cubic',
+        leaveTangent: -27.156404,
+      },
+      { time: 3, value: 8, interpolation: 'cubic', arriveTangent: 0 },
+    ],
+    groundFriction: [
+      { time: 0, value: 10, interpolation: 'linear' },
+      { time: 1, value: 10, interpolation: 'linear' },
+      { time: 2, value: 10, interpolation: 'cubic', leaveTangent: 0 },
+      { time: 3, value: 5, interpolation: 'cubic', arriveTangent: 0 },
+    ],
+  },
+}
+
+/** CF_Als_RotationInterpolationSpeed_{Normal,Responsive}.uasset. */
+const ALS_ROTATION_INTERPOLATION_CURVES: Readonly<
+  Record<'normal' | 'responsive', readonly RichCurveKey[]>
+> = {
+  normal: [
+    {
+      time: 0,
+      value: 0.5,
+      interpolation: 'cubic',
+      arriveTangent: 6.489353,
+      leaveTangent: 6.489353,
+    },
+    {
+      time: 1,
+      value: 4,
+      interpolation: 'cubic',
+      arriveTangent: 0,
+      leaveTangent: 0,
+    },
+    {
+      time: 2,
+      value: 5,
+      interpolation: 'cubic',
+      arriveTangent: 3.7926624,
+      leaveTangent: 3.7926624,
+    },
+    {
+      time: 3,
+      value: 20,
+      interpolation: 'cubic',
+      arriveTangent: 26.585165,
+      leaveTangent: 26.585165,
+    },
+  ],
+  responsive: [
+    {
+      time: 0,
+      value: 5,
+      interpolation: 'cubic',
+      arriveTangent: 2.470298,
+      leaveTangent: 2.470298,
+    },
+    {
+      time: 1,
+      value: 8,
+      interpolation: 'cubic',
+      arriveTangent: 3.5,
+      leaveTangent: 3.5,
+    },
+    {
+      time: 2,
+      value: 12,
+      interpolation: 'cubic',
+      arriveTangent: 4.6387124,
+      leaveTangent: 4.6387124,
+    },
+    {
+      time: 3,
+      value: 20,
+      interpolation: 'cubic',
+      arriveTangent: 13.164665,
+      leaveTangent: 13.164665,
+    },
+  ],
+}
+
+export interface AlsGroundedMovementParameters {
+  readonly maxAcceleration: number
+  readonly brakingDeceleration: number
+  readonly groundFriction: number
+  readonly rotationInterpolationSpeed: number
+}
+
+/** Mirrors UAlsCharacterMovementComponent::RefreshGroundedMovementSettings curve evaluation. */
+export function sampleGroundedMovementParameters(
+  settings: AlsMovementGaitSettings,
+  gaitAmount: number,
+): AlsGroundedMovementParameters {
+  const movementCurve = ALS_MOVEMENT_CURVES[settings.movementCurve]
+  return {
+    maxAcceleration: sampleRichCurve(movementCurve.acceleration, gaitAmount),
+    brakingDeceleration: sampleRichCurve(
+      movementCurve.brakingDeceleration,
+      gaitAmount,
+    ),
+    groundFriction: sampleRichCurve(movementCurve.groundFriction, gaitAmount),
+    rotationInterpolationSpeed: sampleRichCurve(
+      ALS_ROTATION_INTERPOLATION_CURVES[settings.rotationCurve],
+      Math.max(1, gaitAmount),
+    ),
+  }
+}
+
 /**
  * Desired-gait target speed from MS_Als_Normal. ALS keeps DesiredGait selected while stopped;
  * the caller applies the separate Moving gate. Crouching has no sprint gait settings, so both
  * Running and Sprinting resolve to its authored 2m/s run cap.
  */
-export function resolveDesiredGaitSpeed(gait: AlsGait, stance: AlsStance): number {
-  if (stance === 'Crouching') {
-    return gait === 'Walking'
-      ? ALS_AUTHORED_GAIT_SPEEDS.crouching.walk
-      : ALS_AUTHORED_GAIT_SPEEDS.crouching.run
-  }
-  if (gait === 'Walking') return ALS_AUTHORED_GAIT_SPEEDS.standing.walk
-  if (gait === 'Running') return ALS_AUTHORED_GAIT_SPEEDS.standing.run
-  return ALS_AUTHORED_GAIT_SPEEDS.standing.sprint
+export function resolveDesiredGaitSpeed(
+  gait: AlsGait,
+  stance: AlsStance,
+  rotationMode: AlsRotationMode = 'ViewDirection',
+): number {
+  const settings = ALS_MOVEMENT_SETTINGS[rotationMode][stance]
+  if (gait === 'Walking') return settings.walkForwardSpeed
+  if (gait === 'Running' || stance === 'Crouching') return settings.runForwardSpeed
+  return settings.sprintSpeed
 }
 
 export interface Gait {
