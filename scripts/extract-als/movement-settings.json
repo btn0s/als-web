@@ -1,0 +1,531 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "engineVersion": "UE5.5",
+    "referenceRelease": "ALS Refactored 4.15",
+    "settingsAssetPath": "ALS/Content/ALS/Data/Character/Movement/MS_Als_Normal.uasset",
+    "cppDefaults": "Source/ALS/Public/Settings/AlsMovementSettings.h",
+    "curveConsumption": "Source/ALS/Private/AlsCharacterMovementComponent.cpp"
+  },
+  "settings": {
+    "asset": "MS_Als_Normal",
+    "nativeSpeedUnit": "cm/s",
+    "VelocityAngleToSpeedInterpolationRange": [
+      100.0,
+      125.0
+    ],
+    "rotationModes": {
+      "Als.RotationMode.VelocityDirection": {
+        "stances": {
+          "Als.Stance.Standing": {
+            "bAllowDirectionDependentMovementSpeed": false,
+            "WalkForwardSpeed": 175.0,
+            "WalkBackwardSpeed": 175.0,
+            "RunForwardSpeed": 375.0,
+            "RunBackwardSpeed": 375.0,
+            "SprintSpeed": 650.0,
+            "AccelerationAndDecelerationAndGroundFrictionCurve": "CV_Als_AccelerationAndDecelerationAndGroundFriction_Normal",
+            "RotationInterpolationSpeedCurve": "CF_Als_RotationInterpolationSpeed_Responsive"
+          },
+          "Als.Stance.Crouching": {
+            "bAllowDirectionDependentMovementSpeed": false,
+            "WalkForwardSpeed": 150.0,
+            "WalkBackwardSpeed": 150.0,
+            "RunForwardSpeed": 200.0,
+            "RunBackwardSpeed": 200.0,
+            "SprintSpeed": 300.0,
+            "AccelerationAndDecelerationAndGroundFrictionCurve": "CV_Als_AccelerationAndDecelerationAndGroundFriction_Responsive",
+            "RotationInterpolationSpeedCurve": "CF_Als_RotationInterpolationSpeed_Normal"
+          }
+        }
+      },
+      "Als.RotationMode.ViewDirection": {
+        "stances": {
+          "Als.Stance.Standing": {
+            "bAllowDirectionDependentMovementSpeed": false,
+            "WalkForwardSpeed": 175.0,
+            "WalkBackwardSpeed": 175.0,
+            "RunForwardSpeed": 375.0,
+            "RunBackwardSpeed": 375.0,
+            "SprintSpeed": 650.0,
+            "AccelerationAndDecelerationAndGroundFrictionCurve": "CV_Als_AccelerationAndDecelerationAndGroundFriction_Normal",
+            "RotationInterpolationSpeedCurve": "CF_Als_RotationInterpolationSpeed_Normal"
+          },
+          "Als.Stance.Crouching": {
+            "bAllowDirectionDependentMovementSpeed": false,
+            "WalkForwardSpeed": 150.0,
+            "WalkBackwardSpeed": 150.0,
+            "RunForwardSpeed": 200.0,
+            "RunBackwardSpeed": 200.0,
+            "SprintSpeed": 300.0,
+            "AccelerationAndDecelerationAndGroundFrictionCurve": "CV_Als_AccelerationAndDecelerationAndGroundFriction_Responsive",
+            "RotationInterpolationSpeedCurve": "CF_Als_RotationInterpolationSpeed_Normal"
+          }
+        }
+      },
+      "Als.RotationMode.Aiming": {
+        "stances": {
+          "Als.Stance.Standing": {
+            "bAllowDirectionDependentMovementSpeed": false,
+            "WalkForwardSpeed": 165.0,
+            "WalkBackwardSpeed": 165.0,
+            "RunForwardSpeed": 375.0,
+            "RunBackwardSpeed": 375.0,
+            "SprintSpeed": 650.0,
+            "AccelerationAndDecelerationAndGroundFrictionCurve": "CV_Als_AccelerationAndDecelerationAndGroundFriction_Normal",
+            "RotationInterpolationSpeedCurve": "CF_Als_RotationInterpolationSpeed_Normal"
+          },
+          "Als.Stance.Crouching": {
+            "bAllowDirectionDependentMovementSpeed": false,
+            "WalkForwardSpeed": 150.0,
+            "WalkBackwardSpeed": 150.0,
+            "RunForwardSpeed": 200.0,
+            "RunBackwardSpeed": 200.0,
+            "SprintSpeed": 300.0,
+            "AccelerationAndDecelerationAndGroundFrictionCurve": "CV_Als_AccelerationAndDecelerationAndGroundFriction_Responsive",
+            "RotationInterpolationSpeedCurve": "CF_Als_RotationInterpolationSpeed_Normal"
+          }
+        }
+      }
+    }
+  },
+  "curves": {
+    "CF_Als_RotationInterpolationSpeed_Normal": {
+      "assetPath": "ALS/Content/ALS/Data/Character/Movement/CF_Als_RotationInterpolationSpeed_Normal.uasset",
+      "type": "CurveFloat",
+      "channels": {
+        "RotationInterpolationSpeed": {
+          "sourceIndex": 0,
+          "keys": [
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.0,
+              "Value": 0.5,
+              "ArriveTangent": 6.489353,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 6.489353,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 1.0,
+              "Value": 4.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 1.2133517,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 1.2133517
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 2.0,
+              "Value": 5.0,
+              "ArriveTangent": 3.7926624,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 3.7926624,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 3.0,
+              "Value": 20.0,
+              "ArriveTangent": 26.585165,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 26.585165,
+              "LeaveTangentWeight": 0.0
+            }
+          ]
+        }
+      }
+    },
+    "CF_Als_RotationInterpolationSpeed_Responsive": {
+      "assetPath": "ALS/Content/ALS/Data/Character/Movement/CF_Als_RotationInterpolationSpeed_Responsive.uasset",
+      "type": "CurveFloat",
+      "channels": {
+        "RotationInterpolationSpeed": {
+          "sourceIndex": 0,
+          "keys": [
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.0,
+              "Value": 5.0,
+              "ArriveTangent": 2.470298,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 2.470298,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 1.0,
+              "Value": 8.0,
+              "ArriveTangent": 3.5,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 3.5,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 2.0,
+              "Value": 12.0,
+              "ArriveTangent": 4.6387124,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 4.6387124,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 3.0,
+              "Value": 20.0,
+              "ArriveTangent": 13.164665,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 13.164665,
+              "LeaveTangentWeight": 0.0
+            }
+          ]
+        }
+      }
+    },
+    "CV_Als_AccelerationAndDecelerationAndGroundFriction_Normal": {
+      "assetPath": "ALS/Content/ALS/Data/Character/Movement/CV_Als_AccelerationAndDecelerationAndGroundFriction_Normal.uasset",
+      "type": "CurveVector",
+      "channels": {
+        "MaxAccelerationWalking": {
+          "sourceIndex": 0,
+          "keys": [
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.0,
+              "Value": 2000.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 1.0,
+              "Value": 2000.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_Break",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 2.0,
+              "Value": 2000.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": -3642.372,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 3.0,
+              "Value": 750.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            }
+          ]
+        },
+        "BrakingDecelerationWalking": {
+          "sourceIndex": 1,
+          "keys": [
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.0,
+              "Value": 1500.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 1.0,
+              "Value": 1500.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 2.0,
+              "Value": 1250.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 3.0,
+              "Value": 500.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            }
+          ]
+        },
+        "GroundFriction": {
+          "sourceIndex": 2,
+          "keys": [
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.0,
+              "Value": 5.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 1.0,
+              "Value": 5.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 2.0,
+              "Value": 4.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 3.0,
+              "Value": 0.5,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            }
+          ]
+        }
+      }
+    },
+    "CV_Als_AccelerationAndDecelerationAndGroundFriction_Responsive": {
+      "assetPath": "ALS/Content/ALS/Data/Character/Movement/CV_Als_AccelerationAndDecelerationAndGroundFriction_Responsive.uasset",
+      "type": "CurveVector",
+      "channels": {
+        "MaxAccelerationWalking": {
+          "sourceIndex": 0,
+          "keys": [
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.0,
+              "Value": 2500.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 1.0,
+              "Value": 2500.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.33333334,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_Break",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 2.0,
+              "Value": 2500.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.33333334,
+              "LeaveTangent": -5863.394,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 3.0,
+              "Value": 500.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.33333334,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            }
+          ]
+        },
+        "BrakingDecelerationWalking": {
+          "sourceIndex": 1,
+          "keys": [
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.0,
+              "Value": 2000.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 1.0,
+              "Value": 2000.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.33333334,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_Break",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 2.0,
+              "Value": 2000.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.33333334,
+              "LeaveTangent": -2715.6404,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 3.0,
+              "Value": 800.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.33333334,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            }
+          ]
+        },
+        "GroundFriction": {
+          "sourceIndex": 2,
+          "keys": [
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 0.0,
+              "Value": 10.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.0,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Linear",
+              "TangentMode": "RCTM_Auto",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 1.0,
+              "Value": 10.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.33333334,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 2.0,
+              "Value": 10.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.33333334,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            },
+            {
+              "InterpMode": "RCIM_Cubic",
+              "TangentMode": "RCTM_User",
+              "TangentWeightMode": "RCTWM_WeightedNone",
+              "Time": 3.0,
+              "Value": 5.0,
+              "ArriveTangent": 0.0,
+              "ArriveTangentWeight": 0.33333334,
+              "LeaveTangent": 0.0,
+              "LeaveTangentWeight": 0.0
+            }
+          ]
+        }
+      }
+    }
+  },
+  "validations": [
+    {
+      "id": "ms-als-normal-rotation-mode-and-stance-settings",
+      "passed": true,
+      "values": {
+        "rotationModeCount": 3,
+        "gaitCount": 6,
+        "errors": []
+      }
+    },
+    {
+      "id": "movement-rich-curve-keys",
+      "passed": true,
+      "values": {
+        "curveCount": 4,
+        "channelCount": 8,
+        "keyCount": 32,
+        "errors": []
+      }
+    }
+  ]
+}

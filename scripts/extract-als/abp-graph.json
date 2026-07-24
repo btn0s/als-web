@@ -155006,6 +155006,233 @@
   ],
   "validations": [
     {
+      "id": "als-4.15-animation-blueprint-target-coverage",
+      "passed": true,
+      "values": {
+        "expectedCount": 23,
+        "actualCount": 23,
+        "missing": [],
+        "unexpected": [],
+        "kindMismatches": []
+      }
+    },
+    {
+      "id": "compiled-animgraph-structural-integrity",
+      "passed": true,
+      "values": {
+        "assets": [
+          {
+            "asset": "AB_Als",
+            "serializedNodes": 15,
+            "compiledNodes": 15,
+            "recoveredIndices": 15,
+            "poseLinks": 13,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_Monolithic",
+            "serializedNodes": 565,
+            "compiledNodes": 570,
+            "recoveredIndices": 561,
+            "poseLinks": 503,
+            "stateMachines": 10,
+            "transitions": 140
+          },
+          {
+            "asset": "ALI_Overlay",
+            "serializedNodes": 0,
+            "compiledNodes": 0,
+            "recoveredIndices": 0,
+            "poseLinks": 0,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_Grounded",
+            "serializedNodes": 37,
+            "compiledNodes": 37,
+            "recoveredIndices": 37,
+            "poseLinks": 20,
+            "stateMachines": 1,
+            "transitions": 20
+          },
+          {
+            "asset": "AB_Als_Layering",
+            "serializedNodes": 92,
+            "compiledNodes": 94,
+            "recoveredIndices": 91,
+            "poseLinks": 120,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_Locomotion",
+            "serializedNodes": 77,
+            "compiledNodes": 77,
+            "recoveredIndices": 77,
+            "poseLinks": 52,
+            "stateMachines": 2,
+            "transitions": 21
+          },
+          {
+            "asset": "AB_Als_Ragdolling",
+            "serializedNodes": 4,
+            "compiledNodes": 6,
+            "recoveredIndices": 1,
+            "poseLinks": 2,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_View",
+            "serializedNodes": 25,
+            "compiledNodes": 25,
+            "recoveredIndices": 25,
+            "poseLinks": 15,
+            "stateMachines": 1,
+            "transitions": 12
+          },
+          {
+            "asset": "AB_Als_Barrel",
+            "serializedNodes": 17,
+            "compiledNodes": 18,
+            "recoveredIndices": 16,
+            "poseLinks": 15,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_Binoculars",
+            "serializedNodes": 26,
+            "compiledNodes": 28,
+            "recoveredIndices": 24,
+            "poseLinks": 20,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_Bow",
+            "serializedNodes": 48,
+            "compiledNodes": 49,
+            "recoveredIndices": 44,
+            "poseLinks": 34,
+            "stateMachines": 1,
+            "transitions": 6
+          },
+          {
+            "asset": "AB_Als_Box",
+            "serializedNodes": 16,
+            "compiledNodes": 17,
+            "recoveredIndices": 12,
+            "poseLinks": 11,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_Default",
+            "serializedNodes": 14,
+            "compiledNodes": 14,
+            "recoveredIndices": 14,
+            "poseLinks": 12,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_Feminine",
+            "serializedNodes": 14,
+            "compiledNodes": 14,
+            "recoveredIndices": 14,
+            "poseLinks": 12,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_HandsTied",
+            "serializedNodes": 21,
+            "compiledNodes": 22,
+            "recoveredIndices": 21,
+            "poseLinks": 19,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_Injured",
+            "serializedNodes": 21,
+            "compiledNodes": 22,
+            "recoveredIndices": 20,
+            "poseLinks": 19,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_Masculine",
+            "serializedNodes": 14,
+            "compiledNodes": 14,
+            "recoveredIndices": 14,
+            "poseLinks": 12,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_PistolOneHanded",
+            "serializedNodes": 43,
+            "compiledNodes": 44,
+            "recoveredIndices": 39,
+            "poseLinks": 29,
+            "stateMachines": 1,
+            "transitions": 6
+          },
+          {
+            "asset": "AB_Als_PistolTwoHanded",
+            "serializedNodes": 45,
+            "compiledNodes": 46,
+            "recoveredIndices": 41,
+            "poseLinks": 31,
+            "stateMachines": 1,
+            "transitions": 6
+          },
+          {
+            "asset": "AB_Als_Rifle",
+            "serializedNodes": 57,
+            "compiledNodes": 58,
+            "recoveredIndices": 53,
+            "poseLinks": 43,
+            "stateMachines": 1,
+            "transitions": 6
+          },
+          {
+            "asset": "AB_Als_Torch",
+            "serializedNodes": 24,
+            "compiledNodes": 26,
+            "recoveredIndices": 23,
+            "poseLinks": 18,
+            "stateMachines": 0,
+            "transitions": 0
+          },
+          {
+            "asset": "AB_Als_Crouching",
+            "serializedNodes": 112,
+            "compiledNodes": 112,
+            "recoveredIndices": 112,
+            "poseLinks": 103,
+            "stateMachines": 2,
+            "transitions": 36
+          },
+          {
+            "asset": "AB_Als_Standing",
+            "serializedNodes": 203,
+            "compiledNodes": 204,
+            "recoveredIndices": 195,
+            "poseLinks": 178,
+            "stateMachines": 4,
+            "transitions": 51
+          }
+        ],
+        "errors": []
+      }
+    },
+    {
       "id": "rifle-sequence-evaluator-explicit-times",
       "passed": true,
       "values": [

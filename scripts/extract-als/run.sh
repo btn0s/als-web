@@ -5,8 +5,9 @@
 # raw tracks + SKM_Als editor LOD0 → JSON) → assemble-glb.mjs (axis/unit
 # conversion, skinned primitives, GLB) →
 # validate-glb.mjs (structure + physical sanity) → AbpDump.cs (compiled FAnimNode
-# structs + validation lookups) → copy distributable assets with the upstream MIT
-# notice. clips.manifest is the audited M3 animation allowlist.
+# structs + validation lookups) → MovementSettingsDump.cs (MS_Als_Normal + every
+# referenced rich curve) → copy distributable assets with the upstream MIT notice.
+# clips.manifest is the audited M3 animation allowlist.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -37,6 +38,8 @@ dotnet run -- dump \
   SK_Als_Rifle SKM_Als_Rifle MI_Als_Rifle
 dotnet run -- dump-abp "$WORK/stage" "$WORK/abp-graph.json"
 dotnet run -- validate-abp "$WORK/abp-graph.json"
+dotnet run -- dump-movement-settings "$WORK/stage" "$WORK/movement-settings.json"
+dotnet run -- validate-movement-settings "$WORK/movement-settings.json"
 [ -d node_modules ] || pnpm install
 node assemble-glb.mjs "$WORK/als-dump.json" "$WORK/skm-als.glb"
 node assemble-glb.mjs "$WORK/als-rifle-dump.json" "$WORK/skm-als-rifle.glb"
@@ -55,5 +58,7 @@ else
   cp "$WORK/abp-graph.json" "$REPO_ROOT/scripts/extract-als/abp-graph.json"
   ABP_GRAPH_DESTINATION="scripts/extract-als/abp-graph.json"
 fi
+cp "$WORK/movement-settings.json" "$REPO_ROOT/scripts/extract-als/movement-settings.json"
 echo "done: public/assets/skm-als.glb + skm-als-rifle.glb + LICENSE-ALS-Refactored.md"
 echo "done: $ABP_GRAPH_DESTINATION ($ABP_GRAPH_SIZE bytes)"
+echo "done: scripts/extract-als/movement-settings.json"

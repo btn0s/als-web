@@ -85,7 +85,7 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
       the curated merge (single GLB, mesh + 67 clips + curves, root tracks preserved) *(2026-07-23)*
 - [x] Clip audit doc-comment: `clips.manifest`, one line per clip keyed to M3 items *(2026-07-23)*
 
-- [ ] **ABP AnimGraph dumper (added 2026-07-23 — build whatever the 1:1 port needs)**: the
+- [x] **ABP AnimGraph dumper (2026-07-23)**: the
       AnimGraph Blueprints are ALS's only non-legible substance — every shipped visual defect was
       a wrong reconstruction of graph semantics (overlay ownership, ik routing, bank frames, clip
       selection). Blueprint uassets serialize their compiled anim-node objects with readable
@@ -93,7 +93,11 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
       stage walks AB_Als/AB_Als_Grounded/overlay ABPs/ALI interfaces and emits the graph as JSON —
       nodes, parameters, pose-link wiring, layered-blend-per-bone branch filters, state
       transitions, blend durations. Converts graph archaeology into lookups; feeds the parity
-      harness's content oracle its ground truth
+      harness's content oracle its ground truth. The validator pins the exact 23-asset topology,
+      all serialized node/link/index invariants, 24 state machines, and 304 transitions
+- [x] **Movement content oracle (2026-07-23):** `MS_Als_Normal`'s 3 rotation modes × 2 stances
+      plus all referenced acceleration/braking/friction and rotation-interpolation rich curves
+      dump deterministically with their authored interpolation and tangent metadata
 
 **Exit (revised):** one curated GLB (met 2026-07-23: 7.4MB, real mesh, 67 clips, 161 curves; every
 clip binds by bone name; strides from authored speeds) + the ABP graph dump alongside it.

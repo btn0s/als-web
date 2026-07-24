@@ -17,6 +17,37 @@ public static class AbpDump
 {
     const string CharacterPath = "/Content/ALS/Character/";
 
+    // ALS Refactored 4.15 is the extraction pipeline's pinned reference release.
+    // Keep this inventory explicit: adding or losing an AnimBlueprint must be a
+    // reviewed content change, not something a filename filter can hide.
+    static readonly IReadOnlyDictionary<string, string> ExpectedTargets =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["AB_Als"] = "AnimBlueprint",
+            ["AB_Als_Monolithic"] = "AnimBlueprint",
+            ["ALI_Overlay"] = "AnimLayerInterface",
+            ["AB_Als_Grounded"] = "AnimBlueprint",
+            ["AB_Als_Layering"] = "AnimBlueprint",
+            ["AB_Als_Locomotion"] = "AnimBlueprint",
+            ["AB_Als_Ragdolling"] = "AnimBlueprint",
+            ["AB_Als_View"] = "AnimBlueprint",
+            ["AB_Als_Barrel"] = "AnimBlueprint",
+            ["AB_Als_Binoculars"] = "AnimBlueprint",
+            ["AB_Als_Bow"] = "AnimBlueprint",
+            ["AB_Als_Box"] = "AnimBlueprint",
+            ["AB_Als_Default"] = "AnimBlueprint",
+            ["AB_Als_Feminine"] = "AnimBlueprint",
+            ["AB_Als_HandsTied"] = "AnimBlueprint",
+            ["AB_Als_Injured"] = "AnimBlueprint",
+            ["AB_Als_Masculine"] = "AnimBlueprint",
+            ["AB_Als_PistolOneHanded"] = "AnimBlueprint",
+            ["AB_Als_PistolTwoHanded"] = "AnimBlueprint",
+            ["AB_Als_Rifle"] = "AnimBlueprint",
+            ["AB_Als_Torch"] = "AnimBlueprint",
+            ["AB_Als_Crouching"] = "AnimBlueprint",
+            ["AB_Als_Standing"] = "AnimBlueprint",
+        };
+
     static readonly JsonSerializer Serializer = JsonSerializer.Create(
         new JsonSerializerSettings
         {
@@ -128,18 +159,11 @@ public static class AbpDump
 
     static bool IsTarget(string path, string name, string extension)
     {
-        if (extension != "uasset" || !path.Contains(CharacterPath, StringComparison.Ordinal))
-            return false;
-
         var normalized = path.Replace('\\', '/');
-        if (normalized.Contains($"{CharacterPath}AnimationInstances/", StringComparison.Ordinal))
-            return name.StartsWith("AB_Als_", StringComparison.Ordinal);
-
-        return normalized.EndsWith($"{CharacterPath}AB_Als.uasset", StringComparison.Ordinal)
-               || normalized.EndsWith(
-                   $"{CharacterPath}AB_Als_Monolithic.uasset",
-                   StringComparison.Ordinal)
-               || normalized.EndsWith($"{CharacterPath}ALI_Overlay.uasset", StringComparison.Ordinal);
+        return extension == "uasset"
+               && normalized.Contains(CharacterPath, StringComparison.Ordinal)
+               && (name.StartsWith("AB_Als", StringComparison.Ordinal)
+                   || name.StartsWith("ALI_", StringComparison.Ordinal));
     }
 
     static AssetRecord DumpAsset(string filePath, Package package, UObject[] exports)
@@ -596,11 +620,272 @@ public static class AbpDump
     static JArray ValidatePayload(JObject payload)
     {
         var validations = new JArray();
+        validations.Add(ValidateTargetCoverage(payload));
+        validations.Add(ValidateGraphStructure(payload));
         validations.Add(ValidateRifleExplicitTimes(payload));
         validations.Add(ValidateLayeringDynamicAdditive(payload));
         validations.Add(ValidateCrouchIdle(payload));
         validations.Add(ValidateBranchFilters(payload));
         return validations;
+    }
+
+    static JObject ValidateTargetCoverage(JObject payload)
+    {
+        var assets = payload["assets"] as JObject ?? new JObject();
+        var actualNames = assets.Properties()
+            .Select(asset => asset.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var expectedNames = ExpectedTargets.Keys.Order(StringComparer.Ordinal).ToArray();
+        var missing = expectedNames.Except(actualNames, StringComparer.Ordinal).ToArray();
+        var unexpected = actualNames.Except(expectedNames, StringComparer.Ordinal).ToArray();
+        var kindMismatches = new JArray();
+
+        foreach (var target in ExpectedTargets)
+        {
+            if (assets[target.Key] is not JObject asset)
+                continue;
+            var actualKind = asset.Value<string>("kind");
+            if (actualKind == target.Value)
+                continue;
+            kindMismatches.Add(
+                new JObject
+                {
+                    ["asset"] = target.Key,
+                    ["expected"] = target.Value,
+                    ["actual"] = actualKind,
+                });
+        }
+
+        return Validation(
+            "als-4.15-animation-blueprint-target-coverage",
+            missing.Length == 0 && unexpected.Length == 0 && kindMismatches.Count == 0,
+            new JObject
+            {
+                ["expectedCount"] = expectedNames.Length,
+                ["actualCount"] = actualNames.Length,
+                ["missing"] = new JArray(missing),
+                ["unexpected"] = new JArray(unexpected),
+                ["kindMismatches"] = kindMismatches,
+            });
+    }
+
+    static JObject ValidateGraphStructure(JObject payload)
+    {
+        var assets = payload["assets"] as JObject ?? new JObject();
+        var errors = new JArray();
+        var summaries = new JArray();
+
+        foreach (var assetProperty in assets.Properties())
+        {
+            if (assetProperty.Value is not JObject asset)
+            {
+                errors.Add($"{assetProperty.Name}: asset record is not an object");
+                continue;
+            }
+
+            if (asset["nodes"] is not JArray nodes)
+            {
+                errors.Add($"{assetProperty.Name}: nodes is not an array");
+                continue;
+            }
+
+            var serializedNodeCount = asset.Value<int?>("serializedNodeCount");
+            var compiledNodeCount = asset.Value<int?>("compiledNodeCount");
+            if (serializedNodeCount != nodes.Count)
+            {
+                errors.Add(
+                    $"{assetProperty.Name}: serializedNodeCount {serializedNodeCount} " +
+                    $"does not match nodes length {nodes.Count}");
+            }
+            if (compiledNodeCount is null || compiledNodeCount < 0)
+            {
+                errors.Add($"{assetProperty.Name}: compiledNodeCount is missing or negative");
+                continue;
+            }
+
+            var exactIndices = new HashSet<int>();
+            var discoveredLinks = new List<(JObject Node, PoseLink Link)>();
+            foreach (var node in nodes.OfType<JObject>())
+            {
+                var propertyName = node.Value<string>("property") ?? "<unnamed>";
+                var compiledIndex = node["compiledIndex"]?.Type == JTokenType.Integer
+                    ? node.Value<int?>("compiledIndex")
+                    : null;
+                var candidates = node["compiledIndexCandidates"]?.Values<int>().ToArray()
+                                 ?? [];
+
+                if (candidates.Any(index => index < 0 || index >= compiledNodeCount))
+                {
+                    errors.Add(
+                        $"{assetProperty.Name}.{propertyName}: compiled index candidate " +
+                        "is outside compiledNodeCount");
+                }
+                if (compiledIndex is not null)
+                {
+                    if (compiledIndex < 0 || compiledIndex >= compiledNodeCount)
+                    {
+                        errors.Add(
+                            $"{assetProperty.Name}.{propertyName}: compiledIndex " +
+                            $"{compiledIndex} is outside compiledNodeCount");
+                    }
+                    if (!exactIndices.Add(compiledIndex.Value))
+                    {
+                        errors.Add(
+                            $"{assetProperty.Name}: duplicate compiledIndex {compiledIndex}");
+                    }
+                    if (!candidates.Contains(compiledIndex.Value))
+                    {
+                        errors.Add(
+                            $"{assetProperty.Name}.{propertyName}: exact compiledIndex is " +
+                            "absent from compiledIndexCandidates");
+                    }
+                }
+
+                if (node["parameters"] is not JToken parameters)
+                    continue;
+                foreach (var link in FindPoseLinks(parameters))
+                {
+                    discoveredLinks.Add((node, link));
+                    if (link.LinkId < -1 || link.LinkId >= compiledNodeCount
+                        || link.SourceLinkId < -1 || link.SourceLinkId >= compiledNodeCount)
+                    {
+                        errors.Add(
+                            $"{assetProperty.Name}.{propertyName}.{link.Path}: pose-link index " +
+                            "is outside compiledNodeCount");
+                    }
+                    if (compiledIndex is not null && link.SourceLinkId >= 0
+                        && link.SourceLinkId != compiledIndex)
+                    {
+                        errors.Add(
+                            $"{assetProperty.Name}.{propertyName}.{link.Path}: SourceLinkID " +
+                            $"{link.SourceLinkId} does not match compiledIndex {compiledIndex}");
+                    }
+                }
+            }
+
+            var expectedUnresolved = Enumerable.Range(0, compiledNodeCount.Value)
+                .Where(index => !exactIndices.Contains(index))
+                .ToArray();
+            var actualUnresolved =
+                asset["unresolvedCompiledNodeIndices"]?.Values<int>().ToArray() ?? [];
+            if (!expectedUnresolved.SequenceEqual(actualUnresolved))
+            {
+                errors.Add(
+                    $"{assetProperty.Name}: unresolvedCompiledNodeIndices is not the exact " +
+                    "complement of recovered compiled indices");
+            }
+
+            var emittedLinks = asset.SelectToken("wiring.poseLinks") as JArray ?? new JArray();
+            if (emittedLinks.Count != discoveredLinks.Count)
+            {
+                errors.Add(
+                    $"{assetProperty.Name}: emitted {emittedLinks.Count} wiring links for " +
+                    $"{discoveredLinks.Count} serialized pose links");
+            }
+            for (var index = 0; index < Math.Min(emittedLinks.Count, discoveredLinks.Count); index++)
+            {
+                if (emittedLinks[index] is not JObject emitted)
+                    continue;
+                var discovered = discoveredLinks[index];
+                var expectedStatus =
+                    discovered.Link.LinkId < 0 || discovered.Link.SourceLinkId < 0
+                        ? "unlinked"
+                        : exactIndices.Contains(discovered.Link.LinkId)
+                            ? "recovered"
+                            : "raw-index-only";
+                if (emitted.Value<int?>("sourceNodeIndex") != discovered.Link.LinkId
+                    || emitted.Value<int?>("targetNodeIndex") != discovered.Link.SourceLinkId
+                    || emitted.Value<string>("targetInput") != discovered.Link.Path
+                    || emitted.Value<string>("status") != expectedStatus)
+                {
+                    errors.Add(
+                        $"{assetProperty.Name}: wiring link {index} does not match its " +
+                        "serialized pose link");
+                }
+            }
+
+            var stateMachineCount = 0;
+            var transitionCount = 0;
+            foreach (var machine in asset["stateMachines"]?.OfType<JObject>() ?? [])
+            {
+                stateMachineCount++;
+                var states = machine["States"] as JArray ?? new JArray();
+                var initialState = machine.Value<int?>("InitialState");
+                if (states.Count == 0 || initialState is null
+                    || initialState < 0 || initialState >= states.Count)
+                {
+                    errors.Add(
+                        $"{assetProperty.Name}.{machine.Value<string>("MachineName")}: " +
+                        "InitialState is outside the baked state list");
+                }
+
+                foreach (var state in states.OfType<JObject>())
+                {
+                    var rootIndex = state.Value<int?>("StateRootNodeIndex");
+                    var isConduit = state.Value<bool?>("bIsAConduit") ?? false;
+                    if (rootIndex is null
+                        || (rootIndex < 0 && !isConduit)
+                        || rootIndex >= compiledNodeCount)
+                    {
+                        errors.Add(
+                            $"{assetProperty.Name}.{machine.Value<string>("MachineName")}." +
+                            $"{state.Value<string>("StateName")}: StateRootNodeIndex is invalid");
+                    }
+                    foreach (var playerIndex in state["PlayerNodeIndices"]?.Values<int>() ?? [])
+                    {
+                        if (playerIndex < 0 || playerIndex >= compiledNodeCount)
+                        {
+                            errors.Add(
+                                $"{assetProperty.Name}.{machine.Value<string>("MachineName")}." +
+                                $"{state.Value<string>("StateName")}: player index is invalid");
+                        }
+                    }
+                }
+
+                foreach (var transition in machine["Transitions"]?.OfType<JObject>() ?? [])
+                {
+                    transitionCount++;
+                    var previous = transition.Value<int?>("PreviousState");
+                    var next = transition.Value<int?>("NextState");
+                    if (previous is null || previous < 0 || previous >= states.Count
+                        || next is null || next < 0 || next >= states.Count)
+                    {
+                        errors.Add(
+                            $"{assetProperty.Name}.{machine.Value<string>("MachineName")}: " +
+                            "transition state index is invalid");
+                    }
+                    if (transition["CrossfadeDuration"]?.Type is not
+                        (JTokenType.Float or JTokenType.Integer))
+                    {
+                        errors.Add(
+                            $"{assetProperty.Name}.{machine.Value<string>("MachineName")}: " +
+                            "transition is missing CrossfadeDuration");
+                    }
+                }
+            }
+
+            summaries.Add(
+                new JObject
+                {
+                    ["asset"] = assetProperty.Name,
+                    ["serializedNodes"] = nodes.Count,
+                    ["compiledNodes"] = compiledNodeCount,
+                    ["recoveredIndices"] = exactIndices.Count,
+                    ["poseLinks"] = discoveredLinks.Count,
+                    ["stateMachines"] = stateMachineCount,
+                    ["transitions"] = transitionCount,
+                });
+        }
+
+        return Validation(
+            "compiled-animgraph-structural-integrity",
+            errors.Count == 0,
+            new JObject
+            {
+                ["assets"] = summaries,
+                ["errors"] = errors,
+            });
     }
 
     static JObject ValidateRifleExplicitTimes(JObject payload)

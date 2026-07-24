@@ -331,6 +331,12 @@ The 4.15/UE5.5 content currently yields 23 per-asset sections.
   `AnimSequence`, blend-space, montage, composite, aim-offset, and pose-asset classes.
 
 - **VERIFIED validation oracle:**
+  - The target inventory is exact for ALS Refactored 4.15: 23 assets (`AB_Als`,
+    `AB_Als_Monolithic`, `ALI_Overlay`, and all 20 linked-instance ABPs). The validator
+    rejects missing, unexpected, or wrong-kind targets, and independently checks node counts,
+    recovered/candidate index ranges, the exact unresolved-index complement, emitted pose-link
+    wiring, state roots/player indices, transition state references, and every serialized
+    `CrossfadeDuration`.
   - `AB_Als_Rifle` has non-zero sequence-evaluator times for `A_Als_Rifle_Poses`
     (including 0.05, 0.083333, 0.116667, 0.15, 0.183333, 0.216667, 0.25, 0.283333,
     0.316667, 0.35, and 0.383333 seconds).
@@ -347,3 +353,34 @@ The 4.15/UE5.5 content currently yields 23 per-asset sections.
   **HYPOTHESIS:** a separate Control Rig stage can serialize `RigVMGraph` models and compiled
   RigVM bytecode; validate graph pins and execution order against the saved Control Rig editor
   graphs before using such a dump as a runtime oracle.
+
+## Movement settings and rich curves
+
+Run:
+
+```sh
+dotnet run -- dump-movement-settings "$ALS_WORK/stage" movement-settings.json
+dotnet run -- validate-movement-settings movement-settings.json
+```
+
+- **VERIFIED — `MS_Als_Normal` exposes the complete six-way gait table as tagged
+  properties.** `RotationModes` contains VelocityDirection, ViewDirection, and Aiming; each
+  contains Standing and Crouching. The dump preserves all forward/backward walk/run and sprint
+  speeds in Unreal-native cm/s. The default-valued
+  `bAllowDirectionDependentMovementSpeed=false` bit is absent from the asset and therefore
+  comes from `FAlsMovementGaitSettings` in `AlsMovementSettings.h`, as does the absent
+  `VelocityAngleToSpeedInterpolationRange={100,125}`.
+
+- **VERIFIED — the data asset selects both Normal and Responsive authored curves.** Standing
+  uses `CV_Als_AccelerationAndDecelerationAndGroundFriction_Normal`; Crouching uses the
+  Responsive vector curve. VelocityDirection/Standing alone uses the Responsive rotation
+  curve; the other five gait rows use the Normal rotation curve.
+
+- **VERIFIED — all referenced curve payloads are ordinary tagged rich-curve keys.**
+  `CurveFloat.FloatCurve.Keys` holds rotation interpolation speed. The three
+  `CurveVector.FloatCurves` channels map exactly as consumed by
+  `AlsCharacterMovementComponent.cpp`: index 0 `MaxAccelerationWalking`, index 1
+  `BrakingDecelerationWalking`, index 2 `GroundFriction`. `movement-settings.json` preserves
+  interpolation modes, tangent modes, tangent-weight modes, times, values, and both tangent
+  values/weights for all 32 keys. Its validator pins the 3 modes, 6 gait rows, 4 referenced
+  assets, 8 channels, key times, and authored key values.
