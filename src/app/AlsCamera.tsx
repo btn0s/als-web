@@ -198,7 +198,11 @@ function updateAnimationInput(
 ) {
   input.ViewMode = VIEW_MODE_TAGS[character.viewMode]
   input.LocomotionMode = LOCOMOTION_MODE_TAGS[character.locomotionMode]
-  input.RotationMode = ROTATION_MODE_TAGS[character.rotationMode]
+  input.RotationMode = ROTATION_MODE_TAGS[
+    character.viewMode === 'FirstPerson'
+      ? character.desiredRotationMode
+      : character.rotationMode
+  ]
   input.Stance = STANCE_TAGS[character.stance]
   input.Gait = GAIT_TAGS[character.gait]
   input.LocomotionAction = null
