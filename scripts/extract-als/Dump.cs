@@ -183,6 +183,9 @@ public static class Dump
                 additiveType = seq.AdditiveAnimType.ToString(),
                 refPoseSeq = seq.RefPoseSeq?.Name ?? "",
                 refFrameIndex = seq.RefFrameIndex,
+                bEnableRootMotion = seq.GetOrDefault("bEnableRootMotion", false),
+                bForceRootLock = seq.GetOrDefault("bForceRootLock", false),
+                RootMotionRootLock = ReadRootMotionRootLock(seq, animName),
                 fps = (double)frameRate.GetOrDefault("Numerator", 30) / Math.Max(1, frameRate.GetOrDefault("Denominator", 1)),
                 numberOfKeys = model.Get<int>("NumberOfKeys"),
                 tracks,
@@ -224,6 +227,38 @@ public static class Dump
         Console.WriteLine(
             $"dumped {skeletonName}: {bones.Length} bones, {anims.Count} anims -> {outJson}");
         return 0;
+    }
+
+    static string ReadRootMotionRootLock(UAnimSequence sequence, string animName)
+    {
+        // UAnimSequence omits default-valued tagged properties. Unreal's enum
+        // default is RefPose, so an absent RootMotionRootLock is authored RefPose
+        // semantics rather than missing data.
+        var property = sequence.Properties.FirstOrDefault(
+            candidate => candidate.Name.Text == "RootMotionRootLock");
+        if (property?.Tag is null)
+            return "RefPose";
+
+        var serialized = property.Tag.GenericValue?.ToString()?.Trim() ?? "";
+        if (serialized == "0" ||
+            serialized.EndsWith("RefPose", StringComparison.OrdinalIgnoreCase))
+        {
+            return "RefPose";
+        }
+        if (serialized == "1" ||
+            serialized.EndsWith("AnimFirstFrame", StringComparison.OrdinalIgnoreCase))
+        {
+            return "AnimFirstFrame";
+        }
+        if (serialized == "2" ||
+            serialized.EndsWith("Zero", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Zero";
+        }
+
+        throw new Exception(
+            $"{animName} has unsupported RootMotionRootLock value " +
+            $"{JsonSerializer.Serialize(serialized)}");
     }
 
     static object[] ReadNamedTimes(

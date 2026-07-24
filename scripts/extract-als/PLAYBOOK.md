@@ -384,3 +384,86 @@ dotnet run -- validate-movement-settings movement-settings.json
   interpolation modes, tangent modes, tangent-weight modes, times, values, and both tangent
   values/weights for all 32 keys. Its validator pins the 3 modes, 6 gait rows, 4 referenced
   assets, 8 channels, key times, and authored key values.
+
+## BlendSpaces and complete AnimGraph animation coverage
+
+Run:
+
+```sh
+dotnet run -- dump-blend-spaces "$ALS_WORK/stage" blend-spaces.json
+dotnet run -- validate-blend-spaces blend-spaces.json
+```
+
+- **VERIFIED — the 23 compiled ABP assets reference 71 unique `AnimSequence`s, eight
+  `BlendSpace`s, and one `BlendSpace1D`.** The previous 67-clip hand-curated pack omitted 26
+  directly imported sequences. Five were immediate M3 runtime gaps
+  (`A_Als_Crouch_Walk_Pose`, `A_Als_Flail`, both `A_Als_Land_*_Additive` clips, and
+  `A_Als_Rifle_Sprint_Impulse_Arms`); the other 21 were pose/aim assets used by non-rifle
+  overlay ABPs.
+
+- **VERIFIED — the nine BlendSpaces reference 33 unique sample/preview-base sequences.**
+  Sixteen were absent from the old pack: five grounded Lean poses, five Air Lean poses, and
+  the six zero-stride Walk/Run directional pose samples. `clips.manifest` now contains the
+  complete union: 109 ALS-authored sequences. `validate-glb.mjs` joins
+  `abp-graph.json` + `blend-spaces.json` + `clips.manifest` and rejects any direct ABP,
+  BlendSpace sample, or preview-base omission.
+
+- **VERIFIED — BlendSpace topology is ordinary tagged content.** `SampleData`,
+  `BlendParameters`, axis `InterpolationParam`s, and `BlendSpaceData` triangles/segments all
+  serialize legibly. One authored exception matters: `BS_Als_WalkRun_Right_Backward` sets
+  `bInterpolateUsingGrid=true` and serializes four `GridSamples` instead of
+  `BlendSpaceData`; the dump preserves this rather than rebuilding a Delaunay topology.
+  `BS_Als_Look` is the only 1D space and sets
+  `bContainsRotationOffsetMeshSpaceSamples=true`.
+
+- **VERIFIED — expanded animation metadata inventory.** The 109-clip GLB carries 333 curves
+  across 74 clips, 60 sync markers across 30 clips, and 150 notifies across 57 clips.
+  Validators pin those totals and targeted sentinels for crouch locomotion, landing
+  additives, and the rifle sprint impulse.
+
+- **VERIFIED — root-motion flags live directly on each `UAnimSequence`.** Sixteen curated
+  clips set `bForceRootLock`: all 12 standing/crouched Turn/Rotate clips, `A_Als_Roll`, and
+  the three Mantles. All use the default-valued (therefore omitted) `RefPose` lock mode.
+  Roll alone sets `bEnableRootMotion=true`; Mantles keep it false because ALS drives them
+  through `FAlsRootMotionSource_Mantling`. The assembler bakes forced root locks into the
+  emitted root tracks and preserves all three settings in animation extras. Typed extraction
+  and independent generic uasset inspection agree on the Roll/Mantle values.
+
+## Enhanced Input mappings
+
+Run:
+
+```sh
+dotnet run -- dump-input-mappings "$ALS_WORK/stage" input-mappings.json
+dotnet run -- validate-input-mappings input-mappings.json
+```
+
+- **VERIFIED — `IMC_Als_Default` has 31 ordered mappings across 13 InputActions.**
+  `input-mappings.json` preserves keyboard/gamepad keys, mapping-level modifier order,
+  action-level modifier order, and action-level triggers. WASD uses the authored
+  Swizzle/Negate arrangement; `Gamepad_Left2D` uses a default-valued DeadZone, while
+  `Gamepad_Right2D` applies a Y-only Negate followed by a default-valued DeadZone.
+  The complete modifier inventory is 2 DeadZone, 5 Negate, 4 SwizzleAxis, and one
+  action-level ScaleByDeltaTime; **there is no Scalar modifier** in the ALS mapping/action
+  assets.
+
+- **VERIFIED — Sprint and Roll deliberately share `LeftShift` and
+  `Gamepad_FaceButton_Right`.** The action assets disambiguate them: Sprint uses a
+  one-shot Hold at 0.1 seconds plus Released; Roll uses Tap with a 0.3-second release
+  threshold. These trigger subobjects live on the InputAction packages, not the mapping
+  context, so dumping the IMC alone is insufficient.
+
+- **VERIFIED limitation — Unreal omits class-default-valued tags.** Empty
+  `serializedProperties` on the DeadZone, Swizzle, Negate, Pressed, Released, and
+  ScaleByDeltaTime subobjects means the asset uses that UE5.5 Enhanced Input class default.
+  The extractor preserves the omission explicitly; it does not invent duplicate constants.
+
+## Character capsule source
+
+- **VERIFIED — ALS overrides the engine character defaults in C++.**
+  `AAlsCharacter::AAlsCharacter()` calls `InitCapsuleSize(30.0f, 90.0f)` and
+  `UAlsCharacterMovementComponent::UAlsCharacterMovementComponent()` calls
+  `SetCrouchedHalfHeight(56.0f)`. Independent inspection of `B_Als_Character` finds no
+  serialized properties on its `CollisionCylinder` or `CharMoveComp` template exports, so
+  Blueprint content does not override the C++ values. In web meters these are radius 0.30,
+  standing half-height 0.90, and crouched half-height 0.56.

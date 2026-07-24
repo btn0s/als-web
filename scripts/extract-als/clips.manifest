@@ -3,12 +3,18 @@
 A_Als_Stand_Pose|Standing reference/fallback pose for complete base-layer bone coverage|M3 Stances: standing
 A_Als_Crouch_Pose|DUAL-PURPOSE: the literal crouched-idle display clip (AB_Als_Crouching Idle state plays exactly this - verified via ABP dump) AND the crouched additive reference pose|M3 Stances: crouching idle
 A_Als_Idle|Standing locomotion center sample|M3 Gaits: idle origin for walk/run/sprint
+A_Als_Walk_Forward_Pose|Zero-stride authored walk pose sampled by the forward/backward WalkRun BlendSpaces|M3 Gaits and Rotation modes: authored BlendSpace topology
+A_Als_Walk_Left_Pose|Zero-stride authored left walk pose sampled by left-forward/right-backward WalkRun BlendSpaces|M3 Rotation modes: authored BlendSpace topology
+A_Als_Walk_Right_Pose|Zero-stride authored right walk pose sampled by right-forward/left-backward WalkRun BlendSpaces|M3 Rotation modes: authored BlendSpace topology
 A_Als_Walk_Forward|Authored forward walk sample|M3 Gaits and Rotation modes: directional locomotion
 A_Als_Walk_Backward|Authored backward walk sample|M3 Gaits and Rotation modes: directional locomotion
 A_Als_Walk_Left_Forward|Authored forward-left walk sample|M3 Rotation modes: real authored directional blendspace
 A_Als_Walk_Right_Forward|Authored forward-right walk sample|M3 Rotation modes: real authored directional blendspace
 A_Als_Walk_Left_Backward|Authored backward-left walk sample|M3 Rotation modes: real authored directional blendspace
 A_Als_Walk_Right_Backward|Authored backward-right walk sample|M3 Rotation modes: real authored directional blendspace
+A_Als_Run_Forward_Pose|Zero-stride authored run pose and grounded Lean preview base|M3 Gaits, Rotation modes, and Lean: authored BlendSpace topology
+A_Als_Run_Left_Pose|Zero-stride authored left run pose sampled by left-forward/right-backward WalkRun BlendSpaces|M3 Rotation modes: authored BlendSpace topology
+A_Als_Run_Right_Pose|Zero-stride authored right run pose sampled by right-forward/left-backward WalkRun BlendSpaces|M3 Rotation modes: authored BlendSpace topology
 A_Als_Run_Forward|Authored forward run sample|M3 Gaits and Rotation modes: directional locomotion
 A_Als_Run_Backward|Authored backward run sample|M3 Gaits and Rotation modes: directional locomotion
 A_Als_Run_Left_Forward|Authored forward-left run sample|M3 Rotation modes: real authored directional blendspace
@@ -22,6 +28,7 @@ A_Als_Crouch_Walk_Left_Forward|Authored crouched forward-left walk sample|M3 Rot
 A_Als_Crouch_Walk_Right_Forward|Authored crouched forward-right walk sample|M3 Rotation modes: real crouched directional blendspace
 A_Als_Crouch_Walk_Left_Backward|Authored crouched backward-left walk sample|M3 Rotation modes: real crouched directional blendspace
 A_Als_Crouch_Walk_Right_Backward|Authored crouched backward-right walk sample|M3 Rotation modes: real crouched directional blendspace
+A_Als_Crouch_Walk_Pose|Authored crouched locomotion sequence-evaluator pose referenced directly by AB_Als_Monolithic|M3 Stances: authored crouched locomotion graph coverage
 A_Als_StandToCrouch|Authored standing-to-crouched stance change|M3 Stances: stance ladder and staged transitions
 A_Als_CrouchToStand|Authored crouched-to-standing stance change|M3 Stances: stance ladder and staged transitions
 A_Als_Acceleration_Forward|Forward start/acceleration source pose|M3 Turn-in-place plus start/stop/pivot transitions
@@ -31,6 +38,11 @@ A_Als_Acceleration_Right|Right start/pivot source pose|M3 Turn-in-place plus sta
 A_Als_Sprint_Acceleration|Authored transition into sprint|M3 Gaits and start/stop/pivot transitions
 A_Als_Stop_Left|Left-foot authored stopping source pose|M3 Turn-in-place plus start/stop/pivot transitions
 A_Als_Stop_Right|Right-foot authored stopping source pose|M3 Turn-in-place plus start/stop/pivot transitions
+A_Als_Lean|Neutral grounded lean BlendSpace sample|M3 Gaits: authored grounded lean
+A_Als_Lean_Forward|Forward grounded lean BlendSpace sample|M3 Gaits: authored grounded lean
+A_Als_Lean_Backward|Backward grounded lean BlendSpace sample|M3 Gaits: authored grounded lean
+A_Als_Lean_Left|Left grounded lean BlendSpace sample|M3 Gaits: authored grounded lean
+A_Als_Lean_Right|Right grounded lean BlendSpace sample|M3 Gaits: authored grounded lean
 A_Als_Turn_90_Left|Standing 90-degree left turn-in-place|M3 Turn-in-place: authored turns
 A_Als_Turn_90_Right|Standing 90-degree right turn-in-place|M3 Turn-in-place: authored turns
 A_Als_Turn_180_Left|Standing 180-degree left turn-in-place|M3 Turn-in-place: authored turns
@@ -48,10 +60,18 @@ A_Als_Jump_Run_Left|Running jump launched from the left foot|M3 In-air: moving j
 A_Als_Jump_Run_Right|Running jump launched from the right foot|M3 In-air: moving jump variant
 A_Als_Jump_Walk_Left|Low-speed/standing jump launch from the left foot; closest authored standing variant|M3 In-air: standing/low-speed jump variant
 A_Als_Jump_Walk_Right|Low-speed/standing jump launch from the right foot; closest authored standing variant|M3 In-air: standing/low-speed jump variant
+A_Als_Air_Lean|Neutral airborne lean BlendSpace sample|M3 In-air: authored air lean
+A_Als_Air_Lean_Forward|Forward airborne lean BlendSpace sample|M3 In-air: authored air lean
+A_Als_Air_Lean_Backward|Backward airborne lean BlendSpace sample|M3 In-air: authored air lean
+A_Als_Air_Lean_Left|Left airborne lean BlendSpace sample|M3 In-air: authored air lean
+A_Als_Air_Lean_Right|Right airborne lean BlendSpace sample|M3 In-air: authored air lean
 A_Als_Fall|Normal-speed fall loop|M3 In-air: fall state
 A_Als_Fall_Fast|Fast fall loop used to select heavier recovery|M3 In-air: fall-speed-dependent recovery
+A_Als_Flail|Authored high-speed airborne flail referenced directly by the AnimGraph|M3 In-air: fall-speed-dependent flail
 A_Als_Land_Light|Light authored landing recovery|M3 In-air: Land_Light recovery
 A_Als_Land_Heavy|Heavy authored landing recovery|M3 In-air: heavy landing recovery
+A_Als_Land_Light_Additive|Authored additive layer driven by light landing recovery|M3 In-air: Land_Light recovery
+A_Als_Land_Heavy_Additive|Authored additive layer driven by heavy landing recovery|M3 In-air: heavy landing recovery
 A_Als_GetUp_Back|Get-up action from a supine pose|M3 action arbiter coverage; retained despite ragdoll being cut
 A_Als_GetUp_Front|Get-up action from a prone pose|M3 action arbiter coverage; retained despite ragdoll being cut
 A_Als_Roll|Authored roll used as the available LandRoll-equivalent action|M3 In-air: fall-speed LandRoll recovery
@@ -59,11 +79,33 @@ A_Als_Mantle_High|High mantle action with preserved root translation|M3 Mantle/v
 A_Als_Mantle_Low_Left|Low mantle action led from the left side with preserved root translation|M3 Mantle/vault through the arbiter
 A_Als_Mantle_Low_Right|Low mantle action led from the right side with preserved root translation|M3 Mantle/vault through the arbiter
 A_Als_Default_Poses|Neutral multi-frame overlay pose bank|M3 Overlay states: ALS-style pose overlays
+A_Als_Barrel_Poses|Barrel multi-frame overlay pose bank referenced by AB_Als_Barrel|M3 Overlay states: complete authored ABP coverage
+A_Als_Box_Poses|Box multi-frame overlay pose bank referenced by AB_Als_Box|M3 Overlay states: complete authored ABP coverage
+A_Als_Feminine_Poses|Feminine multi-frame overlay pose bank referenced by AB_Als_Feminine|M3 Overlay states: complete authored ABP coverage
+A_Als_HandsTied_Poses|Hands-tied multi-frame overlay pose bank referenced by AB_Als_HandsTied|M3 Overlay states: complete authored ABP coverage
+A_Als_Injured_Poses|Injured multi-frame overlay pose bank referenced by AB_Als_Injured|M3 Overlay states: complete authored ABP coverage
+A_Als_Masculine_Poses|Masculine multi-frame overlay pose bank referenced by AB_Als_Masculine|M3 Overlay states: complete authored ABP coverage
+A_Als_Binoculars_Poses|Binoculars multi-frame overlay pose bank referenced by AB_Als_Binoculars|M3 Overlay states: complete authored ABP coverage
+A_Als_Binoculars_Aim|Standing binoculars aim additive source|M3 Rotation modes and Overlay states: complete authored ABP coverage
+A_Als_Binoculars_Aim_Crouch|Crouched binoculars aim additive source|M3 Rotation modes and Overlay states: complete authored ABP coverage
+A_Als_Bow_Poses|Bow multi-frame overlay pose bank referenced by AB_Als_Bow|M3 Overlay states: complete authored ABP coverage
+A_Als_Bow_Aim|Standing bow aim additive source|M3 Rotation modes and Overlay states: complete authored ABP coverage
+A_Als_Bow_Aim_Crouch|Crouched bow aim additive source|M3 Rotation modes and Overlay states: complete authored ABP coverage
+A_Als_PistolOneHanded_Poses|One-handed pistol multi-frame overlay pose bank|M3 Overlay states: complete authored ABP coverage
+A_Als_PistolOneHanded_Aim|Standing one-handed pistol aim additive source|M3 Rotation modes and Overlay states: complete authored ABP coverage
+A_Als_PistolOneHanded_Aim_Crouch|Crouched one-handed pistol aim additive source|M3 Rotation modes and Overlay states: complete authored ABP coverage
+A_Als_PistolTwoHanded_Poses|Two-handed pistol multi-frame overlay pose bank|M3 Overlay states: complete authored ABP coverage
+A_Als_PistolTwoHanded_Aim|Standing two-handed pistol aim additive source|M3 Rotation modes and Overlay states: complete authored ABP coverage
+A_Als_PistolTwoHanded_Aim_Crouch|Crouched two-handed pistol aim additive source|M3 Rotation modes and Overlay states: complete authored ABP coverage
 A_Als_Rifle_Poses|Rifle multi-frame overlay pose bank|M3 Overlay states: item/pose overlays
 A_Als_Rifle_Aim|Standing rifle aim additive source|M3 Rotation modes and Overlay states: aiming
 A_Als_Rifle_Aim_Crouch|Crouched rifle aim additive source|M3 Rotation modes and Overlay states across stances
 A_Als_Rifle_Run_Arms|Upper-body rifle run source for region masking|M3 Overlay states: masked per-bone moving overlay
 A_Als_Rifle_Sprint_Arms|Upper-body rifle sprint source for region masking|M3 Overlay states: masked per-bone sprint overlay
+A_Als_Rifle_Sprint_Impulse_Arms|Authored upper-body rifle sprint impulse referenced directly by AB_Als_Rifle|M3 Overlay states: masked per-bone sprint transition
+A_Als_Torch_Poses|Torch multi-frame overlay pose bank referenced by AB_Als_Torch|M3 Overlay states: complete authored ABP coverage
+A_Als_Torch_Aim|Standing torch aim additive source|M3 Rotation modes and Overlay states: complete authored ABP coverage
+A_Als_Torch_Aim_Crouch|Crouched torch aim additive source|M3 Rotation modes and Overlay states: complete authored ABP coverage
 A_Als_Look_Down|Downward view/aim additive source|M3 Rotation modes: aiming pitch
 A_Als_Look_Forward|Forward view/aim additive reference source|M3 Rotation modes: aiming pitch
 A_Als_Look_Up|Upward view/aim additive source|M3 Rotation modes: aiming pitch

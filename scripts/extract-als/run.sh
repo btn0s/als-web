@@ -5,8 +5,10 @@
 # raw tracks + SKM_Als editor LOD0 → JSON) → assemble-glb.mjs (axis/unit
 # conversion, skinned primitives, GLB) →
 # validate-glb.mjs (structure + physical sanity) → AbpDump.cs (compiled FAnimNode
-# structs + validation lookups) → MovementSettingsDump.cs (MS_Als_Normal + every
-# referenced rich curve) → copy distributable assets with the upstream MIT notice.
+# structs + validation lookups) → BlendSpaceDump.cs (authored axes/samples/topology)
+# → MovementSettingsDump.cs (MS_Als_Normal + every referenced rich curve) →
+# InputMappingDump.cs (IMC + action triggers/modifiers) → copy distributable assets
+# with the upstream MIT notice.
 # clips.manifest is the audited M3 animation allowlist.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -38,12 +40,19 @@ dotnet run -- dump \
   SK_Als_Rifle SKM_Als_Rifle MI_Als_Rifle
 dotnet run -- dump-abp "$WORK/stage" "$WORK/abp-graph.json"
 dotnet run -- validate-abp "$WORK/abp-graph.json"
+dotnet run -- dump-blend-spaces "$WORK/stage" "$WORK/blend-spaces.json"
+dotnet run -- validate-blend-spaces "$WORK/blend-spaces.json"
 dotnet run -- dump-movement-settings "$WORK/stage" "$WORK/movement-settings.json"
 dotnet run -- validate-movement-settings "$WORK/movement-settings.json"
+dotnet run -- dump-input-mappings "$WORK/stage" "$WORK/input-mappings.json"
+dotnet run -- validate-input-mappings "$WORK/input-mappings.json"
 [ -d node_modules ] || pnpm install
 node assemble-glb.mjs "$WORK/als-dump.json" "$WORK/skm-als.glb"
 node assemble-glb.mjs "$WORK/als-rifle-dump.json" "$WORK/skm-als-rifle.glb"
-node validate-glb.mjs "$WORK/skm-als.glb"
+node validate-glb.mjs \
+  "$WORK/skm-als.glb" \
+  "$WORK/abp-graph.json" \
+  "$WORK/blend-spaces.json"
 node validate-rifle-glb.mjs "$WORK/skm-als-rifle.glb"
 
 mkdir -p "$REPO_ROOT/public/assets"
@@ -59,6 +68,8 @@ else
   ABP_GRAPH_DESTINATION="scripts/extract-als/abp-graph.json"
 fi
 cp "$WORK/movement-settings.json" "$REPO_ROOT/scripts/extract-als/movement-settings.json"
+cp "$WORK/blend-spaces.json" "$REPO_ROOT/scripts/extract-als/blend-spaces.json"
+cp "$WORK/input-mappings.json" "$REPO_ROOT/scripts/extract-als/input-mappings.json"
 echo "done: public/assets/skm-als.glb + skm-als-rifle.glb + LICENSE-ALS-Refactored.md"
 echo "done: $ABP_GRAPH_DESTINATION ($ABP_GRAPH_SIZE bytes)"
-echo "done: scripts/extract-als/movement-settings.json"
+echo "done: scripts/extract-als/{movement-settings,blend-spaces,input-mappings}.json"

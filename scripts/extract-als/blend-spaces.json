@@ -1,0 +1,1842 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "release": "ALS-Refactored 4.15",
+    "engineVersion": "UE5.5",
+    "mount": "/ALS"
+  },
+  "blendSpaces": {
+    "BS_Als_Air_Lean": {
+      "assetPath": "ALS/Content/ALS/Animations/Air/Lean/BS_Als_Air_Lean.uasset",
+      "className": "BlendSpace",
+      "loop": false,
+      "containsRotationOffsetMeshSpaceSamples": false,
+      "animLengthSeconds": 0.03333333507180214,
+      "sampleIndexWithMarkers": null,
+      "previewBasePose": {
+        "name": "A_Als_Fall",
+        "objectPath": "/ALS/ALS/Animations/Air/Fall/A_Als_Fall"
+      },
+      "axes": [
+        {
+          "index": 0,
+          "serialized": {
+            "DisplayName": "Lean Right Amount",
+            "Min": -1.0,
+            "Max": 1.0,
+            "GridNum": 2
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "DisplayName": "Lean Forward Amount",
+            "Min": -1.0,
+            "Max": 1.0,
+            "GridNum": 2
+          }
+        }
+      ],
+      "interpolationParameters": [],
+      "samples": [
+        {
+          "animation": {
+            "name": "A_Als_Air_Lean",
+            "objectPath": "/ALS/ALS/Animations/Air/Lean/A_Als_Air_Lean"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Air_Lean_Forward",
+            "objectPath": "/ALS/ALS/Animations/Air/Lean/A_Als_Air_Lean_Forward"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Air_Lean_Backward",
+            "objectPath": "/ALS/ALS/Animations/Air/Lean/A_Als_Air_Lean_Backward"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": -1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Air_Lean_Left",
+            "objectPath": "/ALS/ALS/Animations/Air/Lean/A_Als_Air_Lean_Left"
+          },
+          "sampleValue": {
+            "X": -1.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Air_Lean_Right",
+            "objectPath": "/ALS/ALS/Animations/Air/Lean/A_Als_Air_Lean_Right"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        }
+      ],
+      "topology": {
+        "interpolateUsingGrid": false,
+        "blendSpaceData": {
+          "Triangles": [
+            {
+              "SampleIndices": 2,
+              "SampleIndices[1]": 0,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 0.5,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 0.5,
+                "Y": 0.5
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 0.5
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": 1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": 1.0
+                },
+                "NeighbourTriangleIndex": 2,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -0.70710677,
+                  "Y": -0.70710677
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 2,
+                "AdjacentPerimeterTriangleIndices[1]": 1,
+                "AdjacentPerimeterVertexIndices": 1,
+                "AdjacentPerimeterVertexIndices[1]": 0
+              }
+            },
+            {
+              "SampleIndices": 2,
+              "SampleIndices[1]": 4,
+              "SampleIndices[2]": 0,
+              "Vertices": {
+                "X": 0.5,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 1.0,
+                "Y": 0.5
+              },
+              "Vertices[2]": {
+                "X": 0.5,
+                "Y": 0.5
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 0.70710677,
+                  "Y": -0.70710677
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 0,
+                "AdjacentPerimeterTriangleIndices[1]": 3,
+                "AdjacentPerimeterVertexIndices": 2,
+                "AdjacentPerimeterVertexIndices[1]": 0
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": 1.0
+                },
+                "NeighbourTriangleIndex": 3,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": 0,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            },
+            {
+              "SampleIndices": 0,
+              "SampleIndices[1]": 1,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 0.5,
+                "Y": 0.5
+              },
+              "Vertices[1]": {
+                "X": 0.5,
+                "Y": 1.0
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 0.5
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": 3,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": -0.70710677,
+                  "Y": 0.70710677
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 3,
+                "AdjacentPerimeterTriangleIndices[1]": 0,
+                "AdjacentPerimeterVertexIndices": 0,
+                "AdjacentPerimeterVertexIndices[1]": 2
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": -1.0
+                },
+                "NeighbourTriangleIndex": 0,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            },
+            {
+              "SampleIndices": 4,
+              "SampleIndices[1]": 1,
+              "SampleIndices[2]": 0,
+              "Vertices": {
+                "X": 1.0,
+                "Y": 0.5
+              },
+              "Vertices[1]": {
+                "X": 0.5,
+                "Y": 1.0
+              },
+              "Vertices[2]": {
+                "X": 0.5,
+                "Y": 0.5
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 0.70710677,
+                  "Y": 0.70710677
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 1,
+                "AdjacentPerimeterTriangleIndices[1]": 2,
+                "AdjacentPerimeterVertexIndices": 0,
+                "AdjacentPerimeterVertexIndices[1]": 1
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": -1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": 2,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": -1.0
+                },
+                "NeighbourTriangleIndex": 1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            }
+          ]
+        },
+        "gridSamples": []
+      }
+    },
+    "BS_Als_Lean": {
+      "assetPath": "ALS/Content/ALS/Animations/Grounded/Lean/BS_Als_Lean.uasset",
+      "className": "BlendSpace",
+      "loop": false,
+      "containsRotationOffsetMeshSpaceSamples": false,
+      "animLengthSeconds": 0.03333333507180214,
+      "sampleIndexWithMarkers": null,
+      "previewBasePose": {
+        "name": "A_Als_Run_Forward_Pose",
+        "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Forward_Pose"
+      },
+      "axes": [
+        {
+          "index": 0,
+          "serialized": {
+            "DisplayName": "Lean Right Amount",
+            "Min": -1.0,
+            "Max": 1.0
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "DisplayName": "Lean Forward Amount",
+            "Min": -1.0,
+            "Max": 1.0
+          }
+        }
+      ],
+      "interpolationParameters": [],
+      "samples": [
+        {
+          "animation": {
+            "name": "A_Als_Lean",
+            "objectPath": "/ALS/ALS/Animations/Grounded/Lean/A_Als_Lean"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Lean_Forward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/Lean/A_Als_Lean_Forward"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Lean_Backward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/Lean/A_Als_Lean_Backward"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": -1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Lean_Left",
+            "objectPath": "/ALS/ALS/Animations/Grounded/Lean/A_Als_Lean_Left"
+          },
+          "sampleValue": {
+            "X": -1.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Lean_Right",
+            "objectPath": "/ALS/ALS/Animations/Grounded/Lean/A_Als_Lean_Right"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        }
+      ],
+      "topology": {
+        "interpolateUsingGrid": false,
+        "blendSpaceData": {
+          "Triangles": [
+            {
+              "SampleIndices": 2,
+              "SampleIndices[1]": 0,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 0.5,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 0.5,
+                "Y": 0.5
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 0.5
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": 1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": 1.0
+                },
+                "NeighbourTriangleIndex": 2,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -0.70710677,
+                  "Y": -0.70710677
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 2,
+                "AdjacentPerimeterTriangleIndices[1]": 1,
+                "AdjacentPerimeterVertexIndices": 1,
+                "AdjacentPerimeterVertexIndices[1]": 0
+              }
+            },
+            {
+              "SampleIndices": 2,
+              "SampleIndices[1]": 4,
+              "SampleIndices[2]": 0,
+              "Vertices": {
+                "X": 0.5,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 1.0,
+                "Y": 0.5
+              },
+              "Vertices[2]": {
+                "X": 0.5,
+                "Y": 0.5
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 0.70710677,
+                  "Y": -0.70710677
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 0,
+                "AdjacentPerimeterTriangleIndices[1]": 3,
+                "AdjacentPerimeterVertexIndices": 2,
+                "AdjacentPerimeterVertexIndices[1]": 0
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": 1.0
+                },
+                "NeighbourTriangleIndex": 3,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": 0,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            },
+            {
+              "SampleIndices": 0,
+              "SampleIndices[1]": 1,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 0.5,
+                "Y": 0.5
+              },
+              "Vertices[1]": {
+                "X": 0.5,
+                "Y": 1.0
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 0.5
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": 3,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": -0.70710677,
+                  "Y": 0.70710677
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 3,
+                "AdjacentPerimeterTriangleIndices[1]": 0,
+                "AdjacentPerimeterVertexIndices": 0,
+                "AdjacentPerimeterVertexIndices[1]": 2
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": -1.0
+                },
+                "NeighbourTriangleIndex": 0,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            },
+            {
+              "SampleIndices": 4,
+              "SampleIndices[1]": 1,
+              "SampleIndices[2]": 0,
+              "Vertices": {
+                "X": 1.0,
+                "Y": 0.5
+              },
+              "Vertices[1]": {
+                "X": 0.5,
+                "Y": 1.0
+              },
+              "Vertices[2]": {
+                "X": 0.5,
+                "Y": 0.5
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 0.70710677,
+                  "Y": 0.70710677
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 1,
+                "AdjacentPerimeterTriangleIndices[1]": 2,
+                "AdjacentPerimeterVertexIndices": 0,
+                "AdjacentPerimeterVertexIndices[1]": 1
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": -1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": 2,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": -1.0
+                },
+                "NeighbourTriangleIndex": 1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            }
+          ]
+        },
+        "gridSamples": []
+      }
+    },
+    "BS_Als_Look": {
+      "assetPath": "ALS/Content/ALS/Animations/View/BS_Als_Look.uasset",
+      "className": "BlendSpace1D",
+      "loop": false,
+      "containsRotationOffsetMeshSpaceSamples": true,
+      "animLengthSeconds": 1.0,
+      "sampleIndexWithMarkers": null,
+      "previewBasePose": {
+        "name": "A_Als_Stand_Pose",
+        "objectPath": "/ALS/ALS/Animations/Base/A_Als_Stand_Pose"
+      },
+      "axes": [
+        {
+          "index": 0,
+          "serialized": {
+            "DisplayName": "Pitch Angle",
+            "Min": -90.0,
+            "Max": 90.0
+          }
+        }
+      ],
+      "interpolationParameters": [],
+      "samples": [
+        {
+          "animation": {
+            "name": "A_Als_Look_Forward",
+            "objectPath": "/ALS/ALS/Animations/View/A_Als_Look_Forward"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Look_Down",
+            "objectPath": "/ALS/ALS/Animations/View/A_Als_Look_Down"
+          },
+          "sampleValue": {
+            "X": -90.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Look_Up",
+            "objectPath": "/ALS/ALS/Animations/View/A_Als_Look_Up"
+          },
+          "sampleValue": {
+            "X": 90.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        }
+      ],
+      "topology": {
+        "interpolateUsingGrid": false,
+        "blendSpaceData": {
+          "Segments": [
+            {
+              "SampleIndices": 1,
+              "SampleIndices[1]": 0,
+              "Vertices": 0.0,
+              "Vertices[1]": 0.5
+            },
+            {
+              "SampleIndices": 0,
+              "SampleIndices[1]": 2,
+              "Vertices": 0.5,
+              "Vertices[1]": 1.0
+            }
+          ]
+        },
+        "gridSamples": []
+      }
+    },
+    "BS_Als_WalkRun_Backward": {
+      "assetPath": "ALS/Content/ALS/Animations/Grounded/WalkRun/BS_Als_WalkRun_Backward.uasset",
+      "className": "BlendSpace",
+      "loop": true,
+      "containsRotationOffsetMeshSpaceSamples": false,
+      "animLengthSeconds": 1.1333333253860474,
+      "sampleIndexWithMarkers": 0,
+      "previewBasePose": null,
+      "axes": [
+        {
+          "index": 0,
+          "serialized": {
+            "DisplayName": "Stride Amount",
+            "Max": 1.0,
+            "GridNum": 1
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "DisplayName": "Walk Run Amount",
+            "Max": 1.0,
+            "GridNum": 1
+          }
+        }
+      ],
+      "interpolationParameters": [
+        {
+          "index": 0,
+          "serialized": {
+            "InterpolationTime": 0.2,
+            "InterpolationType": "BSIT_Cubic"
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "InterpolationTime": 0.4,
+            "InterpolationType": "BSIT_Cubic"
+          }
+        }
+      ],
+      "samples": [
+        {
+          "animation": {
+            "name": "A_Als_Walk_Backward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Walk_Backward"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Walk_Forward_Pose",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Walk_Forward_Pose"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Run_Backward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Backward"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Run_Forward_Pose",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Forward_Pose"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        }
+      ],
+      "topology": {
+        "interpolateUsingGrid": false,
+        "blendSpaceData": {
+          "Triangles": [
+            {
+              "SampleIndices": 1,
+              "SampleIndices[1]": 0,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 0.0,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 1.0,
+                "Y": 0.0
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 1.0
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": -1.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": 1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": 0
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.70710677,
+                  "Y": 0.70710677
+                },
+                "NeighbourTriangleIndex": 1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": 1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            },
+            {
+              "SampleIndices": 0,
+              "SampleIndices[1]": 2,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 1.0,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 1.0,
+                "Y": 1.0
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 1.0
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 0,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": 0,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": 1.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": 0,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": 2
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -0.70710677,
+                  "Y": -0.70710677
+                },
+                "NeighbourTriangleIndex": 0,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            }
+          ]
+        },
+        "gridSamples": []
+      }
+    },
+    "BS_Als_WalkRun_Forward": {
+      "assetPath": "ALS/Content/ALS/Animations/Grounded/WalkRun/BS_Als_WalkRun_Forward.uasset",
+      "className": "BlendSpace",
+      "loop": true,
+      "containsRotationOffsetMeshSpaceSamples": false,
+      "animLengthSeconds": 1.1333333253860474,
+      "sampleIndexWithMarkers": 0,
+      "previewBasePose": null,
+      "axes": [
+        {
+          "index": 0,
+          "serialized": {
+            "DisplayName": "Stride Amount",
+            "Max": 1.0,
+            "GridNum": 1
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "DisplayName": "Walk Run Amount",
+            "Max": 1.0,
+            "GridNum": 1
+          }
+        }
+      ],
+      "interpolationParameters": [
+        {
+          "index": 0,
+          "serialized": {
+            "InterpolationTime": 0.2,
+            "InterpolationType": "BSIT_Cubic"
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "InterpolationTime": 0.4,
+            "InterpolationType": "BSIT_Cubic"
+          }
+        }
+      ],
+      "samples": [
+        {
+          "animation": {
+            "name": "A_Als_Walk_Forward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Walk_Forward"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Walk_Forward_Pose",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Walk_Forward_Pose"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Run_Forward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Forward"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Run_Forward_Pose",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Forward_Pose"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        }
+      ],
+      "topology": {
+        "interpolateUsingGrid": false,
+        "blendSpaceData": {
+          "Triangles": [
+            {
+              "SampleIndices": 1,
+              "SampleIndices[1]": 0,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 0.0,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 1.0,
+                "Y": 0.0
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 1.0
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": -1.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": 1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": 0
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.70710677,
+                  "Y": 0.70710677
+                },
+                "NeighbourTriangleIndex": 1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": 1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            },
+            {
+              "SampleIndices": 0,
+              "SampleIndices[1]": 2,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 1.0,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 1.0,
+                "Y": 1.0
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 1.0
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 0,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": 0,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": 1.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": 0,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": 2
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -0.70710677,
+                  "Y": -0.70710677
+                },
+                "NeighbourTriangleIndex": 0,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            }
+          ]
+        },
+        "gridSamples": []
+      }
+    },
+    "BS_Als_WalkRun_Left_Backward": {
+      "assetPath": "ALS/Content/ALS/Animations/Grounded/WalkRun/BS_Als_WalkRun_Left_Backward.uasset",
+      "className": "BlendSpace",
+      "loop": true,
+      "containsRotationOffsetMeshSpaceSamples": false,
+      "animLengthSeconds": 1.1333333253860474,
+      "sampleIndexWithMarkers": 0,
+      "previewBasePose": null,
+      "axes": [
+        {
+          "index": 0,
+          "serialized": {
+            "DisplayName": "Stride Amount",
+            "Max": 1.0,
+            "GridNum": 1
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "DisplayName": "Walk Run Amount",
+            "Max": 1.0,
+            "GridNum": 1
+          }
+        }
+      ],
+      "interpolationParameters": [
+        {
+          "index": 0,
+          "serialized": {
+            "InterpolationTime": 0.2,
+            "InterpolationType": "BSIT_Cubic"
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "InterpolationTime": 0.4,
+            "InterpolationType": "BSIT_Cubic"
+          }
+        }
+      ],
+      "samples": [
+        {
+          "animation": {
+            "name": "A_Als_Walk_Left_Backward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Walk_Left_Backward"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Walk_Right_Pose",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Walk_Right_Pose"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Run_Left_Backward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Left_Backward"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Run_Right_Pose",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Right_Pose"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        }
+      ],
+      "topology": {
+        "interpolateUsingGrid": false,
+        "blendSpaceData": {
+          "Triangles": [
+            {
+              "SampleIndices": 1,
+              "SampleIndices[1]": 0,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 0.0,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 1.0,
+                "Y": 0.0
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 1.0
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": -1.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": 1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": 0
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.70710677,
+                  "Y": 0.70710677
+                },
+                "NeighbourTriangleIndex": 1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": 1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            },
+            {
+              "SampleIndices": 0,
+              "SampleIndices[1]": 2,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 1.0,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 1.0,
+                "Y": 1.0
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 1.0
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 0,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": 0,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": 1.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": 0,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": 2
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -0.70710677,
+                  "Y": -0.70710677
+                },
+                "NeighbourTriangleIndex": 0,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            }
+          ]
+        },
+        "gridSamples": []
+      }
+    },
+    "BS_Als_WalkRun_Left_Forward": {
+      "assetPath": "ALS/Content/ALS/Animations/Grounded/WalkRun/BS_Als_WalkRun_Left_Forward.uasset",
+      "className": "BlendSpace",
+      "loop": true,
+      "containsRotationOffsetMeshSpaceSamples": false,
+      "animLengthSeconds": 1.1333333253860474,
+      "sampleIndexWithMarkers": 0,
+      "previewBasePose": null,
+      "axes": [
+        {
+          "index": 0,
+          "serialized": {
+            "DisplayName": "Stride Amount",
+            "Max": 1.0,
+            "GridNum": 1
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "DisplayName": "Walk Run Amount",
+            "Max": 1.0,
+            "GridNum": 1
+          }
+        }
+      ],
+      "interpolationParameters": [
+        {
+          "index": 0,
+          "serialized": {
+            "InterpolationTime": 0.2,
+            "InterpolationType": "BSIT_Cubic"
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "InterpolationTime": 0.4,
+            "InterpolationType": "BSIT_Cubic"
+          }
+        }
+      ],
+      "samples": [
+        {
+          "animation": {
+            "name": "A_Als_Walk_Left_Forward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Walk_Left_Forward"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Walk_Left_Pose",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Walk_Left_Pose"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Run_Left_Forward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Left_Forward"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Run_Left_Pose",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Left_Pose"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        }
+      ],
+      "topology": {
+        "interpolateUsingGrid": false,
+        "blendSpaceData": {
+          "Triangles": [
+            {
+              "SampleIndices": 1,
+              "SampleIndices[1]": 0,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 0.0,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 1.0,
+                "Y": 0.0
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 1.0
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": -1.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": 1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": 0
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.70710677,
+                  "Y": 0.70710677
+                },
+                "NeighbourTriangleIndex": 1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": 1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            },
+            {
+              "SampleIndices": 0,
+              "SampleIndices[1]": 2,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 1.0,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 1.0,
+                "Y": 1.0
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 1.0
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 0,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": 0,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": 1.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": 0,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": 2
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -0.70710677,
+                  "Y": -0.70710677
+                },
+                "NeighbourTriangleIndex": 0,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            }
+          ]
+        },
+        "gridSamples": []
+      }
+    },
+    "BS_Als_WalkRun_Right_Backward": {
+      "assetPath": "ALS/Content/ALS/Animations/Grounded/WalkRun/BS_Als_WalkRun_Right_Backward.uasset",
+      "className": "BlendSpace",
+      "loop": true,
+      "containsRotationOffsetMeshSpaceSamples": false,
+      "animLengthSeconds": 1.1333333253860474,
+      "sampleIndexWithMarkers": 0,
+      "previewBasePose": null,
+      "axes": [
+        {
+          "index": 0,
+          "serialized": {
+            "DisplayName": "Stride Amount",
+            "Max": 1.0,
+            "GridNum": 1
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "DisplayName": "Walk Run Amount",
+            "Max": 1.0,
+            "GridNum": 1
+          }
+        }
+      ],
+      "interpolationParameters": [
+        {
+          "index": 0,
+          "serialized": {
+            "InterpolationTime": 0.5848035,
+            "InterpolationType": "BSIT_Cubic"
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "InterpolationTime": 0.7368063,
+            "InterpolationType": "BSIT_Cubic"
+          }
+        }
+      ],
+      "samples": [
+        {
+          "animation": {
+            "name": "A_Als_Walk_Right_Backward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Walk_Right_Backward"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Walk_Left_Pose",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Walk_Left_Pose"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Run_Right_Backward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Right_Backward"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Run_Left_Pose",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Left_Pose"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        }
+      ],
+      "topology": {
+        "interpolateUsingGrid": true,
+        "blendSpaceData": null,
+        "gridSamples": [
+          {
+            "Indices": 1,
+            "Indices[1]": 0,
+            "Indices[2]": 3,
+            "Weights": 1.0,
+            "Weights[1]": 0.0,
+            "Weights[2]": 0.0
+          },
+          {
+            "Indices": 0,
+            "Indices[1]": 2,
+            "Indices[2]": 3,
+            "Weights": 1.0,
+            "Weights[1]": 0.0,
+            "Weights[2]": 0.0
+          },
+          {
+            "Indices": 0,
+            "Indices[1]": 2,
+            "Indices[2]": 3,
+            "Weights": 0.0,
+            "Weights[1]": 0.0,
+            "Weights[2]": 1.0
+          },
+          {
+            "Indices": 0,
+            "Indices[1]": 2,
+            "Indices[2]": 3,
+            "Weights": 0.0,
+            "Weights[1]": 1.0,
+            "Weights[2]": 0.0
+          }
+        ]
+      }
+    },
+    "BS_Als_WalkRun_Right_Forward": {
+      "assetPath": "ALS/Content/ALS/Animations/Grounded/WalkRun/BS_Als_WalkRun_Right_Forward.uasset",
+      "className": "BlendSpace",
+      "loop": true,
+      "containsRotationOffsetMeshSpaceSamples": false,
+      "animLengthSeconds": 1.1333333253860474,
+      "sampleIndexWithMarkers": 0,
+      "previewBasePose": null,
+      "axes": [
+        {
+          "index": 0,
+          "serialized": {
+            "DisplayName": "Stride Amount",
+            "Max": 1.0,
+            "GridNum": 1
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "DisplayName": "Walk Run Amount",
+            "Max": 1.0,
+            "GridNum": 1
+          }
+        }
+      ],
+      "interpolationParameters": [
+        {
+          "index": 0,
+          "serialized": {
+            "InterpolationTime": 0.2,
+            "InterpolationType": "BSIT_Cubic"
+          }
+        },
+        {
+          "index": 1,
+          "serialized": {
+            "InterpolationTime": 0.4,
+            "InterpolationType": "BSIT_Cubic"
+          }
+        }
+      ],
+      "samples": [
+        {
+          "animation": {
+            "name": "A_Als_Walk_Right_Forward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Walk_Right_Forward"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Walk_Right_Pose",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Walk_Right_Pose"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Run_Right_Forward",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Right_Forward"
+          },
+          "sampleValue": {
+            "X": 1.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        },
+        {
+          "animation": {
+            "name": "A_Als_Run_Right_Pose",
+            "objectPath": "/ALS/ALS/Animations/Grounded/WalkRun/A_Als_Run_Right_Pose"
+          },
+          "sampleValue": {
+            "X": 0.0,
+            "Y": 1.0,
+            "Z": 0.0
+          },
+          "rateScale": 1.0
+        }
+      ],
+      "topology": {
+        "interpolateUsingGrid": false,
+        "blendSpaceData": {
+          "Triangles": [
+            {
+              "SampleIndices": 1,
+              "SampleIndices[1]": 0,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 0.0,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 1.0,
+                "Y": 0.0
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 1.0
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": -1.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": 1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": 0
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.70710677,
+                  "Y": 0.70710677
+                },
+                "NeighbourTriangleIndex": 1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": 1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            },
+            {
+              "SampleIndices": 0,
+              "SampleIndices[1]": 2,
+              "SampleIndices[2]": 3,
+              "Vertices": {
+                "X": 1.0,
+                "Y": 0.0
+              },
+              "Vertices[1]": {
+                "X": 1.0,
+                "Y": 1.0
+              },
+              "Vertices[2]": {
+                "X": 0.0,
+                "Y": 1.0
+              },
+              "EdgeInfo": {
+                "Normal": {
+                  "X": 1.0,
+                  "Y": 0.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": 0,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": 0,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              },
+              "EdgeInfo[1]": {
+                "Normal": {
+                  "X": 0.0,
+                  "Y": 1.0
+                },
+                "NeighbourTriangleIndex": -1,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": 0,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": 2
+              },
+              "EdgeInfo[2]": {
+                "Normal": {
+                  "X": -0.70710677,
+                  "Y": -0.70710677
+                },
+                "NeighbourTriangleIndex": 0,
+                "AdjacentPerimeterTriangleIndices": -1,
+                "AdjacentPerimeterTriangleIndices[1]": -1,
+                "AdjacentPerimeterVertexIndices": -1,
+                "AdjacentPerimeterVertexIndices[1]": -1
+              }
+            }
+          ]
+        },
+        "gridSamples": []
+      }
+    }
+  },
+  "validations": [
+    {
+      "id": "als-4.15-blend-space-content",
+      "passed": true,
+      "details": {
+        "expectedCount": 9,
+        "actualCount": 9,
+        "errors": []
+      }
+    }
+  ]
+}

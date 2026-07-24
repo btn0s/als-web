@@ -1,0 +1,598 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "release": "ALS-Refactored 4.15",
+    "engineVersion": "UE5.5",
+    "asset": "/ALS/ALS/Data/Input/IMC_Als_Default"
+  },
+  "mappingContext": {
+    "name": "IMC_Als_Default",
+    "mappings": [
+      {
+        "action": {
+          "name": "IA_Als_LookMouse",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_LookMouse"
+        },
+        "key": "Mouse2D",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Look",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Look"
+        },
+        "key": "Up",
+        "triggers": [],
+        "modifiers": [
+          {
+            "type": "InputModifierSwizzleAxis",
+            "name": "InputModifierSwizzleAxis_4",
+            "serializedProperties": {}
+          }
+        ],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Look",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Look"
+        },
+        "key": "Left",
+        "triggers": [],
+        "modifiers": [
+          {
+            "type": "InputModifierNegate",
+            "name": "InputModifierNegate_5",
+            "serializedProperties": {}
+          }
+        ],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Look",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Look"
+        },
+        "key": "Down",
+        "triggers": [],
+        "modifiers": [
+          {
+            "type": "InputModifierSwizzleAxis",
+            "name": "InputModifierSwizzleAxis_3",
+            "serializedProperties": {}
+          },
+          {
+            "type": "InputModifierNegate",
+            "name": "InputModifierNegate_3",
+            "serializedProperties": {}
+          }
+        ],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Look",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Look"
+        },
+        "key": "Right",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Look",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Look"
+        },
+        "key": "Gamepad_Right2D",
+        "triggers": [],
+        "modifiers": [
+          {
+            "type": "InputModifierNegate",
+            "name": "InputModifierNegate_2",
+            "serializedProperties": {
+              "bX": false,
+              "bZ": false
+            }
+          },
+          {
+            "type": "InputModifierDeadZone",
+            "name": "InputModifierDeadZone_2",
+            "serializedProperties": {}
+          }
+        ],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Move",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Move"
+        },
+        "key": "W",
+        "triggers": [],
+        "modifiers": [
+          {
+            "type": "InputModifierSwizzleAxis",
+            "name": "InputModifierSwizzleAxis_7",
+            "serializedProperties": {}
+          }
+        ],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Move",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Move"
+        },
+        "key": "A",
+        "triggers": [],
+        "modifiers": [
+          {
+            "type": "InputModifierNegate",
+            "name": "InputModifierNegate_1",
+            "serializedProperties": {}
+          }
+        ],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Move",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Move"
+        },
+        "key": "S",
+        "triggers": [],
+        "modifiers": [
+          {
+            "type": "InputModifierSwizzleAxis",
+            "name": "InputModifierSwizzleAxis_6",
+            "serializedProperties": {}
+          },
+          {
+            "type": "InputModifierNegate",
+            "name": "InputModifierNegate_0",
+            "serializedProperties": {}
+          }
+        ],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Move",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Move"
+        },
+        "key": "D",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Move",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Move"
+        },
+        "key": "Gamepad_Left2D",
+        "triggers": [],
+        "modifiers": [
+          {
+            "type": "InputModifierDeadZone",
+            "name": "InputModifierDeadZone_0",
+            "serializedProperties": {}
+          }
+        ],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Sprint",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Sprint"
+        },
+        "key": "LeftShift",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Sprint",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Sprint"
+        },
+        "key": "Gamepad_FaceButton_Right",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Walk",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Walk"
+        },
+        "key": "LeftAlt",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Walk",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Walk"
+        },
+        "key": "Gamepad_RightShoulder",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Crouch",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Crouch"
+        },
+        "key": "LeftControl",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Crouch",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Crouch"
+        },
+        "key": "Gamepad_LeftThumbstick",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Jump",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Jump"
+        },
+        "key": "SpaceBar",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Jump",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Jump"
+        },
+        "key": "Gamepad_FaceButton_Bottom",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Aim",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Aim"
+        },
+        "key": "RightMouseButton",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Aim",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Aim"
+        },
+        "key": "Gamepad_LeftShoulder",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Ragdoll",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Ragdoll"
+        },
+        "key": "X",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Ragdoll",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Ragdoll"
+        },
+        "key": "Gamepad_FaceButton_Left",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Roll",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Roll"
+        },
+        "key": "LeftShift",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_Roll",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_Roll"
+        },
+        "key": "Gamepad_FaceButton_Right",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_RotationMode",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_RotationMode"
+        },
+        "key": "One",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_RotationMode",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_RotationMode"
+        },
+        "key": "Gamepad_DPad_Left",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_ViewMode",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_ViewMode"
+        },
+        "key": "Two",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_ViewMode",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_ViewMode"
+        },
+        "key": "Gamepad_DPad_Right",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_SwitchShoulder",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_SwitchShoulder"
+        },
+        "key": "C",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      },
+      {
+        "action": {
+          "name": "IA_Als_SwitchShoulder",
+          "objectPath": "/ALS/ALS/Data/Input/IA_Als_SwitchShoulder"
+        },
+        "key": "Gamepad_RightThumbstick",
+        "triggers": [],
+        "modifiers": [],
+        "playerMappable": false
+      }
+    ]
+  },
+  "actions": {
+    "IA_Als_Aim": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_Aim",
+      "valueType": "EInputActionValueType::Boolean",
+      "consumeInput": true,
+      "triggers": [
+        {
+          "type": "InputTriggerPressed",
+          "name": "InputTriggerPressed_0",
+          "serializedProperties": {}
+        },
+        {
+          "type": "InputTriggerReleased",
+          "name": "InputTriggerReleased_0",
+          "serializedProperties": {}
+        }
+      ],
+      "modifiers": []
+    },
+    "IA_Als_Crouch": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_Crouch",
+      "valueType": "EInputActionValueType::Boolean",
+      "consumeInput": true,
+      "triggers": [
+        {
+          "type": "InputTriggerPressed",
+          "name": "InputTriggerPressed_0",
+          "serializedProperties": {}
+        }
+      ],
+      "modifiers": []
+    },
+    "IA_Als_Jump": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_Jump",
+      "valueType": "EInputActionValueType::Boolean",
+      "consumeInput": true,
+      "triggers": [
+        {
+          "type": "InputTriggerPressed",
+          "name": "InputTriggerPressed_0",
+          "serializedProperties": {}
+        },
+        {
+          "type": "InputTriggerReleased",
+          "name": "InputTriggerReleased_0",
+          "serializedProperties": {}
+        }
+      ],
+      "modifiers": []
+    },
+    "IA_Als_Look": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_Look",
+      "valueType": "EInputActionValueType::Axis2D",
+      "consumeInput": true,
+      "triggers": [],
+      "modifiers": [
+        {
+          "type": "InputModifierScaleByDeltaTime",
+          "name": "InputModifierScaleByDeltaTime_0",
+          "serializedProperties": {}
+        }
+      ]
+    },
+    "IA_Als_LookMouse": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_LookMouse",
+      "valueType": "EInputActionValueType::Axis2D",
+      "consumeInput": true,
+      "triggers": [],
+      "modifiers": []
+    },
+    "IA_Als_Move": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_Move",
+      "valueType": "EInputActionValueType::Axis2D",
+      "consumeInput": true,
+      "triggers": [],
+      "modifiers": []
+    },
+    "IA_Als_Ragdoll": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_Ragdoll",
+      "valueType": "EInputActionValueType::Boolean",
+      "consumeInput": true,
+      "triggers": [
+        {
+          "type": "InputTriggerPressed",
+          "name": "InputTriggerPressed_0",
+          "serializedProperties": {}
+        }
+      ],
+      "modifiers": []
+    },
+    "IA_Als_Roll": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_Roll",
+      "valueType": "EInputActionValueType::Boolean",
+      "consumeInput": true,
+      "triggers": [
+        {
+          "type": "InputTriggerTap",
+          "name": "InputTriggerTap_0",
+          "serializedProperties": {
+            "TapReleaseTimeThreshold": 0.3
+          }
+        }
+      ],
+      "modifiers": []
+    },
+    "IA_Als_RotationMode": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_RotationMode",
+      "valueType": "EInputActionValueType::Boolean",
+      "consumeInput": true,
+      "triggers": [
+        {
+          "type": "InputTriggerPressed",
+          "name": "InputTriggerPressed_0",
+          "serializedProperties": {}
+        }
+      ],
+      "modifiers": []
+    },
+    "IA_Als_Sprint": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_Sprint",
+      "valueType": "EInputActionValueType::Boolean",
+      "consumeInput": true,
+      "triggers": [
+        {
+          "type": "InputTriggerHold",
+          "name": "InputTriggerHold_0",
+          "serializedProperties": {
+            "HoldTimeThreshold": 0.1,
+            "bIsOneShot": true
+          }
+        },
+        {
+          "type": "InputTriggerReleased",
+          "name": "InputTriggerReleased_0",
+          "serializedProperties": {}
+        }
+      ],
+      "modifiers": []
+    },
+    "IA_Als_SwitchShoulder": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_SwitchShoulder",
+      "valueType": "EInputActionValueType::Boolean",
+      "consumeInput": true,
+      "triggers": [
+        {
+          "type": "InputTriggerPressed",
+          "name": "InputTriggerPressed_0",
+          "serializedProperties": {}
+        }
+      ],
+      "modifiers": []
+    },
+    "IA_Als_ViewMode": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_ViewMode",
+      "valueType": "EInputActionValueType::Boolean",
+      "consumeInput": true,
+      "triggers": [
+        {
+          "type": "InputTriggerPressed",
+          "name": "InputTriggerPressed_0",
+          "serializedProperties": {}
+        }
+      ],
+      "modifiers": []
+    },
+    "IA_Als_Walk": {
+      "assetPath": "/ALS/ALS/Data/Input/IA_Als_Walk",
+      "valueType": "EInputActionValueType::Boolean",
+      "consumeInput": true,
+      "triggers": [
+        {
+          "type": "InputTriggerPressed",
+          "name": "InputTriggerPressed_0",
+          "serializedProperties": {}
+        }
+      ],
+      "modifiers": []
+    }
+  },
+  "inventory": {
+    "mappingModifiers": {
+      "InputModifierDeadZone": 2,
+      "InputModifierNegate": 5,
+      "InputModifierSwizzleAxis": 4
+    },
+    "actionModifiers": {
+      "InputModifierScaleByDeltaTime": 1
+    },
+    "actionTriggers": {
+      "InputTriggerHold": 1,
+      "InputTriggerPressed": 8,
+      "InputTriggerReleased": 3,
+      "InputTriggerTap": 1
+    }
+  },
+  "unrecoverable": [
+    "Unreal omits class-default-valued tagged properties. Empty serializedProperties on modifier/trigger subobjects therefore means the ALS asset uses that UE5.5 Enhanced Input class default; the extractor does not invent a duplicate value."
+  ],
+  "validations": {
+    "id": "als-4.15-input-mapping-content",
+    "passed": true,
+    "details": {
+      "expectedActionCount": 13,
+      "actualActionCount": 13,
+      "expectedMappingCount": 31,
+      "actualMappingCount": 31,
+      "errors": []
+    }
+  }
+}

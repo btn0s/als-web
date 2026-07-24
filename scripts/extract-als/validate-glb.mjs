@@ -3,11 +3,18 @@
 // bindings/root tracks, and physical sanity
 // (character height ≈ 1.8 m, pelvis ≈ 0.9 m up at frame 0 — catches axis/unit
 // conversion mistakes, which fail loudly here and silently on screen).
-// Usage: node validate-glb.mjs <file.glb>
+// Usage:
+//   node validate-glb.mjs <file.glb> [abp-graph.json] [blend-spaces.json]
 import { NodeIO } from '@gltf-transform/core';
 import { readFileSync } from 'node:fs';
 
 const doc = await new NodeIO().read(process.argv[2]);
+const abpGraph = JSON.parse(readFileSync(
+  process.argv[3] ?? new URL('./abp-graph.json', import.meta.url),
+  'utf8'));
+const blendSpaceDump = JSON.parse(readFileSync(
+  process.argv[4] ?? new URL('./blend-spaces.json', import.meta.url),
+  'utf8'));
 const root = doc.getRoot();
 const joints = root.listSkins()[0]?.listJoints() ?? [];
 const names = joints.map((j) => j.getName());
@@ -45,6 +52,61 @@ const manifest = readFileSync(new URL('./clips.manifest', import.meta.url), 'utf
 const manifestSet = new Set(manifest);
 const animNames = anims.map((anim) => anim.getName());
 const animNameSet = new Set(animNames);
+const expectedBakedRootLockedClips = new Set([
+  'A_Als_Turn_90_Left',
+  'A_Als_Turn_90_Right',
+  'A_Als_Turn_180_Left',
+  'A_Als_Turn_180_Right',
+  'A_Als_Rotate_90_Left',
+  'A_Als_Rotate_90_Right',
+  'A_Als_Crouch_Turn_90_Left',
+  'A_Als_Crouch_Turn_90_Right',
+  'A_Als_Crouch_Turn_180_Left',
+  'A_Als_Crouch_Turn_180_Right',
+  'A_Als_Crouch_Rotate_90_Left',
+  'A_Als_Crouch_Rotate_90_Right',
+]);
+const expectedDeferredActionRootLocks = new Set([
+  'A_Als_Roll',
+  'A_Als_Mantle_High',
+  'A_Als_Mantle_Low_Left',
+  'A_Als_Mantle_Low_Right',
+]);
+const expectedForceRootLockedClips = new Set([
+  ...expectedBakedRootLockedClips,
+  ...expectedDeferredActionRootLocks,
+]);
+const expectedRootMotionEnabledClips = new Set(['A_Als_Roll']);
+const expectedActionRootTranslationEnds = new Map([
+  ['A_Als_Roll', [0, 0, 2.75]],
+  ['A_Als_Mantle_High', [0, 2, 0.65]],
+  ['A_Als_Mantle_Low_Left', [0, 1, 0.65]],
+  ['A_Als_Mantle_Low_Right', [0, 1, 0.65]],
+]);
+const abpAnimationReferences = [
+  ...new Map(
+    Object.values(abpGraph.assets ?? {})
+      .flatMap((asset) => asset.referencedAnimationAssets ?? [])
+      .filter(({ className }) =>
+        ['AnimSequence', 'BlendSpace', 'BlendSpace1D'].includes(className))
+      .map((reference) => [`${reference.className}:${reference.objectName}`, reference]),
+  ).values(),
+];
+const abpSequenceNames = new Set(
+  abpAnimationReferences
+    .filter(({ className }) => className === 'AnimSequence')
+    .map(({ objectName }) => objectName));
+const abpBlendSpaceNames = new Set(
+  abpAnimationReferences
+    .filter(({ className }) => className === 'BlendSpace' || className === 'BlendSpace1D')
+    .map(({ objectName }) => objectName));
+const dumpedBlendSpaces = blendSpaceDump.blendSpaces ?? {};
+const blendSpaceNames = new Set(Object.keys(dumpedBlendSpaces));
+const blendSpaceSequenceNames = new Set(
+  Object.values(dumpedBlendSpaces).flatMap((blendSpace) => [
+    ...(blendSpace.samples ?? []).map((sample) => sample.animation?.name),
+    blendSpace.previewBasePose?.name,
+  ].filter(Boolean)));
 
 // NOTE: SK_Als is UE4-mannequin-layout (spine_01–03, neck_01) even in ALS-Refactored
 // 4.17/UE 5.7 — the plugin never adopted the UE5 Manny skeleton (spine_04/05, neck_02).
@@ -83,36 +145,256 @@ if (meshHeight < 1.6 || meshHeight > 2.1)
   errs.push(`mesh bounding-box height ${meshHeight.toFixed(3)}m out of range`);
 
 if (anims.length < 1) errs.push('no animations');
+if (manifest.length !== 109)
+  errs.push(`ALS 4.15 content manifest has ${manifest.length} clips, expected 109`);
 if (manifestSet.size !== manifest.length) errs.push('duplicate clip names in clips.manifest');
 for (const clip of manifest)
   if (!animNameSet.has(clip)) errs.push(`missing curated clip: ${clip}`);
 for (const clip of animNames)
   if (!manifestSet.has(clip)) errs.push(`unexpected uncurated clip: ${clip}`);
 if (animNameSet.size !== animNames.length) errs.push('duplicate animation names in GLB');
+for (const clip of abpSequenceNames) {
+  if (!manifestSet.has(clip))
+    errs.push(`ABP-referenced AnimSequence omitted from clips.manifest: ${clip}`);
+  if (!animNameSet.has(clip))
+    errs.push(`ABP-referenced AnimSequence omitted from GLB: ${clip}`);
+}
+for (const clip of blendSpaceSequenceNames) {
+  if (!manifestSet.has(clip))
+    errs.push(`BlendSpace sample/base omitted from clips.manifest: ${clip}`);
+  if (!animNameSet.has(clip))
+    errs.push(`BlendSpace sample/base omitted from GLB: ${clip}`);
+}
+for (const name of abpBlendSpaceNames)
+  if (!blendSpaceNames.has(name))
+    errs.push(`ABP-referenced BlendSpace omitted from blend-spaces.json: ${name}`);
+for (const name of blendSpaceNames)
+  if (!abpBlendSpaceNames.has(name))
+    errs.push(`unexpected non-ABP BlendSpace in blend-spaces.json: ${name}`);
 
 let channelCount = 0;
 let rootTrackCount = 0;
 let curveCount = 0;
 let syncMarkerCount = 0;
 let notifyCount = 0;
+let rootLockedClipCount = 0;
+let bakedRootLockedClipCount = 0;
+let deferredActionRootLockCount = 0;
 const curveNamePattern = /^[A-Za-z][A-Za-z0-9_]*$/;
 const curvesByClip = new Map();
 const syncMarkersByClip = new Map();
 const notifiesByClip = new Map();
+const rootJoint = joints[names.indexOf('root')];
+const rootLockModes = new Set(['RefPose', 'AnimFirstFrame', 'Zero']);
+const maxComponentDelta = (a, b) =>
+  Math.max(...a.map((value, index) => Math.abs(value - b[index])));
+const quaternionError = (a, b) => {
+  const aLength = Math.hypot(...a);
+  const bLength = Math.hypot(...b);
+  if (aLength === 0 || bLength === 0) return Infinity;
+  const dot = a.reduce((sum, value, index) => sum + value * b[index], 0);
+  return 1 - Math.abs(dot / (aLength * bLength));
+};
+const rootValuesMatch = (path, a, b) =>
+  path === 'rotation'
+    ? quaternionError(a, b) <= 1e-6
+    : maxComponentDelta(a, b) <= 1e-6;
+const validateLockedRootTrack = (animName, path, channel, expectedValue) => {
+  const output = channel?.getSampler()?.getOutput();
+  if (!output || output.getCount() === 0) {
+    errs.push(`${animName} locked root ${path} track has no output keys`);
+    return;
+  }
+
+  const first = output.getElement(0, []);
+  for (let keyIndex = 1; keyIndex < output.getCount(); keyIndex++) {
+    const value = output.getElement(keyIndex, []);
+    if (!rootValuesMatch(path, value, first)) {
+      errs.push(`${animName} locked root ${path} changes at key ${keyIndex}`);
+      break;
+    }
+  }
+  if (expectedValue && !rootValuesMatch(path, first, expectedValue)) {
+    errs.push(
+      `${animName} locked root ${path} ${JSON.stringify(first)} does not match ` +
+      `${JSON.stringify(expectedValue)}`);
+  }
+};
+const validateRawRootTrack = (animName, rawRootTrack, rootChannels) => {
+  if (!rawRootTrack || typeof rawRootTrack !== 'object' || Array.isArray(rawRootTrack)) {
+    errs.push(`${animName} has no animation.extras.rawRootTrack object`);
+    return null;
+  }
+
+  const times = rawRootTrack.times;
+  const translations = rawRootTrack.translations;
+  const rotations = rawRootTrack.rotations;
+  if (!Array.isArray(times) ||
+      !Array.isArray(translations) ||
+      !Array.isArray(rotations))
+  {
+    errs.push(`${animName} rawRootTrack arrays are malformed`);
+    return null;
+  }
+
+  const translationChannel = rootChannels.get('translation');
+  const rotationChannel = rootChannels.get('rotation');
+  const input = translationChannel?.getSampler()?.getInput();
+  const translationOutput = translationChannel?.getSampler()?.getOutput();
+  const rotationOutput = rotationChannel?.getSampler()?.getOutput();
+  const expectedCount = translationOutput?.getCount() ?? 0;
+  if (times.length !== expectedCount ||
+      translations.length !== expectedCount ||
+      rotations.length !== expectedCount ||
+      rotationOutput?.getCount() !== expectedCount)
+  {
+    errs.push(
+      `${animName} rawRootTrack key counts ` +
+      `${times.length}/${translations.length}/${rotations.length} do not match ` +
+      `root channels ${expectedCount}/${rotationOutput?.getCount() ?? 0}`);
+  }
+
+  for (let keyIndex = 0; keyIndex < times.length; keyIndex++) {
+    if (!Number.isFinite(times[keyIndex]))
+      errs.push(`${animName} rawRootTrack time ${keyIndex} is not finite`);
+    if (keyIndex > 0 && times[keyIndex] < times[keyIndex - 1])
+      errs.push(`${animName} rawRootTrack times decrease at key ${keyIndex}`);
+    const sampledTime = input?.getElement(keyIndex, [])?.[0];
+    if (Number.isFinite(sampledTime) &&
+        Math.abs(times[keyIndex] - sampledTime) > 1e-6)
+    {
+      errs.push(`${animName} rawRootTrack time differs from root sampler at key ${keyIndex}`);
+      break;
+    }
+    if (!Array.isArray(translations[keyIndex]) ||
+        translations[keyIndex].length !== 3 ||
+        translations[keyIndex].some((value) => !Number.isFinite(value)))
+    {
+      errs.push(`${animName} rawRootTrack translation ${keyIndex} is malformed`);
+      break;
+    }
+    if (!Array.isArray(rotations[keyIndex]) ||
+        rotations[keyIndex].length !== 4 ||
+        rotations[keyIndex].some((value) => !Number.isFinite(value)))
+    {
+      errs.push(`${animName} rawRootTrack rotation ${keyIndex} is malformed`);
+      break;
+    }
+  }
+
+  return { times, translations, rotations, translationOutput, rotationOutput };
+};
+const validateRootChannelsMatchRaw = (animName, rawRootTrack) => {
+  for (const [path, values, output] of [
+    ['translation', rawRootTrack.translations, rawRootTrack.translationOutput],
+    ['rotation', rawRootTrack.rotations, rawRootTrack.rotationOutput],
+  ]) {
+    if (!output) continue;
+    for (let keyIndex = 0;
+      keyIndex < Math.min(values.length, output.getCount());
+      keyIndex++)
+    {
+      if (!rootValuesMatch(path, output.getElement(keyIndex, []), values[keyIndex])) {
+        errs.push(`${animName} deferred root ${path} differs from raw key ${keyIndex}`);
+        break;
+      }
+    }
+  }
+};
 for (const anim of anims) {
   const rootPaths = new Set();
+  const rootChannels = new Map();
   for (const channel of anim.listChannels()) {
     channelCount++;
     const targetName = channel.getTargetNode()?.getName() ?? '';
     if (!expectedBoneSet.has(targetName) || !names.includes(targetName))
       errs.push(`${anim.getName()} binds unexpected bone: ${targetName || '<none>'}`);
-    if (targetName === 'root') rootPaths.add(channel.getTargetPath());
+    if (targetName === 'root') {
+      const path = channel.getTargetPath();
+      if (rootChannels.has(path))
+        errs.push(`${anim.getName()} has duplicate root ${path} tracks`);
+      rootPaths.add(path);
+      rootChannels.set(path, channel);
+    }
   }
   for (const path of ['translation', 'rotation'])
     if (!rootPaths.has(path)) errs.push(`${anim.getName()} missing root ${path} track`);
   if (rootPaths.has('translation') && rootPaths.has('rotation')) rootTrackCount++;
 
-  const curves = anim.getExtras()?.alsCurves ?? [];
+  const extras = anim.getExtras() ?? {};
+  const shouldForceRootLock = expectedForceRootLockedClips.has(anim.getName());
+  const shouldEnableRootMotion = expectedRootMotionEnabledClips.has(anim.getName());
+  if (typeof extras.bEnableRootMotion !== 'boolean')
+    errs.push(`${anim.getName()} animation.extras.bEnableRootMotion is not a boolean`);
+  else if (extras.bEnableRootMotion !== shouldEnableRootMotion)
+    errs.push(
+      `${anim.getName()} bEnableRootMotion=${extras.bEnableRootMotion}, ` +
+      `expected ${shouldEnableRootMotion}`);
+  if (typeof extras.bForceRootLock !== 'boolean')
+    errs.push(`${anim.getName()} animation.extras.bForceRootLock is not a boolean`);
+  else if (extras.bForceRootLock !== shouldForceRootLock)
+    errs.push(
+      `${anim.getName()} bForceRootLock=${extras.bForceRootLock}, ` +
+      `expected ${shouldForceRootLock}`);
+  if (!rootLockModes.has(extras.RootMotionRootLock))
+    errs.push(
+      `${anim.getName()} has invalid RootMotionRootLock: ` +
+      `${JSON.stringify(extras.RootMotionRootLock)}`);
+  else if (extras.RootMotionRootLock !== 'RefPose')
+    errs.push(
+      `${anim.getName()} RootMotionRootLock=${extras.RootMotionRootLock}, expected RefPose`);
+
+  if (extras.bForceRootLock === true) {
+    rootLockedClipCount++;
+    const rawRootTrack = validateRawRootTrack(
+      anim.getName(),
+      extras.rawRootTrack,
+      rootChannels);
+    if (expectedBakedRootLockedClips.has(anim.getName())) {
+      bakedRootLockedClipCount++;
+      const expectedTranslation =
+        extras.RootMotionRootLock === 'Zero' ? [0, 0, 0] :
+          extras.RootMotionRootLock === 'AnimFirstFrame'
+            ? rawRootTrack?.translations[0]
+            : rootJoint?.getTranslation();
+      const expectedRotation =
+        extras.RootMotionRootLock === 'Zero' ? [0, 0, 0, 1] :
+          extras.RootMotionRootLock === 'AnimFirstFrame'
+            ? rawRootTrack?.rotations[0]
+            : rootJoint?.getRotation();
+      validateLockedRootTrack(
+        anim.getName(),
+        'translation',
+        rootChannels.get('translation'),
+        expectedTranslation);
+      validateLockedRootTrack(
+        anim.getName(),
+        'rotation',
+        rootChannels.get('rotation'),
+        expectedRotation);
+      if (rawRootTrack &&
+          !rawRootTrack.rotations.some((rotation) =>
+            !rootValuesMatch('rotation', rotation, rawRootTrack.rotations[0])))
+      {
+        errs.push(`${anim.getName()} raw root rotation has no authored turn to preserve`);
+      }
+    } else if (expectedDeferredActionRootLocks.has(anim.getName())) {
+      deferredActionRootLockCount++;
+      if (rawRootTrack) {
+        validateRootChannelsMatchRaw(anim.getName(), rawRootTrack);
+        const expectedEnd = expectedActionRootTranslationEnds.get(anim.getName());
+        const actualEnd = rawRootTrack.translations.at(-1);
+        if (!actualEnd || !rootValuesMatch('translation', actualEnd, expectedEnd))
+          errs.push(
+            `${anim.getName()} raw root translation end ${JSON.stringify(actualEnd)} ` +
+            `does not match ${JSON.stringify(expectedEnd)}`);
+      }
+    }
+  } else if (extras.rawRootTrack !== undefined) {
+    errs.push(`${anim.getName()} has rawRootTrack without bForceRootLock`);
+  }
+
+  const curves = extras.alsCurves ?? [];
   curvesByClip.set(anim.getName(), curves);
   if (!Array.isArray(curves)) {
     errs.push(`${anim.getName()} animation.extras.alsCurves is not an array`);
@@ -158,6 +440,18 @@ for (const anim of anims) {
     }
   }
 }
+if (rootLockedClipCount !== expectedForceRootLockedClips.size)
+  errs.push(
+    `force-root-locked clip count ${rootLockedClipCount}, ` +
+    `expected ${expectedForceRootLockedClips.size}`);
+if (bakedRootLockedClipCount !== expectedBakedRootLockedClips.size)
+  errs.push(
+    `baked turn/rotate root-lock count ${bakedRootLockedClipCount}, ` +
+    `expected ${expectedBakedRootLockedClips.size}`);
+if (deferredActionRootLockCount !== expectedDeferredActionRootLocks.size)
+  errs.push(
+    `deferred action root-lock count ${deferredActionRootLockCount}, ` +
+    `expected ${expectedDeferredActionRootLocks.size}`);
 
 const requireCurves = (clipName, requiredNames, minimumCount = requiredNames.length) => {
   const curves = curvesByClip.get(clipName);
@@ -172,10 +466,30 @@ const requireCurves = (clipName, requiredNames, minimumCount = requiredNames.len
     if (!names.has(name)) errs.push(`${clipName} missing curve: ${name}`);
 };
 requireCurves('A_Als_Walk_Forward', ['FootPlanted', 'PoseGait']);
+requireCurves('A_Als_Crouch_Walk_Pose', ['PoseGait']);
 requireCurves(
   'A_Als_Turn_90_Left',
   ['FootLeftLock', 'FootRightLock', 'RotationYawSpeed']);
 requireCurves('A_Als_Rifle_Poses', ['LayerArmLeftAdditive'], 11);
+requireCurves(
+  'A_Als_Rifle_Sprint_Impulse_Arms',
+  [
+    'HandLeftIk',
+    'LayerArmLeft',
+    'LayerArmLeftLocalSpace',
+    'LayerArmRight',
+    'LayerArmRightLocalSpace',
+    'LayerHandRight',
+  ],
+  6);
+requireCurves(
+  'A_Als_Land_Light_Additive',
+  ['FootstepSoundBlock', 'SprintBlock'],
+  2);
+requireCurves(
+  'A_Als_Land_Heavy_Additive',
+  ['FootstepSoundBlock', 'SprintBlock'],
+  2);
 const idleCurves = curvesByClip.get('A_Als_Idle');
 if (!idleCurves) errs.push('curve-free sentinel clip missing: A_Als_Idle');
 else if (idleCurves.length !== 0)
@@ -211,6 +525,56 @@ for (const clipName of forwardLocomotionCycles) {
   }
 }
 
+const requireEvents = (table, clipName, requiredNames, label) => {
+  const events = table.get(clipName);
+  if (!events) {
+    errs.push(`${label} sentinel clip missing: ${clipName}`);
+    return;
+  }
+  const names = events.map(({ name }) => name);
+  for (const requiredName of requiredNames)
+    if (!names.includes(requiredName))
+      errs.push(`${clipName} missing ${label}: ${requiredName}`);
+};
+requireEvents(
+  syncMarkersByClip,
+  'A_Als_Crouch_Walk_Pose',
+  ['Left', 'Right'],
+  'sync marker');
+requireEvents(
+  syncMarkersByClip,
+  'A_Als_Rifle_Sprint_Impulse_Arms',
+  ['Left', 'Right'],
+  'sync marker');
+requireEvents(
+  notifiesByClip,
+  'A_Als_Land_Light_Additive',
+  ['BMAnimNotifyFootstep'],
+  'notify');
+requireEvents(
+  notifiesByClip,
+  'A_Als_Land_Heavy_Additive',
+  ['BMAnimNotifyFootstep'],
+  'notify');
+
+const clipsWithCurves = [...curvesByClip.values()].filter((curves) => curves.length > 0).length;
+const clipsWithSyncMarkers =
+  [...syncMarkersByClip.values()].filter((markers) => markers.length > 0).length;
+const clipsWithNotifies =
+  [...notifiesByClip.values()].filter((notifies) => notifies.length > 0).length;
+if (curveCount !== 333 || clipsWithCurves !== 74)
+  errs.push(
+    `ALS 4.15 curve inventory ${curveCount} across ${clipsWithCurves} clips, ` +
+    'expected 333 across 74');
+if (syncMarkerCount !== 60 || clipsWithSyncMarkers !== 30)
+  errs.push(
+    `ALS 4.15 sync-marker inventory ${syncMarkerCount} across ${clipsWithSyncMarkers} clips, ` +
+    'expected 60 across 30');
+if (notifyCount !== 150 || clipsWithNotifies !== 57)
+  errs.push(
+    `ALS 4.15 notify inventory ${notifyCount} across ${clipsWithNotifies} clips, ` +
+    'expected 150 across 57');
+
 const idle = anims.find((a) => /idle/i.test(a.getName()));
 if (!idle) errs.push('no /idle/i clip');
 const dur = Math.max(...(idle?.listSamplers() ?? []).map((s) => s.getInput().getMax([0])[0] ?? 0), 0);
@@ -228,17 +592,24 @@ console.log(
   `mesh: ${vertexCount} vertices, ${triangleCount} triangles, ${meshPrimitives.length} skinned sections, ` +
   `${meshHeight.toFixed(3)}m bounding-box height`);
 console.log(`curated clips: ${anims.length}/${manifest.length} present`);
+console.log(
+  `ABP content coverage: ${abpSequenceNames.size} direct sequences + ` +
+  `${blendSpaceNames.size} BlendSpaces / ${blendSpaceSequenceNames.size} sample/base sequences`);
 console.log(`bindings: ${channelCount} channels target only expected SK_Als bones`);
 console.log(`root tracks: translation + rotation present in ${rootTrackCount}/${anims.length} clips`);
-console.log(`curves: ${curveCount} across ${[...curvesByClip.values()].filter((curves) => curves.length > 0).length}/${anims.length} clips; sentinel clips passed`);
+console.log(
+  `root locks: exact ${rootLockedClipCount}/${expectedForceRootLockedClips.size} authored; ` +
+  `${bakedRootLockedClipCount} turn/rotate poses baked to RefPose; ` +
+  `${deferredActionRootLockCount} action channels retain raw motion`);
+console.log(`curves: ${curveCount} across ${clipsWithCurves}/${anims.length} clips; sentinel clips passed`);
 console.log(
   `sync markers: ${syncMarkerCount} across ` +
-  `${[...syncMarkersByClip.values()].filter((markers) => markers.length > 0).length}/${anims.length} clips; ` +
+  `${clipsWithSyncMarkers}/${anims.length} clips; ` +
   `${forwardLocomotionCycles.length} forward walk/run cycles have >=2 non-decreasing markers ` +
   `with consistent names [${gaitMarkerNames?.join(', ') ?? ''}]`);
 console.log(
   `notifies: ${notifyCount} across ` +
-  `${[...notifiesByClip.values()].filter((notifies) => notifies.length > 0).length}/${anims.length} clips`);
+  `${clipsWithNotifies}/${anims.length} clips`);
 console.log(`idle duration: ${dur.toFixed(2)}s, pelvis@0: ${pelvisHeight?.toFixed(3)}m`);
 if (errs.length) { console.error('FAIL:\n  ' + errs.join('\n  ')); process.exit(1); }
 console.log('GLB validation passed');

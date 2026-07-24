@@ -68,6 +68,10 @@ const convertScale = ([x, y, z]) => [x, z, y];
 
 // ---------- prepare clips (UE space) ----------
 const { bones } = dump.skeleton;
+const rootBones = bones.filter((bone) => bone.parent < 0);
+if (rootBones.length !== 1)
+  throw new Error(`expected exactly one skeleton root, found ${rootBones.length}`);
+const rootBoneName = rootBones[0].name;
 const key = (arr, i) => arr.length === 0 ? null : arr[Math.min(i, arr.length - 1)];
 const refByName = Object.fromEntries(bones.map((b) => [b.name, b]));
 const canonicalBoneByLower = new Map(bones.map((b) => [b.name.toLowerCase(), b.name]));
@@ -77,36 +81,116 @@ const canonicalBoneName = (clipName, sourceName) => {
   return canonical;
 };
 const compactFloat = (value) => Number(Number(value).toPrecision(6));
+const rootLockModes = new Set(['RefPose', 'AnimFirstFrame', 'Zero']);
+const readRootMotionSettings = (anim) => {
+  if (typeof anim.bEnableRootMotion !== 'boolean')
+    throw new Error(`${anim.name} has no exact bEnableRootMotion metadata`);
+  if (typeof anim.bForceRootLock !== 'boolean')
+    throw new Error(`${anim.name} has no exact bForceRootLock metadata`);
+  if (!rootLockModes.has(anim.RootMotionRootLock))
+    throw new Error(
+      `${anim.name} has unsupported RootMotionRootLock metadata: ` +
+      `${JSON.stringify(anim.RootMotionRootLock)}`);
+  return {
+    bEnableRootMotion: anim.bEnableRootMotion,
+    bForceRootLock: anim.bForceRootLock,
+    RootMotionRootLock: anim.RootMotionRootLock,
+  };
+};
+const bakeRootLock = (anim, rootMotionSettings, shouldBakeRootLock, bone, pos, rot) => {
+  if (!shouldBakeRootLock || bone !== rootBoneName)
+    return { pos, rot };
+
+  // Unreal evaluates bForceRootLock by resetting bone 0 on every pose, even
+  // when root motion extraction is disabled. Preserve that authored sequence
+  // behavior in the clip itself so every web-side sampler sees the same pose.
+  let lockedPos;
+  let lockedRot;
+  switch (rootMotionSettings.RootMotionRootLock) {
+    case 'RefPose':
+      lockedPos = refByName[bone].t;
+      lockedRot = qNorm(refByName[bone].r);
+      break;
+    case 'AnimFirstFrame':
+      lockedPos = pos[0];
+      lockedRot = rot[0];
+      break;
+    case 'Zero':
+      lockedPos = [0, 0, 0];
+      lockedRot = [0, 0, 0, 1];
+      break;
+  }
+
+  return {
+    pos: Array.from({ length: anim.numberOfKeys }, () => lockedPos),
+    rot: Array.from({ length: anim.numberOfKeys }, () => lockedRot),
+  };
+};
 // AnimDataModel tracks are full-pose source keys — playable directly, one glTF
 // clip per dumped sequence (pose sequences like A_Als_Stand_Pose included). A few
 // upstream arms-only clips retain import-time bone-name capitalization; canonicalize
 // those names against SK_Als so every channel binds instead of becoming targetless.
-const clips = dump.anims.map((a) => ({
-  name: a.name,
-  fps: a.fps,
-  numKeys: a.numberOfKeys,
-  tracks: a.tracks.map((t) => {
+const clips = dump.anims.map((a) => {
+  const rootMotionSettings = readRootMotionSettings(a);
+  const sourceTracks = a.tracks.map((t) => {
     const bone = canonicalBoneName(a.name, t.bone);
     return {
       bone,
       pos: Array.from({ length: a.numberOfKeys }, (_, i) => key(t.pos, i) ?? refByName[bone].t),
       rot: Array.from({ length: a.numberOfKeys }, (_, i) => qNorm(key(t.rot, i) ?? refByName[bone].r)),
     };
-  }),
-  curves: (a.curves ?? []).map((curve) => ({
-    name: curve.name,
-    flags: curve.flags,
-    keys: curve.keys.map(([t, v, interp]) => [compactFloat(t), compactFloat(v), interp]),
-  })),
-  syncMarkers: (a.syncMarkers ?? []).map(({ name, time }) => ({
-    name,
-    time: compactFloat(time),
-  })),
-  notifies: (a.notifies ?? []).map(({ name, time }) => ({
-    name,
-    time: compactFloat(time),
-  })),
-}));
+  });
+  const sourceRootTrack = sourceTracks.find((track) => track.bone === rootBoneName);
+  if (rootMotionSettings.bForceRootLock && !sourceRootTrack)
+    throw new Error(`${a.name} enables bForceRootLock but has no ${rootBoneName} track`);
+  const rootTranslationChanges = sourceRootTrack?.pos.some((position) =>
+    position.some((value, axis) => Math.abs(value - sourceRootTrack.pos[0][axis]) > 1e-6)) ?? false;
+  // Tactical compatibility seam: the evaluator currently extracts motion from
+  // the GLB root channel itself. Keep action trajectories there until it reads
+  // rawRootTrack and resets the output pose afterward. The current ALS pack's
+  // exact split is 12 rotational turn/rotate clips baked, with Roll and three
+  // translational Mantles kept raw.
+  const shouldBakeRootLock = rootMotionSettings.bForceRootLock &&
+    !rootMotionSettings.bEnableRootMotion &&
+    !rootTranslationChanges;
+
+  return {
+    name: a.name,
+    fps: a.fps,
+    numKeys: a.numberOfKeys,
+    rootMotionSettings,
+    // Root-motion extraction reads the authored root trajectory before Unreal
+    // resets bone 0 for the output pose. Keep that source trajectory beside the
+    // pose channels so the runtime can close the action-pose reset gap above
+    // without another content extraction change.
+    rawRootTrack: rootMotionSettings.bForceRootLock ? sourceRootTrack : undefined,
+    tracks: sourceTracks.map((track) => {
+      return {
+        bone: track.bone,
+        ...bakeRootLock(
+          a,
+          rootMotionSettings,
+          shouldBakeRootLock,
+          track.bone,
+          track.pos,
+          track.rot),
+      };
+    }),
+    curves: (a.curves ?? []).map((curve) => ({
+      name: curve.name,
+      flags: curve.flags,
+      keys: curve.keys.map(([t, v, interp]) => [compactFloat(t), compactFloat(v), interp]),
+    })),
+    syncMarkers: (a.syncMarkers ?? []).map(({ name, time }) => ({
+      name,
+      time: compactFloat(time),
+    })),
+    notifies: (a.notifies ?? []).map(({ name, time }) => ({
+      name,
+      time: compactFloat(time),
+    })),
+  };
+});
 
 // ---------- build document ----------
 const doc = new Document();
@@ -397,11 +481,20 @@ for (const clip of clips) {
   // [{ name, time }], where time is authored seconds in the UAnimSequence.
   // UE auto-cubic keys store zero tangents because the editor computes them; preserve the
   // authored interpolation enum, but consumers intentionally sample t/v linearly for now.
-  const anim = doc.createAnimation(clip.name).setExtras({
+  const extras = {
     alsCurves: clip.curves,
     syncMarkers: clip.syncMarkers,
     notifies: clip.notifies,
-  });
+    ...clip.rootMotionSettings,
+  };
+  if (clip.rawRootTrack) {
+    extras.rawRootTrack = {
+      times: Array.from({ length: clip.numKeys }, (_, i) => i / clip.fps),
+      translations: clip.rawRootTrack.pos.map(convertPos),
+      rotations: clip.rawRootTrack.rot.map(convertQuat),
+    };
+  }
+  const anim = doc.createAnimation(clip.name).setExtras(extras);
   const times = Float32Array.from({ length: clip.numKeys }, (_, i) => i / clip.fps);
   const timeAcc = doc.createAccessor().setType('SCALAR').setArray(times).setBuffer(buffer);
   for (const t of clip.tracks) {
