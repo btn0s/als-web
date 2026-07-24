@@ -18,6 +18,8 @@ import {
   createAlsFootState,
   processFootLockBaseChange,
   processFootLockTeleport,
+  refreshFeet,
+  refreshFeetOnGameThread,
   refreshFootLock,
 } from './AlsFeetState'
 import type {
@@ -250,6 +252,78 @@ describe('FAlsFeetState defaults', () => {
     expect(state.right.thighAxis).toEqual({ x: 0, y: 0, z: 1 })
     expect(state.left.lockAmount).toBe(0)
     expect(state.left.lockRotation).toEqual({ x: 0, y: 0, z: 0, w: 1 })
+  })
+})
+
+describe('RefreshFeet orchestration', () => {
+  it('snapshots pelvis and both resolved target sockets without retaining aliases', () => {
+    const state = createAlsFeetState()
+    const pelvisRotation = yawQuaternion(15)
+    const leftLocation = { x: 1, y: 2, z: 3 }
+    const leftRotation = yawQuaternion(-20)
+    const leftTarget: AlsTransform = {
+      location: leftLocation,
+      rotation: leftRotation,
+    }
+    const rightTarget: AlsTransform = {
+      location: { x: 4, y: 5, z: 6 },
+      rotation: yawQuaternion(35),
+    }
+
+    refreshFeetOnGameThread(state, {
+      pelvisRotation,
+      leftTarget,
+      rightTarget,
+    })
+    leftLocation.x = 100
+    leftRotation.z = 100
+
+    expect(state.pelvisRotation).toEqual(pelvisRotation)
+    expect(state.left.targetLocation).toEqual({ x: 1, y: 2, z: 3 })
+    expect(state.left.targetRotation).toEqual(yawQuaternion(-20))
+    expect(state.right.targetLocation).toEqual({ x: 4, y: 5, z: 6 })
+    expect(state.right.targetRotation).toEqual(yawQuaternion(35))
+  })
+
+  it('clamps graph curves and refreshes left then right through the exact foot-lock path', () => {
+    const state = createAlsFeetState()
+    refreshFeetOnGameThread(state, {
+      pelvisRotation: yawQuaternion(0),
+      leftTarget: {
+        location: { x: 0.2, y: -0.15, z: 0 },
+        rotation: yawQuaternion(0),
+      },
+      rightTarget: {
+        location: { x: 0.2, y: 0.15, z: 0 },
+        rotation: yawQuaternion(0),
+      },
+    })
+
+    refreshFeet(state, {
+      deltaTime: 1 / 60,
+      pendingUpdate: false,
+      timeSinceTeleported: 1,
+      baseChanged: false,
+      componentTransform: IDENTITY_TRANSFORM,
+      movementBase: NO_MOVEMENT_BASE,
+      movingSmooth: false,
+      grounded: true,
+      disableFootLock: false,
+      footLockAngleLimit: 180,
+      footPlantedCurveAmount: -2,
+      feetCrossingCurveAmount: 2,
+      footLeftIkCurveAmount: 2,
+      footRightIkCurveAmount: -1,
+      footLeftLockCurveAmount: 2,
+      footRightLockCurveAmount: 2,
+    })
+
+    expect(state.footPlantedAmount).toBe(-1)
+    expect(state.feetCrossingAmount).toBe(1)
+    expect(state.left.lockAmount).toBe(1)
+    expect(state.left.lockLocation).toEqual(state.left.targetLocation)
+    expect(state.right.lockAmount).toBe(0)
+    expect(state.right.finalLocation).toEqual(state.right.targetLocation)
   })
 })
 

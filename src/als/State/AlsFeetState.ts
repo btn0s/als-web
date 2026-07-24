@@ -82,6 +82,34 @@ export interface AlsRefreshFootLockInput {
   readonly footLockAngleLimit: number
 }
 
+export interface AlsRefreshFeetOnGameThreadInput {
+  /** Pelvis socket rotation in mesh-component space. */
+  readonly pelvisRotation: Readonly<AlsQuaternion>
+  /** Resolved `ik_foot_l` or `VB foot_l` socket transform in world space. */
+  readonly leftTarget: AlsTransform
+  /** Resolved `ik_foot_r` or `VB foot_r` socket transform in world space. */
+  readonly rightTarget: AlsTransform
+}
+
+export interface AlsRefreshFeetInput {
+  readonly deltaTime: number
+  readonly pendingUpdate: boolean
+  readonly timeSinceTeleported: number
+  readonly baseChanged: boolean
+  readonly componentTransform: AlsTransform
+  readonly movementBase: AlsFootLockMovementBase
+  readonly movingSmooth: boolean
+  readonly grounded: boolean
+  readonly disableFootLock: boolean
+  readonly footLockAngleLimit: number
+  readonly footPlantedCurveAmount: number
+  readonly feetCrossingCurveAmount: number
+  readonly footLeftIkCurveAmount: number
+  readonly footRightIkCurveAmount: number
+  readonly footLeftLockCurveAmount: number
+  readonly footRightLockCurveAmount: number
+}
+
 // AlsAnimationInstance.cpp:1186 and 1248-1250.
 export const ALS_FOOT_LOCK_TELEPORT_GRACE_PERIOD = 0.2
 export const ALS_FOOT_LOCK_MOVING_DECREASE_SPEED = 5
@@ -326,6 +354,24 @@ export function createAlsFeetState(): AlsFeetState {
   }
 }
 
+/**
+ * Exact data boundary of `RefreshFeetOnGameThread()` (`AlsAnimationInstance.cpp:1128-1153`).
+ *
+ * The bridge resolves which authored IK/virtual-bone socket to read; this state seam owns the
+ * copies so later worker-thread Refresh* calls observe one coherent pose snapshot.
+ */
+export function refreshFeetOnGameThread(
+  state: AlsFeetState,
+  input: AlsRefreshFeetOnGameThreadInput,
+): AlsFeetState {
+  state.pelvisRotation = copyQuaternion(input.pelvisRotation)
+  state.left.targetLocation = copyVector(input.leftTarget.location)
+  state.left.targetRotation = copyQuaternion(input.leftTarget.rotation)
+  state.right.targetLocation = copyVector(input.rightTarget.location)
+  state.right.targetRotation = copyQuaternion(input.rightTarget.rotation)
+  return state
+}
+
 /** UAlsAnimationInstance::ProcessFootLockTeleport(), lines 1179-1204. */
 export function processFootLockTeleport(
   state: AlsFootState,
@@ -356,6 +402,73 @@ export function processFootLockTeleport(
       state.lockRotation,
     )
   }
+  return state
+}
+
+/**
+ * Exact `RefreshFeet()` / `RefreshFoot()` orchestration (`cpp:1155-1177`).
+ *
+ * Curve values remain raw at this boundary: ALS clamps planted to [-1, 1], crossing and IK to
+ * [0, 1], while `RefreshFootLock()` independently clamps each authored lock curve.
+ */
+export function refreshFeet(
+  state: AlsFeetState,
+  input: AlsRefreshFeetInput,
+): AlsFeetState {
+  state.footPlantedAmount = Math.max(
+    -1,
+    Math.min(1, input.footPlantedCurveAmount),
+  )
+  state.feetCrossingAmount = Math.max(
+    0,
+    Math.min(1, input.feetCrossingCurveAmount),
+  )
+
+  const refreshFoot = (
+    foot: AlsFootState,
+    ikCurveAmount: number,
+    lockCurveAmount: number,
+  ) => {
+    const ikAmount = Math.max(0, Math.min(1, ikCurveAmount))
+    processFootLockTeleport(foot, {
+      ikAmount,
+      pendingUpdate: input.pendingUpdate,
+      timeSinceTeleported: input.timeSinceTeleported,
+      componentTransform: input.componentTransform,
+      movementBase: input.movementBase,
+    })
+    processFootLockBaseChange(foot, {
+      ikAmount,
+      pendingUpdate: input.pendingUpdate,
+      baseChanged: input.baseChanged,
+      componentTransform: input.componentTransform,
+      movementBase: input.movementBase,
+    })
+    refreshFootLock(foot, {
+      ikAmount,
+      lockCurveAmount,
+      componentTransform: input.componentTransform,
+      deltaTime: input.deltaTime,
+      movingSmooth: input.movingSmooth,
+      grounded: input.grounded,
+      pendingUpdate: input.pendingUpdate,
+      disableFootLock: input.disableFootLock,
+      movementBase: input.movementBase,
+      pelvisRotation: state.pelvisRotation,
+      footLockAngleLimit: input.footLockAngleLimit,
+    })
+  }
+
+  refreshFoot(
+    state.left,
+    input.footLeftIkCurveAmount,
+    input.footLeftLockCurveAmount,
+  )
+  refreshFoot(
+    state.right,
+    input.footRightIkCurveAmount,
+    input.footRightLockCurveAmount,
+  )
   return state
 }
 
