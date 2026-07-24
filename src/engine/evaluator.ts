@@ -184,10 +184,16 @@ export interface EvaluatePoseInput {
 
 export interface EvaluatorSlotEntry {
   readonly source: readonly EvaluatorLayerEntry[]
+  /**
+   * Retained FMontageEvaluationState entries for this SlotName. Each entry's weight is its raw
+   * montage-instance weight; the evaluator applies UE's total-weight normalization.
+   */
+  readonly montages?: readonly EvaluatorLayerEntry[]
+  /** Legacy single-montage form. Mutually exclusive with `montages`. */
   montage?: EvaluatorLayerEntry
   /** Weight of the Slot output in its parent state/graph. */
   weight: number
-  /** Active montage alpha; the source receives exactly `1 - montageWeight`. */
+  /** Legacy single-montage alpha; the source receives exactly `1 - montageWeight`. */
   montageWeight: number
 }
 
@@ -224,6 +230,7 @@ export interface PoseEvaluator {
   readonly referencePose: LocalPoseBuffer
   readonly samplePose: LocalPoseBuffer
   readonly basePose: LocalPoseBuffer
+  readonly slotPose: LocalPoseBuffer
   readonly overlayPose: LocalPoseBuffer
   readonly dynamicAdditivePose: LocalPoseBuffer
   readonly outputPose: LocalPoseBuffer
@@ -261,6 +268,7 @@ export function createPoseEvaluator(
     referencePose,
     samplePose: createPoseBuffer(rig.boneCount),
     basePose: createPoseBuffer(rig.boneCount),
+    slotPose: createPoseBuffer(rig.boneCount),
     overlayPose: createPoseBuffer(rig.boneCount),
     dynamicAdditivePose: createPoseBuffer(rig.boneCount),
     outputPose,
@@ -337,6 +345,108 @@ function sampleAndAccumulate(
   }
 }
 
+function sampleRetainedSlotAndAccumulate(
+  evaluator: PoseEvaluator,
+  slot: EvaluatorSlotEntry,
+  stage?: EvaluatorInertializationStage,
+) {
+  const montages = slot.montages!
+  let totalNodeWeight = 0
+  let nonAdditiveTotalWeight = 0
+  for (const montage of montages) {
+    const weight = Math.max(0, montage.weight)
+    totalNodeWeight += weight
+    if (!montage.additiveSpace) nonAdditiveTotalWeight += weight
+  }
+  const normalization = totalNodeWeight > 1 ? totalNodeWeight : 1
+  const sourceWeight = Math.max(
+    0,
+    1 - nonAdditiveTotalWeight / normalization,
+  )
+
+  // FAnimNode_Slot skips Source.Update/Evaluate only when non-additive montages completely own
+  // the output. Otherwise its source graph is evaluated once, then participates as one pose.
+  if (sourceWeight > 0) {
+    clearPoseAccumulator(evaluator.slotAccumulator)
+    sampleAndAccumulate(
+      evaluator,
+      slot.source,
+      evaluator.slotAccumulator,
+      stage,
+    )
+    finalizePose(
+      evaluator.slotAccumulator,
+      evaluator.referencePose,
+      evaluator.overlayPose,
+    )
+  }
+
+  clearPoseAccumulator(evaluator.slotAccumulator)
+  if (sourceWeight > 0) {
+    accumulatePose(
+      evaluator.slotAccumulator,
+      evaluator.overlayPose,
+      sourceWeight,
+    )
+  }
+  for (const montage of montages) {
+    if (montage.weight <= 0 || montage.additiveSpace) continue
+    sampleClip(
+      montage.sampler,
+      evaluator.rig,
+      montage.time,
+      evaluator.samplePose,
+      montage.loop,
+    )
+    sampleEntryCurves(evaluator, montage, stage)
+    accumulatePose(
+      evaluator.slotAccumulator,
+      evaluator.samplePose,
+      montage.weight / normalization,
+      montage.mask,
+    )
+  }
+  finalizePose(
+    evaluator.slotAccumulator,
+    evaluator.referencePose,
+    evaluator.slotPose,
+  )
+
+  // SlotEvaluatePose applies additive montage poses after the normalized non-additive pass.
+  for (const montage of montages) {
+    if (montage.weight <= 0 || !montage.additiveSpace) continue
+    sampleClip(
+      montage.sampler,
+      evaluator.rig,
+      montage.time,
+      evaluator.samplePose,
+      montage.loop,
+      'additiveIdentity',
+    )
+    sampleEntryCurves(evaluator, montage, stage)
+    const weight = montage.weight / normalization
+    if (montage.additiveSpace === 'mesh') {
+      applyMeshSpaceAdditivePose(
+        evaluator.slotPose,
+        evaluator.samplePose,
+        evaluator.rig,
+        weight,
+        evaluator.meshSpaceScratch,
+        montage.mask,
+      )
+    } else {
+      applyAdditivePose(
+        evaluator.slotPose,
+        evaluator.samplePose,
+        weight,
+        montage.mask,
+      )
+    }
+  }
+
+  accumulatePose(evaluator.accumulator, evaluator.slotPose, slot.weight)
+}
+
 function sampleSlotAndAccumulate(
   evaluator: PoseEvaluator,
   slots: readonly EvaluatorSlotEntry[] | undefined,
@@ -345,6 +455,13 @@ function sampleSlotAndAccumulate(
   if (!slots) return
   for (const slot of slots) {
     if (slot.weight <= 0) continue
+    if (slot.montages && slot.montage) {
+      throw new Error('Evaluator Slot cannot use both montage and retained montages')
+    }
+    if (slot.montages) {
+      sampleRetainedSlotAndAccumulate(evaluator, slot, stage)
+      continue
+    }
     const montageWeight = Math.max(0, Math.min(1, slot.montageWeight))
     const montage = slot.montage
 

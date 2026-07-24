@@ -246,4 +246,85 @@ describe('pose evaluator', () => {
     expect(evaluator.basePose.positions[0]).toBeCloseTo(20)
     expect(result.pose.positions[0]).toBeCloseTo(12.25)
   })
+
+  it('evaluates every retained non-additive montage with the Slot source complement', () => {
+    const root = new THREE.Bone()
+    root.name = 'root'
+    const rig = createRigDefinition(root)
+    const evaluator = createPoseEvaluator(rig)
+    const source = compileClipSampler(constantPositionClip('source', 10), rig)
+    const outgoing = compileClipSampler(constantPositionClip('outgoing', 20), rig)
+    const incoming = compileClipSampler(constantPositionClip('incoming', 40), rig)
+
+    const result = evaluatePose(evaluator, {
+      base: [],
+      slots: [{
+        source: [{ sampler: source, time: 0, weight: 1 }],
+        montages: [
+          { sampler: outgoing, time: 0, weight: 0.25 },
+          { sampler: incoming, time: 0, weight: 0.5 },
+        ],
+        weight: 1,
+        montageWeight: 0,
+      }],
+    })
+
+    // GetSlotWeight returns SourceWeight 0.25; SlotEvaluatePose blends all three weights directly.
+    expect(result.pose.positions[0]).toBeCloseTo(
+      10 * 0.25 + 20 * 0.25 + 40 * 0.5,
+    )
+  })
+
+  it('normalizes retained montage poses when their raw total exceeds one', () => {
+    const root = new THREE.Bone()
+    root.name = 'root'
+    const rig = createRigDefinition(root)
+    const evaluator = createPoseEvaluator(rig)
+    const source = compileClipSampler(constantPositionClip('source', 10), rig)
+    const first = compileClipSampler(constantPositionClip('first', 20), rig)
+    const second = compileClipSampler(constantPositionClip('second', 40), rig)
+
+    const result = evaluatePose(evaluator, {
+      base: [],
+      slots: [{
+        source: [{ sampler: source, time: 0, weight: 1 }],
+        montages: [
+          { sampler: first, time: 0, weight: 0.8 },
+          { sampler: second, time: 0, weight: 0.7 },
+        ],
+        weight: 1,
+        montageWeight: 0,
+      }],
+    })
+
+    expect(result.pose.positions[0]).toBeCloseTo(
+      (20 * 0.8 + 40 * 0.7) / 1.5,
+    )
+  })
+
+  it('applies retained additive montages after the non-additive Slot pass', () => {
+    const root = new THREE.Bone()
+    root.name = 'root'
+    const rig = createRigDefinition(root)
+    const evaluator = createPoseEvaluator(rig)
+    const source = compileClipSampler(constantPositionClip('source', 10), rig)
+    const additive = compileClipSampler(constantPositionClip('additive', 4), rig)
+
+    const result = evaluatePose(evaluator, {
+      base: [],
+      slots: [{
+        source: [{ sampler: source, time: 0, weight: 1 }],
+        montages: [{
+          sampler: additive,
+          time: 0,
+          weight: 0.5,
+          additiveSpace: 'local',
+        }],
+        weight: 1,
+        montageWeight: 0,
+      }],
+    })
+
+    expect(result.pose.positions[0]).toBeCloseTo(12)
+  })
 })
