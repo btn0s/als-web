@@ -1,3 +1,6 @@
+import { alphaToBlendOption } from './alphaBlend'
+import type { AlphaBlendOption } from './alphaBlend'
+
 export interface SlotMontageRequest {
   readonly clipKey: string
   /** Source sequence length. The generated montage keeps this authored timeline. */
@@ -6,6 +9,10 @@ export interface SlotMontageRequest {
   readonly groupName: string
   readonly blendInDuration: number
   readonly blendOutDuration: number
+  /** FMontageBlendSettings::BlendOption. Dynamic montages default to Linear. */
+  readonly blendInOption?: AlphaBlendOption
+  /** FMontageBlendSettings::BlendOption. Dynamic montages default to Linear. */
+  readonly blendOutOption?: AlphaBlendOption
   readonly playRate: number
   readonly loopCount: number
   readonly blendOutTriggerTime: number
@@ -19,6 +26,38 @@ export interface SlotMontageRequest {
   /** UAnimSequenceBase::HasRootMotion(), inherited by the generated montage track. */
   readonly bEnableRootMotion?: boolean
 }
+
+/** Engine/Source/Runtime/Engine/Classes/Animation/AnimCompositeBase.h: FAnimSegment. */
+export interface SlotMontageAnimSegment {
+  readonly StartPos: number
+  readonly AnimStartTime: number
+  readonly AnimEndTime: number
+  readonly AnimPlayRate: number
+  readonly LoopingCount: number
+  /** UAnimSequenceBase::RateScale used by FAnimSegment::GetValidPlayRate(). */
+  readonly SequenceRateScale: number
+}
+
+export interface SlotMontageBranchingPointMarker {
+  readonly NotifyIndex: number
+  readonly TriggerTime: number
+  readonly NotifyEventType: 'Begin' | 'End'
+}
+
+export interface AuthoredSlotMontageRequest extends Omit<
+  SlotMontageRequest,
+  'loopCount'
+> {
+  /** UAnimMontage::GetPlayLength(). */
+  readonly montageDuration: number
+  readonly segment: SlotMontageAnimSegment
+  readonly BranchingPointMarkers?:
+    readonly SlotMontageBranchingPointMarker[]
+}
+
+type AnySlotMontageRequest =
+  | SlotMontageRequest
+  | AuthoredSlotMontageRequest
 
 export type SlotMontageStatus =
   | 'blendingIn'
@@ -61,10 +100,22 @@ export interface SlotMontageSample {
   blendOutReason: SlotMontageBlendOutReason | null
 }
 
+/** One crossed montage notify marker with its FAnimMontageInstance::InstanceID payload. */
+export interface SlotMontageNotifyEvent {
+  readonly instanceId: number
+  readonly clipKey: string
+  readonly slotName: string
+  readonly groupName: string
+  readonly marker: SlotMontageBranchingPointMarker
+}
+
 export interface SlotMontageInstance {
   /** FAnimMontageInstance::InstanceID. */
   readonly instanceId: number
-  readonly request: SlotMontageRequest
+  readonly request: AnySlotMontageRequest
+  readonly segment: SlotMontageAnimSegment
+  readonly branchingPointMarkers:
+    readonly SlotMontageBranchingPointMarker[]
   /** Length of the generated UAnimMontage timeline, before instance PlayRate. */
   readonly montageDuration: number
   readonly sample: SlotMontageSample
@@ -74,6 +125,7 @@ export interface SlotMontageInstance {
   blendDuration: number
   blendStartWeight: number
   blendDesiredWeight: 0 | 1
+  blendOption: AlphaBlendOption
 }
 
 export interface SlotMontageClock {
@@ -100,6 +152,7 @@ export interface SlotMontageWeightData {
 const UE_KINDA_SMALL_NUMBER = 1e-4
 const UE_MONTAGE_END_OFFSET = UE_KINDA_SMALL_NUMBER / 2
 const UE_INDEX_NONE = -1
+const UE_SMALL_NUMBER = 1e-8
 
 // FAnimMontageInstance::Initialize() owns a function-static IncrementInstanceID. Its lifetime is
 // the process, not one UAnimInstance, so constructing a new SlotMontageClock must not reset it.
@@ -164,7 +217,30 @@ export function getSlotMontageEvaluationWeight(
     : sample.weight
 }
 
-function validateRequest(request: SlotMontageRequest) {
+function isAuthoredSlotMontageRequest(
+  request: AnySlotMontageRequest,
+): request is AuthoredSlotMontageRequest {
+  return 'segment' in request
+}
+
+function validateBlendOption(
+  name: 'blendInOption' | 'blendOutOption',
+  option: AlphaBlendOption | undefined,
+) {
+  if (option === undefined) return
+  switch (option) {
+    case 'Linear':
+    case 'Cubic':
+    case 'HermiteCubic':
+    case 'QuadraticInOut':
+      return
+  }
+  throw new Error(
+    `Slot montage ${name} has unsupported blend option "${String(option)}"`,
+  )
+}
+
+function validateRequest(request: AnySlotMontageRequest) {
   if (request.clipKey.length === 0) throw new Error('Slot montage requires a clip key')
   if (request.slotName.length === 0) throw new Error('Slot montage requires a slot name')
   if (request.groupName.length === 0) throw new Error('Slot montage requires a group name')
@@ -186,9 +262,6 @@ function validateRequest(request: SlotMontageRequest) {
   if (request.blendInDuration < 0 || request.blendOutDuration < 0) {
     throw new Error('Slot montage blend durations must be non-negative')
   }
-  if (!Number.isInteger(request.loopCount) || request.loopCount < 1) {
-    throw new Error('Slot montage loopCount must be a positive integer')
-  }
   if (
     request.additiveType !== undefined
     && request.additiveType !== 'none'
@@ -203,14 +276,144 @@ function validateRequest(request: SlotMontageRequest) {
   ) {
     throw new Error('Slot montage bEnableRootMotion must be boolean')
   }
+
+  validateBlendOption('blendInOption', request.blendInOption)
+  validateBlendOption('blendOutOption', request.blendOutOption)
+
+  if (!isAuthoredSlotMontageRequest(request)) {
+    if (!Number.isInteger(request.loopCount) || request.loopCount < 1) {
+      throw new Error('Slot montage loopCount must be a positive integer')
+    }
+    return
+  }
+
+  if (
+    !Number.isFinite(request.montageDuration)
+    || request.montageDuration < 0
+  ) {
+    throw new Error(
+      'Authored slot montage duration must be finite and non-negative',
+    )
+  }
+  const segment = request.segment
+  for (const [name, value] of [
+    ['StartPos', segment.StartPos],
+    ['AnimStartTime', segment.AnimStartTime],
+    ['AnimEndTime', segment.AnimEndTime],
+    ['AnimPlayRate', segment.AnimPlayRate],
+    ['SequenceRateScale', segment.SequenceRateScale],
+  ] as const) {
+    if (!Number.isFinite(value)) {
+      throw new Error(`Slot montage segment ${name} must be finite`)
+    }
+  }
+  if (segment.StartPos < 0) {
+    throw new Error('Slot montage segment StartPos must be non-negative')
+  }
+  if (
+    segment.AnimStartTime < 0
+    || segment.AnimEndTime < segment.AnimStartTime
+    || segment.AnimEndTime > request.clipDuration
+  ) {
+    throw new Error(
+      'Slot montage segment animation range must be inside the source clip',
+    )
+  }
+  if (!Number.isInteger(segment.LoopingCount) || segment.LoopingCount < 1) {
+    throw new Error(
+      'Slot montage segment LoopingCount must be a positive integer',
+    )
+  }
+  if (
+    getSlotMontageSegmentEndPosition(segment)
+    > request.montageDuration + UE_KINDA_SMALL_NUMBER
+  ) {
+    throw new Error('Slot montage segment extends past the montage duration')
+  }
+
+  let previousTriggerTime = Number.NEGATIVE_INFINITY
+  for (const marker of request.BranchingPointMarkers ?? []) {
+    if (
+      !Number.isInteger(marker.NotifyIndex)
+      || marker.NotifyIndex < 0
+      || !Number.isFinite(marker.TriggerTime)
+      || (
+        marker.NotifyEventType !== 'Begin'
+        && marker.NotifyEventType !== 'End'
+      )
+    ) {
+      throw new Error('Slot montage branching point marker is malformed')
+    }
+    if (marker.TriggerTime < previousTriggerTime) {
+      throw new Error(
+        'Slot montage branching point markers must be in trigger order',
+      )
+    }
+    previousTriggerTime = marker.TriggerTime
+  }
+}
+
+/** FAnimSegment::GetValidPlayRate. */
+export function getSlotMontageSegmentValidPlayRate(
+  segment: SlotMontageAnimSegment,
+) {
+  const playRate = segment.SequenceRateScale * segment.AnimPlayRate
+  return Math.abs(playRate) <= UE_SMALL_NUMBER ? 1 : playRate
+}
+
+/** FAnimSegment::GetEndPos. */
+export function getSlotMontageSegmentEndPosition(
+  segment: SlotMontageAnimSegment,
+) {
+  return (
+    segment.StartPos
+    + (
+      segment.LoopingCount
+      * (segment.AnimEndTime - segment.AnimStartTime)
+      / Math.abs(getSlotMontageSegmentValidPlayRate(segment))
+    )
+  )
+}
+
+/**
+ * Literal FAnimSegment::ConvertTrackPosToAnimPos port.
+ * The caller must first establish that the segment owns the track position.
+ */
+export function convertSlotMontageTrackPositionToAnimPosition(
+  segment: SlotMontageAnimSegment,
+  trackPosition: number,
+) {
+  const playRate = getSlotMontageSegmentValidPlayRate(segment)
+  const animationLength = segment.AnimEndTime - segment.AnimStartTime
+  if (!(animationLength > 0)) {
+    throw new Error('Slot montage segment has an invalid animation range')
+  }
+  const unwrappedPosition = (trackPosition - segment.StartPos) * playRate
+  const loopCount = Math.min(
+    Math.floor(Math.abs(unwrappedPosition) / animationLength),
+    Math.max(segment.LoopingCount - 1, 0),
+  )
+  const animationPoint = playRate >= 0
+    ? segment.AnimStartTime
+    : segment.AnimEndTime
+  return (
+    animationPoint
+    + unwrappedPosition
+    - loopCount * animationLength
+  )
 }
 
 function sourceSampleTime(instance: SlotMontageInstance) {
-  const { clipDuration, loopCount } = instance.request
-  if (clipDuration <= 0) return 0
-
-  const sourcePosition = clamp(instance.sample.montageTime, 0, instance.montageDuration)
-  return loopCount > 1 ? sourcePosition % clipDuration : sourcePosition
+  if (instance.request.clipDuration <= 0) return 0
+  const segmentEnd = getSlotMontageSegmentEndPosition(instance.segment)
+  return convertSlotMontageTrackPositionToAnimPosition(
+    instance.segment,
+    clamp(
+      instance.sample.montageTime,
+      instance.segment.StartPos,
+      segmentEnd,
+    ),
+  )
 }
 
 function refreshSample(instance: SlotMontageInstance) {
@@ -225,8 +428,11 @@ function refreshSample(instance: SlotMontageInstance) {
   const alpha = instance.blendDuration <= 0
     ? 1
     : clamp(instance.blendElapsed / instance.blendDuration, 0, 1)
+  const blendedAlpha = alphaToBlendOption(alpha, instance.blendOption)
   sample.weight = instance.blendStartWeight
-    + (instance.blendDesiredWeight - instance.blendStartWeight) * alpha
+    + (
+      instance.blendDesiredWeight - instance.blendStartWeight
+    ) * blendedAlpha
   sample.status = instance.stopped
     ? 'blendingOut'
     : sample.weight >= 1
@@ -256,6 +462,7 @@ function beginBlendOut(
   instance: SlotMontageInstance,
   duration: number,
   reason: SlotMontageBlendOutReason,
+  option: AlphaBlendOption,
 ) {
   if (instance.sample.status === 'completed') return instance.sample
   const wasStopped = instance.stopped
@@ -276,6 +483,7 @@ function beginBlendOut(
   instance.blendElapsed = 0
   instance.blendStartWeight = instance.sample.weight
   instance.blendDesiredWeight = 0
+  instance.blendOption = option
   instance.sample.status = 'blendingOut'
   // FAnimMontageInstance::Stop() calls OnMontageInstanceStopped() on the first stop, which clears
   // UAnimInstance::RootMotionMontageInstance before the fade itself has completed.
@@ -295,12 +503,26 @@ function beginBlendOut(
   return refreshSample(instance)
 }
 
-function createInstance(request: SlotMontageRequest): SlotMontageInstance {
+function createInstance(
+  request: AnySlotMontageRequest,
+): SlotMontageInstance {
   validateRequest(request)
 
-  // UAnimMontage::CreateSlotAnimationAsDynamicMontage leaves FAnimSegment::AnimPlayRate at 1.
-  // InPlayRate belongs to FAnimMontageInstance, so the authored montage timeline is unchanged.
-  const montageDuration = request.clipDuration * request.loopCount
+  // CreateSlotAnimationAsDynamicMontage synthesizes exactly this rate-one FAnimSegment. Authored
+  // assets enter the same retained instance path with their serialized segment instead.
+  const segment: SlotMontageAnimSegment = isAuthoredSlotMontageRequest(request)
+    ? { ...request.segment }
+    : {
+        StartPos: 0,
+        AnimStartTime: 0,
+        AnimEndTime: request.clipDuration,
+        AnimPlayRate: 1,
+        LoopingCount: request.loopCount,
+        SequenceRateScale: 1,
+      }
+  const montageDuration = isAuthoredSlotMontageRequest(request)
+    ? request.montageDuration
+    : request.clipDuration * request.loopCount
   if (!Number.isFinite(montageDuration)) {
     throw new Error('Slot montage duration must be finite')
   }
@@ -316,6 +538,12 @@ function createInstance(request: SlotMontageRequest): SlotMontageInstance {
       ...request,
       additiveType: request.additiveType ?? 'none',
     },
+    segment,
+    branchingPointMarkers: isAuthoredSlotMontageRequest(request)
+      ? (request.BranchingPointMarkers ?? []).map((marker) => ({
+          ...marker,
+        }))
+      : [],
     montageDuration,
     sample: {
       instanceId,
@@ -324,7 +552,7 @@ function createInstance(request: SlotMontageRequest): SlotMontageInstance {
       groupName: request.groupName,
       additiveType: request.additiveType ?? 'none',
       bEnableRootMotion: request.bEnableRootMotion ?? false,
-      loopCount: request.loopCount,
+      loopCount: segment.LoopingCount,
       montageTime,
       rootMotionPreviousMontageTime: montageTime,
       rootMotionMontageTime: montageTime,
@@ -340,6 +568,7 @@ function createInstance(request: SlotMontageRequest): SlotMontageInstance {
     blendDuration: request.blendInDuration,
     blendStartWeight: 0,
     blendDesiredWeight: 1,
+    blendOption: request.blendInOption ?? 'Linear',
   }
   refreshSample(instance)
 
@@ -353,22 +582,85 @@ function safeDeltaTime(deltaTime: number) {
   return Number.isFinite(deltaTime) ? Math.max(0, deltaTime) : 0
 }
 
+function writeCrossedBranchingPointEvents(
+  instance: SlotMontageInstance,
+  previousMontageTime: number,
+  montageTime: number,
+  output: SlotMontageNotifyEvent[] | undefined,
+) {
+  // FAnimMontageInstance::HandleEvents suppresses every notify after an interrupted Stop().
+  if (
+    !output
+    || instance.sample.blendOutReason === 'interrupted'
+    || previousMontageTime === montageTime
+  ) {
+    return
+  }
+
+  if (montageTime > previousMontageTime) {
+    for (const marker of instance.branchingPointMarkers) {
+      // UAnimMontage::FindFirstBranchingPointMarker uses (StartTrackPos, EndTrackPos].
+      if (
+        marker.TriggerTime > previousMontageTime
+        && marker.TriggerTime <= montageTime
+      ) {
+        output.push({
+          instanceId: instance.instanceId,
+          clipKey: instance.sample.clipKey,
+          slotName: instance.sample.slotName,
+          groupName: instance.sample.groupName,
+          marker,
+        })
+      }
+    }
+    return
+  }
+
+  for (
+    let index = instance.branchingPointMarkers.length - 1;
+    index >= 0;
+    index -= 1
+  ) {
+    const marker = instance.branchingPointMarkers[index]
+    if (
+      marker.TriggerTime < previousMontageTime
+      && marker.TriggerTime >= montageTime
+    ) {
+      output.push({
+        instanceId: instance.instanceId,
+        clipKey: instance.sample.clipKey,
+        slotName: instance.sample.slotName,
+        groupName: instance.sample.groupName,
+        marker,
+      })
+    }
+  }
+}
+
 function advanceMontagePosition(
   clock: SlotMontageClock,
   instance: SlotMontageInstance,
   deltaTime: number,
+  notifyEvents?: SlotMontageNotifyEvent[],
 ) {
   if (!instance.playing || deltaTime <= 0) return
 
   const playRate = instance.request.playRate
   if (Math.abs(playRate) <= Number.EPSILON) return
 
+  const previousMontageTime = instance.sample.montageTime
   instance.sample.montageTime = clamp(
-    instance.sample.montageTime + deltaTime * playRate,
+    previousMontageTime + deltaTime * playRate,
     0,
     instance.montageDuration,
   )
   instance.sample.rootMotionMontageTime = instance.sample.montageTime
+  writeCrossedBranchingPointEvents(
+    instance,
+    previousMontageTime,
+    instance.sample.montageTime,
+    notifyEvents,
+  )
 
   const endPosition = playRate >= 0 ? instance.montageDuration : 0
   const playTimeToEnd = Math.abs(
@@ -389,6 +681,7 @@ function advanceMontagePosition(
         instance,
         customTrigger ? instance.request.blendOutDuration : playTimeToEnd,
         'automatic',
+        instance.request.blendOutOption ?? 'Linear',
       )
     }
   }
@@ -411,6 +704,7 @@ function advanceInstance(
   clock: SlotMontageClock,
   instance: SlotMontageInstance,
   deltaTime: number,
+  notifyEvents?: SlotMontageNotifyEvent[],
 ) {
   const sample = instance.sample
   sample.rootMotionPreviousMontageTime = sample.montageTime
@@ -428,7 +722,7 @@ function advanceInstance(
   // UAnimInstance::UpdateMontage runs Montage_UpdateWeight for every instance before
   // Montage_Advance. Do not split the delta at blend or position boundaries.
   updateBlend(instance, delta)
-  advanceMontagePosition(clock, instance, delta)
+  advanceMontagePosition(clock, instance, delta, notifyEvents)
   refreshSample(instance)
 
   if (instance.stopped && instance.sample.weight <= 0) {
@@ -470,13 +764,19 @@ function advanceGroupInstances(
   groupName: string,
   deltaTime: number,
   output?: SlotMontageSample[],
+  notifyEvents?: SlotMontageNotifyEvent[],
 ) {
   const instances = clock.instancesByGroup.get(groupName)
   if (!instances) return undefined
 
   let latest: SlotMontageSample | undefined
   for (const instance of instances) {
-    const sample = advanceInstance(clock, instance, deltaTime)
+    const sample = advanceInstance(
+      clock,
+      instance,
+      deltaTime,
+      notifyEvents,
+    )
     latest = sample
     output?.push(sample)
     if (
@@ -491,18 +791,10 @@ function advanceGroupInstances(
   return preferred
 }
 
-/**
- * Runtime form of UAnimInstance::PlaySlotAnimationAsDynamicMontage.
- *
- * The duration-only overload exposes no blend curve. This primitive therefore uses the linear
- * default represented by Unreal's zero-valued EAlphaBlendOption::Linear.
- *
- * Epic API:
- * https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/UAnimInstance/PlaySlotAnimationAsDynamicMontag-
- */
-export function playSlotAnimationAsDynamicMontage(
+/** Shared UAnimInstance::Montage_PlayInternal retained-instance path. */
+function playRetainedSlotMontage(
   clock: SlotMontageClock,
-  request: SlotMontageRequest,
+  request: AnySlotMontageRequest,
 ): SlotMontageSample {
   const instance = createInstance(request)
   if (instance.sample.status === 'completed') {
@@ -514,7 +806,13 @@ export function playSlotAnimationAsDynamicMontage(
   // until their fades complete, and FAnimNode_Slot evaluates all of them together.
   const groupInstances = clock.instancesByGroup.get(request.groupName) ?? []
   for (const existing of groupInstances) {
-    beginBlendOut(clock, existing, request.blendInDuration, 'interrupted')
+    beginBlendOut(
+      clock,
+      existing,
+      request.blendInDuration,
+      'interrupted',
+      request.blendInOption ?? 'Linear',
+    )
   }
   clock.activeByGroup.delete(request.groupName)
 
@@ -525,6 +823,7 @@ export function playSlotAnimationAsDynamicMontage(
       clock.rootMotionMontageInstance,
       request.blendInDuration,
       'interrupted',
+      request.blendInOption ?? 'Linear',
     )
   }
 
@@ -545,11 +844,70 @@ export function playSlotAnimationAsDynamicMontage(
   return instance.sample
 }
 
+/** Runtime form of UAnimInstance::Montage_Play for one authored slot track. */
+export function playSlotMontage(
+  clock: SlotMontageClock,
+  request: AuthoredSlotMontageRequest,
+): SlotMontageSample {
+  return playRetainedSlotMontage(clock, request)
+}
+
+/**
+ * Runtime form of UAnimInstance::PlaySlotAnimationAsDynamicMontage.
+ *
+ * The duration-only overload exposes no blend curve, so omitted options remain Linear.
+ */
+export function playSlotAnimationAsDynamicMontage(
+  clock: SlotMontageClock,
+  request: SlotMontageRequest,
+): SlotMontageSample {
+  return playRetainedSlotMontage(clock, request)
+}
+
 export function getSlotMontageSample(
   clock: SlotMontageClock,
   groupName: string,
 ): SlotMontageSample | undefined {
   return latestGroupSample(clock, groupName)
+}
+
+function findSlotMontageInstance(
+  clock: SlotMontageClock,
+  instanceId: number,
+) {
+  for (const instances of clock.instancesByGroup.values()) {
+    for (const instance of instances) {
+      if (instance.instanceId === instanceId) return instance
+    }
+  }
+  return undefined
+}
+
+/**
+ * Runtime form of UAnimInstance::Montage_SetPosition, addressed by the stable instance ID.
+ * SetPosition traverses no range; the next Advance starts its root-motion and notify range here.
+ */
+export function montageSetPosition(
+  clock: SlotMontageClock,
+  instanceId: number,
+  newPosition: number,
+): SlotMontageSample | undefined {
+  if (!Number.isInteger(instanceId) || instanceId < 0) {
+    throw new Error('Montage_SetPosition instance ID must be non-negative')
+  }
+  if (!Number.isFinite(newPosition)) {
+    throw new Error('Montage_SetPosition position must be finite')
+  }
+  const instance = findSlotMontageInstance(clock, instanceId)
+  if (!instance || instance.sample.status === 'completed') return undefined
+
+  // FAnimMontageInstance::SetPosition assigns directly. ALS itself clamps its mantling position.
+  const sample = instance.sample
+  sample.montageTime = newPosition
+  sample.rootMotionPreviousMontageTime = newPosition
+  sample.rootMotionMontageTime = newPosition
+  sample.extractRootMotionFromMontagesOnly = false
+  return refreshSample(instance)
 }
 
 /** Writes every live montage sample for one group in Unreal's MontageInstances order. */
@@ -569,8 +927,16 @@ export function advanceSlotMontageGroup(
   clock: SlotMontageClock,
   groupName: string,
   deltaTime: number,
+  notifyEvents?: SlotMontageNotifyEvent[],
 ): SlotMontageSample | undefined {
-  return advanceGroupInstances(clock, groupName, deltaTime)
+  if (notifyEvents) notifyEvents.length = 0
+  return advanceGroupInstances(
+    clock,
+    groupName,
+    deltaTime,
+    undefined,
+    notifyEvents,
+  )
 }
 
 /** Advances and writes every montage evaluated by one Slot Group. */
@@ -579,9 +945,17 @@ export function advanceSlotMontageGroupSamples(
   groupName: string,
   deltaTime: number,
   output: SlotMontageSample[] = [],
+  notifyEvents?: SlotMontageNotifyEvent[],
 ): SlotMontageSample[] {
   output.length = 0
-  advanceGroupInstances(clock, groupName, deltaTime, output)
+  if (notifyEvents) notifyEvents.length = 0
+  advanceGroupInstances(
+    clock,
+    groupName,
+    deltaTime,
+    output,
+    notifyEvents,
+  )
   return output
 }
 
@@ -593,14 +967,23 @@ export function advanceSlotMontageClock(
   clock: SlotMontageClock,
   deltaTime: number,
   output: SlotMontageSample[] = [],
+  notifyEvents?: SlotMontageNotifyEvent[],
 ): SlotMontageSample[] {
   output.length = 0
+  if (notifyEvents) notifyEvents.length = 0
   for (const groupName of [...clock.instancesByGroup.keys()]) {
-    advanceGroupInstances(clock, groupName, deltaTime, output)
+    advanceGroupInstances(
+      clock,
+      groupName,
+      deltaTime,
+      output,
+      notifyEvents,
+    )
   }
   // MontageInstances is one global insertion-ordered array, while the clock stores per-group
   // arrays for ownership. InstanceID recovers that exact order for root-motion accumulation.
   output.sort((a, b) => a.instanceId - b.instanceId)
+  notifyEvents?.sort((a, b) => a.instanceId - b.instanceId)
   return output
 }
 
@@ -628,6 +1011,7 @@ export function stopSlotAnimation(
       instance,
       blendOutDuration,
       'stopped',
+      'Linear',
     )
     stopped.push(sample)
     clock.activeByGroup.delete(groupName)

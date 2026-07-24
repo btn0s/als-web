@@ -5,14 +5,23 @@ import {
   advanceSlotMontageGroup,
   blendSlotCurveValue,
   calculateSlotMontageWeight,
+  convertSlotMontageTrackPositionToAnimPosition,
   createSlotMontageClock,
   getSlotMontageEvaluationWeight,
   getSlotMontageSample,
   getSlotMontageSamples,
+  getSlotMontageSegmentEndPosition,
+  montageSetPosition,
+  playSlotMontage,
   playSlotAnimationAsDynamicMontage,
   stopSlotAnimation,
 } from './slotMontage'
-import type { SlotMontageRequest, SlotMontageSample } from './slotMontage'
+import type {
+  AuthoredSlotMontageRequest,
+  SlotMontageNotifyEvent,
+  SlotMontageRequest,
+  SlotMontageSample,
+} from './slotMontage'
 
 const UE_MONTAGE_END_OFFSET = 0.00005
 
@@ -34,7 +43,36 @@ function request(
   }
 }
 
-describe('UE dynamic slot montage clock', () => {
+function authoredRequest(
+  overrides: Partial<AuthoredSlotMontageRequest> = {},
+): AuthoredSlotMontageRequest {
+  return {
+    clipKey: 'A_Als_Mantle_Low_Right',
+    clipDuration: 1.5,
+    slotName: 'PostLocomotion',
+    groupName: 'DefaultGroup',
+    blendInDuration: 0.1,
+    blendOutDuration: 0.3,
+    blendInOption: 'HermiteCubic',
+    blendOutOption: 'Cubic',
+    playRate: 1,
+    blendOutTriggerTime: 0,
+    startTime: 0,
+    bEnableRootMotion: false,
+    montageDuration: 1.5,
+    segment: {
+      StartPos: 0,
+      AnimStartTime: 0,
+      AnimEndTime: 1.5,
+      AnimPlayRate: 1,
+      LoopingCount: 1,
+      SequenceRateScale: 1,
+    },
+    ...overrides,
+  }
+}
+
+describe('UE retained slot montage clock', () => {
   it('retains one instance ID per play and preserves same-clip insertion order', () => {
     const clock = createSlotMontageClock()
     const outgoing = playSlotAnimationAsDynamicMontage(clock, request())
@@ -114,6 +152,126 @@ describe('UE dynamic slot montage clock', () => {
     expect(full?.sampleTime).toBeCloseTo(1.05)
     expect(full?.weight).toBe(1)
     expect(full?.status).toBe('playing')
+  })
+
+  it('maps authored FAnimSegment track time into sequence time and loops', () => {
+    const segment = {
+      StartPos: 2,
+      AnimStartTime: 0.25,
+      AnimEndTime: 1.25,
+      AnimPlayRate: 2,
+      LoopingCount: 2,
+      SequenceRateScale: 0.5,
+    } as const
+    expect(getSlotMontageSegmentEndPosition(segment)).toBe(4)
+    expect(convertSlotMontageTrackPositionToAnimPosition(segment, 2))
+      .toBe(0.25)
+    expect(convertSlotMontageTrackPositionToAnimPosition(segment, 2.5))
+      .toBe(0.75)
+    expect(convertSlotMontageTrackPositionToAnimPosition(segment, 3))
+      .toBe(0.25)
+    expect(convertSlotMontageTrackPositionToAnimPosition(segment, 4))
+      .toBe(1.25)
+
+    const clock = createSlotMontageClock()
+    const authored = playSlotMontage(clock, authoredRequest({
+      clipDuration: 1.5,
+      montageDuration: 4,
+      startTime: 2.5,
+      segment,
+    }))
+    expect(authored.montageTime).toBe(2.5)
+    expect(authored.sampleTime).toBe(0.75)
+
+    advanceSlotMontageGroup(clock, 'DefaultGroup', 0.5)
+    expect(authored.montageTime).toBe(3)
+    expect(authored.sampleTime).toBe(0.25)
+  })
+
+  it('advances from external Montage_SetPosition(M - delta) exactly to M', () => {
+    const clock = createSlotMontageClock()
+    const mantle = playSlotMontage(clock, authoredRequest())
+    const targetMontageTime = 0.8
+    const deltaTime = 0.1
+
+    expect(montageSetPosition(
+      clock,
+      mantle.instanceId,
+      targetMontageTime - deltaTime,
+    )).toBe(mantle)
+    expect(mantle.montageTime).toBeCloseTo(0.7, 12)
+    expect(advanceSlotMontageGroup(
+      clock,
+      'DefaultGroup',
+      deltaTime,
+    )).toBe(mantle)
+    expect(mantle.montageTime).toBeCloseTo(targetMontageTime, 12)
+    expect(mantle.sampleTime).toBeCloseTo(targetMontageTime, 12)
+    expect(mantle.bEnableRootMotion).toBe(false)
+    expect(clock.rootMotionMontageInstance).toBeNull()
+  })
+
+  it('uses authored HermiteCubic blend-in and Cubic blend-out options', () => {
+    const clock = createSlotMontageClock()
+    const authored = playSlotMontage(clock, authoredRequest())
+
+    expect(advanceSlotMontageGroup(clock, 'DefaultGroup', 0.025)?.weight)
+      .toBeCloseTo(0.15625)
+    advanceSlotMontageGroup(clock, 'DefaultGroup', 1.475)
+    expect(authored.status).toBe('blendingOut')
+    expect(authored.weight).toBe(1)
+    expect(advanceSlotMontageGroup(clock, 'DefaultGroup', 0.075)?.weight)
+      .toBeCloseTo(0.84375)
+  })
+
+  it('retains an interrupted instance but dispatches the new boundary marker once', () => {
+    const clock = createSlotMontageClock()
+    const outgoing = playSlotMontage(clock, authoredRequest({
+      clipKey: 'outgoing',
+      blendInDuration: 0,
+      BranchingPointMarkers: [{
+        NotifyIndex: 3,
+        TriggerTime: 0.5,
+        NotifyEventType: 'End',
+      }],
+    }))
+    montageSetPosition(clock, outgoing.instanceId, 0.4)
+    const incoming = playSlotMontage(clock, authoredRequest({
+      clipKey: 'incoming',
+      blendInDuration: 0.4,
+      BranchingPointMarkers: [{
+        NotifyIndex: 7,
+        TriggerTime: 0.1,
+        NotifyEventType: 'Begin',
+      }],
+    }))
+    const events: SlotMontageNotifyEvent[] = []
+
+    advanceSlotMontageGroup(clock, 'DefaultGroup', 0.1, events)
+    expect(events.map((event) => ({
+      instanceId: event.instanceId,
+      clipKey: event.clipKey,
+      marker: event.marker,
+    }))).toEqual([{
+      instanceId: incoming.instanceId,
+      clipKey: 'incoming',
+      marker: {
+        NotifyIndex: 7,
+        TriggerTime: 0.1,
+        NotifyEventType: 'Begin',
+      },
+    }])
+    expect(outgoing.instanceId).not.toBe(incoming.instanceId)
+    expect(getSlotMontageSamples(clock, 'DefaultGroup').map(
+      (sample) => sample.instanceId,
+    )).toEqual([outgoing.instanceId, incoming.instanceId])
+    expect(outgoing.montageTime).toBeCloseTo(0.5)
+    expect(incoming.montageTime).toBeCloseTo(0.1)
+
+    // Forward crossing is (PreviousPosition, Position], so the exact previous boundary does not
+    // dispatch again on the next Advance.
+    advanceSlotMontageGroup(clock, 'DefaultGroup', 0.1, events)
+    expect(events).toEqual([])
   })
 
   it('matches ALS trigger zero by retaining the terminal sample through the fade tail', () => {
@@ -501,6 +659,14 @@ describe('UE dynamic slot montage clock', () => {
     { clipDuration: Number.NaN },
     { blendInDuration: -1 },
     { blendOutDuration: -1 },
+    {
+      blendInOption:
+        'Unsupported' as SlotMontageRequest['blendInOption'],
+    },
+    {
+      blendOutOption:
+        'Unsupported' as SlotMontageRequest['blendOutOption'],
+    },
     { playRate: Number.NaN },
     { loopCount: 0 },
     { loopCount: 1.5 },
