@@ -120,7 +120,7 @@ from another project's implementation:
       stays as a debug assertion, not a survival constraint. This LIFTS the mesh-space arm-layering
       approximation recorded below.
 - [ ] Gaits: walk / run / sprint with authored speeds; stride warping if the clips demand it
-- [ ] Stances: Standing / Crouching (prone/crawl deferred to downstream forks — non-ALS concepts defer by default); stance ladder + staged transitions
+- [x] Stances: Standing / Crouching with authored StandToCrouch/CrouchToStand transitions following their own PoseCrouching curves *(2026-07-23; prone/crawl deferred to downstream forks)*
 - [ ] **Parity harness (added 2026-07-23 — before more systems build on unverified semantics)**:
       two oracles the implementation didn't author. (a) C++ DIFFERENTIAL: test-only, line-mirroring
       transliteration of AlsAnimationInstance's Refresh* functions; property sweeps assert our
@@ -139,17 +139,15 @@ from another project's implementation:
       feeling real
 - [ ] Rotation modes: VelocityDirection / ViewDirection / Aiming — real 8-way blendspaces
       from authored directional clips (not cardinal-blend approximation)
-- [ ] Turn-in-place (authored Turn clips, scrubbed/arbitered) + start/stop/pivot transitions
-- [ ] Overlay states: ALS-style item/pose overlays via region rules (masked, per-bone) — SEED
+- [x] Turn-in-place + rotate-in-place per spec constants, RotationYawSpeed drives yaw *(2026-07-23)*; start/stop/pivot transitions still open (quick-stop math transliterated, unwired)
+- [x] Overlay states: curve-driven per-region layering + spawning overlay objects (Rifle end-to-end) *(2026-07-23)* — original plan: SEED
       rule alphas from the overlay assets' authored `Layer*` curves (dumped in M2), don't hand-tune
       from scratch. (Mesh-space arm layering: previously an accepted mixer limitation — the
       pose-buffer runtime above makes it implementable; do it if parity footage demands it)
 - [ ] In-air: jump/fall with land recovery (`Land_Light`/`LandRoll` by fall speed)
 - [ ] Mantle/vault through the arbiter (one clock: warp + montage share normalized progress)
-- [ ] **Engine features the UE runtime provided for free (build as needed for parity feel)**:
-      sync groups/markers (footfall-phase-synced gait blending — ALS relies on it; our crossfades
-      don't sync yet), inertialization (UE's transition blending; we approximate with crossfades),
-      montage blend semantics per the ABP dump
+- [x] **Engine features**: sync groups on authored Left/Right markers + inertialization landed
+      *(2026-07-23)*; montage blend semantics per the ABP dump still open
 - [ ] Foot IK with pelvis adaptation (ALS's Control Rig stage: ground trace + spring-damped Z offset + slope alignment — constants in the math spec; the pelvis-combine formula is graph-side and flagged original-design)
 - [ ] CUT for now: ragdoll, rolling physics blend, debug-camera parity — revisit on demand
 
