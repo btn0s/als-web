@@ -412,6 +412,32 @@ describe('AlsAnimationInstance playback regression', () => {
     }
   })
 
+  it('evaluates the authored View pose after Layering in the live graph', async () => {
+    const forwardGltf = await loadAlsGltf()
+    const upwardGltf = await loadAlsGltf()
+    const forward = createAlsAnimationInstance(forwardGltf)
+    const upward = createAlsAnimationInstance(upwardGltf)
+
+    forward.refresh(1 / 60, {
+      ...controls,
+      actorYawAngle: 0,
+      viewPitchAngle: 0,
+    })
+    upward.refresh(1 / 60, {
+      ...controls,
+      actorYawAngle: 0,
+      viewPitchAngle: 60,
+    })
+
+    expect(upward.state.view.lookAmount).toBe(1)
+    expect(upward.state.view.pitchAngle).toBe(60)
+    expect(
+      localRotation(forwardGltf.scene, 'head').angleTo(
+        localRotation(upwardGltf.scene, 'head'),
+      ),
+    ).toBeGreaterThan(0.01)
+  })
+
   it('evaluates the extracted mantle in Locomotion/PostLocomotion before Layering', async () => {
     const gltf = await loadAlsGltf()
     const settings = ALS_MANTLING_SETTINGS.MS_Als_Low_Right

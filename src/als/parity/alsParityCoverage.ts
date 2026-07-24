@@ -84,6 +84,10 @@ const LAYERING_GRAPH_EVIDENCE = partial(
   graphDefinition('AlsLayering', 'evaluateAlsLayeringPose'),
   ['src/als/AlsAnimationInstance.ts', 'evaluateAlsLayeringPose('],
 )
+const VIEW_GRAPH_EVIDENCE = partial(
+  graphDefinition('AB_Als_View', 'evaluateAlsViewPoseRuntime'),
+  ['src/als/AlsAnimationInstance.ts', 'evaluateAlsViewPoseRuntime('],
+)
 const LOCOMOTION_GRAPH_EVIDENCE = partial(
   graphDefinition(
     'AB_Als_Locomotion',
@@ -151,7 +155,11 @@ export const ALS_PARITY_ASSET_COVERAGE = [
       ),
     },
   },
-  unportedAsset('AB_Als_View'),
+  {
+    asset: 'AB_Als_View',
+    status: 'live',
+    evidence: VIEW_GRAPH_EVIDENCE,
+  },
   unportedAsset('AB_Als_Barrel'),
   unportedAsset('AB_Als_Binoculars'),
   unportedAsset('AB_Als_Bow'),
@@ -222,7 +230,13 @@ export const ALS_PARITY_MACHINE_COVERAGE = [
     0,
     LOCOMOTION_GRAPH_EVIDENCE,
   ),
-  machine('AB_Als_View', 'Look States', 0, 'unported'),
+  machine(
+    'AB_Als_View',
+    'Look States',
+    0,
+    'live',
+    VIEW_GRAPH_EVIDENCE,
+  ),
   machine('AB_Als_Bow', 'Bow States', 0, 'unported'),
   machine(
     'AB_Als_PistolOneHanded',

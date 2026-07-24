@@ -241,6 +241,14 @@ import type {
   AlsLocomotionPoseState,
   AlsLocomotionSampledPoses,
 } from './AnimGraph/AB_Als_Locomotion'
+import {
+  ALS_VIEW_POSE_CLIP_NAMES,
+  createAlsViewPoseRuntime,
+  evaluateAlsViewPoseRuntime,
+  isAlsViewPoseBecomingRelevant,
+  isAlsViewPoseRelevant,
+  refreshAlsViewPoseRuntime,
+} from './AnimGraph/AB_Als_View'
 import type {
   AlsLocomotionAction,
   AlsLocomotionMode,
@@ -324,6 +332,10 @@ import {
 import type {
   AlsViewAnimationState,
 } from './State/AlsViewAnimationState'
+import {
+  createAlsLookState,
+  refreshLook,
+} from './State/AlsLookState'
 import {
   createAlsPoseState,
   createAlsStanceTransitionCurveState,
@@ -1747,6 +1759,15 @@ export function createAlsAnimationInstance(gltf: {
   else copyPose(standReference, crouchReference)
   copyPose(standReference, layeringReference)
   const layeringPoseRuntime = createAlsLayeringPoseRuntime(rig)
+  const viewPoseRuntime = ALS_VIEW_POSE_CLIP_NAMES.every(
+    (clipName) => clipsByName.has(clipName),
+  )
+    ? createAlsViewPoseRuntime(
+        rig,
+        standReference,
+        (clipName) => clipsByName.get(clipName)?.sampler,
+      )
+    : undefined
   const defaultOverlayGraphState = createAlsDefaultOverlayGraphState()
   const defaultOverlayGraphRuntime = defaultOverlayClip
     ? createAlsDefaultOverlayGraphRuntime(
@@ -2176,6 +2197,14 @@ export function createAlsAnimationInstance(gltf: {
         },
         context.outputPose,
       )
+      if (viewPoseRuntime) {
+        evaluateAlsViewPoseRuntime(
+          viewPoseRuntime,
+          context.outputPose,
+          viewAnimationState.lookAmount,
+          context.outputPose,
+        )
+      }
     },
     rootMotion,
     resolveBlendedCurves(_samples, output) {
@@ -2251,6 +2280,7 @@ export function createAlsAnimationInstance(gltf: {
   )
   const spineState = createAlsSpineState()
   const viewAnimationState = createAlsViewAnimationState()
+  const lookState = createAlsLookState()
   const publishedCurves = new Map<string, number>()
   const locomotionLocation: Velocity3 = { x: 0, y: 0, z: 0 }
   let pendingUpdate = true
@@ -5828,6 +5858,42 @@ export function createAlsAnimationInstance(gltf: {
       })
     }
     advanceLocomotionPlayers(activeLocomotionGraphInput)
+
+    if (viewPoseRuntime) {
+      if (
+        isAlsViewPoseBecomingRelevant(
+          viewPoseRuntime,
+          viewAnimationState.lookAmount,
+        )
+      ) {
+        // AB_Als_View's OnBecomeRelevant event calls InitializeLook before
+        // the state machine's OnUpdate event calls RefreshLook.
+        lookState.initializationRequired = true
+      }
+      if (isAlsViewPoseRelevant(viewAnimationState.lookAmount)) {
+        refreshLook(lookState, {
+          rotationMode: controls.rotationMode,
+          actorYawAngle: controls.actorYawAngle ?? 0,
+          movementBaseHasRelativeRotation:
+            movementBaseState.hasRelativeRotation,
+          movementBaseDeltaRotationYaw:
+            movementBaseState.deltaRotation.yaw,
+          hasInput,
+          inputYawAngle: controls.inputYawAngle ?? 0,
+          targetYawAngle: controls.targetYawAngle ?? 0,
+          viewYawAngle: viewAnimationState.yawAngle,
+          viewPitchAngle: viewAnimationState.pitchAngle,
+          locomotionYawSpeed: controls.locomotionYawSpeed ?? 0,
+          deltaTime,
+        })
+      }
+      refreshAlsViewPoseRuntime(
+        viewPoseRuntime,
+        lookState,
+        viewAnimationState.lookAmount,
+        deltaTime,
+      )
+    }
 
     const result = evaluatePose(evaluator, mainInput)
     processLocomotionLifecycleEvents()

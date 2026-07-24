@@ -159,7 +159,10 @@ second (flagged) — never from another project's implementation:
       explicitly ORIGINAL because ALS delegates it to UE; source-backed policy and live input
       lifecycle are covered by unit and Playwright gates *(2026-07-23)*
 - [ ] Rotation modes: VelocityDirection / ViewDirection / Aiming — real 8-way blendspaces
-      from authored directional clips (not cardinal-blend approximation)
+      from authored directional clips (not cardinal-blend approximation). The complete authored
+      `AB_Als_View` Look state machine is live in the exact Layering → View → CR_Als stage order,
+      including its mesh-space additive, side-switch curves, and `LookDirectionChange` profile
+      *(2026-07-24)*; directional locomotion remains open
 - [x] Turn-in-place + rotate-in-place per spec constants, RotationYawSpeed drives yaw *(2026-07-23)*; start/stop/pivot transitions still open (quick-stop math transliterated, unwired)
 - [x] Overlay states: curve-driven per-region layering + spawning overlay objects (Rifle end-to-end) *(2026-07-23)* — original plan: SEED
       rule alphas from the overlay assets' authored `Layer*` curves (dumped in M2), don't hand-tune

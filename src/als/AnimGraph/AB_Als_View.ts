@@ -3,8 +3,14 @@ import {
 } from '../../engine/alphaBlend'
 import type { AlphaBlendOption } from '../../engine/alphaBlend'
 import {
+  accumulatePose,
+  applyMeshSpaceAdditivePose,
+  blendPoseInPlace,
+  clearPoseAccumulator,
   createMeshSpaceBlendScratch,
   createPoseAccumulator,
+  finalizePose,
+  makeDynamicAdditivePose,
 } from '../../engine/blend'
 import type {
   MeshSpaceBlendScratch,
@@ -28,6 +34,7 @@ import type {
   CompiledWeightBlendProfile,
   WeightBlendProfile,
 } from '../../engine/blendProfile'
+import { sampleClip } from '../../engine/clipSampler'
 import type { CompiledClipSampler } from '../../engine/clipSampler'
 import {
   copyPose,
@@ -580,6 +587,11 @@ export interface AlsViewPlayerParameters {
   readonly normalizedTime: number
 }
 
+interface MutableAlsViewPlayerParameters {
+  x: number
+  normalizedTime: number
+}
+
 /**
  * Resolves the exact property-access values consumed by a state's
  * FAnimNode_BlendSpaceEvaluator. Values are not rederived or clamped here.
@@ -593,6 +605,7 @@ export function resolveAlsViewPlayerParameters(
     | 'yawLeftAmount'
     | 'yawRightAmount'
   >,
+  output?: MutableAlsViewPlayerParameters,
 ): AlsViewPlayerParameters {
   let normalizedTime: number
   switch (state) {
@@ -609,10 +622,10 @@ export function resolveAlsViewPlayerParameters(
       normalizedTime = 0.5
       break
   }
-  return {
-    x: lookState.pitchAngle,
-    normalizedTime,
-  }
+  const parameters = output ?? { x: 0, normalizedTime: 0 }
+  parameters.x = lookState.pitchAngle
+  parameters.normalizedTime = normalizedTime
+  return parameters
 }
 
 export const ALS_LOOK_SIDE_SWITCH_CURVES:
@@ -985,6 +998,10 @@ export interface AlsViewPosePlayerRuntime {
   readonly binding: AlsViewBlendSpacePlayer
   /** Mutable BlendSpace evaluator state is owned per player, as it is in UE. */
   readonly evaluator: BlendSpaceEvaluator
+  readonly parameters: {
+    x: number
+    normalizedTime: number
+  }
   /** Sparse authored sample indices, valid below sampleCount. */
   readonly sampleIndices: Int32Array
   /** Sparse sample weights parallel to sampleIndices. */
@@ -1008,10 +1025,16 @@ export interface AlsViewPoseRuntime {
   readonly standReferencePose: LocalPoseBuffer
   readonly poseAccumulator: PoseAccumulator
   readonly samplePose: LocalPoseBuffer
+  readonly statePoses: Readonly<
+    Record<AlsViewGraphState, LocalPoseBuffer>
+  >
+  readonly transitionOutputPoses: readonly LocalPoseBuffer[]
+  readonly transitionAlphaMasks: readonly Float32Array[]
   readonly sourcePose: LocalPoseBuffer
   readonly additivePose: LocalPoseBuffer
   readonly viewInputPose: LocalPoseBuffer
   readonly viewOutputPose: LocalPoseBuffer
+  readonly rootOutputPose: LocalPoseBuffer
   readonly meshSpaceScratch: MeshSpaceBlendScratch
 }
 
@@ -1023,6 +1046,7 @@ function createAlsViewPosePlayerRuntime(
     state,
     binding,
     evaluator: createAlsLookBlendSpaceEvaluator(),
+    parameters: { x: 0, normalizedTime: binding.normalizedTime ?? 0 },
     sampleIndices: new Int32Array(ALS_LOOK_BLEND_SPACE.samples.length)
       .fill(-1),
     sampleWeights:
@@ -1091,9 +1115,23 @@ function samplerForAlsViewBlendSpaceSample(
   }
 }
 
-/**
- * Allocates the retained pose-side resources required by AB_Als_View.
- */
+function createAlsViewStatePoses(
+  boneCount: number,
+  referencePose: LocalPoseBuffer,
+): Record<AlsViewGraphState, LocalPoseBuffer> {
+  const createStatePose = () => {
+    const pose = createPoseBuffer(boneCount)
+    copyPose(referencePose, pose)
+    return pose
+  }
+  return {
+    'Look Forward': createStatePose(),
+    'Look Left Back': createStatePose(),
+    'Look Right Back': createStatePose(),
+    'Switch Sides': createStatePose(),
+  }
+}
+
 export function createAlsViewPoseRuntime(
   rig: RigDefinition,
   referencePose: LocalPoseBuffer,
@@ -1130,11 +1168,13 @@ export function createAlsViewPoseRuntime(
   const additivePose = createPoseBuffer(rig.boneCount)
   const viewInputPose = createPoseBuffer(rig.boneCount)
   const viewOutputPose = createPoseBuffer(rig.boneCount)
+  const rootOutputPose = createPoseBuffer(rig.boneCount)
   copyPose(standReferencePose, samplePose)
   copyPose(standReferencePose, sourcePose)
   resetPoseToAdditiveIdentity(additivePose)
   copyPose(standReferencePose, viewInputPose)
   copyPose(standReferencePose, viewOutputPose)
+  copyPose(standReferencePose, rootOutputPose)
 
   return {
     rig,
@@ -1153,21 +1193,44 @@ export function createAlsViewPoseRuntime(
     standReferencePose,
     poseAccumulator: createPoseAccumulator(rig.boneCount),
     samplePose,
+    statePoses: createAlsViewStatePoses(
+      rig.boneCount,
+      standReferencePose,
+    ),
+    transitionOutputPoses: Array.from(
+      {
+        length:
+          ALS_LOOK_STATES_MACHINE.maxTransitionsPerFrame,
+      },
+      () => createPoseBuffer(rig.boneCount),
+    ),
+    transitionAlphaMasks: Array.from(
+      {
+        length:
+          ALS_LOOK_STATES_MACHINE.maxTransitionsPerFrame,
+      },
+      () => new Float32Array(rig.boneCount),
+    ),
     sourcePose,
     additivePose,
     viewInputPose,
     viewOutputPose,
+    rootOutputPose,
     meshSpaceScratch: createMeshSpaceBlendScratch(rig.boneCount),
   }
 }
 
 /** FAnimWeight::IsRelevant() at AB_Als_View's root TwoWayBlend. */
+export function isAlsViewPoseRelevant(lookAmount: number) {
+  return lookAmount > ZERO_ANIMWEIGHT_THRESH
+}
+
 export function isAlsViewPoseBecomingRelevant(
   runtime: AlsViewPoseRuntime,
   lookAmount: number,
 ) {
   return (
-    lookAmount > ZERO_ANIMWEIGHT_THRESH
+    isAlsViewPoseRelevant(lookAmount)
     && !runtime.graph.relevant
   )
 }
@@ -1188,7 +1251,7 @@ export function refreshAlsViewPoseRuntime(
   lookAmount: number,
   deltaTime: number,
 ): AlsViewPoseRuntime {
-  const relevant = lookAmount > ZERO_ANIMWEIGHT_THRESH
+  const relevant = isAlsViewPoseRelevant(lookAmount)
   updateAlsViewGraphRuntime(
     runtime.graph,
     lookState.yawAngle,
@@ -1197,7 +1260,13 @@ export function refreshAlsViewPoseRuntime(
   )
 
   if (!relevant) {
-    for (const stateDescriptor of ALS_LOOK_STATES_MACHINE.states) {
+    for (
+      let stateIndex = 0;
+      stateIndex < ALS_LOOK_STATES_MACHINE.states.length;
+      stateIndex++
+    ) {
+      const stateDescriptor =
+        ALS_LOOK_STATES_MACHINE.states[stateIndex]
       const player = runtime.players[stateDescriptor.name]
       player.sampleIndices.fill(-1)
       player.sampleWeights.fill(0)
@@ -1207,11 +1276,18 @@ export function refreshAlsViewPoseRuntime(
     return runtime
   }
 
-  for (const stateDescriptor of ALS_LOOK_STATES_MACHINE.states) {
+  for (
+    let stateIndex = 0;
+    stateIndex < ALS_LOOK_STATES_MACHINE.states.length;
+    stateIndex++
+  ) {
+    const stateDescriptor =
+      ALS_LOOK_STATES_MACHINE.states[stateIndex]
     const player = runtime.players[stateDescriptor.name]
     const parameters = resolveAlsViewPlayerParameters(
       player.state,
       lookState,
+      player.parameters,
     )
     player.pitchAngle = parameters.x
     player.explicitTime = parameters.normalizedTime
@@ -1236,6 +1312,164 @@ export function refreshAlsViewPoseRuntime(
     }
   }
   return runtime
+}
+
+function evaluateAlsViewStatePoses(runtime: AlsViewPoseRuntime) {
+  for (
+    let stateIndex = 0;
+    stateIndex < ALS_LOOK_STATES_MACHINE.states.length;
+    stateIndex++
+  ) {
+    const state = ALS_LOOK_STATES_MACHINE.states[stateIndex].name
+    const player = runtime.players[state]
+    clearPoseAccumulator(runtime.poseAccumulator)
+    for (
+      let sample = 0;
+      sample < player.sampleCount;
+      sample++
+    ) {
+      const sampleIndex = player.sampleIndices[sample]
+      sampleClip(
+        samplerForAlsViewBlendSpaceSample(
+          runtime.samplers,
+          sampleIndex,
+        ),
+        runtime.rig,
+        player.samplerTimes[sample],
+        runtime.samplePose,
+        player.binding.loop,
+        runtime.standReferencePose,
+      )
+      accumulatePose(
+        runtime.poseAccumulator,
+        runtime.samplePose,
+        player.sampleWeights[sample],
+      )
+    }
+    finalizePose(
+      runtime.poseAccumulator,
+      runtime.standReferencePose,
+      runtime.statePoses[state],
+    )
+  }
+}
+
+function evaluateAlsViewGraphPoseNode(
+  runtime: AlsViewPoseRuntime,
+  node: AlsViewGraphPoseNode,
+  output: LocalPoseBuffer,
+  transitionDepth: number,
+): LocalPoseBuffer {
+  if (node.kind === 'state') {
+    return copyPose(runtime.statePoses[node.state], output)
+  }
+  if (transitionDepth >= runtime.transitionOutputPoses.length) {
+    throw new Error(
+      'AB_Als_View active transition count exceeds '
+      + `${runtime.transitionOutputPoses.length}`,
+    )
+  }
+
+  const sourceOutput =
+    runtime.transitionOutputPoses[transitionDepth]
+  evaluateAlsViewGraphPoseNode(
+    runtime,
+    node.source,
+    sourceOutput,
+    transitionDepth + 1,
+  )
+  copyPose(sourceOutput, output)
+  const alpha = sampleAlsViewTransitionBlend(
+    node.transition,
+    node.elapsed,
+  )
+  if (node.transition.blendProfile === 'LookDirectionChange') {
+    const mask = runtime.transitionAlphaMasks[transitionDepth]
+    const blendScales =
+      runtime.graph.lookDirectionChangeProfile.blendScales
+    for (let bone = 0; bone < runtime.rig.boneCount; bone++) {
+      mask[bone] = Math.max(
+        0,
+        Math.min(1, alpha * blendScales[bone]),
+      )
+    }
+    blendPoseInPlace(
+      output,
+      runtime.statePoses[node.transition.to],
+      1,
+      mask,
+    )
+  } else {
+    blendPoseInPlace(
+      output,
+      runtime.statePoses[node.transition.to],
+      alpha,
+    )
+  }
+  return output
+}
+
+function assertAlsViewPoseBoneCounts(
+  runtime: AlsViewPoseRuntime,
+  viewInputPose: LocalPoseBuffer,
+  outputPose: LocalPoseBuffer,
+) {
+  if (viewInputPose.boneCount !== runtime.rig.boneCount) {
+    throw new Error(
+      'AB_Als_View input pose bone-count mismatch: '
+      + `${viewInputPose.boneCount} !== ${runtime.rig.boneCount}`,
+    )
+  }
+  if (outputPose.boneCount !== runtime.rig.boneCount) {
+    throw new Error(
+      'AB_Als_View output pose bone-count mismatch: '
+      + `${outputPose.boneCount} !== ${runtime.rig.boneCount}`,
+    )
+  }
+}
+
+export function evaluateAlsViewPoseRuntime(
+  runtime: AlsViewPoseRuntime,
+  viewInputPose: LocalPoseBuffer,
+  lookAmount: number,
+  outputPose: LocalPoseBuffer,
+): LocalPoseBuffer {
+  assertAlsViewPoseBoneCounts(runtime, viewInputPose, outputPose)
+  if (!isAlsViewPoseRelevant(lookAmount)) {
+    return copyPose(viewInputPose, outputPose)
+  }
+
+  evaluateAlsViewStatePoses(runtime)
+  evaluateAlsViewGraphPoseNode(
+    runtime,
+    runtime.graph.poseNode,
+    runtime.sourcePose,
+    0,
+  )
+  makeDynamicAdditivePose(
+    runtime.sourcePose,
+    runtime.standReferencePose,
+    runtime.rig,
+    runtime.additivePose,
+    'mesh',
+    runtime.meshSpaceScratch,
+  )
+  copyPose(viewInputPose, runtime.viewInputPose)
+  copyPose(runtime.viewInputPose, runtime.viewOutputPose)
+  applyMeshSpaceAdditivePose(
+    runtime.viewOutputPose,
+    runtime.additivePose,
+    runtime.rig,
+    1,
+    runtime.meshSpaceScratch,
+  )
+  copyPose(runtime.viewInputPose, runtime.rootOutputPose)
+  blendPoseInPlace(
+    runtime.rootOutputPose,
+    runtime.viewOutputPose,
+    lookAmount,
+  )
+  return copyPose(runtime.rootOutputPose, outputPose)
 }
 
 export const ALS_VIEW_GRAPH = {

@@ -156,4 +156,30 @@ describe('ALS authored animation graph stage order', () => {
       'InputPoses[1]',
     )
   })
+
+  it('evaluates Layering, then View, then CR_Als', () => {
+    const main = asset('AB_Als')
+    const layeringGraph = node(main, 'AnimGraphNode_LinkedAnimGraph_6')
+    const viewGraph = node(main, 'AnimGraphNode_LinkedAnimGraph')
+    const controlRig = node(main, 'AnimGraphNode_ControlRig')
+
+    expect(layeringGraph.parameters.InstanceClass?.ObjectName)
+      .toBe("AnimBlueprintGeneratedClass'AB_Als_Layering_C'")
+    expect(viewGraph.parameters.InstanceClass?.ObjectName)
+      .toBe("AnimBlueprintGeneratedClass'AB_Als_View_C'")
+    expect(viewGraph.parameters.InputPoseNames).toEqual(['View Input'])
+    expect(controlRig.type).toBe('FAnimNode_ControlRig')
+    expectLink(
+      main,
+      layeringGraph.property,
+      viewGraph.property,
+      'InputPoses[0]',
+    )
+    expectLink(
+      main,
+      viewGraph.property,
+      controlRig.property,
+      'Source',
+    )
+  })
 })

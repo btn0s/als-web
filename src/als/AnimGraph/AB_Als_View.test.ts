@@ -3,13 +3,27 @@
 import { readFileSync } from 'node:fs'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
+import {
+  accumulatePose,
+  applyMeshSpaceAdditivePose,
+  blendPoseInPlace,
+  createMeshSpaceBlendScratch,
+  createPoseAccumulator,
+  finalizePose,
+  makeDynamicAdditivePose,
+} from '../../engine/blend'
 import { evaluateBlendSpace } from '../../engine/blendSpace'
-import { compileClipSampler } from '../../engine/clipSampler'
+import {
+  compileClipSampler,
+  sampleClip,
+} from '../../engine/clipSampler'
 import type { CompiledClipSampler } from '../../engine/clipSampler'
 import {
+  copyPose,
   createPoseBuffer,
   resetPoseToReference,
 } from '../../engine/poseBuffer'
+import type { LocalPoseBuffer } from '../../engine/poseBuffer'
 import {
   ALS_LOOK_BLEND_SPACE,
   ALS_LOOK_DIRECTION_CHANGE_PROFILE,
@@ -22,7 +36,9 @@ import {
   createAlsViewGraphRuntime,
   createAlsLookBlendSpaceEvaluator,
   createAlsViewPoseRuntime,
+  evaluateAlsViewPoseRuntime,
   isAlsViewPoseBecomingRelevant,
+  isAlsViewPoseRelevant,
   refreshAlsViewPoseRuntime,
   resolveAlsViewPlayerParameters,
   sampleAlsViewTransitionBlend,
@@ -800,7 +816,7 @@ function viewPoseLookState(overrides: Partial<{
   }
 }
 
-describe('AB_Als_View retained pose-runtime scaffold', () => {
+describe('AB_Als_View retained pose runtime', () => {
   it('requires every authored Look sampler by its exact clip name', () => {
     for (const missingClipName of ALS_VIEW_POSE_CLIP_NAMES) {
       const samplers = createViewPoseSamplers()
@@ -884,10 +900,13 @@ describe('AB_Als_View retained pose-runtime scaffold', () => {
     const poseBuffers = [
       runtime.standReferencePose,
       runtime.samplePose,
+      ...Object.values(runtime.statePoses),
+      ...runtime.transitionOutputPoses,
       runtime.sourcePose,
       runtime.additivePose,
       runtime.viewInputPose,
       runtime.viewOutputPose,
+      runtime.rootOutputPose,
     ]
     expect(poseBuffers.every(
       (pose) => pose.boneCount === viewPoseRig.boneCount,
@@ -898,6 +917,15 @@ describe('AB_Als_View retained pose-runtime scaffold', () => {
       .toBe(viewPoseRig.boneCount)
     expect(runtime.meshSpaceScratch.boneCount)
       .toBe(viewPoseRig.boneCount)
+    expect(runtime.transitionOutputPoses).toHaveLength(
+      ALS_LOOK_STATES_MACHINE.maxTransitionsPerFrame,
+    )
+    expect(runtime.transitionAlphaMasks).toHaveLength(
+      ALS_LOOK_STATES_MACHINE.maxTransitionsPerFrame,
+    )
+    expect(runtime.transitionAlphaMasks.every(
+      (mask) => mask.length === viewPoseRig.boneCount,
+    )).toBe(true)
 
     expect(runtime.standReferencePose.positions[0]).toBe(7)
     reference.positions[0] = 99
@@ -913,6 +941,8 @@ describe('AB_Als_View retained pose-runtime scaffold', () => {
     )
     const lookState = viewPoseLookState({ yawAngle: 170 })
 
+    expect(isAlsViewPoseRelevant(1e-5)).toBe(false)
+    expect(isAlsViewPoseRelevant(1.00001e-5)).toBe(true)
     expect(isAlsViewPoseBecomingRelevant(runtime, 1e-5))
       .toBe(false)
     expect(isAlsViewPoseBecomingRelevant(runtime, 1.00001e-5))
@@ -1002,6 +1032,601 @@ describe('AB_Als_View retained pose-runtime scaffold', () => {
       runtime.viewOutputPose,
     ].map((pose) => Array.from(pose.data))).toEqual(
       posesBeforeRefresh,
+    )
+  })
+})
+
+const animatedViewPoseEndpoints = {
+  A_Als_Look_Forward: {
+    root: [1.8, 0.2, 0.3],
+    neck_01: [0.4, 1.2, 0.2],
+    head: [0.1, 0.3, 1],
+    position: [8, 2, -1],
+  },
+  A_Als_Look_Down: {
+    root: [0.2, 1.9, -0.3],
+    neck_01: [-0.2, 0.3, 1.7],
+    head: [1.4, -0.2, 0.4],
+    position: [-3, 9, 2],
+  },
+  A_Als_Look_Up: {
+    root: [-0.3, 0.4, 2.2],
+    neck_01: [1.8, 0.1, -0.4],
+    head: [0.2, 1.6, 0.3],
+    position: [4, -2, 11],
+  },
+} as const
+
+function animatedViewPoseClip(clipName: AlsViewPoseClipName) {
+  const duration = viewPoseClipDurations[clipName]
+  const endpoint = animatedViewPoseEndpoints[clipName]
+  const tracks: THREE.KeyframeTrack[] = []
+  for (const boneName of viewPoseRig.boneNames) {
+    const rotation = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(...endpoint[
+        boneName as keyof Pick<
+          typeof endpoint,
+          'root' | 'neck_01' | 'head'
+        >
+      ]),
+    )
+    tracks.push(new THREE.QuaternionKeyframeTrack(
+      `${boneName}.quaternion`,
+      [0, duration],
+      [0, 0, 0, 1, ...rotation.toArray()],
+    ))
+  }
+  tracks.push(new THREE.VectorKeyframeTrack(
+    'root.position',
+    [0, duration],
+    [0, 0, 0, ...endpoint.position],
+  ))
+  return new THREE.AnimationClip(clipName, duration, tracks)
+}
+
+function createAnimatedViewPoseFixture() {
+  const samplers = new Map<
+    AlsViewPoseClipName,
+    CompiledClipSampler
+  >()
+  for (const clipName of ALS_VIEW_POSE_CLIP_NAMES) {
+    samplers.set(
+      clipName,
+      compileClipSampler(
+        animatedViewPoseClip(clipName),
+        viewPoseRig,
+      ),
+    )
+  }
+  const reference = resetPoseToReference(
+    createPoseBuffer(viewPoseRig.boneCount),
+    viewPoseRig,
+  )
+  return {
+    samplers,
+    reference,
+    runtime: createAlsViewPoseRuntime(
+      viewPoseRig,
+      reference,
+      (clipName) => samplers.get(clipName),
+    ),
+  }
+}
+
+function requireAnimatedViewPoseSampler(
+  samplers: ReadonlyMap<
+    AlsViewPoseClipName,
+    CompiledClipSampler
+  >,
+  sampleIndex: number,
+) {
+  const clipName = ALS_LOOK_BLEND_SPACE.samples[
+    sampleIndex
+  ].animation.name as AlsViewPoseClipName
+  const sampler = samplers.get(clipName)
+  if (!sampler) throw new Error(`Missing ${clipName}`)
+  return sampler
+}
+
+function independentlyEvaluateViewState(
+  samplers: ReadonlyMap<
+    AlsViewPoseClipName,
+    CompiledClipSampler
+  >,
+  reference: LocalPoseBuffer,
+  state: AlsViewGraphState,
+  lookState: ReturnType<typeof viewPoseLookState>,
+) {
+  const samples = evaluateBlendSpace(
+    createAlsLookBlendSpaceEvaluator(),
+    lookState.pitchAngle,
+  )
+  const parameters = resolveAlsViewPlayerParameters(
+    state,
+    lookState,
+  )
+  const accumulator = createPoseAccumulator(viewPoseRig.boneCount)
+  const samplePose = createPoseBuffer(viewPoseRig.boneCount)
+  for (let sample = 0; sample < samples.count; sample++) {
+    const sampler = requireAnimatedViewPoseSampler(
+      samplers,
+      samples.sampleIndices[sample],
+    )
+    sampleClip(
+      sampler,
+      viewPoseRig,
+      parameters.normalizedTime * sampler.clip.duration,
+      samplePose,
+      ALS_VIEW_PLAYERS[state].loop,
+      reference,
+    )
+    accumulatePose(
+      accumulator,
+      samplePose,
+      samples.weights[sample],
+    )
+  }
+  return finalizePose(
+    accumulator,
+    reference,
+    createPoseBuffer(viewPoseRig.boneCount),
+  )
+}
+
+function independentlyFlattenViewLeaves(
+  samplers: ReadonlyMap<
+    AlsViewPoseClipName,
+    CompiledClipSampler
+  >,
+  reference: LocalPoseBuffer,
+  lookState: ReturnType<typeof viewPoseLookState>,
+  states: readonly AlsViewGraphState[],
+  stateWeights: readonly number[],
+) {
+  const samples = evaluateBlendSpace(
+    createAlsLookBlendSpaceEvaluator(),
+    lookState.pitchAngle,
+  )
+  const accumulator = createPoseAccumulator(viewPoseRig.boneCount)
+  const samplePose = createPoseBuffer(viewPoseRig.boneCount)
+  for (let stateIndex = 0; stateIndex < states.length; stateIndex++) {
+    const parameters = resolveAlsViewPlayerParameters(
+      states[stateIndex],
+      lookState,
+    )
+    for (let sample = 0; sample < samples.count; sample++) {
+      const sampler = requireAnimatedViewPoseSampler(
+        samplers,
+        samples.sampleIndices[sample],
+      )
+      sampleClip(
+        sampler,
+        viewPoseRig,
+        parameters.normalizedTime * sampler.clip.duration,
+        samplePose,
+        true,
+        reference,
+      )
+      accumulatePose(
+        accumulator,
+        samplePose,
+        stateWeights[stateIndex] * samples.weights[sample],
+      )
+    }
+  }
+  return finalizePose(
+    accumulator,
+    reference,
+    createPoseBuffer(viewPoseRig.boneCount),
+  )
+}
+
+function expectViewPoseClose(
+  actual: LocalPoseBuffer,
+  expected: LocalPoseBuffer,
+  precision = 5,
+) {
+  for (let index = 0; index < actual.positions.length; index++) {
+    expect(actual.positions[index]).toBeCloseTo(
+      expected.positions[index],
+      precision,
+    )
+    expect(actual.scales[index]).toBeCloseTo(
+      expected.scales[index],
+      precision,
+    )
+  }
+  for (let bone = 0; bone < actual.boneCount; bone++) {
+    const offset = bone * 4
+    const actualRotation = new THREE.Quaternion().fromArray(
+      actual.rotations,
+      offset,
+    ).normalize()
+    const expectedRotation = new THREE.Quaternion().fromArray(
+      expected.rotations,
+      offset,
+    ).normalize()
+    expect(actualRotation.angleTo(expectedRotation))
+      .toBeLessThan(10 ** -precision)
+  }
+}
+
+function viewPoseBoneAngle(
+  one: LocalPoseBuffer,
+  two: LocalPoseBuffer,
+  bone: number,
+) {
+  return new THREE.Quaternion()
+    .fromArray(one.rotations, bone * 4)
+    .normalize()
+    .angleTo(
+      new THREE.Quaternion().fromArray(
+        two.rotations,
+        bone * 4,
+      ).normalize(),
+    )
+}
+
+function animatedViewInputPose(reference: LocalPoseBuffer) {
+  const input = copyPose(
+    reference,
+    createPoseBuffer(reference.boneCount),
+  )
+  input.positions.set([
+    1, 2, 3,
+    -1, 0.5, 2,
+    0, 1, -2,
+  ])
+  new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(0.7, -0.4, 0.2),
+  ).toArray(input.rotations, 0)
+  new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(-0.3, 0.8, 0.5),
+  ).toArray(input.rotations, 4)
+  new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(0.2, -0.6, 0.9),
+  ).toArray(input.rotations, 8)
+  return input
+}
+
+describe('AB_Als_View owned pose evaluation', () => {
+  it('normalizes each BlendSpace state before the transition node', () => {
+    const { runtime, samplers, reference } =
+      createAnimatedViewPoseFixture()
+    const lookState = viewPoseLookState({ pitchAngle: -45 })
+    refreshAlsViewPoseRuntime(runtime, lookState, 1, 1 / 60)
+    runtime.graph.poseNode = {
+      kind: 'transition',
+      source: { kind: 'state', state: 'Look Forward' },
+      transition: ALS_VIEW_GRAPH_TRANSITIONS[0],
+      elapsed: 0.1,
+    }
+
+    evaluateAlsViewPoseRuntime(
+      runtime,
+      reference,
+      1,
+      createPoseBuffer(viewPoseRig.boneCount),
+    )
+    const forward = independentlyEvaluateViewState(
+      samplers,
+      reference,
+      'Look Forward',
+      lookState,
+    )
+    const right = independentlyEvaluateViewState(
+      samplers,
+      reference,
+      'Look Right Back',
+      lookState,
+    )
+    const nested = copyPose(
+      forward,
+      createPoseBuffer(viewPoseRig.boneCount),
+    )
+    blendPoseInPlace(
+      nested,
+      right,
+      sampleAlsViewTransitionBlend(
+        ALS_VIEW_GRAPH_TRANSITIONS[0],
+        0.1,
+      ),
+    )
+    const flattened = independentlyFlattenViewLeaves(
+      samplers,
+      reference,
+      lookState,
+      ['Look Forward', 'Look Right Back'],
+      [0.5, 0.5],
+    )
+
+    expectViewPoseClose(runtime.statePoses['Look Forward'], forward)
+    expectViewPoseClose(runtime.statePoses['Look Right Back'], right)
+    expectViewPoseClose(runtime.sourcePose, nested)
+    expect(viewPoseBoneAngle(runtime.sourcePose, flattened, 0))
+      .toBeGreaterThan(1e-4)
+  })
+
+  it('uses pitch topology and each state explicit normalized time', () => {
+    const { runtime, samplers, reference } =
+      createAnimatedViewPoseFixture()
+    const output = createPoseBuffer(viewPoseRig.boneCount)
+    const early = viewPoseLookState({
+      pitchAngle: 0,
+      yawForwardAmount: 0.2,
+    })
+    refreshAlsViewPoseRuntime(runtime, early, 1, 1 / 60)
+    evaluateAlsViewPoseRuntime(runtime, reference, 1, output)
+    const earlyExpected = independentlyEvaluateViewState(
+      samplers,
+      reference,
+      'Look Forward',
+      early,
+    )
+    expectViewPoseClose(runtime.sourcePose, earlyExpected)
+    const earlyRoot = new THREE.Quaternion().fromArray(
+      runtime.sourcePose.rotations,
+      0,
+    )
+
+    const late = viewPoseLookState({
+      pitchAngle: 0,
+      yawForwardAmount: 0.8,
+    })
+    refreshAlsViewPoseRuntime(runtime, late, 1, 1 / 60)
+    evaluateAlsViewPoseRuntime(runtime, reference, 1, output)
+    expectViewPoseClose(
+      runtime.sourcePose,
+      independentlyEvaluateViewState(
+        samplers,
+        reference,
+        'Look Forward',
+        late,
+      ),
+    )
+    expect(earlyRoot.angleTo(
+      new THREE.Quaternion().fromArray(
+        runtime.sourcePose.rotations,
+        0,
+      ),
+    )).toBeGreaterThan(0.1)
+
+    for (const pitchAngle of [-90, 45, 90]) {
+      const lookState = viewPoseLookState({
+        pitchAngle,
+        yawForwardAmount: 0.35,
+      })
+      refreshAlsViewPoseRuntime(runtime, lookState, 1, 1 / 60)
+      evaluateAlsViewPoseRuntime(runtime, reference, 1, output)
+      expectViewPoseClose(
+        runtime.sourcePose,
+        independentlyEvaluateViewState(
+          samplers,
+          reference,
+          'Look Forward',
+          lookState,
+        ),
+      )
+    }
+  })
+
+  it('copies an irrelevant View Input byte-for-byte without pose evaluation', () => {
+    const { runtime, reference } =
+      createAnimatedViewPoseFixture()
+    const lookState = viewPoseLookState({ pitchAngle: 45 })
+    refreshAlsViewPoseRuntime(runtime, lookState, 1, 1 / 60)
+    evaluateAlsViewPoseRuntime(
+      runtime,
+      reference,
+      1,
+      createPoseBuffer(viewPoseRig.boneCount),
+    )
+    const retainedPoses = [
+      runtime.samplePose,
+      ...Object.values(runtime.statePoses),
+      ...runtime.transitionOutputPoses,
+      runtime.sourcePose,
+      runtime.additivePose,
+      runtime.viewInputPose,
+      runtime.viewOutputPose,
+      runtime.rootOutputPose,
+    ]
+    const retainedBefore = retainedPoses.map(
+      (pose) => pose.data.slice(),
+    )
+    runtime.players['Look Forward'].sampleCount = 1
+    runtime.players['Look Forward'].sampleIndices[0] = 999
+    const input = animatedViewInputPose(reference)
+    const output = createPoseBuffer(viewPoseRig.boneCount)
+    output.data.fill(123)
+
+    evaluateAlsViewPoseRuntime(runtime, input, 0, output)
+
+    expect(new Uint8Array(output.data.buffer)).toEqual(
+      new Uint8Array(input.data.buffer),
+    )
+    for (let pose = 0; pose < retainedPoses.length; pose++) {
+      expect(retainedPoses[pose].data).toEqual(retainedBefore[pose])
+    }
+  })
+
+  it('uses full additive then the root TwoWayBlend and supports input aliasing', () => {
+    const { runtime, samplers, reference } =
+      createAnimatedViewPoseFixture()
+    const lookState = viewPoseLookState({
+      pitchAngle: 90,
+      yawForwardAmount: 0.7,
+    })
+    refreshAlsViewPoseRuntime(runtime, lookState, 1, 1 / 60)
+    const input = animatedViewInputPose(reference)
+    const output = createPoseBuffer(viewPoseRig.boneCount)
+    const lookAmount = 0.35
+
+    evaluateAlsViewPoseRuntime(runtime, input, lookAmount, output)
+
+    const source = independentlyEvaluateViewState(
+      samplers,
+      reference,
+      'Look Forward',
+      lookState,
+    )
+    const additive = createPoseBuffer(viewPoseRig.boneCount)
+    const fullAdditiveOutput = copyPose(
+      input,
+      createPoseBuffer(viewPoseRig.boneCount),
+    )
+    const scratch = createMeshSpaceBlendScratch(
+      viewPoseRig.boneCount,
+    )
+    makeDynamicAdditivePose(
+      source,
+      reference,
+      viewPoseRig,
+      additive,
+      'mesh',
+      scratch,
+    )
+    applyMeshSpaceAdditivePose(
+      fullAdditiveOutput,
+      additive,
+      viewPoseRig,
+      1,
+      scratch,
+    )
+    const expected = copyPose(
+      input,
+      createPoseBuffer(viewPoseRig.boneCount),
+    )
+    blendPoseInPlace(expected, fullAdditiveOutput, lookAmount)
+    const shortcut = copyPose(
+      input,
+      createPoseBuffer(viewPoseRig.boneCount),
+    )
+    applyMeshSpaceAdditivePose(
+      shortcut,
+      additive,
+      viewPoseRig,
+      lookAmount,
+      scratch,
+    )
+
+    expectViewPoseClose(runtime.viewOutputPose, fullAdditiveOutput)
+    expectViewPoseClose(output, expected)
+    expect(viewPoseBoneAngle(output, shortcut, 0))
+      .toBeGreaterThan(1e-4)
+
+    const alias = copyPose(
+      input,
+      createPoseBuffer(viewPoseRig.boneCount),
+    )
+    evaluateAlsViewPoseRuntime(runtime, alias, lookAmount, alias)
+    expectViewPoseClose(alias, expected)
+  })
+
+  it('evaluates both side-switch transition boundaries and profile weights', () => {
+    const { runtime, samplers, reference } =
+      createAnimatedViewPoseFixture()
+    const leftLook = viewPoseLookState({
+      yawAngle: -170,
+      yawForwardAmount: 0.03,
+      yawLeftAmount: 0.03,
+      yawRightAmount: 0.97,
+      pitchAngle: -45,
+    })
+    refreshAlsViewPoseRuntime(runtime, leftLook, 1, 0)
+    refreshAlsViewPoseRuntime(runtime, leftLook, 1, 0)
+    const rightLook = viewPoseLookState({
+      yawAngle: 170,
+      yawForwardAmount: 0.97,
+      yawLeftAmount: 0.03,
+      yawRightAmount: 0.97,
+      pitchAngle: -45,
+    })
+    refreshAlsViewPoseRuntime(runtime, rightLook, 1, 0.5)
+    expect(runtime.graph.activeTransitionIndices).toEqual([5, 10])
+
+    evaluateAlsViewPoseRuntime(
+      runtime,
+      reference,
+      1,
+      createPoseBuffer(viewPoseRig.boneCount),
+    )
+    const left = independentlyEvaluateViewState(
+      samplers,
+      reference,
+      'Look Left Back',
+      rightLook,
+    )
+    const sideSwitch = independentlyEvaluateViewState(
+      samplers,
+      reference,
+      'Switch Sides',
+      rightLook,
+    )
+    const right = independentlyEvaluateViewState(
+      samplers,
+      reference,
+      'Look Right Back',
+      rightLook,
+    )
+    expectViewPoseClose(runtime.statePoses['Look Left Back'], left)
+    expectViewPoseClose(runtime.statePoses['Switch Sides'], sideSwitch)
+    expectViewPoseClose(runtime.statePoses['Look Right Back'], right)
+
+    const profileScales = [1, 2, 2]
+    const firstAlpha = sampleAlsViewTransitionBlend(
+      ALS_VIEW_GRAPH_TRANSITIONS[5],
+      0.5,
+    )
+    const firstMask = new Float32Array(profileScales.map(
+      (scale) => Math.min(1, firstAlpha * scale),
+    ))
+    const firstOutput = copyPose(
+      left,
+      createPoseBuffer(viewPoseRig.boneCount),
+    )
+    blendPoseInPlace(firstOutput, sideSwitch, 1, firstMask)
+    expectViewPoseClose(runtime.transitionOutputPoses[0], firstOutput)
+
+    const secondAlpha = sampleAlsViewTransitionBlend(
+      ALS_VIEW_GRAPH_TRANSITIONS[10],
+      0.5,
+    )
+    const secondMask = new Float32Array(profileScales.map(
+      (scale) => Math.min(1, secondAlpha * scale),
+    ))
+    const finalOutput = copyPose(
+      firstOutput,
+      createPoseBuffer(viewPoseRig.boneCount),
+    )
+    blendPoseInPlace(finalOutput, right, 1, secondMask)
+    expectViewPoseClose(runtime.sourcePose, finalOutput)
+    expect(viewPoseBoneAngle(runtime.sourcePose, right, 0))
+      .toBeGreaterThan(1e-4)
+    expect(viewPoseBoneAngle(runtime.sourcePose, right, 1))
+      .toBeLessThan(1e-6)
+    expect(viewPoseBoneAngle(runtime.sourcePose, right, 2))
+      .toBeLessThan(1e-6)
+  })
+
+  it('rejects malformed View input and output bone counts', () => {
+    const { runtime, reference } =
+      createAnimatedViewPoseFixture()
+    expect(() => evaluateAlsViewPoseRuntime(
+      runtime,
+      createPoseBuffer(viewPoseRig.boneCount - 1),
+      0,
+      createPoseBuffer(viewPoseRig.boneCount),
+    )).toThrow(
+      'AB_Als_View input pose bone-count mismatch: 2 !== 3',
+    )
+    expect(() => evaluateAlsViewPoseRuntime(
+      runtime,
+      reference,
+      0,
+      createPoseBuffer(viewPoseRig.boneCount - 1),
+    )).toThrow(
+      'AB_Als_View output pose bone-count mismatch: 2 !== 3',
     )
   })
 })
