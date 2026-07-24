@@ -179,4 +179,6 @@ export function useAlsAnimationInstance(gltf: {
       poseSample.current.characterYaw = root.rotation.y
     }
   })
+
+  return overlayMode as AlsOverlayMode
 }

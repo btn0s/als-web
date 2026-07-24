@@ -1,6 +1,7 @@
 import { useFrame } from '@react-three/fiber'
-import { Html } from '@react-three/drei'
+import { Html, useGLTF } from '@react-three/drei'
 import {
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -13,6 +14,11 @@ import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { useAlsAnimationInstance } from '../als/AlsAnimationInstance.hooks'
 import type { CharacterPoseSample } from '../als/AlsCamera/poseCameraState'
+import {
+  ALS_RIFLE_OVERLAY_OBJECT_URL,
+  attachRifleOverlayObject,
+  detachOverlayObject,
+} from '../als/AlsCharacter.overlayObjects'
 import { applyCharacterMaterialOverrides } from '../als/characterMaterials'
 
 const CHARACTER_URL = '/assets/skm-als.glb'
@@ -142,6 +148,20 @@ function CharacterLoadState({
   )
 }
 
+function RifleOverlayObject({ characterScene }: { characterScene: THREE.Object3D }) {
+  // useGLTF caches by URL: the first Rifle switch loads, then Default only detaches/hides it.
+  const rifleGltf = useGLTF(ALS_RIFLE_OVERLAY_OBJECT_URL)
+
+  useLayoutEffect(() => {
+    // Keep the authored MI_Als_Rifle material graph intact; as a bone child it shares the
+    // character's lighting, shadows, and postprocessing path.
+    attachRifleOverlayObject(characterScene, rifleGltf.scene)
+    return () => detachOverlayObject(rifleGltf.scene)
+  }, [characterScene, rifleGltf.scene])
+
+  return null
+}
+
 function LoadedCharacter({
   gltf,
   onSizeChange,
@@ -182,7 +202,7 @@ function LoadedCharacter({
 
   // The hook owns clip sampling, pose-space composition, and the one skeleton write per frame.
   // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
-  useAlsAnimationInstance(gltf, characterGroup, poseSample)
+  const overlayMode = useAlsAnimationInstance(gltf, characterGroup, poseSample)
 
   useFrame(() => {
     const group = characterGroup.current
@@ -205,6 +225,11 @@ function LoadedCharacter({
   return (
     <group ref={characterGroup} position={bounds.position}>
       <primitive object={gltf.scene} />
+      {overlayMode === 'Rifle' && (
+        <Suspense fallback={null}>
+          <RifleOverlayObject characterScene={gltf.scene} />
+        </Suspense>
+      )}
     </group>
   )
 }
