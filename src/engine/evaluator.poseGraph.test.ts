@@ -83,4 +83,59 @@ describe('authored evaluator pose graph seam', () => {
       overlayLayers: [],
     })).toThrow('either overlayBranch or overlayGraph')
   })
+
+  it('evaluates Locomotion before Grounded inertia and the Transition slot', () => {
+    const { rig, evaluator } = setup()
+    const locomotion = createEvaluatorInertializationStage(rig.boneCount)
+    const transition = compileClipSampler(
+      constantPositionClip('transition', 20),
+      rig,
+    )
+
+    const result = evaluatePose(evaluator, {
+      base: [],
+      locomotionGraph(context) {
+        copyPose(context.referencePose, context.outputPose)
+        context.outputPose.positions[0] = 12
+        context.outputCurves.set('PoseMoving', 1)
+      },
+      montages: [{
+        sampler: transition,
+        time: 0,
+        weight: 0.25,
+      }],
+      stagedInertialization: { locomotion },
+      resolveBlendedCurves(_samples, output) {
+        output.set(
+          'PoseMoving',
+          locomotion.curves.get('PoseMoving') ?? -1,
+        )
+      },
+    })
+
+    expect(result.pose.positions[0]).toBeCloseTo(14)
+    expect(evaluator.basePose.positions[0]).toBeCloseTo(14)
+    expect(locomotion.curves.get('PoseMoving')).toBe(1)
+    expect(result.curves.values.get('PoseMoving')).toBe(1)
+  })
+
+  it('rejects a flattened locomotion branch beside the exact graph output', () => {
+    const { rig, evaluator, base } = setup()
+    const locomotion = createEvaluatorInertializationStage(rig.boneCount)
+
+    expect(() => evaluatePose(evaluator, {
+      base: [base],
+      locomotionGraph() {},
+      stagedInertialization: { locomotion },
+    })).toThrow('either locomotionGraph or flattened base/slots')
+  })
+
+  it('requires the authored Grounded inertialization boundary for Locomotion', () => {
+    const { evaluator } = setup()
+
+    expect(() => evaluatePose(evaluator, {
+      base: [],
+      locomotionGraph() {},
+    })).toThrow('authored locomotion inertialization stage')
+  })
 })

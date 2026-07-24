@@ -140,6 +140,13 @@ export function createEvaluatorInertializationStage(
 export interface EvaluatePoseInput {
   readonly base: readonly EvaluatorLayerEntry[]
   /**
+   * Complete AB_Als_Locomotion graph output before AB_Als_Grounded node 35.
+   *
+   * State poses finish their internal blends, additives, and slots before the outer state-machine
+   * transition. A flat `base` list cannot preserve those authored node boundaries.
+   */
+  readonly locomotionGraph?: EvaluatorPoseGraph
+  /**
    * Non-additive Slot nodes evaluated inside the base branch. A Slot blends its active montage
    * over the complementary source pose, then contributes that composed pose to its parent graph.
    */
@@ -608,35 +615,66 @@ export function evaluatePose(
       'Overlay inertialization requires a full pre-Layering overlayBranch or overlayGraph',
     )
   }
+  if (input.locomotionGraph) {
+    if (!locomotionInertialization) {
+      throw new Error(
+        'locomotionGraph requires its authored locomotion inertialization stage',
+      )
+    }
+    if (input.base.length > 0 || (input.slots?.length ?? 0) > 0) {
+      throw new Error(
+        'Use either locomotionGraph or flattened base/slots, not both',
+      )
+    }
+  }
 
   clearPoseAccumulator(evaluator.accumulator)
   beginCurveFrame(evaluator.curves)
   evaluator.curves.values.clear()
   beginInertializationStage(locomotionInertialization)
   beginInertializationStage(overlayInertialization)
-  sampleAndAccumulate(
-    evaluator,
-    input.base,
-    evaluator.accumulator,
-    locomotionInertialization,
-  )
-  sampleSlotAndAccumulate(
-    evaluator,
-    input.slots,
-    locomotionInertialization,
-  )
-  // AB_Als_Grounded finalizes its state-machine pose and inertializes it before the Transition
-  // slot. Preserve the legacy normalized-accumulator path when no staged node is supplied.
-  if (!locomotionInertialization) {
-    sampleAndAccumulate(evaluator, input.montages)
-    checkCoverage(evaluator)
+  if (input.locomotionGraph) {
+    input.locomotionGraph({
+      rig: evaluator.rig,
+      referencePose: evaluator.referencePose,
+      outputPose: evaluator.outputPose,
+      outputCurves: locomotionInertialization!.curves,
+    })
+    applyInertializationStage(
+      evaluator.outputPose,
+      locomotionInertialization,
+      deltaTime,
+      true,
+    )
+  } else {
+    sampleAndAccumulate(
+      evaluator,
+      input.base,
+      evaluator.accumulator,
+      locomotionInertialization,
+    )
+    sampleSlotAndAccumulate(
+      evaluator,
+      input.slots,
+      locomotionInertialization,
+    )
+    // AB_Als_Grounded finalizes its state-machine pose and inertializes it before the Transition
+    // slot. Preserve the legacy normalized-accumulator path when no staged node is supplied.
+    if (!locomotionInertialization) {
+      sampleAndAccumulate(evaluator, input.montages)
+      checkCoverage(evaluator)
+    }
+    finalizePose(
+      evaluator.accumulator,
+      evaluator.referencePose,
+      evaluator.outputPose,
+    )
+    applyInertializationStage(
+      evaluator.outputPose,
+      locomotionInertialization,
+      deltaTime,
+    )
   }
-  finalizePose(evaluator.accumulator, evaluator.referencePose, evaluator.outputPose)
-  applyInertializationStage(
-    evaluator.outputPose,
-    locomotionInertialization,
-    deltaTime,
-  )
   if (locomotionInertialization) {
     applyMontageLayersAfterInertialization(evaluator, input.montages)
   }
