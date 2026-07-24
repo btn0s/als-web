@@ -106,6 +106,8 @@ interface HandVirtualBoneOracle {
     readonly rightHandToGunSamples: readonly {
       readonly clip: string
       readonly time: number
+      readonly interpolation: 'Step'
+      readonly heldSourceKeyIndex: number
       readonly translation: Vector3Tuple
       readonly rotation: QuaternionTuple
     }[]
@@ -562,8 +564,13 @@ describe('ALS hand virtual-bone topology parity', () => {
     const gun = gltf.scene.getObjectByName('ik_hand_gun')
     if (!(hand instanceof THREE.Bone)) throw new Error('Missing hand_r')
     if (!(gun instanceof THREE.Bone)) throw new Error('Missing ik_hand_gun')
+    expect(animation.userData.interpolation).toBe('Step')
 
     for (const sample of oracle.animationEvidence.rightHandToGunSamples) {
+      expect(sample.interpolation).toBe('Step')
+      expect(sample.heldSourceKeyIndex).toBe(
+        Math.floor(sample.time * 30),
+      )
       mixer.setTime(sample.time)
       gltf.scene.updateMatrixWorld(true)
       const actual = decompose(
