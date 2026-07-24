@@ -1,6 +1,12 @@
 import type { CompiledClipSampler } from './clipSampler'
 import { resolveClipTime, sampleClip } from './clipSampler'
 import type { ClipCurveSamplers } from './curves'
+import {
+  applyAuthoredRootMotionPoseReset,
+} from './rootMotion'
+import type {
+  CompiledAuthoredRootMotion,
+} from './rootMotion'
 import type { MutableUePoseNode } from './uePoseBlend'
 import { createPoseBuffer } from './poseBuffer'
 import type { RigDefinition } from './rig'
@@ -9,6 +15,12 @@ import type { RigDefinition } from './rig'
 export interface UeSequencePoseSource {
   readonly sampler: CompiledClipSampler
   readonly curves?: ClipCurveSamplers
+  /**
+   * UAnimSequenceBase root-lock metadata compiled from the extracted asset.
+   * Sequence players consume the raw trajectory before returning their pose,
+   * even when the character applies that motion through a montage elsewhere.
+   */
+  readonly rootMotion?: Readonly<CompiledAuthoredRootMotion>
 }
 
 export function createMutableUePoseNode(
@@ -34,6 +46,13 @@ export function sampleSequencePoseNode(
   out: MutableUePoseNode,
 ): MutableUePoseNode {
   sampleClip(source.sampler, rig, time, out.pose, loop)
+  if (source.rootMotion) {
+    applyAuthoredRootMotionPoseReset(
+      source.rootMotion,
+      out.pose,
+      rig,
+    )
+  }
   out.curves.clear()
   if (!source.curves) return out
 

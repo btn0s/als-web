@@ -6,7 +6,9 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createPoseBuffer, resetPoseToReference } from './poseBuffer'
 import { createRigDefinition } from './rig'
+import type { RigDefinition } from './rig'
 import {
+  applyAuthoredRootMotionPoseReset,
   accumulateRootMotion,
   accumulateRootMotionWithBlend,
   compileAuthoredRootMotion,
@@ -344,6 +346,31 @@ describe('authored ALS root motion', () => {
       compiled.duration,
       { translationScale: -1 },
     )).toThrow(/non-negative/)
+  })
+
+  it('resets the sampled Roll root to RefPose after extracting its raw track', () => {
+    const animation = clip('A_Als_Roll')
+    const compiled = compileAuthoredRootMotion(animation)
+    if (!compiled) throw new Error('A_Als_Roll did not compile authored root motion')
+    const pose = createPoseBuffer(1)
+    pose.positions.set([3, 4, 5])
+    pose.rotations.set([0.1, 0.2, 0.3, 0.9])
+    pose.scales.set([2, 3, 4])
+    const rig: RigDefinition = {
+      boneCount: 1,
+      physicalBoneCount: 1,
+      boneNames: ['root'],
+      parentIndices: new Int16Array([-1]),
+      referencePositions: new Float32Array([0.25, 0.5, 0.75]),
+      referenceRotations: new Float32Array([0, 0, 0, 1]),
+      referenceScales: new Float32Array([1, 1, 1]),
+      virtualBones: [],
+    }
+
+    expect(applyAuthoredRootMotionPoseReset(compiled, pose, rig)).toBe(pose)
+    expect([...pose.positions]).toEqual([0.25, 0.5, 0.75])
+    expect([...pose.rotations]).toEqual([0, 0, 0, 1])
+    expect([...pose.scales]).toEqual([1, 1, 1])
   })
 
   it('VERIFIED — compiles all three UE root-lock reset modes without renaming them', () => {

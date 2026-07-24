@@ -174,6 +174,61 @@ export interface RootMotionMovementParams extends AuthoredRootMotionDelta {
   blendWeight: number
 }
 
+/**
+ * FAnimationRuntime::ResetRootBoneForRootMotion().
+ *
+ * Raw authored motion is extracted before this reset. The sampled pose then
+ * receives the montage's configured root lock so applying movement to the
+ * character body cannot also translate the skeleton a second time.
+ */
+export function applyAuthoredRootMotionPoseReset(
+  rootMotion: Readonly<CompiledAuthoredRootMotion>,
+  pose: LocalPoseBuffer,
+  rig: RigDefinition,
+  rootBoneIndex = rig.parentIndices.findIndex((parent) => parent < 0),
+): LocalPoseBuffer {
+  if (
+    pose.boneCount !== rig.boneCount
+    || rootBoneIndex < 0
+    || rootBoneIndex >= rig.boneCount
+  ) {
+    throw new Error('Root-motion pose reset requires a compatible root bone')
+  }
+  if (rootMotion.poseReset.kind === 'none') return pose
+
+  const positionOffset = rootBoneIndex * 3
+  const rotationOffset = rootBoneIndex * 4
+  if (rootMotion.poseReset.kind === 'referencePose') {
+    pose.positions.set(
+      rig.referencePositions.subarray(
+        positionOffset,
+        positionOffset + 3,
+      ),
+      positionOffset,
+    )
+    pose.rotations.set(
+      rig.referenceRotations.subarray(
+        rotationOffset,
+        rotationOffset + 4,
+      ),
+      rotationOffset,
+    )
+  } else {
+    pose.positions.set(rootMotion.poseReset.translation, positionOffset)
+    pose.rotations.set(rootMotion.poseReset.rotation, rotationOffset)
+  }
+  // ALS's action roots carry no animated Scale3D. UE's locked root transform
+  // therefore retains the skeleton reference scale in every shipped mode.
+  pose.scales.set(
+    rig.referenceScales.subarray(
+      positionOffset,
+      positionOffset + 3,
+    ),
+    positionOffset,
+  )
+  return pose
+}
+
 export interface AuthoredRootMotionExtractionOptions {
   readonly loop?: boolean
   /**
