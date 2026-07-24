@@ -38,6 +38,10 @@ A_Als_Acceleration_Right|Right start/pivot source pose|M3 Turn-in-place plus sta
 A_Als_Sprint_Acceleration|Authored transition into sprint|M3 Gaits and start/stop/pivot transitions
 A_Als_Stop_Left|Left-foot authored stopping source pose|M3 Turn-in-place plus start/stop/pivot transitions
 A_Als_Stop_Right|Right-foot authored stopping source pose|M3 Turn-in-place plus start/stop/pivot transitions
+A_Als_Stand_Transition_Left|Standing left quick-stop transition montage referenced by AIS_Als_Default|M3 Turn-in-place plus start/stop/pivot transitions
+A_Als_Stand_Transition_Right|Standing right quick-stop transition montage referenced by AIS_Als_Default|M3 Turn-in-place plus start/stop/pivot transitions
+A_Als_Crouch_Transition_Left|Crouching left quick-stop transition montage referenced by AIS_Als_Default|M3 Turn-in-place plus start/stop/pivot transitions
+A_Als_Crouch_Transition_Right|Crouching right quick-stop transition montage referenced by AIS_Als_Default|M3 Turn-in-place plus start/stop/pivot transitions
 A_Als_Lean|Neutral grounded lean BlendSpace sample|M3 Gaits: authored grounded lean
 A_Als_Lean_Forward|Forward grounded lean BlendSpace sample|M3 Gaits: authored grounded lean
 A_Als_Lean_Backward|Backward grounded lean BlendSpace sample|M3 Gaits: authored grounded lean

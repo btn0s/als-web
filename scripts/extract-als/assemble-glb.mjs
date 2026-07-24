@@ -82,6 +82,11 @@ const canonicalBoneName = (clipName, sourceName) => {
 };
 const compactFloat = (value) => Number(Number(value).toPrecision(6));
 const rootLockModes = new Set(['RefPose', 'AnimFirstFrame', 'Zero']);
+const additiveTypes = new Set([
+  'AAT_None',
+  'AAT_LocalSpaceBase',
+  'AAT_RotationOffsetMeshSpace',
+]);
 const readRootMotionSettings = (anim) => {
   if (typeof anim.bEnableRootMotion !== 'boolean')
     throw new Error(`${anim.name} has no exact bEnableRootMotion metadata`);
@@ -95,6 +100,40 @@ const readRootMotionSettings = (anim) => {
     bEnableRootMotion: anim.bEnableRootMotion,
     bForceRootLock: anim.bForceRootLock,
     RootMotionRootLock: anim.RootMotionRootLock,
+  };
+};
+const readAdditiveSettings = (anim) => {
+  if (!additiveTypes.has(anim.additiveType))
+    throw new Error(
+      `${anim.name} has unsupported additiveType metadata: ` +
+      `${JSON.stringify(anim.additiveType)}`);
+
+  // CUE4Parse serializes FName either as a string or its Text/PlainText object shape,
+  // depending on the serializer version. The GLB contract keeps the semantic sequence
+  // name stable instead of leaking that incidental representation.
+  const refPoseSeq =
+    typeof anim.refPoseSeq === 'string'
+      ? anim.refPoseSeq
+      : typeof anim.refPoseSeq?.PlainText === 'string'
+        ? anim.refPoseSeq.PlainText
+        : typeof anim.refPoseSeq?.Text === 'string'
+          ? anim.refPoseSeq.Text
+          : null;
+  if (refPoseSeq === null)
+    throw new Error(
+      `${anim.name} has malformed refPoseSeq metadata: ` +
+      `${JSON.stringify(anim.refPoseSeq)}`);
+  if (anim.additiveType !== 'AAT_None' && refPoseSeq.length === 0)
+    throw new Error(`${anim.name} is additive but has no refPoseSeq metadata`);
+  if (!Number.isInteger(anim.refFrameIndex) || anim.refFrameIndex < 0)
+    throw new Error(
+      `${anim.name} has invalid refFrameIndex metadata: ` +
+      `${JSON.stringify(anim.refFrameIndex)}`);
+
+  return {
+    additiveType: anim.additiveType,
+    refPoseSeq,
+    refFrameIndex: anim.refFrameIndex,
   };
 };
 const bakeRootLock = (anim, rootMotionSettings, shouldBakeRootLock, bone, pos, rot) => {
@@ -132,6 +171,7 @@ const bakeRootLock = (anim, rootMotionSettings, shouldBakeRootLock, bone, pos, r
 // those names against SK_Als so every channel binds instead of becoming targetless.
 const clips = dump.anims.map((a) => {
   const rootMotionSettings = readRootMotionSettings(a);
+  const additiveSettings = readAdditiveSettings(a);
   const sourceTracks = a.tracks.map((t) => {
     const bone = canonicalBoneName(a.name, t.bone);
     return {
@@ -159,6 +199,7 @@ const clips = dump.anims.map((a) => {
     fps: a.fps,
     numKeys: a.numberOfKeys,
     rootMotionSettings,
+    additiveSettings,
     // Root-motion extraction reads the authored root trajectory before Unreal
     // resets bone 0 for the output pose. Keep that source trajectory beside the
     // pose channels so the runtime can close the action-pose reset gap above
@@ -486,6 +527,7 @@ for (const clip of clips) {
     syncMarkers: clip.syncMarkers,
     notifies: clip.notifies,
     ...clip.rootMotionSettings,
+    ...clip.additiveSettings,
   };
   if (clip.rawRootTrack) {
     extras.rawRootTrack = {

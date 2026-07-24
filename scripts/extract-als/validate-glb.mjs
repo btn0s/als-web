@@ -77,6 +77,12 @@ const expectedForceRootLockedClips = new Set([
   ...expectedDeferredActionRootLocks,
 ]);
 const expectedRootMotionEnabledClips = new Set(['A_Als_Roll']);
+const expectedQuickStopTransitionClips = new Map([
+  ['A_Als_Stand_Transition_Left', 'Left'],
+  ['A_Als_Stand_Transition_Right', 'Right'],
+  ['A_Als_Crouch_Transition_Left', 'Left'],
+  ['A_Als_Crouch_Transition_Right', 'Right'],
+]);
 const expectedActionRootTranslationEnds = new Map([
   ['A_Als_Roll', [0, 0, 2.75]],
   ['A_Als_Mantle_High', [0, 2, 0.65]],
@@ -145,8 +151,8 @@ if (meshHeight < 1.6 || meshHeight > 2.1)
   errs.push(`mesh bounding-box height ${meshHeight.toFixed(3)}m out of range`);
 
 if (anims.length < 1) errs.push('no animations');
-if (manifest.length !== 109)
-  errs.push(`ALS 4.15 content manifest has ${manifest.length} clips, expected 109`);
+if (manifest.length !== 113)
+  errs.push(`ALS 4.15 content manifest has ${manifest.length} clips, expected 113`);
 if (manifestSet.size !== manifest.length) errs.push('duplicate clip names in clips.manifest');
 for (const clip of manifest)
   if (!animNameSet.has(clip)) errs.push(`missing curated clip: ${clip}`);
@@ -186,6 +192,11 @@ const syncMarkersByClip = new Map();
 const notifiesByClip = new Map();
 const rootJoint = joints[names.indexOf('root')];
 const rootLockModes = new Set(['RefPose', 'AnimFirstFrame', 'Zero']);
+const additiveTypes = new Set([
+  'AAT_None',
+  'AAT_LocalSpaceBase',
+  'AAT_RotationOffsetMeshSpace',
+]);
 const maxComponentDelta = (a, b) =>
   Math.max(...a.map((value, index) => Math.abs(value - b[index])));
 const quaternionError = (a, b) => {
@@ -394,6 +405,21 @@ for (const anim of anims) {
     errs.push(`${anim.getName()} has rawRootTrack without bForceRootLock`);
   }
 
+  if (!additiveTypes.has(extras.additiveType))
+    errs.push(
+      `${anim.getName()} has invalid additiveType: ` +
+      `${JSON.stringify(extras.additiveType)}`);
+  if (typeof extras.refPoseSeq !== 'string')
+    errs.push(
+      `${anim.getName()} animation.extras.refPoseSeq is not a string: ` +
+      `${JSON.stringify(extras.refPoseSeq)}`);
+  else if (extras.additiveType !== 'AAT_None' && extras.refPoseSeq.length === 0)
+    errs.push(`${anim.getName()} is additive but has no refPoseSeq`);
+  if (!Number.isInteger(extras.refFrameIndex) || extras.refFrameIndex < 0)
+    errs.push(
+      `${anim.getName()} has invalid refFrameIndex: ` +
+      `${JSON.stringify(extras.refFrameIndex)}`);
+
   const curves = extras.alsCurves ?? [];
   curvesByClip.set(anim.getName(), curves);
   if (!Array.isArray(curves)) {
@@ -557,23 +583,99 @@ requireEvents(
   ['BMAnimNotifyFootstep'],
   'notify');
 
+const QUICK_STOP_NEAR_ZERO = -9.53674e-8;
+const QUICK_STOP_SHARED_CURVES = {
+  AllowTransitions: {
+    flags: 4,
+    keys: [[0, -1, 1], [1.33333, QUICK_STOP_NEAR_ZERO, 0]],
+  },
+  FootstepSoundBlock: {
+    flags: 20,
+    keys: [[0, 1, 0]],
+  },
+};
+const QUICK_STOP_EARLY_LOCK_KEYS = [
+  [0.333333, QUICK_STOP_NEAR_ZERO, 2],
+  [0.733333, -1, 1],
+  [0.8, QUICK_STOP_NEAR_ZERO, 0],
+];
+const QUICK_STOP_LATE_LOCK_KEYS = [
+  [0.833333, QUICK_STOP_NEAR_ZERO, 2],
+  [1.26667, -1, 1],
+  [1.33333, QUICK_STOP_NEAR_ZERO, 0],
+];
+const quickStopExtrasByClip = new Map(
+  anims.map((animation) => [animation.getName(), animation.getExtras() ?? {}]));
+for (const [clipName, direction] of expectedQuickStopTransitionClips) {
+  const extras = quickStopExtrasByClip.get(clipName);
+  if (!extras) {
+    errs.push(`quick-stop transition clip missing: ${clipName}`);
+    continue;
+  }
+
+  const expectedCurves = [
+    { name: 'AllowTransitions', ...QUICK_STOP_SHARED_CURVES.AllowTransitions },
+    {
+      name: 'FootLeftLock',
+      flags: 4,
+      keys: direction === 'Left'
+        ? QUICK_STOP_EARLY_LOCK_KEYS
+        : QUICK_STOP_LATE_LOCK_KEYS,
+    },
+    {
+      name: 'FootRightLock',
+      flags: 4,
+      keys: direction === 'Left'
+        ? QUICK_STOP_LATE_LOCK_KEYS
+        : QUICK_STOP_EARLY_LOCK_KEYS,
+    },
+    {
+      name: 'FootstepSoundBlock',
+      ...QUICK_STOP_SHARED_CURVES.FootstepSoundBlock,
+    },
+  ];
+  if (JSON.stringify(extras.alsCurves) !== JSON.stringify(expectedCurves))
+    errs.push(`${clipName} quick-stop curve inventory differs from ALS 4.15`);
+  if (JSON.stringify(extras.syncMarkers) !== '[]')
+    errs.push(`${clipName} should have no authored sync markers`);
+  if (JSON.stringify(extras.notifies) !== JSON.stringify([
+    { name: 'BMAnimNotifyFootstep', time: 0.833333 },
+    { name: 'BMAnimNotifyFootstep', time: 1.36667 },
+  ]))
+    errs.push(`${clipName} quick-stop notify inventory differs from ALS 4.15`);
+  if (
+    extras.bEnableRootMotion !== false
+    || extras.bForceRootLock !== false
+    || extras.RootMotionRootLock !== 'RefPose'
+  ) {
+    errs.push(`${clipName} quick-stop root-motion settings differ from ALS 4.15`);
+  }
+  if (
+    extras.additiveType !== 'AAT_RotationOffsetMeshSpace'
+    || extras.refPoseSeq !== 'A_Als_Stand_Pose'
+    || extras.refFrameIndex !== 0
+  ) {
+    errs.push(`${clipName} quick-stop additive settings differ from ALS 4.15`);
+  }
+}
+
 const clipsWithCurves = [...curvesByClip.values()].filter((curves) => curves.length > 0).length;
 const clipsWithSyncMarkers =
   [...syncMarkersByClip.values()].filter((markers) => markers.length > 0).length;
 const clipsWithNotifies =
   [...notifiesByClip.values()].filter((notifies) => notifies.length > 0).length;
-if (curveCount !== 333 || clipsWithCurves !== 74)
+if (curveCount !== 349 || clipsWithCurves !== 78)
   errs.push(
     `ALS 4.15 curve inventory ${curveCount} across ${clipsWithCurves} clips, ` +
-    'expected 333 across 74');
+    'expected 349 across 78');
 if (syncMarkerCount !== 60 || clipsWithSyncMarkers !== 30)
   errs.push(
     `ALS 4.15 sync-marker inventory ${syncMarkerCount} across ${clipsWithSyncMarkers} clips, ` +
     'expected 60 across 30');
-if (notifyCount !== 150 || clipsWithNotifies !== 57)
+if (notifyCount !== 158 || clipsWithNotifies !== 61)
   errs.push(
     `ALS 4.15 notify inventory ${notifyCount} across ${clipsWithNotifies} clips, ` +
-    'expected 150 across 57');
+    'expected 158 across 61');
 
 const idle = anims.find((a) => /idle/i.test(a.getName()));
 if (!idle) errs.push('no /idle/i clip');
