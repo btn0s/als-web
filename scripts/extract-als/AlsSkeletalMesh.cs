@@ -9,12 +9,9 @@ using CUE4Parse.UE4.Objects.Meshes;
 using CUE4Parse.UE4.Objects.RenderCore;
 
 // UE 5.5 editor skeletal-mesh serialization differs from CUE4Parse 1.2.2.202607 at
-// four seams: an extra model strip-flags field; a PER-SECTION, VARIABLE influence
-// slot count (12 for SKM_Als, 16 for SKM_Als_Rifle — never hardcode; ProbeInfluenceLayout
-// brute-forces it) with bone indices uint8-or-uint16 per the serialized
-// bUse16BitBoneIndex and weights ALWAYS uint16-wide (FSkelMeshSection has no
-// weight-width flag; the main body merely uses byte-scale values inside the wider
-// field — verified against source + probe 2026-07-23); the 49-byte
+// four seams: an extra model strip-flags field; a per-section variable influence
+// layout (slot count plus uint8/uint16 index and weight widths, recovered by
+// ProbeInfluenceLayout); the 49-byte
 // FSkelMeshSourceSectionUserData map; and a plain uint32 index array followed by a
 // retained legacy vertex-count field. Keep this asset compatibility shim at the
 // extraction seam rather than patching the vendored library.
@@ -206,16 +203,26 @@ public sealed class AlsMeshSection
         int vertexCount)
     {
         // Position, three tangents, and color occupy 56 bytes around 1–4 UV
-        // channels. UE assets in the repository carry 4–24 reserved
-        // influence slots and uint8/uint16 indices. Probe those layouts, then
-        // independently require the following render flag, BoneMap, NumVertices,
-        // and MaxBoneInfluences fields to agree with the candidate. The render
-        // bUse16BitBoneIndex flag does not describe the editor soft-vertex array:
-        // both meshes store uint16 editor indices even when that flag is false.
+        // channels. UE assets in the repository carry 4–24 reserved influence
+        // slots and uint8/uint16 indices and weights. The post-array fields prove
+        // the byte stride, but cannot distinguish equal-stride width swaps such
+        // as 8-bit indices + 16-bit weights versus 16-bit indices + 8-bit
+        // weights. Require Unreal's independent packed-influence invariant too:
+        // every positive weight lives in the leading MaxBoneInfluences slots,
+        // its paired local index resolves through BoneMap, all BoneMap entries
+        // are used, and sums match the candidate's own weight width. This is the
+        // seam that prevents a plausible wrong width split from silently binding
+        // an entire multi-bone section to BoneMap[0].
         const int BytesWithoutUvsOrInfluences = 56;
         // The editor soft-vertex struct reserves four UV channels even when the
         // mesh reports fewer active channels; prefer that full layout when byte
         // counts are otherwise ambiguous with additional influence slots.
+        var validLayouts = new List<(
+            bool Use16BitBoneIndices,
+            bool Use16BitBoneWeights,
+            int InfluenceCount,
+            int UvCount,
+            int BytesPerVertex)>();
         foreach (var uvCount in new[] { 4, 3, 2, 1 })
         {
             foreach (var influenceCount in new[] { 4, 8, 12, 16, 24 })
@@ -243,16 +250,53 @@ public sealed class AlsMeshSection
                         var maxBoneInfluences = ar.Read<int>();
                         if (serializedVertexCount == vertexCount &&
                             maxBoneInfluences is > 0 &&
-                            maxBoneInfluences <= influenceCount)
-                            return (
+                            maxBoneInfluences <= influenceCount &&
+                            HasValidPackedInfluences(
+                                ar,
+                                dataStart,
+                                vertexCount,
                                 candidate16Bit,
                                 candidate16BitWeights,
                                 influenceCount,
-                                uvCount
-                            );
+                                uvCount,
+                                boneMapCount,
+                                maxBoneInfluences))
+                        {
+                            validLayouts.Add((
+                                candidate16Bit,
+                                candidate16BitWeights,
+                                influenceCount,
+                                uvCount,
+                                bytesPerVertex
+                            ));
+                        }
                     }
                 }
             }
+        }
+
+        if (validLayouts.Count == 1)
+        {
+            var layout = validLayouts[0];
+            return (
+                layout.Use16BitBoneIndices,
+                layout.Use16BitBoneWeights,
+                layout.InfluenceCount,
+                layout.UvCount
+            );
+        }
+
+        if (validLayouts.Count > 1)
+        {
+            throw new Exception(
+                $"ambiguous influence layouts for {vertexCount} soft vertices at {dataStart}: " +
+                string.Join(
+                    ", ",
+                    validLayouts.Select(layout =>
+                        $"index16={layout.Use16BitBoneIndices}/" +
+                        $"weight16={layout.Use16BitBoneWeights}/" +
+                        $"slots={layout.InfluenceCount}/uvs={layout.UvCount}/" +
+                        $"stride={layout.BytesPerVertex}")));
         }
 
         var matchingStrides = new List<int>();
@@ -272,6 +316,76 @@ public sealed class AlsMeshSection
         throw new Exception(
             $"could not determine influence layout for {vertexCount} soft vertices at {dataStart}; " +
             $"post-field matching strides=[{string.Join(", ", matchingStrides)}]");
+    }
+
+    static bool HasValidPackedInfluences(
+        FAssetArchive ar,
+        long dataStart,
+        int vertexCount,
+        bool use16BitBoneIndex,
+        bool use16BitBoneWeight,
+        int influenceCount,
+        int uvCount,
+        int boneMapCount,
+        int maxBoneInfluences)
+    {
+        ar.Position = dataStart;
+        var weightSums = new int[vertexCount];
+        var observedMaxBoneInfluences = 0;
+        var usedBoneMapIndices = new bool[boneMapCount];
+
+        for (var vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++)
+        {
+            var vertex = new AlsSoftVertex(
+                ar,
+                use16BitBoneIndex,
+                use16BitBoneWeight,
+                influenceCount,
+                uvCount);
+            var positiveInfluenceCount = 0;
+            var foundPackedGap = false;
+
+            for (var influenceIndex = 0; influenceIndex < influenceCount; influenceIndex++)
+            {
+                var weight = vertex.BoneWeights[influenceIndex];
+                if (influenceIndex < maxBoneInfluences)
+                {
+                    if (weight == 0)
+                    {
+                        foundPackedGap = true;
+                        continue;
+                    }
+
+                    if (foundPackedGap)
+                        return false;
+                }
+                else if (weight > 0)
+                {
+                    return false;
+                }
+
+                if (weight == 0)
+                    continue;
+
+                if (vertex.BoneIndices[influenceIndex] >= boneMapCount)
+                    return false;
+
+                usedBoneMapIndices[vertex.BoneIndices[influenceIndex]] = true;
+                positiveInfluenceCount++;
+                weightSums[vertexIndex] += weight;
+            }
+
+            if (positiveInfluenceCount is < 1 || positiveInfluenceCount > maxBoneInfluences)
+                return false;
+            observedMaxBoneInfluences = Math.Max(
+                observedMaxBoneInfluences,
+                positiveInfluenceCount);
+        }
+
+        var expectedWeightSum = use16BitBoneWeight ? ushort.MaxValue : byte.MaxValue;
+        return observedMaxBoneInfluences == maxBoneInfluences &&
+               usedBoneMapIndices.All(used => used) &&
+               weightSums.All(weightSum => Math.Abs(weightSum - expectedWeightSum) <= 16);
     }
 
     public sealed class AlsSoftVertex

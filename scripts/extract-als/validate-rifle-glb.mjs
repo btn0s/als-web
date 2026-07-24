@@ -22,6 +22,19 @@ const expectedBones = [
   'barrel',
 ];
 const expectedBoneSet = new Set(expectedBones);
+const expectedSkinJointHistogram = {
+  root: 7435,
+  trigger: 74,
+  magazine: 747,
+  bullets: 864,
+  charging_handle: 328,
+  muzzle: 0,
+  sights: 802,
+  stock: 544,
+  barrel: 960,
+};
+const actualSkinJointHistogram = Object.fromEntries(
+  expectedBones.map((bone) => [bone, 0]));
 const meshNodes = root.listNodes().filter((node) => node.getMesh());
 const primitives = meshNodes.flatMap((node) => node.getMesh().listPrimitives());
 const errors = [];
@@ -67,16 +80,22 @@ for (const [primitiveIndex, primitive] of primitives.entries()) {
   }
 
   for (let vertexIndex = 0; vertexIndex < position.getCount(); vertexIndex++) {
-    const vertexJoints = joints0.getElement(vertexIndex, []);
-    const vertexWeights = weights0.getElement(vertexIndex, []);
+    const vertexJoints = [0, 0, 0, 0];
+    const vertexWeights = [0, 0, 0, 0];
+    joints0.getElement(vertexIndex, vertexJoints);
+    weights0.getElement(vertexIndex, vertexWeights);
     const active = vertexWeights
       .map((weight, index) => ({ weight, joint: vertexJoints[index] }))
       .filter(({ weight }) => weight > 1e-6);
     if (active.length !== 1 || Math.abs(active[0]?.weight - 1) > 1e-6)
       nonRigidVertexCount++;
     for (const { joint } of active)
-      if (!Number.isInteger(joint) || joint < 0 || joint >= expectedBones.length)
+      if (!Number.isInteger(joint) || joint < 0 || joint >= expectedBones.length) {
         errors.push(`primitive ${primitiveIndex} vertex ${vertexIndex} has invalid joint ${joint}`);
+      } else {
+        const jointName = jointNames[joint];
+        actualSkinJointHistogram[jointName]++;
+      }
   }
 
   for (let index = 0; index < indices.getCount(); index += 3) {
@@ -101,6 +120,10 @@ if (longestAxis < 0.3 || longestAxis > 1.2)
   errors.push(`longest axis ${longestAxis.toFixed(3)}m out of rifle range`);
 if (nonRigidVertexCount !== 0)
   errors.push(`${nonRigidVertexCount} vertices are not rigidly skinned`);
+if (JSON.stringify(actualSkinJointHistogram) !== JSON.stringify(expectedSkinJointHistogram))
+  errors.push(
+    `skin-joint histogram ${JSON.stringify(actualSkinJointHistogram)} ` +
+    `does not match ALS source ${JSON.stringify(expectedSkinJointHistogram)}`);
 if (!(signedVolume > 1e-10))
   errors.push(`signed volume ${signedVolume} is not positive; source-order winding suspect`);
 
@@ -116,7 +139,8 @@ console.log(
   `rifle mesh: ${vertexCount} vertices, ${triangleCount} triangles, ${primitives.length} skinned section, ` +
   `dimensions ${dimensions.map((value) => value.toFixed(3)).join(' x ')}m, longest ${longestAxis.toFixed(3)}m`);
 console.log(
-  `rifle skinning: rigid (${nonRigidVertexCount} non-rigid vertices), animations: ${root.listAnimations().length}`);
+  `rifle skinning: rigid (${nonRigidVertexCount} non-rigid vertices), ` +
+  `joints ${JSON.stringify(actualSkinJointHistogram)}, animations: ${root.listAnimations().length}`);
 console.log(
   `rifle material: MI_Als_Rifle Color=[${baseColor.map((value) => value.toFixed(2)).join(', ')}]`);
 console.log(`rifle winding: source order, signed volume ${signedVolume.toExponential(3)}`);

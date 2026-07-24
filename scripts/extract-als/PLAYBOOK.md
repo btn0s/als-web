@@ -62,41 +62,32 @@ extracting asset class X from uncooked ALS-Refactored (.uasset only, no .uexp/.u
 │      bExtraBoneInfluences, bUse16BitBoneIndex=false, bUse16BitBoneWeight=false, length=0)`
 │      — `FSoftVertex`'s constructor calls this with ONLY the `bExtraBoneInfluences` arg,
 │      hardcoding influence slots to 4 or 8 (`NUM_INFLUENCES_UE4`/`MAX_TOTAL_INFLUENCES_UE4`)
-│      and index/weight width to 8-bit always. UE5.5 editor soft vertices actually carry a
-│      **per-section, variable** slot count (12 for SKM_Als main body, 16 for
-│      SKM_Als_Rifle — VERIFIED, see Part B) and a **per-section** `bUse16BitBoneIndex` bool
-│      (read AFTER the vertex array, matching stock's `FSkelMeshSection` field order — that
-│      part stock gets right). CUE4Parse's fixed-width reader silently misparses this and
-│      desyncs the cursor — this is very likely the mechanism behind the exit-134 abort (a
-│      cursor desync feeding a garbage huge/negative length into a subsequent
-│      `ReadArray`/bulk-count read, aborting the CLR natively rather than throwing a catchable
-│      .NET exception). The fix already in place (`AlsSkeletalMesh.cs`,
-│      `ProbeInfluenceLayout`): brute-force search over {uvCount 1–4} × {influenceCount
-│      4/8/12/16/24} × {8/16-bit index} × {8/16-bit weight}, validated by requiring the
-│      subsequent `Use16BitBoneIndex` flag / `BoneMap` count / `NumVertices` /
-│      `MaxBoneInfluences` fields to land exactly right. This generalizes correctly — no
-│      further per-mesh hardcoding needed for future OverlayObjects meshes.
+│      and index/weight width to 8-bit always. Both shipped meshes instead have 12 reserved
+│      influence slots and uint16 editor indices. Their weight widths differ: SKM_Als uses
+│      uint8 and SKM_Als_Rifle uses uint16. This is independently VERIFIED in the source
+│      uasset bytes by consecutive vertex starts: body stride 124 =
+│      56 fixed + 4 UVs × 8 + 12 indices × 2 + 12 weights × 1; rifle stride 136 =
+│      56 + 32 + 12 × 2 + 12 × 2. CUE4Parse's fixed reader can desynchronize the cursor and
+│      feed a garbage length into a later array/bulk read.
+│
+│      `ProbeInfluenceLayout` therefore enumerates {uvCount 1–4} × {influenceCount
+│      4/8/12/16/24} × {8/16-bit index} × {8/16-bit weight}. The post-array
+│      `Use16BitBoneIndex` / `BoneMap` / `NumVertices` / `MaxBoneInfluences` fields prove
+│      only the total stride. Equal-stride width swaps are resolved independently by Unreal's
+│      content invariants: positive weights form a packed prefix, paired local indices resolve
+│      through BoneMap, the observed maximum active count equals `MaxBoneInfluences`, every
+│      section BoneMap entry is used, and sums match the candidate width (255 or 65535).
+│      Extraction rejects zero or multiple semantic matches rather than choosing by loop order.
 │   4. Legacy retained `NumVertices` int after `Size`, before the real (strip-flag-gated)
 │      `NumVertices` — read and discard it (`_ = ar.Read<int>()`), matching the shim as-is.
 │
-│   NEW finding (not yet reflected in the file's header comment, which still says
-│   "12 uint8 weights" — stale, should be corrected): weight width is **always 16-bit** in
-│   this format, for BOTH meshes. VERIFIED two ways:
-│     - Empirically: instrumented probe run against both SKM_Als (main body, 5 independent
-│       sections) and SKM_Als_Rifle all matched `16bitWeight=True`, never `False` — and this
-│       is not a spurious match: the anchor check requires an *exact* vertex-count match on
-│       the post-array `serializedVertexCount` field, independently for each section, which a
-│       wrong stride essentially cannot pass by chance.
-│     - By source: `FSkelMeshSection.cs` has no `bUse16BitBoneWeight` field at all — only
-│       `bUse16BitBoneIndex` is a real serialized bool. There is no format switch for weight
-│       width; it's constant.
-│   The apparent "8-bit vs 16-bit" difference between main body (values 0–255) and rifle
-│   (values 0–65535) is NOT a wire-format difference — it's authored precision/quantization
-│   scale within the same uint16 field (main body was likely imported/authored at legacy
-│   byte precision and just left in the low byte of the wider field; rifle uses full 16-bit
-│   scale). `Dump.cs`'s `expectedWeightSum = weightSums.Max() > byte.MaxValue ? ushort.MaxValue
-│   : byte.MaxValue` already handles this correctly per-mesh — no code change needed, just
-│   correct the misleading header comment in `AlsSkeletalMesh.cs` when next touching that file.
+│   CORRECTION (2026-07-23): the earlier “rifle has 16 slots / weights are always uint16”
+│   conclusion was an equal-stride probe alias, not a source fact. On the body, the wrong
+│   12×uint8-index + 12×uint16-weight interpretation has the same 124-byte stride as the real
+│   12×uint16-index + 12×uint8-weight layout. It moved each rigid weight from slot 0 to slot 6;
+│   the assembler then paired it with local joint 0 and collapsed every multi-bone section.
+│   Exact per-material joint histograms in `validate-glb.mjs` and the rifle joint histogram in
+│   `validate-rifle-glb.mjs` are the independent output oracles for this failure class.
 │
 │   Winding: VERIFIED (assemble-glb.mjs comment, signed-volume test, 2026-07-23) — UE's
 │   stored index order is already front-facing after the (x,z,y) basis-swap conjugation;
@@ -108,32 +99,19 @@ extracting asset class X from uncooked ALS-Refactored (.uasset only, no .uexp/.u
 │   triangles, 1 section, all internal sanity checks passed (section-vertex-sum ==
 │   NumVertices, section-triangle-sum*3 == Indices.Length), weight-sum-normalization check
 │   passed under the ushort branch.
-│   What differs from SKM_Als, precisely (instrumented `ProbeInfluenceLayout` to print the
-│   winning candidate):
+│   What differs from SKM_Als, precisely:
 │     - Skeleton: 9 bones vs SKM_Als's much larger skeleton (smaller-skeleton hypothesis
 │       from the task brief — CONFIRMED).
 │     - Sections: 1 vs SKM_Als's several.
-│     - Influence slots: 16 vs SKM_Als's 12 (both matched consistently, not a fluke — see
-│       above). This is the actual "pinpointed divergence": OverlayObjects meshes are not
-│       guaranteed to share the main body's 12-slot influence layout, and a hardcoded
-│       assumption of "12" (which is what the OLD, pre-fix version of this file effectively
-│       had, per its still-current stale header comment) would misparse the rifle and,
-│       per seam 3 above, plausibly explains the previously-reported exit-134 abort.
-│     - Weight magnitude: 0–65535 (full 16-bit precision) vs main body's 0–255-in-a-uint16.
-│       `MaxBoneInfluences=1` for every rifle vertex (simple rigid single-bone skin, as
-│       expected for a prop).
-│     - Index width, UV count (4), section-user-data map, strip-flags seam: all identical
-│       to SKM_Als — no additional divergence found there.
-│   Bottom line: the current general (probe-based) shim already generalizes correctly to the
-│   rifle. There is no further code change to recommend here — the fix is exactly "don't
-│   hardcode the influence-slot count; keep the brute-force probe." If the parallel agent's
-│   exit-134 was hit against an OLDER/hardcoded version of this file, it's already resolved
-│   by the generalization now in place; if it recurs, re-run with the
-│   `ProbeInfluenceLayout`-instrumentation trick above (temporary `Console.Error.WriteLine` at
-│   the `return (...)` site) to see which candidate — or none — matched, and widen the
-│   `influenceCount` candidate list (currently `{4,8,12,16,24}`) or `uvCount` range if the
-│   fallback stride-scan (already present, throws with `matchingStrides` diagnostics) reports
-│   a stride outside those bounds.
+│     - Weight width: uint16/full 65535 versus the body's uint8/255. Both use 12 slots,
+│       uint16 indices, four UV channels, the same section-user-data map, and the same
+│       strip-flags seam.
+│     - `MaxBoneInfluences=1` for every rifle vertex (rigid prop pieces). Its exact positive
+│       joint histogram is root 7435, bullets 864, magazine 747, charging handle 328,
+│       barrel 960, sights 802, trigger 74, stock 544, and muzzle 0.
+│   Bottom line: keep the semantic probe; neither slot count nor index/weight width is inferred
+│   from stride alone. If a new mesh reports no unique match, inspect the diagnostic candidate
+│   list and source bytes before widening the allowed slot/UV ranges.
 │   Not yet probed: SK_Als_Bow / SK_Als_Pistol and their SKM_* meshes — apply the identical
 │   `dump` invocation; the shim needs zero changes since it already generalizes. HYPOTHESIS:
 │   they'll parse the same way, possibly with yet another influence-slot count — that's fine,

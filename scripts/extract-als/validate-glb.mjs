@@ -45,6 +45,63 @@ const expectedBones = [
   'ik_hand_root', 'ik_hand_gun', 'ik_hand_l', 'ik_hand_r',
 ];
 const expectedBoneSet = new Set(expectedBones);
+const expectedSkinJointHistograms = new Map([
+  ['Pelvis_MAT', { pelvis: 284 }],
+  ['Torso_MAT', { spine_01: 284, spine_02: 284, spine_03: 568 }],
+  ['Head_MAT', { neck_01: 284, head: 1021 }],
+  ['UpperArm_L_MAT', { upperarm_l: 284 }],
+  ['Shoulder_L_MAT', { clavicle_l: 284 }],
+  ['LowerArm_L_MAT', { lowerarm_l: 284 }],
+  ['UpperLeg_MAT', { thigh_l: 284, thigh_r: 284 }],
+  ['LowerLeg_MAT', { calf_l: 284, calf_r: 284 }],
+  ['Feet_MAT', { ball_l: 134, ball_r: 134, foot_l: 219, foot_r: 219 }],
+  [
+    'Hand_L_MAT',
+    {
+      hand_l: 233,
+      index_01_l: 107,
+      index_02_l: 107,
+      index_03_l: 107,
+      middle_01_l: 107,
+      middle_02_l: 107,
+      middle_03_l: 107,
+      pinky_01_l: 107,
+      pinky_02_l: 107,
+      pinky_03_l: 107,
+      ring_01_l: 107,
+      ring_02_l: 107,
+      ring_03_l: 107,
+      thumb_01_l: 107,
+      thumb_02_l: 107,
+      thumb_03_l: 107,
+    },
+  ],
+  ['Eyes_MAT', { head: 326 }],
+  ['UpperArm_R_MAT', { upperarm_r: 284 }],
+  ['Shoulder_R_MAT', { clavicle_r: 284 }],
+  ['LowerArm_R_MAT', { lowerarm_r: 284 }],
+  [
+    'Hand_R_MAT',
+    {
+      hand_r: 233,
+      index_01_r: 107,
+      index_02_r: 107,
+      index_03_r: 107,
+      middle_01_r: 107,
+      middle_02_r: 107,
+      middle_03_r: 107,
+      pinky_01_r: 107,
+      pinky_02_r: 107,
+      pinky_03_r: 107,
+      ring_01_r: 107,
+      ring_02_r: 107,
+      ring_03_r: 107,
+      thumb_01_r: 107,
+      thumb_02_r: 107,
+      thumb_03_r: 107,
+    },
+  ],
+]);
 const manifest = readFileSync(new URL('./clips.manifest', import.meta.url), 'utf8')
   .split(/\r?\n/)
   .filter((line) => line && !line.startsWith('#'))
@@ -136,6 +193,8 @@ let vertexCount = 0;
 let triangleCount = 0;
 let boundsMinY = Infinity;
 let boundsMaxY = -Infinity;
+let matchingSkinJointHistogramCount = 0;
+const actualSkinJointHistograms = new Map();
 for (const [index, primitive] of meshPrimitives.entries()) {
   const position = primitive.getAttribute('POSITION');
   const normal = primitive.getAttribute('NORMAL');
@@ -150,11 +209,75 @@ for (const [index, primitive] of meshPrimitives.entries()) {
   triangleCount += (indices?.getCount() ?? 0) / 3;
   boundsMinY = Math.min(boundsMinY, position?.getMin([])[1] ?? Infinity);
   boundsMaxY = Math.max(boundsMaxY, position?.getMax([])[1] ?? -Infinity);
+
+  const materialName = primitive.getMaterial()?.getName() ?? '';
+  if (!materialName) {
+    errs.push(`mesh primitive ${index} has no named material`);
+  } else if (actualSkinJointHistograms.has(materialName)) {
+    errs.push(`duplicate skinned material primitive: ${materialName}`);
+  } else if (joints0 && weights0 && position) {
+    const histogram = {};
+    for (let vertexIndex = 0; vertexIndex < position.getCount(); vertexIndex++) {
+      const jointIndices = [0, 0, 0, 0];
+      const weights = [0, 0, 0, 0];
+      joints0.getElement(vertexIndex, jointIndices);
+      weights0.getElement(vertexIndex, weights);
+      let positiveInfluenceCount = 0;
+      let weightSum = 0;
+
+      for (let influenceIndex = 0; influenceIndex < 4; influenceIndex++) {
+        const weight = weights[influenceIndex];
+        if (weight <= 0) continue;
+        positiveInfluenceCount++;
+        weightSum += weight;
+        const jointIndex = jointIndices[influenceIndex];
+        const jointName = joints[jointIndex]?.getName();
+        if (!jointName) {
+          errs.push(
+            `${materialName} vertex ${vertexIndex} influence ${influenceIndex} ` +
+            `references missing skin joint ${jointIndex}`);
+          continue;
+        }
+        histogram[jointName] = (histogram[jointName] ?? 0) + 1;
+      }
+
+      if (positiveInfluenceCount !== 1)
+        errs.push(
+          `${materialName} vertex ${vertexIndex} has ${positiveInfluenceCount} positive ` +
+          'skin influences, expected rigid ALS geometry');
+      if (Math.abs(weightSum - 1) > 1e-6)
+        errs.push(
+          `${materialName} vertex ${vertexIndex} skin weights sum to ${weightSum}, expected 1`);
+    }
+    actualSkinJointHistograms.set(materialName, histogram);
+  }
 }
 const meshHeight = boundsMaxY - boundsMinY;
 if (vertexCount <= 5000) errs.push(`mesh has only ${vertexCount} vertices (proxy or incomplete geometry)`);
 if (meshHeight < 1.6 || meshHeight > 2.1)
   errs.push(`mesh bounding-box height ${meshHeight.toFixed(3)}m out of range`);
+for (const [materialName, expectedHistogram] of expectedSkinJointHistograms) {
+  const actualHistogram = actualSkinJointHistograms.get(materialName);
+  if (!actualHistogram) {
+    errs.push(`missing skinned material primitive: ${materialName}`);
+    continue;
+  }
+
+  const expected = JSON.stringify(
+    Object.fromEntries(Object.entries(expectedHistogram).sort(([a], [b]) => a.localeCompare(b))));
+  const actual = JSON.stringify(
+    Object.fromEntries(Object.entries(actualHistogram).sort(([a], [b]) => a.localeCompare(b))));
+  if (actual !== expected) {
+    errs.push(
+      `${materialName} skin-joint histogram ${actual} does not match ALS source ${expected}`);
+  } else {
+    matchingSkinJointHistogramCount++;
+  }
+}
+for (const materialName of actualSkinJointHistograms.keys()) {
+  if (!expectedSkinJointHistograms.has(materialName))
+    errs.push(`unexpected skinned material primitive: ${materialName}`);
+}
 
 if (anims.length < 1) errs.push('no animations');
 if (manifest.length !== 117)
@@ -760,6 +883,9 @@ console.log(`joints: ${joints.length}/${expectedBones.length} expected`);
 console.log(
   `mesh: ${vertexCount} vertices, ${triangleCount} triangles, ${meshPrimitives.length} skinned sections, ` +
   `${meshHeight.toFixed(3)}m bounding-box height`);
+console.log(
+  `skin joints: ${matchingSkinJointHistogramCount}/${expectedSkinJointHistograms.size} ` +
+  'exact per-material ALS histograms');
 console.log(`curated clips: ${anims.length}/${manifest.length} present`);
 console.log(
   `ABP content coverage: ${abpSequenceNames.size} direct sequences + ` +
