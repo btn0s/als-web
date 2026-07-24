@@ -95,6 +95,14 @@ export interface SlotMontageSample {
   extractRootMotionFromMontagesOnly: boolean
   /** Time passed to the source clip sampler. */
   sampleTime: number
+  /** Source-sequence position before this update's montage advance. */
+  sourceNotifyPreviousTime: number
+  /** Source-sequence position at this update's exact forward endpoint. */
+  sourceNotifyCurrentTime: number
+  /** Montage blend weight before this update. */
+  notifyPreviousWeight: number
+  /** FAnimTickRecord::EffectiveBlendWeight used by sequence-notify filtering. */
+  notifyWeight: number
   weight: number
   status: SlotMontageStatus
   blendOutReason: SlotMontageBlendOutReason | null
@@ -215,6 +223,22 @@ export function getSlotMontageEvaluationWeight(
   return totalNodeWeight > 1
     ? sample.weight / totalNodeWeight
     : sample.weight
+}
+
+/**
+ * FAnimMontageInstance::HandleEvents source-sequence eligibility.
+ *
+ * Interrupted instances retain their pose fade but suppress every later notify. Weight threshold
+ * filtering remains the source notify queue's job because NotifyWeight is the maximum of the
+ * montage's pre- and post-update blend weights.
+ */
+export function canGatherSlotMontageSequenceNotifies(
+  sample: SlotMontageSample,
+) {
+  return (
+    sample.blendOutReason !== 'interrupted'
+    && sample.sourceNotifyPreviousTime !== sample.sourceNotifyCurrentTime
+  )
 }
 
 function isAuthoredSlotMontageRequest(
@@ -403,16 +427,26 @@ export function convertSlotMontageTrackPositionToAnimPosition(
   )
 }
 
-function sourceSampleTime(instance: SlotMontageInstance) {
+function sourceSampleTimeAtMontagePosition(
+  instance: SlotMontageInstance,
+  montagePosition: number,
+) {
   if (instance.request.clipDuration <= 0) return 0
   const segmentEnd = getSlotMontageSegmentEndPosition(instance.segment)
   return convertSlotMontageTrackPositionToAnimPosition(
     instance.segment,
     clamp(
-      instance.sample.montageTime,
+      montagePosition,
       instance.segment.StartPos,
       segmentEnd,
     ),
+  )
+}
+
+function sourceSampleTime(instance: SlotMontageInstance) {
+  return sourceSampleTimeAtMontagePosition(
+    instance,
+    instance.sample.montageTime,
   )
 }
 
@@ -558,6 +592,10 @@ function createInstance(
       rootMotionMontageTime: montageTime,
       extractRootMotionFromMontagesOnly: false,
       sampleTime: 0,
+      sourceNotifyPreviousTime: 0,
+      sourceNotifyCurrentTime: 0,
+      notifyPreviousWeight: request.blendInDuration <= 0 ? 1 : 0,
+      notifyWeight: request.blendInDuration <= 0 ? 1 : 0,
       weight: request.blendInDuration <= 0 ? 1 : 0,
       status: request.blendInDuration <= 0 ? 'playing' : 'blendingIn',
       blendOutReason: null,
@@ -571,6 +609,10 @@ function createInstance(
     blendOption: request.blendInOption ?? 'Linear',
   }
   refreshSample(instance)
+  instance.sample.sourceNotifyPreviousTime = instance.sample.sampleTime
+  instance.sample.sourceNotifyCurrentTime = instance.sample.sampleTime
+  instance.sample.notifyPreviousWeight = instance.sample.weight
+  instance.sample.notifyWeight = instance.sample.weight
 
   if (montageDuration <= 0) {
     complete(instance)
@@ -709,6 +751,10 @@ function advanceInstance(
   const sample = instance.sample
   sample.rootMotionPreviousMontageTime = sample.montageTime
   sample.rootMotionMontageTime = sample.montageTime
+  sample.sourceNotifyPreviousTime = sourceSampleTime(instance)
+  sample.sourceNotifyCurrentTime = sample.sourceNotifyPreviousTime
+  sample.notifyPreviousWeight = sample.weight
+  sample.notifyWeight = sample.weight
   sample.extractRootMotionFromMontagesOnly = (
     instance.playing
     && clock.rootMotionMontageInstance === instance
@@ -724,6 +770,14 @@ function advanceInstance(
   updateBlend(instance, delta)
   advanceMontagePosition(clock, instance, delta, notifyEvents)
   refreshSample(instance)
+  sample.sourceNotifyCurrentTime = sourceSampleTimeAtMontagePosition(
+    instance,
+    sample.rootMotionMontageTime,
+  )
+  sample.notifyWeight = Math.max(
+    sample.notifyPreviousWeight,
+    sample.weight,
+  )
 
   if (instance.stopped && instance.sample.weight <= 0) {
     return complete(instance)
@@ -906,6 +960,10 @@ export function montageSetPosition(
   sample.montageTime = newPosition
   sample.rootMotionPreviousMontageTime = newPosition
   sample.rootMotionMontageTime = newPosition
+  sample.sourceNotifyPreviousTime = sourceSampleTime(instance)
+  sample.sourceNotifyCurrentTime = sample.sourceNotifyPreviousTime
+  sample.notifyPreviousWeight = sample.weight
+  sample.notifyWeight = sample.weight
   sample.extractRootMotionFromMontagesOnly = false
   return refreshSample(instance)
 }

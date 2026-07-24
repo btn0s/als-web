@@ -12,7 +12,15 @@ function member(
   duration = 1,
   markers: SyncGroupMember['markers'] = [],
 ): SyncGroupMember {
-  return { id, duration, markers, time: 0, weight, playRate: 1 }
+  return {
+    id,
+    duration,
+    markers,
+    updatedThisFrame: true,
+    time: 0,
+    weight,
+    playRate: 1,
+  }
 }
 
 describe('sync groups', () => {
@@ -28,6 +36,15 @@ describe('sync groups', () => {
     const second = { ...member('rifleSprint', 0.75), canLead: false }
 
     expect(electSyncGroupLeader([first, second])).toBe(first)
+  })
+
+  it('does not make equal-weight leader identity part of the contract', () => {
+    const first = member('first', 0.5)
+    const second = member('second', 0.5)
+    const leader = electSyncGroupLeader([first, second])
+
+    expect([first, second]).toContain(leader)
+    expect(leader?.weight).toBe(0.5)
   })
 
   it('maps follower phase between matching markers with asymmetric layouts', () => {
@@ -94,7 +111,7 @@ describe('sync groups', () => {
     expect(markerlessFollower.time).toBeCloseTo(0.35)
   })
 
-  it('keeps a zero-weight candidate phase-ready without including it in marker validity', () => {
+  it('keeps a visited zero-weight tick record phase-ready', () => {
     const leader = member('walk', 0.7, 1, [
       { name: 'Left', normalizedTime: 0.1 },
       { name: 'Right', normalizedTime: 0.6 },
@@ -115,6 +132,29 @@ describe('sync groups', () => {
     expect(result.usedMarkerSync).toBe(true)
     expect(follower.time).toBeCloseTo(0.5)
     expect(inactive.time).toBeCloseTo(0.7)
+  })
+
+  it('leaves a dormant player at StartPosition until graph traversal visits it', () => {
+    const leader = member('run', 1, 1)
+    const dormant = {
+      ...member('sprint', 0, 0.6000000238418579),
+      time: 0.166667,
+      updatedThisFrame: false,
+    }
+    leader.time = 0.4
+    leader.playRate = 0
+    const group = createSyncGroup('Movement', [leader, dormant])
+
+    advanceSyncGroup(group, 0)
+    expect(dormant.time).toBeCloseTo(0.166667, 12)
+
+    dormant.updatedThisFrame = true
+    dormant.weight = 0.25
+    advanceSyncGroup(group, 0)
+    expect(dormant.time).toBeCloseTo(
+      0.4 * dormant.duration,
+      12,
+    )
   })
 
   it('falls back to normalized-time sync for markerless same-length cycles', () => {

@@ -14,5 +14,6 @@ export const ALS_FRAME_PRIORITY = {
   MeshBase: -2.5,
   Animation: -2,
   PosePublication: -1,
+  AnimNotifyDispatch: -0.5,
   Camera: 0,
 } as const

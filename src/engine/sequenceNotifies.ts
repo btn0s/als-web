@@ -14,7 +14,17 @@ export interface SerializedSequenceNotify {
   readonly triggerWeightThreshold?: number
   readonly notifyTriggerChance?: number
   readonly triggerOnFollower?: boolean
+  readonly triggerOnDedicatedServer?: boolean
 }
+
+/**
+ * Exact sidecar fields for a notify that the GLB extras only identify by name and time.
+ *
+ * The extracted animation extras deliberately remain the discovery oracle. Enrichment may fill
+ * serialized FAnimNotifyEvent fields that glTF cannot carry, but it must match an existing raw
+ * event rather than creating a second, sidecar-only timeline.
+ */
+export type SequenceNotifyEnrichment = SerializedSequenceNotify
 
 interface SequenceNotifyExtras {
   readonly notifies?: unknown
@@ -138,6 +148,7 @@ function readOptionalBoolean(
  */
 export function compileSequenceNotifies(
   clip: ClipWithSequenceNotifyExtras,
+  enrichments: readonly SequenceNotifyEnrichment[] = [],
 ): CompiledSequenceNotifies {
   if (
     typeof clip.name !== 'string'
@@ -150,17 +161,44 @@ export function compileSequenceNotifies(
 
   const rawNotifies = clip.userData?.notifies
   if (rawNotifies === undefined) {
+    if (enrichments.length > 0) {
+      throw new Error(`${clip.name} notify enrichment has no raw GLB events`)
+    }
     return { clipName: clip.name, duration: clip.duration, notifies: [] }
   }
   if (!Array.isArray(rawNotifies)) {
     throw new Error(`${clip.name} animation.extras.notifies must be an array`)
   }
 
+  const matchedEnrichments = new Set<number>()
   const notifies: CompiledSequenceNotify[] = []
   for (let index = 0; index < rawNotifies.length; index++) {
-    const rawNotify = rawNotifies[index]
-    if (!isRecord(rawNotify)) {
+    const serializedNotify = rawNotifies[index]
+    if (!isRecord(serializedNotify)) {
       throw new Error(`${clip.name} notify ${index} must be an object`)
+    }
+    let rawNotify = serializedNotify
+    for (
+      let enrichmentIndex = 0;
+      enrichmentIndex < enrichments.length;
+      enrichmentIndex++
+    ) {
+      const enrichment = enrichments[enrichmentIndex]
+      if (
+        enrichment.name !== serializedNotify.name
+        || typeof serializedNotify.time !== 'number'
+        || Math.abs(enrichment.time - serializedNotify.time) > 1e-6
+      ) {
+        continue
+      }
+      if (matchedEnrichments.has(enrichmentIndex)) {
+        throw new Error(
+          `${clip.name} notify enrichment ${enrichmentIndex} matched more than once`,
+        )
+      }
+      matchedEnrichments.add(enrichmentIndex)
+      rawNotify = { ...serializedNotify, ...enrichment }
+      break
     }
     const name = rawNotify.name
     const time = rawNotify.time
@@ -230,7 +268,13 @@ export function compileSequenceNotifies(
       bCanBeFilteredViaRequest:
         UE_SEQUENCE_NOTIFY_DEFAULTS.bCanBeFilteredViaRequest,
       bTriggerOnDedicatedServer:
-        UE_SEQUENCE_NOTIFY_DEFAULTS.bTriggerOnDedicatedServer,
+        readOptionalBoolean(
+          rawNotify.triggerOnDedicatedServer,
+          UE_SEQUENCE_NOTIFY_DEFAULTS.bTriggerOnDedicatedServer,
+          'triggerOnDedicatedServer',
+          clip.name,
+          index,
+        ),
       bTriggerOnFollower: readOptionalBoolean(
         rawNotify.triggerOnFollower,
         UE_SEQUENCE_NOTIFY_DEFAULTS.bTriggerOnFollower,
@@ -240,6 +284,15 @@ export function compileSequenceNotifies(
       ),
       TrackIndex: UE_SEQUENCE_NOTIFY_DEFAULTS.TrackIndex,
     })
+  }
+
+  if (matchedEnrichments.size !== enrichments.length) {
+    const missingIndex = enrichments.findIndex(
+      (_, index) => !matchedEnrichments.has(index),
+    )
+    throw new Error(
+      `${clip.name} notify enrichment ${missingIndex} has no raw GLB event`,
+    )
   }
 
   return { clipName: clip.name, duration: clip.duration, notifies }
@@ -357,4 +410,46 @@ export function gatherSequenceNotifies(
   }
 
   return output.length - outputStart
+}
+
+/**
+ * `UAnimSequenceBase::GetAnimNotifiesFromDeltaPositions()` range-facing adapter.
+ *
+ * Synchronized players publish their previous and final sequence positions, not an independently
+ * accumulated delta. A forward loop is the sole reason the final position may be lower than the
+ * previous position; splitting that wrap through `gatherSequenceNotifies()` preserves Unreal's
+ * `(PreviousPosition, CurrentPosition]` boundaries on both sides.
+ */
+export function gatherSequenceNotifiesFromDeltaPositions(
+  track: CompiledSequenceNotifies,
+  PreviousPosition: number,
+  CurrentPosition: number,
+  context: SequenceNotifyTickContext,
+  output: CompiledSequenceNotify[],
+): number {
+  if (
+    !Number.isFinite(PreviousPosition)
+    || !Number.isFinite(CurrentPosition)
+    || PreviousPosition < 0
+    || CurrentPosition < 0
+    || PreviousPosition > track.duration
+    || CurrentPosition > track.duration
+  ) {
+    throw new Error('Sequence notify positions must be inside the play range')
+  }
+
+  let DeltaTime = CurrentPosition - PreviousPosition
+  if (DeltaTime < 0) {
+    if (!context.bAllowLooping) {
+      throw new Error('A non-looping sequence notify range cannot wrap')
+    }
+    DeltaTime += track.duration
+  }
+  return gatherSequenceNotifies(
+    track,
+    PreviousPosition,
+    DeltaTime,
+    context,
+    output,
+  )
 }

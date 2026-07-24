@@ -15,6 +15,13 @@ export interface SyncGroupMember {
    * becomes leader so that the group has a playback authority.
    */
   readonly canLead?: boolean
+  /**
+   * Whether graph traversal emitted an FAnimTickRecord for this player this frame.
+   *
+   * Effective weight cannot stand in for visitation: BlendList nodes may update a zero-weight
+   * child, while an entirely dormant SequencePlayer must retain its authored StartPosition.
+   */
+  updatedThisFrame?: boolean
   time: number
   weight: number
   /** Conventional clip play rate. Only the elected leader advances independently. */
@@ -49,28 +56,26 @@ export function createSyncGroup(
 }
 
 /**
- * Epic's Sync Groups normally elect the highest-weight animation as Leader. Ties retain the
- * current leader to avoid a playhead authority flip caused only by array ordering.
+ * Epic's Sync Groups elect the highest-scoring tick record as Leader.
+ *
+ * Equal-score ordering is deliberately not policy here. JavaScript's stable iteration happens to
+ * retain candidate order, while Unreal's sort does not promise a tie identity; callers may only
+ * depend on the elected record having the maximum score.
  *
  * https://dev.epicgames.com/documentation/en-us/unreal-engine/sync-groups
  */
 export function electSyncGroupLeader(
   members: readonly SyncGroupMember[],
-  preferredLeaderId: string | null = null,
 ): SyncGroupMember | null {
   let leader: SyncGroupMember | null = null
   let followerFallback: SyncGroupMember | null = null
   for (const member of members) {
-    if (member.weight <= 0) continue
+    if (member.updatedThisFrame === false) continue
     followerFallback ??= member
     if (member.canLead === false) continue
     if (
       !leader
       || member.weight > leader.weight
-      || (
-        member.weight === leader.weight
-        && member.id === preferredLeaderId
-      )
     ) {
       leader = member
     }
@@ -89,7 +94,13 @@ function commonMarkerNames(
 ) {
   const common = new Set(leader.markers.map((marker) => marker.name))
   for (const member of members) {
-    if (member === leader || member.weight <= 0 || member.markers.length === 0) continue
+    if (
+      member === leader
+      || member.updatedThisFrame === false
+      || member.markers.length === 0
+    ) {
+      continue
+    }
     const names = new Set(member.markers.map((marker) => marker.name))
     for (const name of common) {
       if (!names.has(name)) common.delete(name)
@@ -211,7 +222,7 @@ export function advanceSyncGroup(
   group: SyncGroup,
   deltaTime: number,
 ): SyncGroupResult {
-  const leader = electSyncGroupLeader(group.members, group.leaderId)
+  const leader = electSyncGroupLeader(group.members)
   if (!leader) {
     group.leaderId = null
     return { leader: null, usedMarkerSync: false }
@@ -229,7 +240,12 @@ export function advanceSyncGroup(
   const commonNames = commonMarkerNames(leader, group.members)
   const usedMarkerSync = commonNames.size > 0
   for (const follower of group.members) {
-    if (follower === leader) continue
+    if (
+      follower === leader
+      || follower.updatedThisFrame === false
+    ) {
+      continue
+    }
     const mapped = mapFollowerTime(leader, follower, commonNames)
     follower.time = mapped.time
   }

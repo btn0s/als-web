@@ -10,6 +10,7 @@ import {
 import {
   compileSequenceNotifies,
   gatherSequenceNotifies,
+  gatherSequenceNotifiesFromDeltaPositions,
   UE_SEQUENCE_NOTIFY_DEFAULTS,
 } from './sequenceNotifies'
 import type {
@@ -219,6 +220,48 @@ describe('UE animation-sequence notifies', () => {
     }).map(({ NotifyName }) => NotifyName)).toEqual(['FollowerEnabled'])
   })
 
+  it('splits a synchronized forward wrap from .59 to .07', () => {
+    const track = compileSequenceNotifies(clip([
+      { name: 'BeforeWrap', time: 0.595 },
+      { name: 'AfterWrap', time: 0.06666667 },
+    ], 0.6000000238418579))
+    const output: CompiledSequenceNotify[] = []
+
+    expect(gatherSequenceNotifiesFromDeltaPositions(
+      track,
+      0.59,
+      0.07,
+      { ...leader, bAllowLooping: true },
+      output,
+    )).toBe(2)
+    expect(output.map(({ NotifyName }) => NotifyName)).toEqual([
+      'BeforeWrap',
+      'AfterWrap',
+    ])
+  })
+
+  it('enriches an existing raw event without creating a sidecar-only timeline', () => {
+    const raw = clip([{ name: 'AlsCameraShake', time: 0.25 }])
+    const compiled = compileSequenceNotifies(raw, [{
+      name: 'AlsCameraShake',
+      time: 0.25000001,
+      triggerWeightThreshold: 0.5,
+      notifyTriggerChance: 1,
+      triggerOnFollower: false,
+    }])
+
+    expect(compiled.notifies[0]).toMatchObject({
+      Time: 0.25000001,
+      TriggerWeightThreshold: 0.5,
+      NotifyTriggerChance: 1,
+      bTriggerOnFollower: false,
+    })
+    expect(() => compileSequenceNotifies(raw, [{
+      name: 'Missing',
+      time: 0.25,
+    }])).toThrow('has no raw GLB event')
+  })
+
   it('refuses to approximate authored random chance without UE queue state', () => {
     expect(() => compileSequenceNotifies(clip([{
       name: 'Chance',
@@ -280,7 +323,20 @@ describe('shipped ALS camera-shake sequence notifies', () => {
       expect(animation, sequenceName).toBeDefined()
       if (!animation) continue
 
-      const compiled = compileSequenceNotifies(animation)
+      const authoredEvents = ALS_ANIM_NOTIFY_CAMERA_SHAKE_EVENTS.filter(
+        ({ Sequence }) => Sequence === sequenceName,
+      )
+      const compiled = compileSequenceNotifies(
+        animation,
+        authoredEvents.map((authored) => ({
+          name: authored.NotifyName,
+          time: authored.Time,
+          triggerWeightThreshold: authored.TriggerWeightThreshold,
+          notifyTriggerChance: authored.NotifyTriggerChance,
+          triggerOnFollower: authored.bTriggerOnFollower,
+          triggerOnDedicatedServer: authored.bTriggerOnDedicatedServer,
+        })),
+      )
       compiledCameraEvents.push(
         ...compiled.notifies.filter(
           ({ NotifyName }) => NotifyName === 'AlsCameraShake',
@@ -294,12 +350,16 @@ describe('shipped ALS camera-shake sequence notifies', () => {
       time: notify.Time,
       chance: notify.NotifyTriggerChance,
       follower: notify.bTriggerOnFollower,
+      threshold: notify.TriggerWeightThreshold,
+      dedicatedServer: notify.bTriggerOnDedicatedServer,
     }))).toEqual(
       ALS_ANIM_NOTIFY_CAMERA_SHAKE_EVENTS.map((authored) => ({
         name: authored.NotifyName,
         time: expect.closeTo(authored.Time, 5),
         chance: authored.NotifyTriggerChance,
         follower: authored.bTriggerOnFollower,
+        threshold: authored.TriggerWeightThreshold,
+        dedicatedServer: authored.bTriggerOnDedicatedServer,
       })),
     )
   })

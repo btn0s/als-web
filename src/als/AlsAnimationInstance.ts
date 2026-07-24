@@ -59,6 +59,7 @@ import { createRootMotionExtractor, resetRootMotionExtractor } from '../engine/r
 import type { RootMotionExtractor } from '../engine/rootMotion'
 import {
   advanceSlotMontageClock,
+  canGatherSlotMontageSequenceNotifies,
   calculateSlotMontageWeight,
   createSlotMontageClock,
   getSlotMontageSamples,
@@ -68,6 +69,14 @@ import {
   playSlotMontage,
   stopSlotAnimation,
 } from '../engine/slotMontage'
+import {
+  compileSequenceNotifies,
+  gatherSequenceNotifiesFromDeltaPositions,
+} from '../engine/sequenceNotifies'
+import type {
+  CompiledSequenceNotifies,
+  CompiledSequenceNotify,
+} from '../engine/sequenceNotifies'
 import type {
   SlotMontageNotifyEvent,
   SlotMontageSample,
@@ -243,6 +252,14 @@ import type {
   AlsMantlingSettings,
 } from './Settings/AlsMantlingSettings'
 import { ALS_TURN_IN_PLACE_SETTINGS } from './Settings/AlsTurnInPlaceSettings'
+import {
+  ALS_ANIM_NOTIFY_CAMERA_SHAKE_EVENTS,
+  notifyAlsAnimNotifyCameraShake,
+} from './AlsCamera/Notifies/AlsAnimNotify_CameraShake'
+import type {
+  AlsAnimNotifyCameraShakeEvent,
+  AlsPlayerCameraManager,
+} from './AlsCamera/Notifies/AlsAnimNotify_CameraShake'
 import {
   createVelocityBlend,
   stepVelocityBlend,
@@ -496,6 +513,12 @@ interface RuntimeLocomotionSyncGroup {
   leaderKey: RuntimeLocomotionSequencePlayer['key'] | null
 }
 
+interface RuntimeCameraShakeNotifyTrack {
+  readonly track: CompiledSequenceNotifies
+  readonly payloadByNotify:
+    ReadonlyMap<CompiledSequenceNotify, AlsAnimNotifyCameraShakeEvent>
+}
+
 export interface AlsAnimationInstanceControls {
   gait: AlsGait
   moving: boolean
@@ -619,6 +642,13 @@ export interface AlsAnimationInstance {
   jump: () => void
   /** USkeletalMeshComponent::GetAnimInstance()->GetCurveValue() on the published graph frame. */
   getCurveValue: (name: string) => number
+  /**
+   * UAnimInstance queued-notify dispatch seam.
+   *
+   * Refresh only gathers events. The frame pipeline calls this after pose publication and before
+   * the camera tick so animation evaluation never reaches into camera or React state.
+   */
+  dispatchQueuedAnimEvents: (sink: AlsPlayerCameraManager) => number
   readonly mantlingMontage: AlsMantlingMontageBridge
   readonly state: AlsAnimationInstanceState
   refresh: (delta: number, controls: AlsAnimationInstanceControls) => void
@@ -814,6 +844,55 @@ function copyPoseNode(
   return output
 }
 
+function compileCameraShakeNotifyTracks(
+  animations: readonly THREE.AnimationClip[],
+) {
+  const eventsBySequence = new Map<
+    string,
+    AlsAnimNotifyCameraShakeEvent[]
+  >()
+  for (const event of ALS_ANIM_NOTIFY_CAMERA_SHAKE_EVENTS) {
+    const events = eventsBySequence.get(event.Sequence)
+    if (events) events.push(event)
+    else eventsBySequence.set(event.Sequence, [event])
+  }
+
+  const tracks = new Map<string, RuntimeCameraShakeNotifyTrack>()
+  for (const [sequenceName, events] of eventsBySequence) {
+    const animation = animations.find(({ name }) => name === sequenceName)
+    if (!animation) continue
+    const track = compileSequenceNotifies(
+      animation,
+      events.map((event) => ({
+        name: event.NotifyName,
+        time: event.Time,
+        triggerWeightThreshold: event.TriggerWeightThreshold,
+        notifyTriggerChance: event.NotifyTriggerChance,
+        triggerOnFollower: event.bTriggerOnFollower,
+        triggerOnDedicatedServer: event.bTriggerOnDedicatedServer,
+      })),
+    )
+    const payloadByNotify = new Map<
+      CompiledSequenceNotify,
+      AlsAnimNotifyCameraShakeEvent
+    >()
+    for (const event of events) {
+      const notify = track.notifies.find((candidate) => (
+        candidate.NotifyName === event.NotifyName
+        && Math.abs(candidate.Time - event.Time) <= 1e-6
+      ))
+      if (!notify) {
+        throw new Error(
+          `${sequenceName} is missing authored ${event.NotifyName} at ${event.Time}`,
+        )
+      }
+      payloadByNotify.set(notify, event)
+    }
+    tracks.set(sequenceName, { track, payloadByNotify })
+  }
+  return tracks
+}
+
 /**
  * Owns sampling, pose-space composition, and the sole skeleton write for the character. The pure
  * weight table and region rules remain the graph; the React hook only forwards frame delta and
@@ -874,6 +953,9 @@ export function createAlsAnimationInstance(gltf: {
     return { sampler, curves, entry: createEntry(sampler, curves), time: 0 }
   })
   const clipsByName = new Map(clips.map((clip) => [clip.sampler.clip.name, clip]))
+  const cameraShakeNotifyTracks = compileCameraShakeNotifyTracks(
+    gltf.animations,
+  )
   const locomotionPoseGraphRuntime =
     createAlsLocomotionPoseGraphRuntime(rig)
   const locomotionGroundedInput =
@@ -1587,21 +1669,24 @@ export function createAlsAnimationInstance(gltf: {
   }
   for (const clip of locomotionClips) {
     const clipName = clip.sampler.clip.name
-    const startPosition = groundedLocomotionClipNames.has(clipName)
-      ? ALS_GROUNDED_DIRECTION_PLAYER.startPosition
-      : (
-          clipName === ALS_STANDING_SPRINT_GRAPH.sprint.clip
-          || clipName === ALS_STANDING_SPRINT_GRAPH.sprintAcceleration.clip
-        )
-          ? ALS_STANDING_SPRINT_GRAPH.sprint.startPosition
+    const startTime = groundedLocomotionClipNames.has(clipName)
+      // FAnimNode_BlendSpacePlayer serializes StartPosition as normalized phase.
+      ? clip.sampler.clip.duration
+        * ALS_GROUNDED_DIRECTION_PLAYER.startPosition
+      : clipName === ALS_STANDING_SPRINT_GRAPH.sprint.clip
+        // FAnimNode_SequencePlayer serializes StartPosition in sequence seconds.
+        ? ALS_STANDING_SPRINT_GRAPH.sprint.startPosition
+        : clipName === ALS_STANDING_SPRINT_GRAPH.sprintAcceleration.clip
+          ? ALS_STANDING_SPRINT_GRAPH.sprintAcceleration.startPosition
           : 0
     const member: SyncGroupMember = {
       id: clipName,
       duration: clip.sampler.clip.duration,
       markers: gltf.syncMarkers?.[clipName] ?? clipSyncMarkers(clip.sampler.clip),
-      time: clip.sampler.clip.duration * startPosition,
+      time: startTime,
       weight: 0,
       playRate: 0,
+      updatedThisFrame: false,
     }
     locomotionMembersByClip.set(clip, member)
     locomotionMembers.push(member)
@@ -1622,6 +1707,7 @@ export function createAlsAnimationInstance(gltf: {
       markers:
         gltf.syncMarkers?.[clipName] ?? clipSyncMarkers(source.clip.sampler.clip),
       canLead: false,
+      updatedThisFrame: false,
       time: 0,
       weight: 0,
       playRate: 0,
@@ -1922,6 +2008,9 @@ export function createAlsAnimationInstance(gltf: {
   const slotMontageSamples: SlotMontageSample[] = []
   const slotMontageNotifyEvents: SlotMontageNotifyEvent[] = []
   const locomotionSlotMontageSamples: SlotMontageSample[] = []
+  const gatheredSequenceNotifies: CompiledSequenceNotify[] = []
+  const pendingQueuedAnimEvents: AlsAnimNotifyCameraShakeEvent[] = []
+  const locomotionPreviousTimes = new Map<SyncGroupMember, number>()
   const slotMontageBindings = new Map<
     number,
     RuntimeSlotMontageBinding
@@ -1950,6 +2039,51 @@ export function createAlsAnimationInstance(gltf: {
   let previousStance: AlsStance | null = null
   let previousMovingSmooth: boolean | null = null
   let previousOverlayMode: AlsOverlayMode | null = null
+
+  function queueCameraShakeNotifiesFromRange(
+    runtimeTrack: RuntimeCameraShakeNotifyTrack,
+    previousTime: number,
+    currentTime: number,
+    context: {
+      readonly bAllowLooping: boolean
+      readonly bSrcIsLeader: boolean
+      readonly InstanceWeight: number
+    },
+  ) {
+    gatheredSequenceNotifies.length = 0
+    gatherSequenceNotifiesFromDeltaPositions(
+      runtimeTrack.track,
+      previousTime,
+      currentTime,
+      context,
+      gatheredSequenceNotifies,
+    )
+    for (const notify of gatheredSequenceNotifies) {
+      const payload = runtimeTrack.payloadByNotify.get(notify)
+      if (payload) pendingQueuedAnimEvents.push(payload)
+    }
+  }
+
+  function dispatchQueuedAnimEvents(
+    sink: AlsPlayerCameraManager,
+  ) {
+    const queuedEventCount = pendingQueuedAnimEvents.length
+    let deliveredEventCount = 0
+    try {
+      for (let index = 0; index < queuedEventCount; index++) {
+        notifyAlsAnimNotifyCameraShake(
+          sink,
+          pendingQueuedAnimEvents[index],
+        )
+        deliveredEventCount++
+      }
+    } finally {
+      // If a sink fails, retry only the undelivered suffix. Already-delivered queued notifies
+      // cannot legally fire twice on the next frame.
+      pendingQueuedAnimEvents.splice(0, deliveredEventCount)
+    }
+    return deliveredEventCount
+  }
   const gaitAmounts = createAlsPoseState()
   const layeringState = resolveAlsLayeringState(publishedCurves)
   const state: AlsAnimationInstanceState = {
@@ -4007,6 +4141,7 @@ export function createAlsAnimationInstance(gltf: {
     for (const clip of baseClips) clip.entry.weight = 0
     for (const member of locomotionSyncGroup.members) {
       member.weight = 0
+      member.updatedThisFrame = false
     }
 
     // AB_Als_Crouching now contributes one retained graph node. Its sequence players remain in
@@ -4025,6 +4160,10 @@ export function createAlsAnimationInstance(gltf: {
           crouchingMovementClipWeights[direction]
           * crouchingMovementOuterWeight
           * crouchingGraphWeight
+        syncMember.updatedThisFrame = (
+          crouchingMovementRelevant
+          && crouchingMovementClipWeights[direction] > 0
+        )
       }
     }
     if (roles.crouchIdle) roles.crouchIdle.entry.weight = 0
@@ -4060,6 +4199,14 @@ export function createAlsAnimationInstance(gltf: {
             * forwardGraphWeight
             * directionStateWeight
             * standingMovementSubtreeWeight
+          if (
+            sample.weight > 0
+            && forwardGraphWeight > 0
+            && directionStateWeight > 0
+            && standingGraphRuntime.movementDetails.relevant
+          ) {
+            member.updatedThisFrame = true
+          }
           member.playRate = sample.playRate
         }
       }
@@ -4072,10 +4219,18 @@ export function createAlsAnimationInstance(gltf: {
       sprint.entry.weight = 0
       const member = locomotionMembersByClip.get(sprint)
       if (member) {
+        // SequencePlayer visitation belongs to the local Sprint/Acceleration graph. Effective
+        // notify weight additionally includes the enclosing direction and state-machine weights;
+        // keeping those two facts separate preserves a visited zero-weight tick record.
         member.weight =
           standingSprint.sprintWeight
           * forwardDirectionWeight
           * standingMovementSubtreeWeight
+        member.updatedThisFrame = (
+          standingSprint.sprintWeight > 0
+          && forwardDirectionWeight > 0
+          && standingGraphRuntime.movementDetails.relevant
+        )
         member.playRate = standingSprint.sprintPlayRate
       }
     }
@@ -4087,6 +4242,11 @@ export function createAlsAnimationInstance(gltf: {
           standingSprint.sprintAccelerationWeight
           * forwardDirectionWeight
           * standingMovementSubtreeWeight
+        member.updatedThisFrame = (
+          standingSprint.sprintAccelerationWeight > 0
+          && forwardDirectionWeight > 0
+          && standingGraphRuntime.movementDetails.relevant
+        )
         member.playRate = standingSprint.sprintAccelerationPlayRate
       }
     }
@@ -4214,6 +4374,7 @@ export function createAlsAnimationInstance(gltf: {
           runningBranchWeight
           * (1 - sprintingAmount)
           * rifleGraphState.velocityBlendWeights[0]
+        runArmsMember.updatedThisFrame = runArmsMember.weight > 0
       }
 
       const sprintArmsMember = rifleSprintArmsSource
@@ -4227,6 +4388,8 @@ export function createAlsAnimationInstance(gltf: {
           runningBranchWeight
           * sprintingAmount
           * (1 - sprintAccelerationAmount)
+        sprintArmsMember.updatedThisFrame =
+          sprintArmsMember.weight > 0
       }
 
       const sprintImpulseArmsMember = rifleSprintImpulseArmsSource
@@ -4242,12 +4405,14 @@ export function createAlsAnimationInstance(gltf: {
           runningBranchWeight
           * sprintingAmount
           * sprintAccelerationAmount
+        sprintImpulseArmsMember.updatedThisFrame =
+          sprintImpulseArmsMember.weight > 0
       }
     }
 
     for (const member of locomotionSyncGroup.members) {
       if (
-        member.weight <= 0
+        member.updatedThisFrame !== true
         || (
           !groundedLocomotionClipNames.has(member.id)
           && member.id !== ALS_STANDING_SPRINT_GRAPH.sprint.clip
@@ -4263,7 +4428,66 @@ export function createAlsAnimationInstance(gltf: {
       const member = locomotionMembersByRole.get(role)
       if (member) member.playRate = crouchingState.playRate
     }
+    locomotionPreviousTimes.clear()
+    for (const [sequenceName] of cameraShakeNotifyTracks) {
+      const clip = clipsByName.get(sequenceName)
+      const member = clip
+        ? locomotionMembersByClip.get(clip)
+        : undefined
+      if (member?.updatedThisFrame) {
+        locomotionPreviousTimes.set(member, member.time)
+      }
+    }
     const syncResult = advanceSyncGroup(locomotionSyncGroup, delta)
+    // FAnimNotifyQueue receives graph tick-record candidates before Slot source candidates.
+    // Only the elected Movement leader may emit these authored bTriggerOnFollower=false events.
+    for (const [sequenceName, runtimeTrack] of cameraShakeNotifyTracks) {
+      const clip = clipsByName.get(sequenceName)
+      const member = clip
+        ? locomotionMembersByClip.get(clip)
+        : undefined
+      const previousTime = member
+        ? locomotionPreviousTimes.get(member)
+        : undefined
+      if (!member || previousTime === undefined) continue
+      queueCameraShakeNotifiesFromRange(
+        runtimeTrack,
+        previousTime,
+        member.time,
+        {
+          bAllowLooping: true,
+          bSrcIsLeader: syncResult.leader === member,
+          InstanceWeight: member.weight,
+        },
+      )
+    }
+    // PostLocomotion is a local Slot relevance gate. NotifyWeight already owns the sequence
+    // threshold, so the final Slot/global graph weight must not be applied a second time.
+    for (const sample of slotMontageSamples) {
+      if (
+        sample.slotName !== POST_LOCOMOTION_SLOT_NAME
+        || sample.groupName !== LOCOMOTION_SLOT_GROUP_NAME
+        || (
+          sample.notifyPreviousWeight <= 0
+          && sample.weight <= 0
+        )
+        || !canGatherSlotMontageSequenceNotifies(sample)
+      ) {
+        continue
+      }
+      const runtimeTrack = cameraShakeNotifyTracks.get(sample.clipKey)
+      if (!runtimeTrack) continue
+      queueCameraShakeNotifiesFromRange(
+        runtimeTrack,
+        sample.sourceNotifyPreviousTime,
+        sample.sourceNotifyCurrentTime,
+        {
+          bAllowLooping: sample.loopCount > 1,
+          bSrcIsLeader: true,
+          InstanceWeight: sample.notifyWeight,
+        },
+      )
+    }
     normalDebugWeights.locomotionCadence = syncResult.leader
       && syncResult.leader.duration > 0
       ? syncResult.leader.playRate / syncResult.leader.duration
@@ -5308,6 +5532,7 @@ export function createAlsAnimationInstance(gltf: {
     setHipsDirection,
     jump,
     getCurveValue: (name) => publishedCurves.get(name) ?? 0,
+    dispatchQueuedAnimEvents,
     mantlingMontage: Object.freeze({
       play: playMantlingMontage,
       montageSetPosition: setMantlingMontagePosition,

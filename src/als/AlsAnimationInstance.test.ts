@@ -31,6 +31,9 @@ import {
 import {
   ALS_MANTLING_SETTINGS,
 } from './Settings/AlsMantlingSettings'
+import type {
+  AlsMantlingSettings,
+} from './Settings/AlsMantlingSettings'
 import { ALS_VIRTUAL_BONES } from './Utility/AlsVirtualBones'
 import type {
   AlsAnimationInstance,
@@ -1540,6 +1543,116 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.runLeftFwd).toBe(0)
     expect(instance.state.pose.amount).toBe(3)
     expect(instance.state.standingMovement.playRate).toBeCloseTo(650 / 600, 12)
+    const StartCameraShake = vi.fn()
+    expect(instance.dispatchQueuedAnimEvents({ StartCameraShake }))
+      .toBeGreaterThan(0)
+    expect(StartCameraShake.mock.calls.every(
+      ([, scale]) => scale === 0.5,
+    )).toBe(true)
+  })
+
+  it('initializes direct Sprint SequencePlayers in seconds and leaves them dormant', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const idleControls: AlsAnimationInstanceControls = {
+      ...controls,
+      gait: 'Walking',
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+    }
+
+    instance.refresh(1, idleControls)
+
+    expect(window.__weightTable?.['clipTime.sprint'])
+      .toBeCloseTo(0.166667, 12)
+    expect(window.__weightTable?.['clipTime.sprintAcceleration'])
+      .toBeCloseTo(0.166667, 12)
+    expect(window.__weightTable?.['clipTime.sprint'])
+      .not.toBeCloseTo(0.100000204, 7)
+    const StartCameraShake = vi.fn()
+    expect(instance.dispatchQueuedAnimEvents({ StartCameraShake })).toBe(0)
+    expect(StartCameraShake).not.toHaveBeenCalled()
+  })
+
+  it('holds queued graph and Roll events, then dispatches Sprint before Roll FIFO', async () => {
+    const gltf = await loadAlsGltf()
+    const rollClip = gltf.animations.find(
+      ({ name }) => name === 'A_Als_Roll',
+    )
+    if (!rollClip) throw new Error('Missing A_Als_Roll')
+    // A fixture exercises the reusable authored Slot substrate until the Rolling action owns its
+    // live clock. Mantling normally rejects sequence root motion because its root-motion source
+    // owns translation, so this isolated copy exposes the same non-additive pose as Slot input.
+    rollClip.userData = {
+      ...rollClip.userData,
+      bEnableRootMotion: false,
+    }
+    const instance = createAlsAnimationInstance(gltf)
+    const sprintAccelerationControls: AlsAnimationInstanceControls = {
+      ...controls,
+      gait: 'Sprinting',
+      speed: 6.5,
+      relativeAccelerationAmount: { x: 0.25, y: 0 },
+    }
+
+    refreshFrames(instance, 60, controls)
+    instance.refresh(0.1, sprintAccelerationControls)
+    instance.refresh(0.1, sprintAccelerationControls)
+    // Clear anything encountered while establishing a full-weight acceleration leader.
+    instance.dispatchQueuedAnimEvents({ StartCameraShake: () => {} })
+    expect(window.__weightTable?.sprintAcceleration)
+      .toBeGreaterThan(0.99)
+    // At least .25s at the authored acceleration cadence traverses more than the largest
+    // .3s gap between its two looping camera notifies.
+    instance.refresh(0.1, sprintAccelerationControls)
+    instance.refresh(0.1, sprintAccelerationControls)
+    instance.refresh(0.05, sprintAccelerationControls)
+    const baseSettings = ALS_MANTLING_SETTINGS.MS_Als_Low
+    const rollFixture: AlsMantlingSettings = {
+      ...baseSettings,
+      Name: 'MS_Test_Roll_Notify',
+      Montage: {
+        ...baseSettings.Montage,
+        Name: 'AM_Test_Roll_Notify',
+        Sequence: 'A_Als_Roll',
+        PlayLength: 1.5,
+        SequenceLength: 1.5,
+        RateScale: 1,
+        StartPos: 0,
+        AnimStartTime: 0,
+        AnimEndTime: 1.5,
+        AnimPlayRate: 1,
+        LoopingCount: 1,
+        Notifies: [],
+        BranchingPointMarkers: [],
+      },
+    }
+    expect(instance.mantlingMontage.play(
+      rollFixture,
+      0.09,
+    )).not.toBeNull()
+
+    const StartCameraShake = vi.fn()
+    instance.refresh(0.02, sprintAccelerationControls)
+    expect(StartCameraShake).not.toHaveBeenCalled()
+
+    const dispatched = instance.dispatchQueuedAnimEvents({
+      StartCameraShake,
+    })
+    expect(dispatched).toBe(StartCameraShake.mock.calls.length)
+    expect(dispatched).toBeGreaterThanOrEqual(2)
+    expect(StartCameraShake.mock.calls.at(-1)).toEqual([
+      'B_Als_CameraShake_Sprint_C',
+      1,
+    ])
+    expect(StartCameraShake.mock.calls.slice(0, -1).every(
+      ([cameraShakeClass, scale]) => (
+        cameraShakeClass === 'B_Als_CameraShake_Sprint_C'
+        && scale === 1.25
+      ),
+    )).toBe(true)
+    expect(instance.dispatchQueuedAnimEvents({ StartCameraShake })).toBe(0)
   })
 
   it('evaluates the authored sprint tag, acceleration, and exit blends without inertialization', async () => {
@@ -1744,7 +1857,10 @@ describe('AlsAnimationInstance playback regression', () => {
     }
     instance.refresh(0, idle)
     expect(window.__weightTable?.['clipPhase.runFwd']).toBeCloseTo(0.2, 6)
-    expect(window.__weightTable?.['clipPhase.sprint']).toBeCloseTo(0.166667, 6)
+    expect(window.__weightTable?.['clipTime.sprint'])
+      .toBeCloseTo(0.166667, 12)
+    expect(window.__weightTable?.['clipPhase.sprint'])
+      .toBeCloseTo(0.166667 / 0.6000000238418579, 6)
 
     instance.refresh(0.1, controls)
     expect(window.__weightTable?.idle).toBeCloseTo(0.5, 12)
@@ -2236,7 +2352,7 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.locomotionMarkerSync).toBe(1)
   })
 
-  it('keeps all six upstream WalkRun player sources advancing in the Movement sync group', async () => {
+  it('advances only WalkRun players visited by the current direction graph', async () => {
     const gltf = await loadAlsGltf()
     const instance = createAlsAnimationInstance(gltf)
     const phaseKeys = [
@@ -2252,8 +2368,9 @@ describe('AlsAnimationInstance playback regression', () => {
     const initialPhases = phaseKeys.map((key) => window.__weightTable?.[key])
     refreshFrames(instance, 10, controls)
     const advancedPhases = phaseKeys.map((key) => window.__weightTable?.[key])
-    for (let index = 0; index < phaseKeys.length; index++) {
-      expect(advancedPhases[index], phaseKeys[index]).not.toBe(
+    expect(advancedPhases[0], phaseKeys[0]).not.toBe(initialPhases[0])
+    for (let index = 1; index < phaseKeys.length; index++) {
+      expect(advancedPhases[index], phaseKeys[index]).toBe(
         initialPhases[index],
       )
     }

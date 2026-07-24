@@ -4,6 +4,7 @@ import {
   advanceSlotMontageClock,
   advanceSlotMontageGroup,
   blendSlotCurveValue,
+  canGatherSlotMontageSequenceNotifies,
   calculateSlotMontageWeight,
   convertSlotMontageTrackPositionToAnimPosition,
   createSlotMontageClock,
@@ -222,6 +223,101 @@ describe('UE retained slot montage clock', () => {
     expect(authored.weight).toBe(1)
     expect(advanceSlotMontageGroup(clock, 'DefaultGroup', 0.075)?.weight)
       .toBeCloseTo(0.84375)
+  })
+
+  it('publishes the Roll source range at authored play-rate crossings', () => {
+    const clock = createSlotMontageClock()
+    const roll = playSlotMontage(clock, authoredRequest({
+      clipKey: 'A_Als_Roll',
+      clipDuration: 1.5,
+      montageDuration: 1.5,
+      playRate: 1.3,
+      blendInDuration: 0.1,
+      blendInOption: 'HermiteCubic',
+      segment: {
+        StartPos: 0,
+        AnimStartTime: 0,
+        AnimEndTime: 1.5,
+        AnimPlayRate: 1,
+        LoopingCount: 1,
+        SequenceRateScale: 1,
+      },
+    }))
+
+    advanceSlotMontageGroup(
+      clock,
+      'DefaultGroup',
+      0.10000000894069672 / 1.3,
+    )
+    expect(roll.sourceNotifyPreviousTime).toBe(0)
+    expect(roll.sourceNotifyCurrentTime)
+      .toBeCloseTo(0.10000000894069672, 12)
+    expect(roll.montageTime).toBeCloseTo(0.10000000894069672, 12)
+    expect(canGatherSlotMontageSequenceNotifies(roll)).toBe(true)
+
+    advanceSlotMontageGroup(
+      clock,
+      'DefaultGroup',
+      (
+        0.46666669845581055
+        - 0.10000000894069672
+      ) / 1.3,
+    )
+    expect(roll.sourceNotifyPreviousTime)
+      .toBeCloseTo(0.10000000894069672, 12)
+    expect(roll.sourceNotifyCurrentTime)
+      .toBeCloseTo(0.46666669845581055, 12)
+    expect(roll.montageTime).toBeCloseTo(0.46666669845581055, 12)
+  })
+
+  it('uses max(pre, post) NotifyWeight and suppresses interrupted sources', () => {
+    const clock = createSlotMontageClock()
+    const outgoing = playSlotMontage(clock, authoredRequest({
+      clipKey: 'A_Als_Roll',
+      blendInDuration: 0.4,
+      blendInOption: 'HermiteCubic',
+    }))
+
+    advanceSlotMontageGroup(clock, 'DefaultGroup', 0.2)
+    expect(outgoing.notifyPreviousWeight).toBe(0)
+    expect(outgoing.weight).toBeCloseTo(0.5)
+    expect(outgoing.notifyWeight).toBeCloseTo(0.5)
+
+    advanceSlotMontageGroup(clock, 'DefaultGroup', 0.2)
+    expect(outgoing.notifyPreviousWeight).toBeCloseTo(0.5)
+    expect(outgoing.weight).toBe(1)
+    expect(outgoing.notifyWeight).toBe(1)
+
+    playSlotMontage(clock, authoredRequest({
+      clipKey: 'replacement',
+      blendInDuration: 0.4,
+      blendInOption: 'HermiteCubic',
+    }))
+    advanceSlotMontageGroup(clock, 'DefaultGroup', 0.2)
+    expect(outgoing.notifyPreviousWeight).toBe(1)
+    expect(outgoing.weight).toBeCloseTo(0.5)
+    expect(outgoing.notifyWeight).toBe(1)
+    expect(outgoing.blendOutReason).toBe('interrupted')
+    expect(canGatherSlotMontageSequenceNotifies(outgoing)).toBe(false)
+  })
+
+  it('keeps a stopped PostLocomotion source relevant for its prior-weight range', () => {
+    const clock = createSlotMontageClock()
+    const roll = playSlotMontage(clock, authoredRequest({
+      clipKey: 'A_Als_Roll',
+      blendInDuration: 0,
+    }))
+    stopSlotAnimation(clock, 0.1, 'PostLocomotion')
+
+    advanceSlotMontageGroup(clock, 'DefaultGroup', 0.1)
+
+    expect(roll.notifyPreviousWeight).toBe(1)
+    expect(roll.weight).toBe(0)
+    expect(roll.notifyWeight).toBe(1)
+    expect(roll.sourceNotifyPreviousTime).toBe(0)
+    expect(roll.sourceNotifyCurrentTime).toBeCloseTo(0.1, 12)
+    expect(roll.blendOutReason).toBe('stopped')
+    expect(canGatherSlotMontageSequenceNotifies(roll)).toBe(true)
   })
 
   it('retains an interrupted instance but dispatches the new boundary marker once', () => {
