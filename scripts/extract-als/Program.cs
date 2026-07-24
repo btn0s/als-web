@@ -32,6 +32,10 @@ if (args.Length == 3 && args[0] == "dump-camera-content")
     return CameraContentDump.Run(args[1], args[2]);
 if (args.Length == 2 && args[0] == "validate-camera-content")
     return CameraContentDump.Validate(args[1]);
+if (args.Length == 3 && args[0] == "dump-grid-level-content")
+    return GridLevelContentDump.Run(args[1], args[2]);
+if (args.Length == 2 && args[0] == "validate-grid-level-content")
+    return GridLevelContentDump.Validate(args[1]);
 if (args.Length == 4 && args[0] == "inspect") return Inspect.Run(args[1], args[2], args[3]);
 Console.Error.WriteLine(
     "usage: dotnet run -- dump <stage-dir> <out.json> <SkeletonName> <MeshName> " +
@@ -63,4 +67,8 @@ Console.Error.WriteLine(
     "       dotnet run -- dump-camera-content <stage-dir> <camera-content.json>");
 Console.Error.WriteLine(
     "       dotnet run -- validate-camera-content <camera-content.json>");
+Console.Error.WriteLine(
+    "       dotnet run -- dump-grid-level-content <stage-dir> <grid-level-content.json>");
+Console.Error.WriteLine(
+    "       dotnet run -- validate-grid-level-content <grid-level-content.json>");
 return 1;

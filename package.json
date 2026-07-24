@@ -21,6 +21,7 @@
     "@react-three/postprocessing": "^3.0.4",
     "@react-three/rapier": "^2.2.0",
     "leva": "^0.10.1",
+    "postprocessing": "6.39.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "three": "^0.185.1",

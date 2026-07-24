@@ -1,12 +1,13 @@
 import { Canvas } from '@react-three/fiber'
-import { Grid } from '@react-three/drei'
-import {
-  CuboidCollider,
-  Physics,
-  RigidBody,
-} from '@react-three/rapier'
+import { Physics } from '@react-three/rapier'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
+import {
+  L_Als_GridFloor,
+  L_Als_GridFloorCollision,
+  L_Als_GridSkyLight,
+  L_Als_GridSkySphere,
+} from '../als/ALSExtras/Levels/L_Als_Grid'
 import { ALS_PHYSICS_TIMESTEP } from '../als/AlsCharacter.hooks'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 import { createCharacterPoseSample } from './CharacterPoseSample'
@@ -15,8 +16,6 @@ import { Character } from './Character'
 import { FramePerformanceMonitor } from './FramePerformanceMonitor'
 import { PostProcessing } from './PostProcessing'
 import './App.css'
-
-const DEFAULT_CHARACTER_SIZE = new THREE.Vector3(0.7, 1.9, 0.7)
 
 function SceneReady() {
   useEffect(() => {
@@ -27,31 +26,13 @@ function SceneReady() {
 }
 
 function Scene() {
-  const [characterSize, setCharacterSize] = useState(
-    () => DEFAULT_CHARACTER_SIZE.clone(),
-  )
+  const [, setCharacterSize] = useState(() => new THREE.Vector3())
   const poseSample = useRef(createCharacterPoseSample())
-  const gridSize = Math.max(20, characterSize.length() * 3)
 
   return (
     <>
-      <color attach="background" args={['#18202b']} />
-      <hemisphereLight args={['#c8ddff', '#202633', 1.1]} />
-      <directionalLight
-        castShadow
-        color="#fff1db"
-        intensity={3.2}
-        position={[4.5, 7.5, 5]}
-        shadow-bias={-0.0001}
-        shadow-normalBias={0.025}
-        shadow-radius={4}
-        shadow-mapSize={[2048, 2048]}
-      />
-      <directionalLight
-        color="#9abfff"
-        intensity={1.15}
-        position={[-4, 3.5, 2]}
-      />
+      <L_Als_GridSkySphere />
+      <L_Als_GridSkyLight />
 
       <Suspense fallback={null}>
         <Physics
@@ -61,26 +42,12 @@ function Scene() {
           updatePriority={ALS_FRAME_PRIORITY.Physics}
         >
           <Character onSizeChange={setCharacterSize} poseSample={poseSample} />
-          <RigidBody type="fixed" colliders={false}>
-            <CuboidCollider
-              args={[gridSize / 2, 0.05, gridSize / 2]}
-              position={[0, -0.05, 0]}
-              friction={0}
-            />
-          </RigidBody>
+          <L_Als_GridFloorCollision />
           <AlsCamera poseSample={poseSample} />
         </Physics>
       </Suspense>
 
-      <Grid
-        args={[gridSize, gridSize]}
-        cellColor="#354253"
-        cellSize={gridSize / 40}
-        fadeDistance={gridSize * 0.7}
-        fadeStrength={1}
-        sectionColor="#68809d"
-        sectionSize={gridSize / 8}
-      />
+      <L_Als_GridFloor />
       <PostProcessing />
       <FramePerformanceMonitor />
       <SceneReady />
@@ -96,7 +63,7 @@ function App() {
         gl={{
           antialias: false,
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.05,
+          toneMappingExposure: 1,
         }}
         shadows="soft"
       >

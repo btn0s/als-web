@@ -11,6 +11,7 @@
 # SkeletonProfilesDump.cs (SK_Als authored per-bone blend profiles) →
 # InputMappingDump.cs (IMC + action triggers/modifiers) →
 # CameraContentDump.cs (camera defaults + scalar graph + authored transition curves) →
+# GridLevelContentDump.cs (L_Als_Grid floor/sky/post-process external actors) →
 # copy distributable assets
 # with the upstream MIT notice.
 # clips.manifest is the audited M3 animation allowlist.
@@ -56,6 +57,8 @@ dotnet run -- dump-input-mappings "$WORK/stage" "$WORK/input-mappings.json"
 dotnet run -- validate-input-mappings "$WORK/input-mappings.json"
 dotnet run -- dump-camera-content "$WORK/stage" "$WORK/camera-content.json"
 dotnet run -- validate-camera-content "$WORK/camera-content.json"
+dotnet run -- dump-grid-level-content "$WORK/stage" "$WORK/grid-level-content.json"
+dotnet run -- validate-grid-level-content "$WORK/grid-level-content.json"
 [ -d node_modules ] || pnpm install
 node assemble-glb.mjs "$WORK/als-dump.json" "$WORK/skm-als.glb"
 node assemble-glb.mjs "$WORK/als-rifle-dump.json" "$WORK/skm-als-rifle.glb"
@@ -83,6 +86,7 @@ cp "$WORK/skeleton-profiles.json" "$REPO_ROOT/scripts/extract-als/skeleton-profi
 cp "$WORK/blend-spaces.json" "$REPO_ROOT/scripts/extract-als/blend-spaces.json"
 cp "$WORK/input-mappings.json" "$REPO_ROOT/scripts/extract-als/input-mappings.json"
 cp "$WORK/camera-content.json" "$REPO_ROOT/scripts/extract-als/camera-content.json"
+cp "$WORK/grid-level-content.json" "$REPO_ROOT/scripts/extract-als/grid-level-content.json"
 echo "done: public/assets/skm-als.glb + skm-als-rifle.glb + LICENSE-ALS-Refactored.md"
 echo "done: $ABP_GRAPH_DESTINATION ($ABP_GRAPH_SIZE bytes)"
-echo "done: scripts/extract-als/{movement-settings,animation-settings,skeleton-profiles,blend-spaces,input-mappings,camera-content}.json"
+echo "done: scripts/extract-als/{movement-settings,animation-settings,skeleton-profiles,blend-spaces,input-mappings,camera-content,grid-level-content}.json"

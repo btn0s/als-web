@@ -1,5 +1,5 @@
-import { Bloom, EffectComposer, N8AO, SMAA } from '@react-three/postprocessing'
 import { useControls } from 'leva'
+import { L_Als_GridPostProcess } from '../als/ALSExtras/Levels/L_Als_Grid'
 import { LEVA_ROOTS } from './levaRoots'
 
 export function PostProcessing() {
@@ -18,23 +18,5 @@ export function PostProcessing() {
     return null
   }
 
-  return (
-    <EffectComposer multisampling={0}>
-      <N8AO
-        aoRadius={0.35}
-        distanceFalloff={0.75}
-        intensity={0.7}
-        quality="performance"
-        halfRes
-        depthAwareUpsampling
-      />
-      <Bloom
-        intensity={0.12}
-        luminanceThreshold={1.05}
-        luminanceSmoothing={0.12}
-        mipmapBlur
-      />
-      <SMAA />
-    </EffectComposer>
-  )
+  return <L_Als_GridPostProcess />
 }

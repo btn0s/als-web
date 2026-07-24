@@ -1,0 +1,421 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "engineVersion": "UE5.5",
+    "referenceRelease": "ALS Refactored 4.15",
+    "levelAssetPath": "ALS/Content/ALSExtras/Levels/L_Als_Grid.umap",
+    "externalActorAssetPaths": [
+      "ALS/Content/__ExternalActors__/ALSExtras/Levels/L_Als_Grid/1/NR/NVLAS1RDNB3U5XYT6JM68J.uasset",
+      "ALS/Content/__ExternalActors__/ALSExtras/Levels/L_Als_Grid/6/JQ/PSCX8LT78YJA7CWJGBTXU4.uasset",
+      "ALS/Content/__ExternalActors__/ALSExtras/Levels/L_Als_Grid/7/R2/U2YKN4R6KEK238HJKD31KI.uasset",
+      "ALS/Content/__ExternalActors__/ALSExtras/Levels/L_Als_Grid/8/PQ/0BWL9QDSSI05VAHC0HUX60.uasset",
+      "ALS/Content/__ExternalActors__/ALSExtras/Levels/L_Als_Grid/A/A9/69KQ49PN7FFEK1HAU0YA23.uasset"
+    ]
+  },
+  "world": {
+    "bForceNoPrecomputedLighting": true
+  },
+  "postProcess": {
+    "bUnbound": true,
+    "settings": {
+      "bOverride_AutoExposureMinBrightness": true,
+      "bOverride_AutoExposureMaxBrightness": true,
+      "bOverride_AutoExposureBias": true,
+      "bOverride_VignetteIntensity": true,
+      "bOverride_MotionBlurAmount": true,
+      "AutoExposureBias": 0.0,
+      "AutoExposureMinBrightness": 1.0,
+      "AutoExposureMaxBrightness": 1.0,
+      "VignetteIntensity": 0.8500000238418579,
+      "MotionBlurAmount": 0.0
+    }
+  },
+  "floor": {
+    "actorLabel": "Floor",
+    "mesh": "SM_Als_Floor_1x1Km",
+    "material": "M_Als_Grid",
+    "CastShadow": false,
+    "boundsExtentCm": {
+      "X": 50000.0,
+      "Y": 50000.0,
+      "Z": 8.040613314053147E-12
+    }
+  },
+  "gridMaterial": {
+    "BlendMode": "BLEND_Translucent",
+    "ShadingModel": "MSM_Unlit",
+    "TwoSided": true,
+    "EmissiveColor": {
+      "B": 255,
+      "G": 255,
+      "R": 255,
+      "A": 255,
+      "Hex": "FFFFFF"
+    },
+    "OpacityExpression": "MaterialExpressionMultiply_4",
+    "parameters": {
+      "FadeOffset": 1000.0,
+      "FadeLength": 2000.0,
+      "FadeExponent": 5.0,
+      "LineWidthExponent": 100.0,
+      "CellWidth": 75.0,
+      "LineWidthMultiplier": 1.0750000476837158
+    },
+    "expressions": [
+      {
+        "name": "MaterialExpressionAbs_0",
+        "type": "MaterialExpressionAbs",
+        "inputs": {
+          "Input": "MaterialExpressionSubtract_6"
+        }
+      },
+      {
+        "name": "MaterialExpressionAdd_10",
+        "type": "MaterialExpressionAdd",
+        "inputs": {
+          "A": "MaterialExpressionComponentMask_12",
+          "B": "MaterialExpressionComponentMask_13"
+        }
+      },
+      {
+        "name": "MaterialExpressionCameraPositionWS_2",
+        "type": "MaterialExpressionCameraPositionWS"
+      },
+      {
+        "name": "MaterialExpressionComponentMask_12",
+        "type": "MaterialExpressionComponentMask",
+        "inputs": {
+          "Input": "MaterialExpressionPower_5"
+        },
+        "values": {
+          "R": true
+        }
+      },
+      {
+        "name": "MaterialExpressionComponentMask_13",
+        "type": "MaterialExpressionComponentMask",
+        "inputs": {
+          "Input": "MaterialExpressionPower_5"
+        },
+        "values": {
+          "G": true
+        }
+      },
+      {
+        "name": "MaterialExpressionConstantBiasScale_0",
+        "type": "MaterialExpressionConstantBiasScale",
+        "inputs": {
+          "Input": "MaterialExpressionAbs_0"
+        },
+        "values": {
+          "Bias": -0.25,
+          "Scale": 4.0
+        }
+      },
+      {
+        "name": "MaterialExpressionDistance_0",
+        "type": "MaterialExpressionDistance",
+        "inputs": {
+          "A": "MaterialExpressionWorldPosition_2",
+          "B": "MaterialExpressionCameraPositionWS_2"
+        }
+      },
+      {
+        "name": "MaterialExpressionDivide_0",
+        "type": "MaterialExpressionDivide",
+        "inputs": {
+          "A": "MaterialExpressionSubtract_1",
+          "B": "MaterialExpressionScalarParameter_8"
+        },
+        "values": {
+          "ConstB": 100.0
+        }
+      },
+      {
+        "name": "MaterialExpressionDivide_4",
+        "type": "MaterialExpressionDivide",
+        "inputs": {
+          "A": "MaterialExpressionSubtract_5",
+          "B": "MaterialExpressionScalarParameter_2"
+        }
+      },
+      {
+        "name": "MaterialExpressionFrac_0",
+        "type": "MaterialExpressionFrac",
+        "inputs": {
+          "Input": "MaterialExpressionDivide_0"
+        }
+      },
+      {
+        "name": "MaterialExpressionMultiply_4",
+        "type": "MaterialExpressionMultiply",
+        "inputs": {
+          "A": "MaterialExpressionNamedRerouteUsage_1",
+          "B": "MaterialExpressionNamedRerouteUsage_0"
+        }
+      },
+      {
+        "name": "MaterialExpressionMultiply_6",
+        "type": "MaterialExpressionMultiply",
+        "inputs": {
+          "A": "MaterialExpressionConstantBiasScale_0",
+          "B": "MaterialExpressionScalarParameter_9"
+        }
+      },
+      {
+        "name": "MaterialExpressionNamedRerouteDeclaration_0",
+        "type": "MaterialExpressionNamedRerouteDeclaration",
+        "inputs": {
+          "Input": "MaterialExpressionPower_2"
+        },
+        "values": {
+          "Name": "FadeOpacity"
+        }
+      },
+      {
+        "name": "MaterialExpressionNamedRerouteDeclaration_1",
+        "type": "MaterialExpressionNamedRerouteDeclaration",
+        "inputs": {
+          "Input": "MaterialExpressionAdd_10"
+        },
+        "values": {
+          "Name": "LineOpacity"
+        }
+      },
+      {
+        "name": "MaterialExpressionNamedRerouteUsage_0",
+        "type": "MaterialExpressionNamedRerouteUsage",
+        "declaration": "MaterialExpressionNamedRerouteDeclaration_0"
+      },
+      {
+        "name": "MaterialExpressionNamedRerouteUsage_1",
+        "type": "MaterialExpressionNamedRerouteUsage",
+        "declaration": "MaterialExpressionNamedRerouteDeclaration_1"
+      },
+      {
+        "name": "MaterialExpressionObjectPositionWS_1",
+        "type": "MaterialExpressionObjectPositionWS"
+      },
+      {
+        "name": "MaterialExpressionOneMinus_3",
+        "type": "MaterialExpressionOneMinus",
+        "inputs": {
+          "Input": "MaterialExpressionSaturate_0"
+        }
+      },
+      {
+        "name": "MaterialExpressionPower_2",
+        "type": "MaterialExpressionPower",
+        "inputs": {
+          "Base": "MaterialExpressionOneMinus_3",
+          "Exponent": "MaterialExpressionScalarParameter_5"
+        },
+        "values": {
+          "ConstExponent": 5.0
+        }
+      },
+      {
+        "name": "MaterialExpressionPower_5",
+        "type": "MaterialExpressionPower",
+        "inputs": {
+          "Base": "MaterialExpressionMultiply_6",
+          "Exponent": "MaterialExpressionScalarParameter_7"
+        }
+      },
+      {
+        "name": "MaterialExpressionSaturate_0",
+        "type": "MaterialExpressionSaturate",
+        "inputs": {
+          "Input": "MaterialExpressionDivide_4"
+        }
+      },
+      {
+        "name": "MaterialExpressionScalarParameter_1",
+        "type": "MaterialExpressionScalarParameter",
+        "values": {
+          "ParameterName": "FadeOffset",
+          "DefaultValue": 1000.0
+        }
+      },
+      {
+        "name": "MaterialExpressionScalarParameter_2",
+        "type": "MaterialExpressionScalarParameter",
+        "values": {
+          "ParameterName": "FadeLength",
+          "DefaultValue": 2000.0
+        }
+      },
+      {
+        "name": "MaterialExpressionScalarParameter_5",
+        "type": "MaterialExpressionScalarParameter",
+        "values": {
+          "ParameterName": "FadeExponent",
+          "DefaultValue": 5.0
+        }
+      },
+      {
+        "name": "MaterialExpressionScalarParameter_7",
+        "type": "MaterialExpressionScalarParameter",
+        "values": {
+          "ParameterName": "LineWidthExponent",
+          "DefaultValue": 100.0
+        }
+      },
+      {
+        "name": "MaterialExpressionScalarParameter_8",
+        "type": "MaterialExpressionScalarParameter",
+        "values": {
+          "ParameterName": "CellWidth",
+          "DefaultValue": 75.0
+        }
+      },
+      {
+        "name": "MaterialExpressionScalarParameter_9",
+        "type": "MaterialExpressionScalarParameter",
+        "values": {
+          "ParameterName": "LineWidthMultiplier",
+          "DefaultValue": 1.075
+        }
+      },
+      {
+        "name": "MaterialExpressionSubtract_1",
+        "type": "MaterialExpressionSubtract",
+        "inputs": {
+          "A": "MaterialExpressionWorldPosition_1",
+          "B": "MaterialExpressionObjectPositionWS_1"
+        }
+      },
+      {
+        "name": "MaterialExpressionSubtract_5",
+        "type": "MaterialExpressionSubtract",
+        "inputs": {
+          "A": "MaterialExpressionDistance_0",
+          "B": "MaterialExpressionScalarParameter_1"
+        }
+      },
+      {
+        "name": "MaterialExpressionSubtract_6",
+        "type": "MaterialExpressionSubtract",
+        "inputs": {
+          "A": "MaterialExpressionFrac_0"
+        },
+        "values": {
+          "ConstB": 0.5
+        }
+      },
+      {
+        "name": "MaterialExpressionWorldPosition_1",
+        "type": "MaterialExpressionWorldPosition"
+      },
+      {
+        "name": "MaterialExpressionWorldPosition_2",
+        "type": "MaterialExpressionWorldPosition"
+      }
+    ]
+  },
+  "skySphere": {
+    "actorLabel": "SkySphere",
+    "mesh": "Sphere",
+    "material": "M_Als_SkySphere",
+    "RelativeScale3D": {
+      "X": 1000.0,
+      "Y": 1000.0,
+      "Z": 1000.0
+    },
+    "CastShadow": false,
+    "CollisionEnabled": "ECollisionEnabled::NoCollision",
+    "ShadingModel": "MSM_Unlit",
+    "TwoSided": true,
+    "bIsSky": true,
+    "EmissiveExpression": "MaterialExpressionVectorParameter_0",
+    "ColorParameter": {
+      "name": "Color",
+      "value": {
+        "R": 0.0,
+        "G": 0.333333,
+        "B": 2.0,
+        "A": 1.0,
+        "Hex": "009CFF"
+      }
+    }
+  },
+  "skyLight": {
+    "actorLabel": "SkyLight",
+    "SourceType": "SLS_SpecifiedCubemap",
+    "Cubemap": "TC_Als_WhiteLight_HDRI",
+    "Intensity": 2.0,
+    "bLowerHemisphereIsBlack": true,
+    "LowerHemisphereColor": {
+      "R": 0.0,
+      "G": 0.0,
+      "B": 0.0,
+      "A": 1.0
+    },
+    "cubemapSource": {
+      "SizeX": 256.0,
+      "SizeY": 256.0,
+      "NumSlices": 6.0,
+      "Format": "TSF_RGBA16F",
+      "ColorMin": {
+        "R": 1.0,
+        "G": 1.0,
+        "B": 1.0,
+        "A": 0.0,
+        "Hex": "FFFFFF"
+      },
+      "ColorMax": {
+        "R": 1.0,
+        "G": 1.0,
+        "B": 1.0,
+        "A": 0.0,
+        "Hex": "FFFFFF"
+      }
+    }
+  },
+  "validations": [
+    {
+      "name": "schema-version",
+      "passed": true
+    },
+    {
+      "name": "five-external-actors",
+      "passed": true
+    },
+    {
+      "name": "no-precomputed-lighting",
+      "passed": true
+    },
+    {
+      "name": "unbound-post-process",
+      "passed": true
+    },
+    {
+      "name": "fixed-exposure",
+      "passed": true
+    },
+    {
+      "name": "vignette-and-motion-blur",
+      "passed": true
+    },
+    {
+      "name": "one-kilometer-floor",
+      "passed": true
+    },
+    {
+      "name": "authored-grid-material",
+      "passed": true
+    },
+    {
+      "name": "grid-material-expression-graph",
+      "passed": true
+    },
+    {
+      "name": "authored-sky-sphere",
+      "passed": true
+    },
+    {
+      "name": "white-hdri-skylight",
+      "passed": true
+    }
+  ]
+}
