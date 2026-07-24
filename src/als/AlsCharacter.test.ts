@@ -14,8 +14,10 @@ import {
   refreshInput,
   refreshLocomotion,
   refreshRotationMode,
+  refreshView,
   setStance,
   setTargetYawAngle,
+  setViewMode,
 } from './AlsCharacter'
 
 describe('AAlsCharacter input and gait policy', () => {
@@ -73,7 +75,8 @@ describe('AAlsCharacter input and gait policy', () => {
     refreshInput(character, { x: -1, y: 0, z: 0 })
 
     expect(canSprint(character)).toBe(true)
-    character.viewMode = 'FirstPerson'
+    expect(setViewMode(character, 'FirstPerson')).toBe(character)
+    expect(character.viewMode).toBe('FirstPerson')
     expect(canSprint(character)).toBe(false)
   })
 
@@ -266,5 +269,26 @@ describe('AAlsCharacter RotationMode policy', () => {
     expect(character.locomotionState.targetYawAngle).toBe(-170)
     expect(character.locomotionState.smoothTargetYawAngle).toBe(-170)
     expect(character.locomotionState.viewRelativeTargetYawAngle).toBe(-160)
+  })
+
+  it('keeps absolute view yaw independent while authored actor yaw turns', () => {
+    // AlsCharacter.cpp:1226-1269 samples controller view rotation one-way; actor yaw never feeds
+    // back into it. AlsAnimationInstance.cpp:363-369 derives the relative yaw afterward.
+    const character = createAlsCharacter({
+      actorYawAngle: 0,
+      viewYawAngle: 90,
+    })
+
+    refreshView(character, 90, 1 / 60)
+    character.actorYawAngle = applyRotationYawSpeedAnimationCurve(
+      character.actorYawAngle,
+      45,
+      1,
+    )
+    refreshView(character, 90, 1 / 60)
+
+    expect(character.viewYawAngle).toBe(90)
+    expect(character.viewYawSpeed).toBe(0)
+    expect(character.viewYawAngle - character.actorYawAngle).toBe(45)
   })
 })

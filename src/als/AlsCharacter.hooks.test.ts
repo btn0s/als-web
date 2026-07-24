@@ -1,12 +1,21 @@
-import { describe, expect, it } from 'vitest'
+import RAPIER from '@dimforge/rapier3d-compat'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { createAlsCharacter, refreshAlsCharacter } from './AlsCharacter'
 import {
   ALS_PHYSICS_TIMESTEP,
+  ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
+  ALS_STANDING_CAPSULE_HALF_HEIGHT,
+  calculateMaintainedMeshBaseOffset,
   hasTriggeredSprintHold,
   resolveCameraRelativeInput,
+  setCapsuleHalfHeightMaintainingBase,
   stepGroundedCharacterYaw,
 } from './AlsCharacter.hooks'
 import { exponentialDecay } from './State/AlsGroundedState'
+
+beforeAll(async () => {
+  await RAPIER.init()
+})
 
 describe('AlsCharacter browser bridge math', () => {
   it('fires the authored 0.1s Sprint Hold on the sixth fixed physics tick', () => {
@@ -33,6 +42,75 @@ describe('AlsCharacter browser bridge math', () => {
     )
     expect(rotated.x).toBeCloseTo(0, 12)
     expect(rotated.y).toBeCloseTo(1, 12)
+  })
+
+  it('replaces the Rapier capsule while maintaining the crouched base location', () => {
+    const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
+    world.timestep = ALS_PHYSICS_TIMESTEP
+    try {
+      const ground = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
+      world.createCollider(
+        RAPIER.ColliderDesc
+          .cuboid(10, 0.05, 10)
+          .setTranslation(0, -0.05, 0),
+        ground,
+      )
+      const body = world.createRigidBody(
+        RAPIER.RigidBodyDesc
+          .dynamic()
+          .setTranslation(0, ALS_STANDING_CAPSULE_HALF_HEIGHT, 0)
+          .lockRotations()
+          .setCanSleep(false),
+      )
+      let collider = setCapsuleHalfHeightMaintainingBase(
+        world,
+        body,
+        null,
+        ALS_STANDING_CAPSULE_HALF_HEIGHT,
+        ALS_STANDING_CAPSULE_HALF_HEIGHT,
+      )
+      for (let step = 0; step < 120; step += 1) world.step()
+      const standingBottom =
+        body.translation().y - ALS_STANDING_CAPSULE_HALF_HEIGHT
+
+      collider = setCapsuleHalfHeightMaintainingBase(
+        world,
+        body,
+        collider,
+        ALS_STANDING_CAPSULE_HALF_HEIGHT,
+        ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
+      )
+      for (let step = 0; step < 60; step += 1) world.step()
+
+      expect(collider.translationWrtParent()?.y).toBe(0)
+      expect(
+        body.translation().y - ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
+      ).toBeCloseTo(standingBottom, 5)
+      expect(body.translation().y).toBeCloseTo(
+        ALS_CROUCHING_CAPSULE_HALF_HEIGHT + standingBottom,
+        5,
+      )
+    } finally {
+      world.free()
+    }
+  })
+
+  it('cancels the one-frame rendered-body interpolation across a crouch teleport', () => {
+    const physicsBodyY = 0.5588623881340027
+    const renderedBodyY = 0.7583373704612587
+    const colliderHalfExtent = ALS_CROUCHING_CAPSULE_HALF_HEIGHT
+    const offset = calculateMaintainedMeshBaseOffset(
+      physicsBodyY,
+      renderedBodyY,
+      0,
+      colliderHalfExtent,
+    )
+
+    expect(renderedBodyY + offset).toBeCloseTo(
+      physicsBodyY - colliderHalfExtent,
+      12,
+    )
+    expect(offset).toBeCloseTo(-0.759474982327256, 12)
   })
 
   it('applies ALS extra-smooth target rotation before actor exponential decay', () => {

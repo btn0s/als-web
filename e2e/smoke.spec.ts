@@ -14,10 +14,17 @@ test('scene mounts with either the character GLB or its DOM load state', async (
   await page.goto('/')
 
   await expect(page.locator('canvas')).toBeVisible()
-  await expect.poll(() => page.evaluate(() => window.__appReady)).toBe(true)
+  await expect.poll(
+    () => page.evaluate(() => window.__appReady),
+    { timeout: 15_000 },
+  ).toBe(true)
   await expect
     .poll(() => page.evaluate(() => window.__characterStatus))
     .toMatch(/^(glb|placeholder)$/)
+  await expect.poll(
+    () => page.evaluate(() => window.__characterStatus),
+    { timeout: 30_000 },
+  ).toBe('glb')
   if (await page.evaluate(() => window.__characterStatus === 'glb')) {
     await expect.poll(() => page.evaluate(() => ({
       gait: typeof window.__setGait,
@@ -28,6 +35,10 @@ test('scene mounts with either the character GLB or its DOM load state', async (
       movementOverride: typeof window.__setMovementOverride,
       playClip: typeof window.__playClip,
       weightTable: typeof window.__weightTable,
+      cameraState: typeof window.__alsCameraState,
+      cameraShoulder: typeof window.__setCameraRightShoulder,
+      cameraViewMode: typeof window.__setCameraViewMode,
+      cameraViewRotation: typeof window.__setCameraViewRotation,
     }))).toEqual({
       gait: 'function',
       stance: 'function',
@@ -37,22 +48,59 @@ test('scene mounts with either the character GLB or its DOM load state', async (
       movementOverride: 'function',
       playClip: 'function',
       weightTable: 'object',
+      cameraState: 'object',
+      cameraShoulder: 'function',
+      cameraViewMode: 'function',
+      cameraViewRotation: 'function',
     })
 
     await expect.poll(() => page.evaluate(
       () => window.__alsCharacterState?.rotationMode,
     )).toBe('ViewDirection')
-    const initialX = await page.evaluate(
-      () => window.__alsCharacterState?.position.x ?? 0,
-    )
+    await expect.poll(() => page.evaluate(
+      () => window.__alsCameraState?.activated,
+    )).toBe(true)
+    await expect.poll(() => page.evaluate(() => {
+      const camera = window.__alsCameraState
+      return camera && {
+        viewMode: camera.viewMode,
+        rightShoulder: camera.rightShoulder,
+        finite: [
+          camera.location.x,
+          camera.location.y,
+          camera.location.z,
+          camera.rotation.pitch,
+          camera.rotation.yaw,
+          camera.rotation.roll,
+          camera.horizontalFieldOfView,
+          camera.traceDistanceRatio,
+        ].every(Number.isFinite),
+      }
+    })).toEqual({
+      viewMode: 'ThirdPerson',
+      rightShoulder: true,
+      finite: true,
+    })
+    await page.evaluate(() => {
+      window.__setCameraViewRotation?.(0, 90)
+    })
+    await page.waitForTimeout(4_000)
+
+    const initialPosition = await page.evaluate(() => ({
+      x: window.__alsCharacterState?.position.x ?? 0,
+      z: window.__alsCharacterState?.position.z ?? 0,
+    }))
 
     await page.keyboard.down('KeyW')
     await expect.poll(() => page.evaluate(
       () => window.__alsCharacterState?.speed ?? 0,
     )).toBeGreaterThan(0.1)
     await expect.poll(() => page.evaluate(
-      (startX) => (window.__alsCharacterState?.position.x ?? startX) - startX,
-      initialX,
+      (start) => Math.hypot(
+        (window.__alsCharacterState?.position.x ?? start.x) - start.x,
+        (window.__alsCharacterState?.position.z ?? start.z) - start.z,
+      ),
+      initialPosition,
     )).toBeGreaterThan(0.02)
 
     await page.keyboard.down('ShiftLeft')
@@ -69,6 +117,19 @@ test('scene mounts with either the character GLB or its DOM load state', async (
     await expect.poll(() => page.evaluate(
       () => window.__alsCharacterState?.stance,
     )).toBe('Crouching')
+    await expect.poll(() => page.evaluate(
+      () => window.__alsCharacterState?.speed ?? Number.POSITIVE_INFINITY,
+    )).toBeLessThan(0.05)
+    await page.waitForTimeout(1_500)
+    await page.keyboard.down('KeyW')
+    await expect.poll(() => page.evaluate(
+      () => window.__alsCharacterState?.speed ?? 0,
+    )).toBeGreaterThan(0.1)
+    await page.waitForTimeout(500)
+    await page.keyboard.up('KeyW')
+    await expect.poll(() => page.evaluate(
+      () => window.__alsCharacterState?.speed ?? Number.POSITIVE_INFINITY,
+    )).toBeLessThan(0.05)
     await page.keyboard.press('Digit1')
     await expect.poll(() => page.evaluate(
       () => window.__alsCharacterState?.rotationMode,
@@ -83,6 +144,34 @@ test('scene mounts with either the character GLB or its DOM load state', async (
     await expect.poll(() => page.evaluate(
       () => window.__alsCharacterState?.rotationMode,
     )).toBe('VelocityDirection')
+
+    await page.keyboard.press('KeyC')
+    await expect.poll(() => page.evaluate(
+      () => window.__alsCameraState?.rightShoulder,
+    )).toBe(false)
+
+    await page.keyboard.press('Digit2')
+    await expect.poll(() => page.evaluate(
+      () => window.__alsCameraState?.viewMode,
+    )).toBe('FirstPerson')
+    await expect.poll(() => page.evaluate(
+      () => window.__alsCameraState?.firstPersonOverride ?? 0,
+    )).toBeGreaterThan(1 - 1e-5)
+
+    await page.evaluate(() => {
+      window.__setCameraViewRotation?.(5, 90)
+    })
+    await expect.poll(() => page.evaluate(
+      () => window.__alsCameraState?.rotation.yaw ?? 0,
+    )).toBeCloseTo(90, 3)
+
+    await page.keyboard.press('Digit2')
+    await expect.poll(() => page.evaluate(
+      () => window.__alsCameraState?.viewMode,
+    )).toBe('ThirdPerson')
+    await expect.poll(() => page.evaluate(
+      () => window.__alsCameraState?.firstPersonOverride ?? 1,
+    )).toBeLessThan(1e-5)
   }
   await page.waitForTimeout(250)
 

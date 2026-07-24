@@ -1,7 +1,6 @@
 import { useFrame } from '@react-three/fiber'
 import { Html, useGLTF } from '@react-three/drei'
 import {
-  CapsuleCollider,
   RigidBody,
   type RapierCollider,
   type RapierRigidBody,
@@ -20,11 +19,11 @@ import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { useAlsAnimationInstance } from '../als/AlsAnimationInstance.hooks'
 import {
-  ALS_CAPSULE_RADIUS,
   ALS_STANDING_CAPSULE_HALF_HEIGHT,
   useAlsCharacter,
 } from '../als/AlsCharacter.hooks'
-import type { CharacterPoseSample } from '../als/AlsCamera/poseCameraState'
+import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import type { CharacterPoseSample } from './CharacterPoseSample'
 import {
   ALS_RIFLE_OVERLAY_OBJECT_URL,
   attachRifleOverlayObject,
@@ -245,7 +244,7 @@ function LoadedCharacter({
     poseSample.current.characterYaw = group.rotation.y
     poseSample.current.ready =
       Number.isFinite(poseSample.current.poseHeight) && poseSample.current.poseHeight > 0
-  })
+  }, ALS_FRAME_PRIORITY.PosePublication)
 
   return (
     <RigidBody
@@ -259,14 +258,6 @@ function LoadedCharacter({
       linearDamping={0}
       angularDamping={0}
     >
-      <CapsuleCollider
-        ref={capsule}
-        args={[
-          ALS_STANDING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS,
-          ALS_CAPSULE_RADIUS,
-        ]}
-        friction={0}
-      />
       <group
         ref={characterGroup}
         position={[0, -ALS_STANDING_CAPSULE_HALF_HEIGHT, 0]}

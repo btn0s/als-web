@@ -1,13 +1,21 @@
 import {
   useBeforePhysicsStep,
+  useRapier,
   type RapierCollider,
   type RapierRigidBody,
 } from '@react-three/rapier'
+import { useFrame } from '@react-three/fiber'
+import RAPIER, {
+  type Collider,
+  type RigidBody,
+  type World,
+} from '@dimforge/rapier3d-compat'
 import { folder, useControls } from 'leva'
 import { useEffect, useRef } from 'react'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { LEVA_ROOTS } from '../app/levaRoots'
+import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 import {
   threeToUnrealVector,
   unrealToThreeVector,
@@ -25,7 +33,7 @@ import {
 } from './AlsCharacterMovementComponent'
 import { getRelativeAccelerationAmount } from './AlsAnimationInstance'
 import type { AlsAnimationInstanceControls } from './AlsAnimationInstance'
-import type { CharacterPoseSample } from './AlsCamera/poseCameraState'
+import type { CharacterPoseSample } from '../app/CharacterPoseSample'
 import {
   ALS_OVERLAY_MODES,
 } from './AnimGraph/overlayMode'
@@ -36,6 +44,7 @@ import {
   ALS_STANCES,
   resolveDesiredGaitSpeed,
 } from './Settings/AlsMovementSettings'
+import { calculateMovingSmooth } from './Settings/AlsGeneralAnimationSettings'
 import type {
   AlsGait,
   AlsRotationMode,
@@ -50,6 +59,54 @@ export const ALS_CAPSULE_RADIUS = 0.3
 export const ALS_STANDING_CAPSULE_HALF_HEIGHT = 0.9
 export const ALS_CROUCHING_CAPSULE_HALF_HEIGHT = 0.56
 export const ALS_PHYSICS_TIMESTEP = 1 / 60
+
+/**
+ * UCharacterMovementComponent crouches with bCrouchMaintainsBaseLocation: the capsule center
+ * moves by the half-height delta while its bottom stays planted. Rapier retains the old contact
+ * manifold when a collider shape is mutated in place, so replace the collider atomically instead.
+ */
+export function setCapsuleHalfHeightMaintainingBase(
+  world: World,
+  body: RigidBody,
+  collider: Collider | null,
+  previousHalfHeight: number,
+  halfHeight: number,
+): Collider {
+  if (collider && world.getCollider(collider.handle)) {
+    world.removeCollider(collider, true)
+  }
+
+  if (previousHalfHeight !== halfHeight) {
+    const translation = body.translation()
+    body.setTranslation({
+      x: translation.x,
+      y: translation.y + halfHeight - previousHalfHeight,
+      z: translation.z,
+    }, true)
+  }
+
+  return world.createCollider(
+    RAPIER.ColliderDesc
+      .capsule(halfHeight - ALS_CAPSULE_RADIUS, ALS_CAPSULE_RADIUS)
+      .setFriction(0),
+    body,
+  )
+}
+
+/**
+ * Keeps the rendered mesh on the physics capsule base while react-three-rapier interpolates a
+ * fixed-step body between its pre-crouch and post-crouch centers. Unreal's
+ * bCrouchMaintainsBaseLocation changes the capsule center without smoothing that delta into the
+ * locally controlled mesh.
+ */
+export function calculateMaintainedMeshBaseOffset(
+  physicsBodyY: number,
+  renderedBodyY: number,
+  colliderLocalY: number,
+  colliderHalfExtent: number,
+) {
+  return physicsBodyY + colliderLocalY - colliderHalfExtent - renderedBodyY
+}
 
 // Unreal Enhanced Input's default radial dead-zone lower threshold. The authored IMC mapping
 // dump owns buttons/axes; this engine-level normalization only suppresses browser gamepad drift.
@@ -241,6 +298,7 @@ export function useAlsCharacter(
   characterRoot: MutableRefObject<THREE.Group | null>,
   poseSample: MutableRefObject<CharacterPoseSample>,
 ): AlsCharacterBridge {
+  const { world } = useRapier()
   const [{
     desiredGait,
     desiredStance,
@@ -320,9 +378,24 @@ export function useAlsCharacter(
   )
 
   const character = useRef(createAlsCharacter())
+  poseSample.current.character = character.current
+  useEffect(() => () => {
+    if (poseSample.current.character === character.current) {
+      poseSample.current.character = null
+      poseSample.current.ownerRigidBody = null
+    }
+  }, [poseSample])
+  useEffect(() => () => {
+    const collider = capsule.current
+    if (collider && world.getCollider(collider.handle)) {
+      world.removeCollider(collider, true)
+    }
+    capsule.current = null
+  }, [capsule, world])
   const animationControls = useRef<AlsAnimationInstanceControls>({
     gait: 'Walking',
     moving: false,
+    movingSmooth: false,
     stance: 'Standing',
     rotationMode: 'ViewDirection',
     overlayMode: 'Default',
@@ -386,6 +459,9 @@ export function useAlsCharacter(
   const renderedVelocity = useRef({ x: 0, y: 0, z: 0 })
   const debugViewYawWorld = useRef(0)
   const previousStance = useRef<AlsStance>('Standing')
+  const capsuleHalfHeight = useRef(ALS_STANDING_CAPSULE_HALF_HEIGHT)
+  const maintainRenderedMeshBase = useRef(false)
+  const renderedBodyPosition = useRef(new THREE.Vector3())
 
   useEffect(() => {
     if (viewYawOverride) {
@@ -501,12 +577,49 @@ export function useAlsCharacter(
     }
   }, [setControls])
 
+  useFrame(() => {
+    if (!maintainRenderedMeshBase.current) return
+
+    const body = rigidBody.current
+    const collider = capsule.current
+    const root = characterRoot.current
+    const renderedBody = root?.parent
+    if (!body || !collider || !root || !renderedBody) return
+
+    renderedBody.getWorldPosition(renderedBodyPosition.current)
+    const physicsBodyY = body.translation().y
+    const colliderLocalY = collider.translationWrtParent()?.y ?? 0
+    const colliderHalfExtent = collider.halfHeight() + collider.radius()
+    root.position.y = calculateMaintainedMeshBaseOffset(
+      physicsBodyY,
+      renderedBodyPosition.current.y,
+      colliderLocalY,
+      colliderHalfExtent,
+    )
+  }, ALS_FRAME_PRIORITY.MeshBase)
+
   useBeforePhysicsStep(() => {
     const body = rigidBody.current
     if (!body) return
+    if (maintainRenderedMeshBase.current) {
+      // react-three-rapier captured the post-crouch body as this substep's previous state before
+      // invoking us, so the old center can no longer leak through fixed-step interpolation.
+      const root = characterRoot.current
+      if (root) root.position.y = -capsuleHalfHeight.current
+      maintainRenderedMeshBase.current = false
+    }
+    capsule.current ??= setCapsuleHalfHeightMaintainingBase(
+      world,
+      body,
+      null,
+      capsuleHalfHeight.current,
+      capsuleHalfHeight.current,
+    )
 
     const controls = values.current
     const current = character.current
+    poseSample.current.character = current
+    poseSample.current.ownerRigidBody = body
     const keys = pressedKeys.current
     const gamepad = sampleGamepad(gamepadInput.current)
     const previousGamepad = previousGamepadInput.current
@@ -568,14 +681,9 @@ export function useAlsCharacter(
       controls.desiredAiming || aimingWithPointer.current || gamepad.aim
     setStance(current, current.desiredStance)
 
-    const relativeViewYaw = controls.viewYawOverride
-      ? unwindDegrees(debugViewYawWorld.current - current.actorYawAngle)
-      : poseSample.current.viewYawAngle
-    current.viewYawAngle = unwindDegrees(
-      current.actorYawAngle + relativeViewYaw,
-    )
-    current.viewYawSpeed = poseSample.current.viewYawSpeed
-
+    if (controls.viewYawOverride) {
+      current.viewYawAngle = debugViewYawWorld.current
+    }
     resolveCameraRelativeInput(
       axes,
       current.viewYawAngle,
@@ -618,6 +726,9 @@ export function useAlsCharacter(
     body.setLinvel(renderedVelocity.current, true)
 
     stepGroundedCharacterYaw(current, ALS_PHYSICS_TIMESTEP)
+    const animationViewYawAngle = unwindDegrees(
+      current.viewYawAngle - current.actorYawAngle,
+    )
     const root = characterRoot.current
     if (root) {
       root.rotation.y = unrealYawDegreesToThreeRadians(
@@ -630,12 +741,16 @@ export function useAlsCharacter(
       const halfHeight = current.stance === 'Crouching'
         ? ALS_CROUCHING_CAPSULE_HALF_HEIGHT
         : ALS_STANDING_CAPSULE_HALF_HEIGHT
-      capsule.current?.setHalfHeight(halfHeight - ALS_CAPSULE_RADIUS)
-      capsule.current?.setTranslationWrtParent({
-        x: 0,
-        y: halfHeight - ALS_STANDING_CAPSULE_HALF_HEIGHT,
-        z: 0,
-      })
+      capsule.current = setCapsuleHalfHeightMaintainingBase(
+        world,
+        body,
+        capsule.current,
+        capsuleHalfHeight.current,
+        halfHeight,
+      )
+      capsuleHalfHeight.current = halfHeight
+      if (root) root.position.y = -halfHeight
+      maintainRenderedMeshBase.current = true
     }
 
     const state = current.locomotionState
@@ -646,6 +761,9 @@ export function useAlsCharacter(
     frame.moving = controls.movementOverride
       ? controls.speed > 0
       : state.moving
+    frame.movingSmooth = controls.movementOverride
+      ? controls.speed > 0
+      : calculateMovingSmooth(state)
     frame.stance = current.stance
     frame.rotationMode = current.rotationMode
     frame.overlayMode = controls.overlayMode
@@ -670,9 +788,17 @@ export function useAlsCharacter(
       ? 0
       : relativeAccelerationAmount.y
     frame.rotateInPlace = controls.rotateInPlace
-    frame.viewYawAngle = relativeViewYaw
+    frame.viewYawAngle = animationViewYawAngle
     frame.viewYawSpeed = current.viewYawSpeed
 
+    const activeCollider = capsule.current
+    const colliderTranslation = activeCollider.translationWrtParent()
+    const bodyTranslation = body.translation()
+    const colliderHalfExtent =
+      activeCollider.halfHeight() + activeCollider.radius()
+    const colliderBottomY = bodyTranslation.y
+      + (colliderTranslation?.y ?? 0)
+      - colliderHalfExtent
     window.__alsCharacterState = {
       actorYawAngle: current.actorYawAngle,
       desiredGait: current.desiredGait,
@@ -682,7 +808,11 @@ export function useAlsCharacter(
       speed: state.speed,
       direction: frame.direction,
       moving: state.moving,
-      position: body.translation(),
+      capsuleBottomY: colliderBottomY,
+      capsuleHalfHeight: colliderHalfExtent,
+      meshBaseOffsetY:
+        characterRoot.current?.position.y ?? Number.NaN,
+      position: bodyTranslation,
       velocity: body.linvel(),
     }
   })

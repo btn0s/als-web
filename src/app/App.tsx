@@ -8,8 +8,9 @@ import {
 import { Suspense, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { ALS_PHYSICS_TIMESTEP } from '../als/AlsCharacter.hooks'
-import { AlsCameraComponent } from '../als/AlsCamera/AlsCameraComponent'
-import { createCharacterPoseSample } from '../als/AlsCamera/poseCameraState'
+import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import { createCharacterPoseSample } from './CharacterPoseSample'
+import { AlsCamera } from './AlsCamera'
 import { Character } from './Character'
 import { FramePerformanceMonitor } from './FramePerformanceMonitor'
 import { PostProcessing } from './PostProcessing'
@@ -26,7 +27,9 @@ function SceneReady() {
 }
 
 function Scene() {
-  const [characterSize, setCharacterSize] = useState(() => DEFAULT_CHARACTER_SIZE.clone())
+  const [characterSize, setCharacterSize] = useState(
+    () => DEFAULT_CHARACTER_SIZE.clone(),
+  )
   const poseSample = useRef(createCharacterPoseSample())
   const gridSize = Math.max(20, characterSize.length() * 3)
 
@@ -44,13 +47,18 @@ function Scene() {
         shadow-radius={4}
         shadow-mapSize={[2048, 2048]}
       />
-      <directionalLight color="#9abfff" intensity={1.15} position={[-4, 3.5, 2]} />
+      <directionalLight
+        color="#9abfff"
+        intensity={1.15}
+        position={[-4, 3.5, 2]}
+      />
 
       <Suspense fallback={null}>
         <Physics
           colliders={false}
           gravity={[0, -9.81, 0]}
           timeStep={ALS_PHYSICS_TIMESTEP}
+          updatePriority={ALS_FRAME_PRIORITY.Physics}
         >
           <Character onSizeChange={setCharacterSize} poseSample={poseSample} />
           <RigidBody type="fixed" colliders={false}>
@@ -60,6 +68,7 @@ function Scene() {
               friction={0}
             />
           </RigidBody>
+          <AlsCamera poseSample={poseSample} />
         </Physics>
       </Suspense>
 
@@ -72,7 +81,6 @@ function Scene() {
         sectionColor="#68809d"
         sectionSize={gridSize / 8}
       />
-      <AlsCameraComponent characterSize={characterSize} poseSample={poseSample} />
       <PostProcessing />
       <FramePerformanceMonitor />
       <SceneReady />

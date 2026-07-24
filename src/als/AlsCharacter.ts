@@ -147,6 +147,33 @@ export function createAlsCharacter(
   return character
 }
 
+/**
+ * AAlsCharacter::RefreshView(), cpp:1226-1269. The supplied yaw is the web controller's
+ * absolute ControlRotation analog. Actor rotation consumes this state but never writes back to
+ * it; camera and animation derive their actor-relative values from the same absolute yaw.
+ */
+export function refreshView(
+  character: AlsCharacter,
+  viewYawAngle: number,
+  deltaTime: number,
+): AlsCharacter {
+  const previousYawAngle = character.viewYawAngle
+  character.viewYawAngle = unwindDegrees(viewYawAngle)
+  character.viewYawSpeed = deltaTime > UE_SMALL_NUMBER
+    ? Math.abs(character.viewYawAngle - previousYawAngle) / deltaTime
+    : 0
+  return character
+}
+
+/** AAlsCharacter::SetViewMode(). Network replication is outside the standalone web runtime. */
+export function setViewMode(
+  character: AlsCharacter,
+  viewMode: AlsViewMode,
+): AlsCharacter {
+  character.viewMode = viewMode
+  return character
+}
+
 function getSafeNormal(
   vector: Readonly<AlsVector3>,
   out: AlsVector3,
