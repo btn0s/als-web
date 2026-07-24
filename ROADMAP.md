@@ -112,7 +112,14 @@ from another project's implementation:
       approximation recorded below.
 - [ ] Gaits: walk / run / sprint with authored speeds; stride warping if the clips demand it
 - [ ] Stances: Standing / Crouching (prone/crawl deferred to the stealth fork — non-ALS concepts defer by default); stance ladder + staged transitions
-- [ ] Rotation modes: velocity direction / looking direction / aiming — real 8-way blendspaces
+- [ ] **Character controller (`AlsCharacter` + movement component analog)**: WASD/gamepad input →
+      acceleration/braking → velocity on a rapier capsule, feeding the existing VelocityBlend/
+      gait inputs (today's Leva sliders become the debug override, not the source). All constants
+      from ALS source/content: `MS_Als_Normal` gait speeds + `AlsMovementSettings` accel/braking/
+      direction-dependent speeds; actor yaw consumes the `RotationYawSpeed` curve while
+      grounded-and-not-moving (AlsCharacter.cpp:1798). Prereq for rotation modes + turn-in-place
+      feeling real
+- [ ] Rotation modes: VelocityDirection / ViewDirection / Aiming — real 8-way blendspaces
       from authored directional clips (not cardinal-blend approximation)
 - [ ] Turn-in-place (authored Turn clips, scrubbed/arbitered) + start/stop/pivot transitions
 - [ ] Overlay states: ALS-style item/pose overlays via region rules (masked, per-bone) — SEED
