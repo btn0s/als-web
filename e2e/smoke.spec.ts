@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('scene mounts with either the character GLB or its placeholder', async ({ page }) => {
+test('scene mounts with either the character GLB or its DOM load state', async ({ page }) => {
   const consoleErrors: string[] = []
   const pageErrors: string[] = []
 

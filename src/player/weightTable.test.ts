@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computeWeightTable,
   createWeightTable,
+  mapVelocityBlendToSixDirections,
   legRegionWeight,
   armRegionWeight,
 } from './weightTable';
@@ -10,7 +11,7 @@ import type { WeightTable, WeightTableInput } from './weightTable';
 /** A neutral grounded-idle input; tests override the dimensions they exercise. */
 function makeInput(overrides: Partial<WeightTableInput> = {}): WeightTableInput {
   return {
-    standWeights: [1, 0, 0],
+    standWeights: [1, 0, 0, 0],
     crouchMoveWeight: 0,
     posture: 0,
     crawlBlend: 0,
@@ -19,7 +20,7 @@ function makeInput(overrides: Partial<WeightTableInput> = {}): WeightTableInput 
     jumpBlend: 0,
     montageGate: 0,
     windup: 0,
-    movementAngle: 0,
+    velocityBlend: { forward: 1, backward: 0, left: 0, right: 0 },
     crouchTint: 0,
     ...overrides,
   };
@@ -37,13 +38,15 @@ describe('computeWeightTable — steady states', () => {
     const t = compute();
     expect(t.idle).toBeCloseTo(1, 6);
     expect(legRegionWeight(t)).toBeCloseTo(1, 6);
-    expect(sum(t, ['walkFwd', 'jogFwd', 'crouchIdle', 'crawlIdle', 'jumpBody', 'windupPose'])).toBeCloseTo(0, 6);
+    expect(sum(t, ['walkFwd', 'runFwd', 'sprint', 'crouchIdle', 'crawlIdle', 'jumpBody', 'windupPose'])).toBeCloseTo(0, 6);
   });
 
   it('full walk forward puts the whole walk share on walkFwd', () => {
-    const t = compute({ standWeights: [0, 1, 0] });
+    const t = compute({ standWeights: [0, 1, 0, 0] });
     expect(t.walkFwd).toBeCloseTo(1, 6);
-    expect(t.walkBwd + t.walkLeft + t.walkRight).toBeCloseTo(0, 6);
+    expect(
+      t.walkBwd + t.walkLeftFwd + t.walkRightFwd + t.walkLeftBwd + t.walkRightBwd,
+    ).toBeCloseTo(0, 6);
   });
 
   it('crouched moving splits by crouchMoveWeight', () => {
@@ -74,7 +77,7 @@ describe('computeWeightTable — steady states', () => {
   });
 
   it('a full montage gate silences the entire base layer', () => {
-    const t = compute({ montageGate: 1, standWeights: [0, 0, 1], jumpBlend: 0.5 });
+    const t = compute({ montageGate: 1, standWeights: [0, 0, 0, 1], jumpBlend: 0.5 });
     expect(legRegionWeight(t)).toBeCloseTo(0, 6);
     expect(armRegionWeight(t)).toBeCloseTo(0, 6);
   });
@@ -94,7 +97,7 @@ describe('computeWeightTable — crouch tint and stance alpha', () => {
   });
 
   it('crouch tint shifts a fraction of the stand share onto the crouch clips', () => {
-    const t = compute({ standWeights: [0, 1, 0], crouchTint: 0.2 });
+    const t = compute({ standWeights: [0, 1, 0, 0], crouchTint: 0.2 });
     expect(t.walkFwd).toBeCloseTo(0.8, 6);
     expect(t.crouchFwd).toBeCloseTo(0, 6); // crouchMoveWeight 0 -> tint shows as crouch idle
     expect(t.crouchIdle).toBeCloseTo(0.2, 6);
@@ -102,7 +105,7 @@ describe('computeWeightTable — crouch tint and stance alpha', () => {
   });
 
   it('crouch tint routes through the crouch move split like real posture', () => {
-    const t = compute({ standWeights: [0, 1, 0], crouchTint: 0.2, crouchMoveWeight: 1 });
+    const t = compute({ standWeights: [0, 1, 0, 0], crouchTint: 0.2, crouchMoveWeight: 1 });
     expect(t.walkFwd).toBeCloseTo(0.8, 6);
     expect(t.crouchFwd).toBeCloseTo(0.2, 6);
     expect(legRegionWeight(t)).toBeCloseTo(1, 6);
@@ -110,32 +113,74 @@ describe('computeWeightTable — crouch tint and stance alpha', () => {
 });
 
 describe('computeWeightTable — direction split', () => {
-  it('movementAngle 0 keeps everything on Fwd', () => {
-    const t = compute({ standWeights: [0, 1, 0], movementAngle: 0 });
+  it('a forward velocity blend keeps everything on Fwd', () => {
+    const t = compute({ standWeights: [0, 1, 0, 0] });
     expect(t.walkFwd).toBeCloseTo(1, 6);
   });
 
   it('pure backward flips to Bwd', () => {
-    const t = compute({ standWeights: [0, 1, 0], movementAngle: Math.PI });
+    const t = compute({
+      standWeights: [0, 1, 0, 0],
+      velocityBlend: { forward: 0, backward: 1, left: 0, right: 0 },
+    });
     expect(t.walkBwd).toBeCloseTo(1, 6);
     expect(t.walkFwd).toBeCloseTo(0, 6);
   });
 
-  it('diagonals split but preserve the gait total', () => {
-    const t = compute({ standWeights: [0, 0, 1], movementAngle: Math.PI / 4 });
-    expect(t.jogFwd).toBeCloseTo(0.5, 6);
-    expect(t.jogLeft).toBeCloseTo(0.5, 6);
-    expect(sum(t, ['jogFwd', 'jogBwd', 'jogLeft', 'jogRight'])).toBeCloseTo(1, 6);
+  it('an L1 diagonal selects the authored diagonal clip rather than blending cardinals', () => {
+    const t = compute({
+      standWeights: [0, 0, 1, 0],
+      velocityBlend: { forward: 0.5, backward: 0, left: 0.5, right: 0 },
+    });
+    expect(t.runLeftFwd).toBeCloseTo(1, 6);
+    expect(sum(t, [
+      'runFwd', 'runBwd', 'runLeftFwd', 'runRightFwd', 'runLeftBwd', 'runRightBwd',
+    ])).toBeCloseTo(1, 6);
+  });
+
+  it('pure lateral movement shares the adjacent authored diagonal pair', () => {
+    const directions = mapVelocityBlendToSixDirections({
+      forward: 0,
+      backward: 0,
+      left: 1,
+      right: 0,
+    });
+    expect(directions.leftForward).toBeCloseTo(0.5, 6);
+    expect(directions.leftBackward).toBeCloseTo(0.5, 6);
+    expect(Object.values(directions).reduce((total, value) => total + value, 0)).toBeCloseTo(1, 6);
+  });
+
+  it('preserves damped opposite longitudinal channels during direction changes', () => {
+    const directions = mapVelocityBlendToSixDirections({
+      forward: 0.25,
+      backward: 0.75,
+      left: 0,
+      right: 0,
+    });
+    expect(directions.forward).toBeCloseTo(0.25, 6);
+    expect(directions.backward).toBeCloseTo(0.75, 6);
+  });
+
+  it('keeps sprint as the single authored forward gait clip', () => {
+    const t = compute({
+      standWeights: [0, 0, 0, 1],
+      velocityBlend: { forward: 0, backward: 0, left: 0, right: 1 },
+    });
+    expect(t.sprint).toBeCloseTo(1, 6);
   });
 });
 
 describe('computeWeightTable — coverage invariant (the anti-T-pose floor)', () => {
   // Exhaustive-ish grid over every input dimension. The invariant: for BOTH bone regions,
   // base coverage + montageGate never falls below ~1. Over-coverage is allowed (launch
-  // transient, pipe tuck — PropertyMixer normalizes overweight; only UNDER-coverage bleeds
-  // bind pose).
+  // transient, pipe tuck — the owned pose accumulator normalizes overweight).
   const steps = [0, 0.25, 0.5, 0.75, 1];
-  const angles = [0, Math.PI / 3, Math.PI, -Math.PI / 2];
+  const directions = [
+    { forward: 1, backward: 0, left: 0, right: 0 },
+    { forward: 0.5, backward: 0, left: 0.5, right: 0 },
+    { forward: 0, backward: 1, left: 0, right: 0 },
+    { forward: 0, backward: 0, left: 0, right: 1 },
+  ];
 
   it('holds across the input grid', () => {
     const out = createWeightTable();
@@ -146,10 +191,10 @@ describe('computeWeightTable — coverage invariant (the anti-T-pose floor)', ()
           for (const montageGate of steps) {
             for (const windup of [0, 0.5, 1]) {
               for (const tuckCrawl of [0, 0.5]) {
-                for (const angle of angles) {
-                  // standWeights sums to 1 like the damped real ones do (idle<->walk<->jog).
+                for (const velocityBlend of directions) {
+                  // standWeights sums to 1 like the damped real ones do.
                   const w = posture; // reuse as a free knob for the stand split
-                  const standWeights = [1 - w, w * 0.5, w * 0.5];
+                  const standWeights = [1 - w, w / 3, w / 3, w / 3];
                   const input = makeInput({
                     standWeights,
                     crouchMoveWeight: jumpBlend, // free knob
@@ -160,7 +205,7 @@ describe('computeWeightTable — coverage invariant (the anti-T-pose floor)', ()
                     jumpBlend,
                     montageGate,
                     windup,
-                    movementAngle: angle,
+                    velocityBlend,
                   });
                   computeWeightTable(input, out);
                   const floor = 1 - 1e-6;
@@ -189,10 +234,10 @@ describe('computeWeightTable — coverage invariant (the anti-T-pose floor)', ()
 describe('computeWeightTable — reuse contract', () => {
   it('writes every field on reuse (no stale values from a previous frame)', () => {
     const out = createWeightTable();
-    computeWeightTable(makeInput({ standWeights: [0, 0, 1], jumpBlend: 0.7 }), out);
+    computeWeightTable(makeInput({ standWeights: [0, 0, 0, 1], jumpBlend: 0.7 }), out);
     computeWeightTable(makeInput(), out); // back to plain idle
     expect(out.idle).toBeCloseTo(1, 6);
-    expect(out.jogFwd).toBeCloseTo(0, 6);
+    expect(out.sprint).toBeCloseTo(0, 6);
     expect(out.jumpBody).toBeCloseTo(0, 6);
   });
 });

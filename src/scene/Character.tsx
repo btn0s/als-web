@@ -1,5 +1,13 @@
 import { useFrame } from '@react-three/fiber'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Html } from '@react-three/drei'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
@@ -26,22 +34,49 @@ function isGlb(buffer: ArrayBuffer) {
 
 function useCharacterGltf() {
   const [gltf, setGltf] = useState<GLTF>()
+  const [status, setStatus] = useState<'loading' | 'error'>('loading')
+  const [progress, setProgress] = useState<number>()
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
 
     async function load() {
+      setStatus('loading')
+      setProgress(undefined)
       try {
         const response = await fetch(CHARACTER_URL, { signal: controller.signal })
         const contentType = response.headers.get('content-type') ?? ''
 
         if (!response.ok || contentType.includes('text/html')) {
-          return
+          throw new Error(`Character request failed (${response.status})`)
         }
 
-        const buffer = await response.arrayBuffer()
+        let buffer: ArrayBuffer
+        const totalBytes = Number(response.headers.get('content-length')) || 0
+        if (response.body) {
+          const reader = response.body.getReader()
+          const chunks: Uint8Array[] = []
+          let receivedBytes = 0
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            chunks.push(value)
+            receivedBytes += value.byteLength
+            if (totalBytes > 0) setProgress(Math.min(1, receivedBytes / totalBytes))
+          }
+          const bytes = new Uint8Array(receivedBytes)
+          let offset = 0
+          for (const chunk of chunks) {
+            bytes.set(chunk, offset)
+            offset += chunk.byteLength
+          }
+          buffer = bytes.buffer
+        } else {
+          buffer = await response.arrayBuffer()
+        }
         if (!isGlb(buffer)) {
-          return
+          throw new Error('Character response was not a GLB')
         }
 
         const resourcePath = new URL('.', response.url).href
@@ -51,25 +86,59 @@ function useCharacterGltf() {
           setGltf(loadedGltf)
         }
       } catch (error) {
-        if (!(error instanceof DOMException && error.name === 'AbortError')) {
-          console.debug('[Character] GLB unavailable; using placeholder')
+        if (
+          !controller.signal.aborted
+          && !(error instanceof DOMException && error.name === 'AbortError')
+        ) {
+          console.debug('[Character] GLB unavailable; showing retry state')
+          setStatus('error')
         }
       }
     }
 
     void load()
     return () => controller.abort()
+  }, [attempt])
+
+  const retry = useCallback(() => {
+    setGltf(undefined)
+    setAttempt((value) => value + 1)
   }, [])
 
-  return gltf
+  return { gltf, status, progress, retry }
 }
 
-function Placeholder() {
+function CharacterLoadState({
+  status,
+  progress,
+  retry,
+}: {
+  status: 'loading' | 'error'
+  progress?: number
+  retry: () => void
+}) {
+  const determinate = status === 'loading' && progress !== undefined
   return (
-    <mesh castShadow position={[0, 0.95, 0]}>
-      <capsuleGeometry args={[0.35, 1.2, 8, 16]} />
-      <meshStandardMaterial color="#c87842" roughness={0.72} />
-    </mesh>
+    <Html fullscreen>
+      <div className="character-load-state" role="status" aria-live="polite">
+        <div className="character-load-card">
+          <span>
+            {status === 'error' ? 'character unavailable' : 'loading character…'}
+          </span>
+          <div className="character-load-track" aria-hidden="true">
+            <i
+              className={determinate ? 'is-determinate' : 'is-indeterminate'}
+              style={determinate ? { transform: `scaleX(${progress})` } : undefined}
+            />
+          </div>
+          {status === 'error' && (
+            <button type="button" onClick={retry}>
+              retry
+            </button>
+          )}
+        </div>
+      </div>
+    </Html>
   )
 }
 
@@ -140,7 +209,7 @@ function LoadedCharacter({
 }
 
 export function Character({ onSizeChange, poseSample }: CharacterProps) {
-  const gltf = useCharacterGltf()
+  const { gltf, status, progress, retry } = useCharacterGltf()
 
   useEffect(() => {
     window.__characterStatus = gltf ? 'glb' : 'placeholder'
@@ -149,6 +218,6 @@ export function Character({ onSizeChange, poseSample }: CharacterProps) {
   return gltf ? (
     <LoadedCharacter gltf={gltf} onSizeChange={onSizeChange} poseSample={poseSample} />
   ) : (
-    <Placeholder />
+    <CharacterLoadState status={status} progress={progress} retry={retry} />
   )
 }

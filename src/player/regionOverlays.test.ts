@@ -10,7 +10,8 @@ function makeCtx(overrides: Partial<OverlayContext> = {}): OverlayContext {
   return {
     idleShare: 1,
     walkShare: 0,
-    jogShare: 0,
+    runShare: 0,
+    sprintShare: 0,
     sneak: 0,
     posture: 0,
     crawlBlend: 0,
@@ -47,15 +48,20 @@ describe('region overlay rules', () => {
   });
 
   it('ride alpha scales every rule (montage/jump fade overlays with their base)', () => {
-    const ctx = makeCtx({ jogShare: 1 });
+    const ctx = makeCtx({ runShare: 0.5, sprintShare: 0.5 });
     expect(weightOf('jog-sprint-arms', ctx, { stance: 0.5, airborne: 0 })).toBeCloseTo(
       weightOf('jog-sprint-arms', ctx, { stance: 1, airborne: 0 }) * 0.5,
       6,
     );
   });
 
-  it('jog-sprint-arms rises with the jog share and is silent otherwise', () => {
-    expect(weightOf('jog-sprint-arms', makeCtx({ jogShare: 1 }))).toBeCloseTo(0.6, 6);
+  it('jog-sprint-arms only rides the run→sprint crossfade', () => {
+    expect(weightOf(
+      'jog-sprint-arms',
+      makeCtx({ runShare: 0.5, sprintShare: 0.5 }),
+    )).toBeCloseTo(0.6, 6);
+    expect(weightOf('jog-sprint-arms', makeCtx({ runShare: 1 }))).toBeCloseTo(0, 6);
+    expect(weightOf('jog-sprint-arms', makeCtx({ sprintShare: 1 }))).toBeCloseTo(0, 6);
     expect(weightOf('jog-sprint-arms', makeCtx({ walkShare: 1 }))).toBeCloseTo(0, 6);
   });
 
@@ -63,7 +69,7 @@ describe('region overlay rules', () => {
     const out = new Array(REGION_OVERLAY_RULES.length).fill(-1);
     evaluateRegionOverlays(
       REGION_OVERLAY_RULES,
-      makeCtx({ sneak: -5, jogShare: -3, walkShare: -1 }),
+      makeCtx({ sneak: -5, runShare: -3, sprintShare: -2, walkShare: -1 }),
       { stance: 1, airborne: 1 },
       out,
     );

@@ -11,76 +11,72 @@ import {
 const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
 
 // Clean, decoupled test fixtures (the real values come from the model's baked root motion).
-const SPEEDS: GaitSpeeds = { walk: 1, jog: 3 };
+const SPEEDS: GaitSpeeds = { walk: 1, run: 3, sprint: 6 };
 const CROUCH_WALK_SPEED = 1.5;
-const STRIDES: GaitStrides = { walk: 1, jog: 1.5, crouchWalk: 0.75 };
+const STRIDES: GaitStrides = { walk: 1, run: 1.5, sprint: 2, crouchWalk: 0.75 };
 
 describe('updateLocomotionTargets', () => {
   it('is fully idle at speed 0 and within the idle deadzone', () => {
-    const t = [0, 0, 0];
+    const t = [0, 0, 0, 0];
     expect(updateLocomotionTargets(0, t, SPEEDS, CROUCH_WALK_SPEED)).toBe(0);
-    expect(t).toEqual([1, 0, 0]);
+    expect(t).toEqual([1, 0, 0, 0]);
     updateLocomotionTargets(IDLE_EPS, t, SPEEDS, CROUCH_WALK_SPEED);
-    expect(t).toEqual([1, 0, 0]);
+    expect(t).toEqual([1, 0, 0, 0]);
   });
 
   it('crossfades idle→walk below the walk speed', () => {
-    const t = [0, 0, 0];
+    const t = [0, 0, 0, 0];
     updateLocomotionTargets(0.5, t, SPEEDS, CROUCH_WALK_SPEED); // half of walk speed 1
     expect(t[STAND.IDLE]).toBeCloseTo(0.5, 5);
     expect(t[STAND.WALK]).toBeCloseTo(0.5, 5);
-    expect(t[STAND.JOG]).toBe(0);
+    expect(t[STAND.RUN]).toBe(0);
+    expect(t[STAND.SPRINT]).toBe(0);
     expect(sum(t)).toBeCloseTo(1, 5);
   });
 
   it('is pure walk exactly at the walk speed', () => {
-    const t = [0, 0, 0];
+    const t = [0, 0, 0, 0];
     updateLocomotionTargets(SPEEDS.walk, t, SPEEDS, CROUCH_WALK_SPEED);
-    expect(t).toEqual([0, 1, 0]);
+    expect(t).toEqual([0, 1, 0, 0]);
   });
 
-  it('crossfades walk→jog in the walk/jog band', () => {
-    const t = [0, 0, 0];
-    updateLocomotionTargets(2, t, SPEEDS, CROUCH_WALK_SPEED); // midway walk(1)→jog(3)
+  it('crossfades walk→run in the walk/run band', () => {
+    const t = [0, 0, 0, 0];
+    updateLocomotionTargets(2, t, SPEEDS, CROUCH_WALK_SPEED);
     expect(t[STAND.WALK]).toBeCloseTo(0.5, 5);
-    expect(t[STAND.JOG]).toBeCloseTo(0.5, 5);
+    expect(t[STAND.RUN]).toBeCloseTo(0.5, 5);
     expect(t[STAND.IDLE]).toBe(0);
     expect(sum(t)).toBeCloseTo(1, 5);
   });
 
-  it('is pure jog at the jog speed and clamps above it (jog is the top gait)', () => {
-    const t = [0, 0, 0];
-    updateLocomotionTargets(SPEEDS.jog, t, SPEEDS, CROUCH_WALK_SPEED);
-    expect(t).toEqual([0, 0, 1]);
-    updateLocomotionTargets(SPEEDS.jog * 3, t, SPEEDS, CROUCH_WALK_SPEED);
-    expect(t).toEqual([0, 0, 1]);
+  it('is pure run at the run speed', () => {
+    const t = [0, 0, 0, 0];
+    updateLocomotionTargets(SPEEDS.run, t, SPEEDS, CROUCH_WALK_SPEED);
+    expect(t).toEqual([0, 0, 1, 0]);
   });
 
-  it('jogBlendMax caps the jog weight, keeping walk mixed in even at top speed', () => {
-    const t = [0, 0, 0];
-    updateLocomotionTargets(SPEEDS.jog, t, SPEEDS, CROUCH_WALK_SPEED, 0.7);
-    expect(t[STAND.JOG]).toBeCloseTo(0.7, 5);
-    expect(t[STAND.WALK]).toBeCloseTo(0.3, 5);
-    expect(t[STAND.IDLE]).toBe(0);
-    expect(sum(t)).toBeCloseTo(1, 5); // still normalized
-    // midway through the band, jog is scaled by the cap too
-    updateLocomotionTargets(2, t, SPEEDS, CROUCH_WALK_SPEED, 0.7); // t=0.5 -> jogW=0.35
-    expect(t[STAND.JOG]).toBeCloseTo(0.35, 5);
-    expect(t[STAND.WALK]).toBeCloseTo(0.65, 5);
+  it('crossfades run→sprint and clamps above the sprint speed', () => {
+    const t = [0, 0, 0, 0];
+    updateLocomotionTargets(4.5, t, SPEEDS, CROUCH_WALK_SPEED);
+    expect(t[STAND.RUN]).toBeCloseTo(0.5, 5);
+    expect(t[STAND.SPRINT]).toBeCloseTo(0.5, 5);
+    expect(sum(t)).toBeCloseTo(1, 5);
+    updateLocomotionTargets(SPEEDS.sprint * 3, t, SPEEDS, CROUCH_WALK_SPEED);
+    expect(t).toEqual([0, 0, 0, 1]);
   });
 
   it('ramps the crouch-move target linearly to 1 at the crouch-walk speed, then clamps', () => {
-    expect(updateLocomotionTargets(CROUCH_WALK_SPEED / 2, [0, 0, 0], SPEEDS, CROUCH_WALK_SPEED)).toBeCloseTo(0.5, 5);
-    expect(updateLocomotionTargets(CROUCH_WALK_SPEED, [0, 0, 0], SPEEDS, CROUCH_WALK_SPEED)).toBeCloseTo(1, 5);
-    expect(updateLocomotionTargets(CROUCH_WALK_SPEED * 2, [0, 0, 0], SPEEDS, CROUCH_WALK_SPEED)).toBe(1);
+    expect(updateLocomotionTargets(CROUCH_WALK_SPEED / 2, [0, 0, 0, 0], SPEEDS, CROUCH_WALK_SPEED)).toBeCloseTo(0.5, 5);
+    expect(updateLocomotionTargets(CROUCH_WALK_SPEED, [0, 0, 0, 0], SPEEDS, CROUCH_WALK_SPEED)).toBeCloseTo(1, 5);
+    expect(updateLocomotionTargets(CROUCH_WALK_SPEED * 2, [0, 0, 0, 0], SPEEDS, CROUCH_WALK_SPEED)).toBe(1);
   });
 });
 
 describe('advanceLocomotionPhase', () => {
-  const WALKING = [0, 1, 0];
+  const WALKING = [0, 1, 0, 0];
 
   it('freezes while within the idle deadzone', () => {
-    expect(advanceLocomotionPhase(0.3, 1 / 60, IDLE_EPS, [1, 0, 0], 0, 0, STRIDES)).toBe(0.3);
+    expect(advanceLocomotionPhase(0.3, 1 / 60, IDLE_EPS, [1, 0, 0, 0], 0, 0, STRIDES)).toBe(0.3);
   });
 
   it('advances at cadence = speed / stride (foot-locked)', () => {
@@ -92,6 +88,24 @@ describe('advanceLocomotionPhase', () => {
     const slow = advanceLocomotionPhase(0, 0.1, 2, WALKING, 0, 0, STRIDES);
     const fast = advanceLocomotionPhase(0, 0.1, 4, WALKING, 0, 0, STRIDES);
     expect(fast).toBeCloseTo(2 * slow, 6); // double the speed => double the cadence
+  });
+
+  it('uses PoseGait ramps to blend walk, run, and sprint strides', () => {
+    // PoseGait 2.5 is halfway from run stride 1.5 to sprint stride 2.
+    const phase = advanceLocomotionPhase(
+      0,
+      0.1,
+      1.75,
+      [0, 0, 0.5, 0.5],
+      0,
+      0,
+      STRIDES,
+      0,
+      0,
+      0,
+      2.5,
+    );
+    expect(phase).toBeCloseTo(0.1, 6);
   });
 
   it('blends stand and crouch stride by posture', () => {

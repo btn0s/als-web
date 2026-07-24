@@ -1,16 +1,9 @@
 /**
  * Pure locomotion blendspace math.
  *
- * Ported from `../exposure-demo/src/animation/blendspace.ts` — only the "stand" (gait) blend
- * pieces. The reference also blends a directional sub-space (forward/back/left/right), but the
- * UAL1 rig only ships forward locomotion clips (`Idle/Walk/Jog_Fwd/Sprint/Crouch_Idle/Crouch_Fwd`),
- * so that half is intentionally dropped: the character always plays forward locomotion and the
- * player controller yaws it to face its movement direction.
- *
- * Crucially, there are NO magic speed/cadence numbers here. The gait `speeds` (crossfade
- * breakpoints) and `strides` (metres per cycle) are passed in from the locomotion profile — both
- * measured from the model's baked root motion (see `locomotionProfile.ts`). Movement speed and
- * animation playback therefore derive from the same source and stay foot-locked at any speed.
+ * Gait breakpoints and strides come from ALS's authored movement settings through
+ * `locomotionProfile.ts`; the clips are in-place, so root-motion measurement is not a valid
+ * source. Directional distribution is a separate pure layer in `weightTable.ts`.
  *
  * Kept framework-free (no `three` import) so it stays Vitest-testable in isolation.
  */
@@ -21,37 +14,36 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 /** Below this speed (m/s) the player is treated as standing still (a tiny deadzone, not a gait). */
 export const IDLE_EPS = 0.05;
 
-/** Index layout shared by `standTargets` / `standWeights` arrays (length 3). */
-export const STAND = { IDLE: 0, WALK: 1, JOG: 2 } as const;
+/** Index layout shared by `standTargets` / `standWeights` arrays (length 4). */
+export const STAND = { IDLE: 0, WALK: 1, RUN: 2, SPRINT: 3 } as const;
 
 /** Authored ground speed (m/s) of each stand gait — the blendspace crossfade breakpoints. */
 export interface GaitSpeeds {
   walk: number;
-  jog: number;
+  run: number;
+  sprint: number;
 }
 
 /** Authored stride (m/cycle) of each moving gait — used to foot-lock playback cadence. */
 export interface GaitStrides {
   walk: number;
-  jog: number;
+  run: number;
+  sprint: number;
   crouchWalk: number;
 }
 
 /**
- * Fills `standTargets` (length-3: idle/walk/jog) with target blend weights for the given measured
- * speed, crossfading so each gait is pure exactly at its authored speed (jog is the top gait, so
- * speeds above it clamp to pure jog). Returns the target crouch-move weight (0 = crouch idle,
- * 1 = full crouch-walk, reached at crouch-walk speed).
+ * Fills `standTargets` (length-4: idle/walk/run/sprint) with target weights for measured speed,
+ * with every authored gait pure at its ALS movement speed. Returns the crouch idle→walk target.
  */
 export function updateLocomotionTargets(
   speed: number,
   standTargets: number[],
   speeds: GaitSpeeds,
   crouchWalkSpeed: number,
-  jogBlendMax = 1,
 ): number {
   standTargets.fill(0);
-  const { walk, jog } = speeds;
+  const { walk, run, sprint } = speeds;
 
   if (speed <= IDLE_EPS) {
     standTargets[STAND.IDLE] = 1;
@@ -59,14 +51,14 @@ export function updateLocomotionTargets(
     const t = clampf(speed / walk, 0, 1);
     standTargets[STAND.IDLE] = 1 - t;
     standTargets[STAND.WALK] = t;
+  } else if (speed < run) {
+    const t = clampf((speed - walk) / (run - walk), 0, 1);
+    standTargets[STAND.WALK] = 1 - t;
+    standTargets[STAND.RUN] = t;
   } else {
-    // Jog band. `jogBlendMax` caps how "pure" the jog clip ever gets — below 1 it keeps a fraction of
-    // the walk clip mixed in even at full jog speed, toning down an over-animated jog without changing
-    // movement speed (this only shifts ANIMATION weights). 1 = pure jog at top speed (original).
-    const t = clampf((speed - walk) / (jog - walk), 0, 1);
-    const jogW = t * jogBlendMax;
-    standTargets[STAND.WALK] = 1 - jogW;
-    standTargets[STAND.JOG] = jogW;
+    const t = clampf((speed - run) / (sprint - run), 0, 1);
+    standTargets[STAND.RUN] = 1 - t;
+    standTargets[STAND.SPRINT] = t;
   }
 
   return crouchWalkSpeed > 0 ? clampf(speed / crouchWalkSpeed, 0, 1) : 0;
@@ -103,9 +95,22 @@ export function advanceLocomotionPhase(
   crawlStride = 0,
   crawlMoveWeight = 0,
   crawlBlend = 0,
+  poseGaitAmount?: number,
 ): number {
-  const standStride =
-    standWeights[STAND.WALK] * strides.walk + standWeights[STAND.JOG] * strides.jog;
+  let standStride =
+    standWeights[STAND.WALK] * strides.walk
+    + standWeights[STAND.RUN] * strides.run
+    + standWeights[STAND.SPRINT] * strides.sprint;
+  if (poseGaitAmount !== undefined) {
+    // ALS PoseGait is 0 idle, 1 walk, 2 run, 3 sprint. These are the exact overlapping ramps from
+    // RefreshPose; our constant strides replace UE's authored stride-blend curves at this seam.
+    const walking = clampf(poseGaitAmount, 0, 1);
+    const running = clampf(poseGaitAmount - 1, 0, 1);
+    const sprinting = clampf(poseGaitAmount - 2, 0, 1);
+    standStride = lerp(0, strides.walk, walking);
+    standStride = lerp(standStride, strides.run, running);
+    standStride = lerp(standStride, strides.sprint, sprinting);
+  }
   const crouchStride = crouchMoveWeight * strides.crouchWalk;
   const uprightStride = lerp(standStride, crouchStride, posture);
   const effectiveCrawlStride = crawlMoveWeight * crawlStride;

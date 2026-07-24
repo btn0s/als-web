@@ -42,7 +42,7 @@ export interface Gait {
 export interface LocomotionProfile {
   idle: Gait
   walk: Gait
-  jog: Gait
+  run: Gait
   sprint: Gait
   crouchIdle: Gait
   crouchWalk: Gait
@@ -78,7 +78,7 @@ export function buildLocomotionProfile(animations: THREE.AnimationClip[]): Locom
       'A_Als_Walk_Forward',
       ALS_AUTHORED_GAIT_SPEEDS.standing.walk,
     ),
-    jog: gaitOf(
+    run: gaitOf(
       byName,
       'A_Als_Run_Forward',
       ALS_AUTHORED_GAIT_SPEEDS.standing.run,
@@ -88,7 +88,8 @@ export function buildLocomotionProfile(animations: THREE.AnimationClip[]): Locom
       'A_Als_Sprint',
       ALS_AUTHORED_GAIT_SPEEDS.standing.sprint,
     ),
-    crouchIdle: gaitOf(byName, 'A_Als_Crouch_Idle', 0),
+    // The pack intentionally uses its one-frame authored crouch pose as the stance idle.
+    crouchIdle: gaitOf(byName, 'A_Als_Crouch_Pose', 0),
     crouchWalk: gaitOf(
       byName,
       'A_Als_Crouch_Walk_Forward',
@@ -109,25 +110,27 @@ export function useLocomotionProfile(): LocomotionProfile {
  * Pace tuning (Leva). Multipliers on the clips' authored ground speed — 1 = authored; feet stay
  * locked at any value (cadence = speed/stride), so these trade limb-cadence naturalness for
  * traversal feel. Walk has `normal` and `slow` modes, toggled at runtime by Caps Lock (the same
- * mode applies while crouched). `jog` is the Shift gait and is unaffected by the walk mode.
+ * mode applies while crouched). `run` is the Shift gait and is unaffected by the walk mode.
  */
 export interface PaceTuning {
   normal: number
   slow: number
-  jog: number
+  run: number
 }
 
 // Retain the transplanted playtest tuning until movement is wired and playtested against ALS.
-export const DEFAULT_PACE: PaceTuning = { normal: 1.65, slow: 0.7, jog: 0.85 }
+export const DEFAULT_PACE: PaceTuning = { normal: 1.65, slow: 0.7, run: 0.85 }
 
 export interface ResolvedGaitSpeeds {
   walk: number
-  jog: number
+  run: number
+  sprint: number
   crouchWalk: number
+  crouchRun: number
 }
 
 /**
- * Resolves authored gait speeds × pace into the movement/threshold speeds, keeping walk < jog so
+ * Resolves authored gait speeds × pace into movement/threshold speeds, keeping walk < run so
  * the blendspace crossfade can't invert however the sliders are set. `slowWalk` (Caps Lock) picks
  * the walk mode, applied to both walk and crouch-walk. Single source consumed by BOTH Player
  * (target speed) and Operative (crossfade thresholds), so they can't diverge.
@@ -139,7 +142,13 @@ export function resolveGaitSpeeds(
 ): ResolvedGaitSpeeds {
   const walkMult = slowWalk ? tuning.slow : tuning.normal
   const walk = profile.walk.speed * walkMult
-  const jog = Math.max(profile.jog.speed * tuning.jog, walk * 1.05)
+  const run = Math.max(profile.run.speed * tuning.run, walk * 1.05)
   const crouchWalk = profile.crouchWalk.speed * walkMult
-  return { walk, jog, crouchWalk }
+  return {
+    walk,
+    run,
+    sprint: profile.sprint.speed,
+    crouchWalk,
+    crouchRun: ALS_AUTHORED_GAIT_SPEEDS.crouching.run,
+  }
 }

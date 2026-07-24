@@ -18,8 +18,8 @@ before feature work.
   "jog"), Stance Standing/Crouching, RotationMode VelocityDirection/ViewDirection/Aiming,
   LocomotionMode Grounded/InAir, LocomotionAction Mantling/Rolling/GettingUp, VelocityBlend,
   GaitAmount, curve names verbatim (FootLeftLock, RotationYawSpeed, …). Concepts ALS doesn't
-  have (crawl/prone) are marked EXTENSION in their doc comment; unused sibling vocabulary is
-  deleted on contact, not renamed.
+  have are DEFERRED BY DEFAULT to the downstream stealth fork (user 2026-07-23) — crawl/prone/
+  sneak/tuck don't live here at all; unused sibling vocabulary is deleted on contact, not renamed.
 - **Docs philosophy:** code speaks for itself. ROADMAP.md (plan) + this file (orientation) are
   the only standing docs; design rationale lives in code comments at the relevant site. No
   spec/history markdown files.

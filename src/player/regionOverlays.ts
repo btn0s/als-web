@@ -3,12 +3,12 @@ import type { RegionName } from './trackMask';
 /**
  * Declarative region-overlay layer — the ALS-style "per-state, per-body-region animation layer"
  * as DATA. Each rule pins one clip, masked to one region, whose weight is a pure function of the
- * frame's blend state. Want "jog shows more crouch arms"? That's a one-line rule, not a new
+ * frame's blend state. Want "run shows more crouch arms"? That's a one-line rule, not a new
  * constant threaded through the weight table.
  *
- * Contract (enforced by the applier in Operative.tsx):
+ * Contract (enforced by the pose-buffer applier):
  *  - Rules are OVERLAYS: extra normal-blend weight stacked over the full-coverage base layer.
- *    PropertyMixer normalizes, so a rule at weight v over a ~1-weight base shows the base at
+ *    The pose accumulator normalizes, so a rule at weight v over a ~1-weight base shows the base at
  *    1/(1+v) on that region — dominance units, same math as the stance overlays. Rules can never
  *    cause bind-pose bleed (only base UNDER-coverage does; rules only add).
  *  - Every rule's weight is scaled by the frame's stanceAlpha, so montages/jumps/crawl fade the
@@ -24,7 +24,8 @@ export interface OverlayContext {
   /** Stand-gait shares (damped, sum ~1). */
   idleShare: number;
   walkShare: number;
-  jogShare: number;
+  runShare: number;
+  sprintShare: number;
   /** Sneak blend 0..1 (slow-walk mode, upright, grounded, moving). */
   sneak: number;
   /** Crouch posture 0..1 (damped). */
@@ -54,7 +55,7 @@ export interface RegionOverlayRule {
    * Which base layer this overlay rides — its weight scales with THAT base's alpha so the
    * dominance ratio holds as the base fades:
    *  - 'stance' (default): the grounded locomotion base (stanceAlpha). Correct for gait
-   *    overlays (sneak arms, jog arms) — but ~0 while airborne.
+   *    overlays (sneak arms, run arms) — but ~0 while airborne.
    *  - 'airborne': the jump-split arms base (jumpBlend-scaled). Correct for in-air overlays —
    *    a 'stance' rule gated on jumpBlend would multiply jumpBlend x (1 - jumpBlend) and peak
    *    at a useless 0.3 mid-crossfade, zero at the apex (the frame-dump-diagnosed arms-down bug).
@@ -70,15 +71,14 @@ export interface RegionOverlayRule {
  */
 export const REGION_OVERLAY_RULES: RegionOverlayRule[] = [
   {
-    // M1 transplant proof rule (the exposure-r3f rule set stays in that repo as reference —
-    // rules are per-project data, re-pointed at this pack's clips): the sprint's pumping arm
-    // cycle bleeds over the run's arms as the jog share rises, reading as building urgency
-    // before sprint becomes its own gait (M3). 0.6 dominance ≈ 37% sprint arms at full jog.
+    // Sprint is now a full gait. The old permanent "sprint arms over run" look is only useful in
+    // the run↔sprint crossfade, so the cross-term is zero at either pure endpoint and peaks at
+    // 0.6 dominance in the middle of the hand-off.
     id: 'jog-sprint-arms',
     clip: 'A_Als_Sprint',
     region: 'armsNoFingers',
-    phaseLock: false,
-    weight: (c) => c.jogShare * 0.6,
+    phaseLock: true,
+    weight: (c) => Math.min(1, 4 * c.runShare * c.sprintShare) * 0.6,
   },
 ];
 

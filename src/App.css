@@ -6,3 +6,98 @@
 .app-shell canvas {
   display: block;
 }
+
+.character-load-state {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  pointer-events: none;
+}
+
+.character-load-card {
+  display: grid;
+  width: min(15rem, calc(100vw - 3rem));
+  gap: 0.65rem;
+  color: rgb(238 242 247 / 62%);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-align: center;
+  text-transform: lowercase;
+  text-wrap: pretty;
+}
+
+.character-load-track {
+  height: 1px;
+  overflow: hidden;
+  background: rgb(238 242 247 / 12%);
+}
+
+.character-load-track i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: rgb(238 242 247 / 52%);
+  transform-origin: left center;
+}
+
+.character-load-track .is-determinate {
+  transition: transform 120ms linear;
+}
+
+.character-load-track .is-indeterminate {
+  animation: character-load-shimmer 1.35s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.character-load-card button {
+  min-width: 40px;
+  min-height: 40px;
+  margin: -0.35rem auto 0;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 999px;
+  color: rgb(238 242 247 / 68%);
+  background: rgb(238 242 247 / 7%);
+  box-shadow:
+    0 1px 1px rgb(0 0 0 / 18%),
+    0 4px 16px rgb(0 0 0 / 12%);
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  transition-property: background-color, color, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+.character-load-card button:hover {
+  color: rgb(238 242 247 / 88%);
+  background: rgb(238 242 247 / 11%);
+}
+
+.character-load-card button:active {
+  transform: scale(0.96);
+}
+
+@keyframes character-load-shimmer {
+  0%,
+  100% {
+    opacity: 0.22;
+    transform: scaleX(0.12) translateX(-320%);
+  }
+
+  50% {
+    opacity: 0.72;
+    transform: scaleX(0.32) translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .character-load-track .is-indeterminate {
+    animation: none;
+    opacity: 0.45;
+    transform: scaleX(0.35);
+  }
+}

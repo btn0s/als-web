@@ -8,7 +8,7 @@ import { PostProcessing } from './scene/PostProcessing'
 import { createCharacterPoseSample } from './scene/poseCameraState'
 import './App.css'
 
-const PLACEHOLDER_SIZE = new THREE.Vector3(0.7, 1.9, 0.7)
+const DEFAULT_CHARACTER_SIZE = new THREE.Vector3(0.7, 1.9, 0.7)
 
 function SceneReady() {
   useEffect(() => {
@@ -19,7 +19,7 @@ function SceneReady() {
 }
 
 function Scene() {
-  const [characterSize, setCharacterSize] = useState(() => PLACEHOLDER_SIZE.clone())
+  const [characterSize, setCharacterSize] = useState(() => DEFAULT_CHARACTER_SIZE.clone())
   const poseSample = useRef(createCharacterPoseSample())
   const gridSize = Math.max(20, characterSize.length() * 3)
 

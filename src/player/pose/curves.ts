@@ -1,6 +1,17 @@
 export type ScalarCurveSampler = (time: number) => number
 export type ClipCurveSamplers = Readonly<Record<string, ScalarCurveSampler>>
 
+interface AlsCurveExtras {
+  name?: unknown
+  keys?: unknown
+}
+
+interface ClipWithCurveExtras {
+  userData?: {
+    alsCurves?: unknown
+  }
+}
+
 /** Stable per-clip maps; curve values are overwritten instead of allocated each frame. */
 export interface CurveFrame {
   readonly byClip: Map<string, Map<string, number>>
@@ -53,4 +64,84 @@ export function createKeyframedScalarCurve(
     const alpha = (time - times[low]) / (times[high] - times[low])
     return values[low] + (values[high] - values[low]) * alpha
   }
+}
+
+/**
+ * Compiles the GLB animation `extras.alsCurves` sidecar emitted by the ALS extraction pipeline.
+ * Keys are `[time, value, interpolationMode]`; ALS web runtime policy is linear sampling, so the
+ * third value is deliberately metadata-only here.
+ */
+export function compileClipCurveSamplers(clip: ClipWithCurveExtras): ClipCurveSamplers {
+  const extras = clip.userData?.alsCurves
+  if (!Array.isArray(extras)) return {}
+
+  const samplers: Record<string, ScalarCurveSampler> = {}
+  for (const rawCurve of extras as AlsCurveExtras[]) {
+    if (typeof rawCurve?.name !== 'string' || !Array.isArray(rawCurve.keys)) continue
+    const times: number[] = []
+    const values: number[] = []
+    for (const rawKey of rawCurve.keys) {
+      if (
+        Array.isArray(rawKey)
+        && typeof rawKey[0] === 'number'
+        && typeof rawKey[1] === 'number'
+      ) {
+        times.push(rawKey[0])
+        values.push(rawKey[1])
+      }
+    }
+    if (times.length > 0) {
+      samplers[rawCurve.name] = createKeyframedScalarCurve(times, values)
+    }
+  }
+  return samplers
+}
+
+export interface WeightedCurveSource {
+  clipKey: string
+  weight: number
+  /** Authored graph value used when this clip does not carry the requested curve. */
+  fallback: number
+}
+
+/**
+ * Reconstructs the AnimGraph's blended scalar from the per-clip curve seam. Missing curves use
+ * their damped graph share's semantic value, matching the approximation called out by the ALS
+ * math spec for packs without complete PoseGait coverage.
+ */
+export function blendCurveValue(
+  frame: CurveFrame,
+  curveName: string,
+  sources: readonly WeightedCurveSource[],
+  fallback = 0,
+): number {
+  let weighted = 0
+  let totalWeight = 0
+  for (const source of sources) {
+    if (source.weight <= 0) continue
+    const sampled = frame.byClip.get(source.clipKey)?.get(curveName)
+    weighted += (sampled ?? source.fallback) * source.weight
+    totalWeight += source.weight
+  }
+  return totalWeight > Number.EPSILON ? weighted / totalWeight : fallback
+}
+
+export interface PoseGaitAmounts {
+  amount: number
+  walking: number
+  running: number
+  sprinting: number
+}
+
+/** `RefreshPose` gait ramps (AlsAnimationInstance.cpp:313-351). */
+export function resolvePoseGaitAmounts(
+  gaitAmount: number,
+  out: PoseGaitAmounts = { amount: 0, walking: 0, running: 0, sprinting: 0 },
+): PoseGaitAmounts {
+  const clamped = Math.max(0, Math.min(3, gaitAmount))
+  out.amount = clamped
+  out.walking = Math.max(0, Math.min(1, clamped))
+  out.running = Math.max(0, Math.min(1, clamped - 1))
+  out.sprinting = Math.max(0, Math.min(1, clamped - 2))
+  return out
 }

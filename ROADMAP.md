@@ -121,7 +121,7 @@ data on the M1 substrate (weight-table entries, region rules, arbiter records), 
       stays as a debug assertion, not a survival constraint. This LIFTS the mesh-space arm-layering
       approximation recorded below.
 - [ ] Gaits: walk / run / sprint with authored speeds; stride warping if the clips demand it
-- [ ] Stances: standing / crouching (+ our prone extension); stance ladder + staged transitions
+- [ ] Stances: Standing / Crouching (prone/crawl deferred to the stealth fork — non-ALS concepts defer by default); stance ladder + staged transitions
 - [ ] Rotation modes: velocity direction / looking direction / aiming — real 8-way blendspaces
       from authored directional clips (not cardinal-blend approximation)
 - [ ] Turn-in-place (authored Turn clips, scrubbed/arbitered) + start/stop/pivot transitions
