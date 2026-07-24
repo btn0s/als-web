@@ -523,6 +523,47 @@ dotnet run -- validate-action-content action-content.json
   `action-content.json` also preserves every linked notify object's tagged properties rather
   than hand-authoring the runtime-relevant subset.
 
+## Physics asset bodies, shapes, and constraints
+
+Run:
+
+```sh
+dotnet run -- dump-physics-asset "$ALS_WORK/stage" physics-asset.json
+dotnet run -- validate-physics-asset physics-asset.json
+```
+
+- **VERIFIED — `PA_Als` is legible without an editor.** Its authored arrays contain 21 body
+  setups, 22 primitives (17 `FKSphylElem`, four `FKBoxElem`, one `FKSphereElem`), 20
+  constraints, and 49 collision-disable pairs. The oracle preserves native centimetres/degrees,
+  body/constraint array order, per-shape collection order, all GUIDs, and every raw tagged
+  property. The exact body inventory starts with `pelvis` and includes the two-shape
+  `spine_03`; the validator pins the complete inventory, topology, and canonical content digest.
+
+- **VERIFIED — collision and mass participation are authored per primitive.** All 22 shapes set
+  `bContributeToMass=true` and `QueryAndPhysics`. Body index 18 (`root`) alone serializes
+  `PhysType_Kinematic`, `BodyCollision_Disabled`, and `bConsiderForBounds=false`; the asset's
+  `BoundsBodies` table includes every other body. Collision-disable semantics come from map
+  membership; the serialized `false` values are retained without reinterpretation.
+
+- **VERIFIED — every constraint stores its parent frame and authored limit/drive overrides.**
+  `Pos2` / `PriAxis2` / `SecAxis2` are serialized for all 20 constraints. Nineteen constraints
+  author angular cone/twist modes plus Twist-and-Swing position drives; the `pelvis`→`root`
+  constraint instead makes all three linear axes free. Omitted projection, break, plasticity,
+  soft-limit, drive-strength, and body-1-frame members are recorded field-by-field as inherited
+  UE5.5 defaults rather than filled with C# zero values.
+
+- **VERIFIED unavailable — the uncooked asset does not serialize effective Chaos/body defaults.**
+  `SolverType`/`SolverSettings`, every body's `DefaultInstance`, `PhysMaterial`, and
+  `BuildScale3D`, plus non-overridden constraint members are absent tags. CUE4Parse 1.2.2 also
+  marks `FBodyInstance` projection as TODO. Therefore exact effective mass, material density,
+  damping, solver iterations, and omitted constructor defaults cannot be recovered from
+  `PA_Als.uasset` alone; `physics-asset.json` leaves them explicitly null.
+
+- **HYPOTHESIS — a runtime physics adapter can reproduce the authored topology once its engine
+  default boundary is sourced independently.** Verify UE5.5 constructor/config defaults against
+  an authoritative engine build before assigning masses, damping, missing body-1 axes, or Chaos
+  solver values; none of those values are guessed by this extractor.
+
 ## Enhanced Input mappings
 
 Run:

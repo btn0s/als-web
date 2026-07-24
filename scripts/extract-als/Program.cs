@@ -48,6 +48,10 @@ if (args.Length == 3 && args[0] == "dump-action-content")
     return ActionContentDump.Run(args[1], args[2]);
 if (args.Length == 2 && args[0] == "validate-action-content")
     return ActionContentDump.Validate(args[1]);
+if (args.Length == 3 && args[0] == "dump-physics-asset")
+    return PhysicsAssetDump.Run(args[1], args[2]);
+if (args.Length == 2 && args[0] == "validate-physics-asset")
+    return PhysicsAssetDump.Validate(args[1]);
 if (args.Length == 4 && args[0] == "inspect") return Inspect.Run(args[1], args[2], args[3]);
 Console.Error.WriteLine(
     "usage: dotnet run -- dump <stage-dir> <out.json> <SkeletonName> <MeshName> " +
@@ -95,4 +99,8 @@ Console.Error.WriteLine(
     "       dotnet run -- dump-action-content <stage-dir> <action-content.json>");
 Console.Error.WriteLine(
     "       dotnet run -- validate-action-content <action-content.json>");
+Console.Error.WriteLine(
+    "       dotnet run -- dump-physics-asset <stage-dir> <physics-asset.json>");
+Console.Error.WriteLine(
+    "       dotnet run -- validate-physics-asset <physics-asset.json>");
 return 1;
