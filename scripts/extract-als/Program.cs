@@ -16,6 +16,10 @@ if (args.Length == 3 && args[0] == "dump-animation-settings")
     return AnimationInstanceSettingsDump.Run(args[1], args[2]);
 if (args.Length == 2 && args[0] == "validate-animation-settings")
     return AnimationInstanceSettingsDump.Validate(args[1]);
+if (args.Length == 3 && args[0] == "dump-skeleton-profiles")
+    return SkeletonProfilesDump.Run(args[1], args[2]);
+if (args.Length == 2 && args[0] == "validate-skeleton-profiles")
+    return SkeletonProfilesDump.Validate(args[1]);
 if (args.Length == 3 && args[0] == "dump-blend-spaces")
     return BlendSpaceDump.Run(args[1], args[2]);
 if (args.Length == 2 && args[0] == "validate-blend-spaces")
@@ -39,6 +43,10 @@ Console.Error.WriteLine(
     "       dotnet run -- dump-animation-settings <stage-dir> <animation-settings.json>");
 Console.Error.WriteLine(
     "       dotnet run -- validate-animation-settings <animation-settings.json>");
+Console.Error.WriteLine(
+    "       dotnet run -- dump-skeleton-profiles <stage-dir> <skeleton-profiles.json>");
+Console.Error.WriteLine(
+    "       dotnet run -- validate-skeleton-profiles <skeleton-profiles.json>");
 Console.Error.WriteLine(
     "       dotnet run -- dump-blend-spaces <stage-dir> <blend-spaces.json>");
 Console.Error.WriteLine(

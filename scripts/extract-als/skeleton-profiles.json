@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "release": "ALS-Refactored 4.15",
+    "engineVersion": "UE5.5",
+    "assetPath": "ALS/Content/ALS/Character/SK_Als.uasset"
+  },
+  "profiles": {
+    "LookDirectionChange": {
+      "entries": [
+        {
+          "bone": "neck_01",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "head",
+          "blendScale": 2.0
+        }
+      ]
+    },
+    "MoveDirectionChange": {
+      "entries": [
+        {
+          "bone": "thigh_l",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "calf_l",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "calf_twist_01_l",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "foot_l",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "ball_l",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "thigh_twist_01_l",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "thigh_r",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "calf_r",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "calf_twist_01_r",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "foot_r",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "ball_r",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "thigh_twist_01_r",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "ik_foot_root",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "ik_foot_l",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "ik_foot_r",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "VB foot_root",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "VB foot_l",
+          "blendScale": 2.0
+        },
+        {
+          "bone": "VB foot_r",
+          "blendScale": 2.0
+        }
+      ]
+    },
+    "QuickFeetBlend": {
+      "entries": [
+        {
+          "bone": "thigh_l",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "calf_l",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "calf_twist_01_l",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "foot_l",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "ball_l",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "thigh_twist_01_l",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "thigh_r",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "calf_r",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "calf_twist_01_r",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "foot_r",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "ball_r",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "thigh_twist_01_r",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "ik_foot_root",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "ik_foot_l",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "ik_foot_r",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "VB foot_root",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "VB foot_l",
+          "blendScale": 5.0
+        },
+        {
+          "bone": "VB foot_r",
+          "blendScale": 5.0
+        }
+      ]
+    }
+  },
+  "validations": [
+    {
+      "id": "als-4.15-skeleton-blend-profile-content",
+      "passed": true,
+      "details": {
+        "expectedCount": 3,
+        "actualCount": 3,
+        "errors": []
+      }
+    },
+    {
+      "id": "als-4.15-move-direction-change-profile",
+      "passed": true,
+      "details": {
+        "expectedEntryCount": 18,
+        "actualEntryCount": 18,
+        "expectedBlendScale": 2.0,
+        "errors": []
+      }
+    }
+  ]
+}
