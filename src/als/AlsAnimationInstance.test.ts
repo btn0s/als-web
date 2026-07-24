@@ -188,4 +188,20 @@ describe('AlsAnimationInstance playback regression', () => {
       window.__weightTable?.inertializationCorrectionMagnitude,
     ).toBe(0)
   })
+
+  it('consumes the real GLB Left/Right extras for marker-relative gait sync', async () => {
+    const gltf = await loadAlsGltf()
+    const walk = gltf.animations.find(
+      (clip) => clip.name === 'A_Als_Walk_Forward',
+    )
+    expect(walk?.userData.syncMarkers).toEqual([
+      { name: 'Left', time: 0.0833333 },
+      { name: 'Right', time: 0.65 },
+    ])
+
+    const instance = createAlsAnimationInstance(gltf)
+    const blendControls = { ...controls, speed: 2.75 }
+    refreshFrames(instance, 30, blendControls)
+    expect(window.__weightTable?.locomotionMarkerSync).toBe(1)
+  })
 })

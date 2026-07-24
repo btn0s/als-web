@@ -28,6 +28,7 @@ import {
   createSyncGroup,
 } from '../engine/syncGroups'
 import type {
+  SyncMarker,
   SyncGroupMember,
   SyncMarkerTable,
 } from '../engine/syncGroups'
@@ -269,6 +270,24 @@ function clamp01(value: number) {
   return Math.max(0, Math.min(1, value))
 }
 
+function clipSyncMarkers(clip: THREE.AnimationClip): readonly SyncMarker[] {
+  const markers = clip.userData?.syncMarkers
+  if (!Array.isArray(markers) || clip.duration <= 0) return []
+  return markers.flatMap((marker): SyncMarker[] => {
+    if (
+      typeof marker?.name !== 'string'
+      || typeof marker?.time !== 'number'
+      || !Number.isFinite(marker.time)
+    ) {
+      return []
+    }
+    return [{
+      name: marker.name,
+      normalizedTime: clamp01(marker.time / clip.duration),
+    }]
+  })
+}
+
 /**
  * Owns sampling, pose-space composition, and the sole skeleton write for the character. The pure
  * weight table and region rules remain the graph; the React hook only forwards frame delta and
@@ -277,7 +296,7 @@ function clamp01(value: number) {
 export function createAlsAnimationInstance(gltf: {
   animations: THREE.AnimationClip[]
   scene: THREE.Object3D
-  /** Authored marker injection seam; the current extracted GLB does not carry sync markers yet. */
+  /** Optional normalized marker override; regular GLTF loads consume clip.userData.syncMarkers. */
   syncMarkers?: SyncMarkerTable
 }): AlsAnimationInstance {
   const rig = createRigDefinition(gltf.scene)
@@ -453,7 +472,7 @@ export function createAlsAnimationInstance(gltf: {
     const member: SyncGroupMember = {
       id: clipName,
       duration: clip.sampler.clip.duration,
-      markers: gltf.syncMarkers?.[clipName] ?? [],
+      markers: gltf.syncMarkers?.[clipName] ?? clipSyncMarkers(clip.sampler.clip),
       time: 0,
       weight: 0,
       playRate: 0,
@@ -469,7 +488,8 @@ export function createAlsAnimationInstance(gltf: {
     const member: SyncGroupMember = {
       id: clipName,
       duration: source.clip.sampler.clip.duration,
-      markers: gltf.syncMarkers?.[clipName] ?? [],
+      markers:
+        gltf.syncMarkers?.[clipName] ?? clipSyncMarkers(source.clip.sampler.clip),
       canLead: false,
       time: 0,
       weight: 0,
@@ -872,7 +892,7 @@ export function createAlsAnimationInstance(gltf: {
     for (const member of locomotionSyncGroup.members) {
       member.playRate = locomotionCadence * member.duration
     }
-    advanceSyncGroup(locomotionSyncGroup, delta)
+    const syncResult = advanceSyncGroup(locomotionSyncGroup, delta)
     for (const [role, member] of locomotionMembersByRole) {
       const clip = roles[role]
       if (clip) clip.entry.time = member.time
@@ -984,6 +1004,7 @@ export function createAlsAnimationInstance(gltf: {
     normalDebugWeights.gaitWalkingAmount = gaitAmounts.walking
     normalDebugWeights.gaitRunningAmount = gaitAmounts.running
     normalDebugWeights.gaitSprintingAmount = gaitAmounts.sprinting
+    normalDebugWeights.locomotionMarkerSync = syncResult.usedMarkerSync ? 1 : 0
     normalDebugWeights[POSE_CROUCHING_CURVE_NAME] = state.crouchingAmount
     normalDebugWeights[FOOT_LEFT_LOCK_CURVE_NAME] = state.footLeftLock
     normalDebugWeights[FOOT_RIGHT_LOCK_CURVE_NAME] = state.footRightLock
