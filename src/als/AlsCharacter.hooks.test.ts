@@ -22,6 +22,7 @@ import {
   requestAlsJumpInput,
   publishAlsCharacterAnimationSnapshot,
   resolveAlsActorLocation,
+  resolveAlsCameraMovementBaseSnapshot,
   resolveAlsMeshRootRelativeY,
   resolveCameraRelativeInput,
   stepGroundedCharacterYaw,
@@ -208,6 +209,67 @@ describe('AlsCharacter browser bridge math', () => {
     )
     expect(output.location).toBe(location)
     expect(output.basedMovement).toBe(basedMovement)
+  })
+
+  it('publishes only the current Grounded support to ALSCamera', () => {
+    const supportBody = (
+      handle: number,
+      fixed: boolean,
+      translation: { x: number; y: number; z: number },
+    ) => ({
+      handle,
+      isFixed: () => fixed,
+      translation: () => translation,
+      rotation: () => ({ x: 0, y: 0, z: 0, w: 1 }),
+    })
+    const supportHit = (
+      rigidBody: ReturnType<typeof supportBody>,
+    ) => {
+      const collider = {
+        handle: rigidBody.handle + 100,
+        parent: () => rigidBody,
+        translation: rigidBody.translation,
+        rotation: rigidBody.rotation,
+      }
+      return {
+        validBlockingHit: true,
+        time: 0,
+        impactNormal: { x: 0, y: 0, z: 1 },
+        collider,
+        rigidBody,
+      }
+    }
+
+    const staticBody = supportBody(1, true, { x: 2, y: 3, z: 4 })
+    expect(resolveAlsCameraMovementBaseSnapshot(
+      'Grounded',
+      supportHit(staticBody),
+    )).toEqual({
+      key: staticBody,
+      boneName: '',
+      hasRelativeRotation: false,
+      location: { x: 2, y: 4, z: 3 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+    })
+
+    const movingBody = supportBody(2, false, { x: 5, y: 6, z: 7 })
+    expect(resolveAlsCameraMovementBaseSnapshot(
+      'Grounded',
+      supportHit(movingBody),
+      true,
+    )).toMatchObject({
+      key: movingBody,
+      hasRelativeRotation: true,
+      location: { x: 5, y: 7, z: 6 },
+    })
+
+    expect(resolveAlsCameraMovementBaseSnapshot('Grounded', null))
+      .toBeNull()
+    expect(resolveAlsCameraMovementBaseSnapshot(
+      'InAir',
+      supportHit(movingBody),
+      true,
+    )).toBeNull()
   })
 
   it('fires the authored 0.1s Sprint Hold on the sixth fixed physics tick', () => {

@@ -11,6 +11,7 @@ import * as THREE from 'three'
 import { LEVA_ROOTS } from '../app/levaRoots'
 import {
   probeRapierAlsGround,
+  rapierAlsCameraMovementBase,
   rapierAlsMovementBase,
 } from '../engine/rapierAlsCapsuleSweep'
 import type {
@@ -292,6 +293,24 @@ export function publishAlsCharacterAnimationSnapshot(
     : relativeAccelerationAmount.y
   output.rotateInPlace = input.rotateInPlaceOverride
   return output
+}
+
+/**
+ * Exact live selection seam for the `FBasedMovementInfo` consumed by
+ * `UAlsCameraComponent::TickCamera()` (`AlsCameraComponent.cpp:180-207`).
+ *
+ * Rapier can retain a nearby floor sweep while airborne, but CharacterMovement exposes no
+ * movement base off Grounded. Static supports deliberately retain identity even though their
+ * relative-rotation flag is false.
+ */
+export function resolveAlsCameraMovementBaseSnapshot(
+  locomotionMode: AlsLocomotionMode,
+  groundSupport: Readonly<RapierAlsCapsuleSweepHit> | null,
+  relativeRotation = false,
+) {
+  return locomotionMode === 'Grounded'
+    ? rapierAlsCameraMovementBase(groundSupport, relativeRotation)
+    : null
 }
 
 interface AlsJumpRequestRef {
@@ -733,6 +752,7 @@ export function useAlsCharacter(
     if (poseSample.current.character === character.current) {
       poseSample.current.character = null
       poseSample.current.ownerRigidBody = null
+      poseSample.current.movementBase = null
     }
   }, [poseSample])
   const animationControls = useRef<AlsCharacterAnimationControls>({
@@ -1210,7 +1230,10 @@ export function useAlsCharacter(
 
   useAfterPhysicsStep(() => {
     const body = rigidBody.current
-    if (!body) return
+    if (!body) {
+      poseSample.current.movementBase = null
+      return
+    }
 
     const current = character.current
     threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
@@ -1238,6 +1261,11 @@ export function useAlsCharacter(
         actualVelocity.current.z,
       )
     }
+    poseSample.current.movementBase =
+      resolveAlsCameraMovementBaseSnapshot(
+        current.locomotionMode,
+        currentGroundSupport,
+      )
 
     if (current.stance !== previousStance.current) {
       previousStance.current = current.stance
