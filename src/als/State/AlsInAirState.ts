@@ -25,6 +25,66 @@ export function createAlsInAirState(): AlsInAirState {
   }
 }
 
+// AlsAnimationInstance.cpp:1012-1017. Runtime linear speeds are metres per second.
+export const ALS_JUMP_REFERENCE_SPEED = 6
+export const ALS_JUMP_MIN_PLAY_RATE = 1.2
+export const ALS_JUMP_MAX_PLAY_RATE = 1.5
+
+/** UAlsAnimationInstance::Jump(), AlsAnimationInstance.h:393-396. */
+export function jump(state: AlsInAirState): AlsInAirState {
+  state.jumpRequested = true
+  return state
+}
+
+/**
+ * Exact port of `RefreshInAirOnGameThread()` (`AlsAnimationInstance.cpp:985-991`).
+ *
+ * A pending animation update discards both an old latch and a new request. The request is consumed
+ * every frame even when it cannot become `jumped`.
+ */
+export function refreshInAirOnGameThread(
+  state: AlsInAirState,
+  pendingUpdate: boolean,
+): AlsInAirState {
+  state.jumped = !pendingUpdate && (state.jumped || state.jumpRequested)
+  state.jumpRequested = false
+  return state
+}
+
+export interface AlsRefreshInAirInput {
+  /** LocomotionState.Speed, in metres per second. */
+  readonly speed: number
+  /** LocomotionState.Velocity.Z, in metres per second. */
+  readonly verticalVelocity: number
+}
+
+/**
+ * State-only portion of `UAlsAnimationInstance::RefreshInAir()` (`cpp:993-1026`).
+ *
+ * Ground prediction and in-air lean remain their own Refresh* functions, matching the source call
+ * boundaries. `jumped` is a one-shot: only the first refresh after the game-thread latch changes
+ * `JumpPlayRate`.
+ */
+export function refreshInAir(
+  state: AlsInAirState,
+  input: AlsRefreshInAirInput,
+): AlsInAirState {
+  if (state.jumped) {
+    state.jumped = false
+    const speedAmount = clamp(
+      input.speed / ALS_JUMP_REFERENCE_SPEED,
+      0,
+      1,
+    )
+    state.jumpPlayRate =
+      ALS_JUMP_MIN_PLAY_RATE
+      + (ALS_JUMP_MAX_PLAY_RATE - ALS_JUMP_MIN_PLAY_RATE) * speedAmount
+  }
+
+  state.verticalVelocity = input.verticalVelocity
+  return state
+}
+
 /**
  * Backend-neutral capsule-sweep query corresponding to the `SweepSingleByChannel()` call in
  * `RefreshGroundPrediction()`. All positions and dimensions are metres in ALS coordinates

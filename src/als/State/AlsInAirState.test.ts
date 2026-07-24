@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  ALS_JUMP_MAX_PLAY_RATE,
+  ALS_JUMP_MIN_PLAY_RATE,
   adaptGroundPredictionSweepHit,
   createAlsInAirState,
+  jump,
+  refreshInAir,
+  refreshInAirOnGameThread,
   refreshGroundPrediction,
 } from './AlsInAirState'
 import type {
@@ -158,6 +163,59 @@ describe('FAlsInAirState parity', () => {
       jumpPlayRate: 1,
       groundPredictionAmount: 1,
     })
+  })
+})
+
+describe('ALS jump and RefreshInAir lifecycle', () => {
+  it('latches a requested jump once and consumes the request every game-thread frame', () => {
+    const state = createAlsInAirState()
+
+    jump(state)
+    expect(state.jumpRequested).toBe(true)
+    refreshInAirOnGameThread(state, false)
+    expect(state.jumpRequested).toBe(false)
+    expect(state.jumped).toBe(true)
+
+    refreshInAirOnGameThread(state, false)
+    expect(state.jumped).toBe(true)
+    refreshInAir(state, { speed: 3, verticalVelocity: 4.2 })
+    expect(state.jumped).toBe(false)
+    expect(state.jumpPlayRate).toBeCloseTo(1.35, 15)
+    expect(state.verticalVelocity).toBe(4.2)
+
+    refreshInAir(state, { speed: 6, verticalVelocity: -1.25 })
+    expect(state.jumpPlayRate).toBeCloseTo(1.35, 15)
+    expect(state.verticalVelocity).toBe(-1.25)
+  })
+
+  it('drops both old and newly requested jump latches during a pending update', () => {
+    const state = createAlsInAirState()
+    state.jumped = true
+    jump(state)
+
+    refreshInAirOnGameThread(state, true)
+
+    expect(state.jumpRequested).toBe(false)
+    expect(state.jumped).toBe(false)
+  })
+
+  it.each([
+    [-3, ALS_JUMP_MIN_PLAY_RATE],
+    [0, ALS_JUMP_MIN_PLAY_RATE],
+    [3, 1.35],
+    [6, ALS_JUMP_MAX_PLAY_RATE],
+    [12, ALS_JUMP_MAX_PLAY_RATE],
+  ])('maps %s m/s to the exact clamped jump play rate %s', (
+    speed,
+    expectedPlayRate,
+  ) => {
+    const state = createAlsInAirState()
+    state.jumped = true
+
+    refreshInAir(state, { speed, verticalVelocity: -2 })
+
+    expect(state.jumpPlayRate).toBeCloseTo(expectedPlayRate, 15)
+    expect(state.verticalVelocity).toBe(-2)
   })
 })
 
