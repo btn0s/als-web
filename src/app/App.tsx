@@ -15,6 +15,7 @@ import {
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 import { createCharacterPoseSample } from './CharacterPoseSample'
 import { AlsCamera } from './AlsCamera'
+import { AlsMantlingParityFixture } from './AlsMantlingParityFixture'
 import { Character } from './Character'
 import { FramePerformanceMonitor } from './FramePerformanceMonitor'
 import { PostProcessing } from './PostProcessing'
@@ -46,6 +47,7 @@ function Scene() {
         >
           <Character onSizeChange={setCharacterSize} poseSample={poseSample} />
           <L_Als_GridFloorCollision />
+          {import.meta.env.DEV && <AlsMantlingParityFixture />}
           <AlsCamera poseSample={poseSample} />
         </Physics>
       </Suspense>
