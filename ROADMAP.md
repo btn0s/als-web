@@ -6,13 +6,6 @@ ALS** (scope sharpened 2026-07-23) — a reference repo / template whose deliver
 locomotion on the web, full stop. Gameplay layers (stealth etc.) are downstream projects that
 fork this, not milestones here.
 
-**Lineage:** sibling of `../exposure-r3f`, which pioneered the architecture on a UE4-style rig
-(Quaternius UAL) — pure weight table, region-overlay rules, track-mask regions, action arbiter,
-pose-based camera, measured-gait foot-locking. That repo stays the working stealth slice and the
-reference implementation; this one is the clean rebuild on the skeleton the content ecosystem
-actually uses. Its pure modules transplant verbatim (they are skeleton-agnostic; the prefix-based
-masks already classify UE5's `spine_04/05`, `neck_02`, and twist bones correctly).
-
 **Operating principles (inherited):** code speaks for itself — this file plus a lean CLAUDE.md are
 the only docs; design rationale lives in code comments. Fix quality bar applies (land at the seam,
 in-idiom, no reward hacks, name the trades). Burn debt on a system before the feature wave that
@@ -40,21 +33,14 @@ UE5-native packs (TSO) will need the scripted retarget now listed in M2.
 
 ---
 
-## M1 — Transplant the proven core
+## M1 — Land the pure-module core
 
-Copy from `../exposure-r3f/src/player/`, tests included, adapting names only:
-
-- [x] `weightTable` (invariant grid tests green) · `regionOverlays` (rules re-pointed to ALS
-      clips; Leva auto-panel pending) · `trackMask` (prefixes verified against the SK_Als dump —
-      one adaptation: lowercase `head`; twist/ik bones classify correctly) *(2026-07-23)*
+- [x] `weightTable` (invariant grid tests green) · `regionOverlays` (rules on ALS clips) ·
+      `trackMask` (prefixes verified against the SK_Als dump) *(2026-07-23)*
 - [x] `blendspace` · `actionSequence` · `actionArbiter` · `slotMontage` · `scrubbedPose` ·
-      `proceduralPose` · `footIk` + `ikChain` — transplanted verbatim, 107 tests green; wired so
-      far: blendspace + weightTable + one region rule (rest wire up through M3) *(2026-07-23)*
-- [ ] `locomotionProfile` — re-point at the ALS pack **as constants, not measurement** (verified
-      2026-07-23 against plugin source: clips are fully in-place, root track constant zero; speeds
-      live in `AlsMovementSettings.h` / `MS_Als_Normal` — walk 1.75, run 3.75, sprint 6.5 m/s,
-      crouch 1.5/2.0). Stride = speed × clip duration. The sibling's root-motion measurement was
-      built for a root-motion pack and reads zero here — wrong source, not a bug to patch
+      `proceduralPose` · `footIk` + `ikChain` — landed with tests green *(2026-07-23)*
+- [x] `locomotionProfile` on ALS authored constants (`AlsMovementSettings.h` / `MS_Als_Normal`:
+      walk 1.75, run 3.75, sprint 6.5 m/s, crouch 1.5/2.0; stride = speed × duration) *(2026-07-23)*
 - [ ] Pose-based camera (poseHeight publish + self-calibrating pivot) and the reticle-true zoom
 - [ ] Dev tooling: test hooks (`__triggerJump`, `__playClip`; `__setSpeed` + `__weightTable`
       landed with the M1 proof), capture scripts, Leva root taxonomy
@@ -84,7 +70,7 @@ Remaining for M1 close: locomotionProfile re-point, pose-based camera, rest of d
       (turn-in-place timing), `AllowTransitions`, `SprintBlock`, `Pose*`, per-region `Layer*`
       alphas (incl. `Additive`/`LocalSpace` variants). They live in the same AnimDataModel Dump.cs
       already parses.) M3 turn-in-place, foot locking, and transitions now have their authored
-      data; prefer `FootLock` curves over the sibling's measured-gait heuristic
+      data; foot locking consumes the authored `FootLock` curves
 - [x] **Real `SKM_Als` geometry** *(2026-07-23)*: geometry turned out to live INLINE in the
       USkeletalMesh export (behind an extra strip-flags field CUE4Parse skips), not in
       SkeletalMeshEditorData (that holds Oodle-compressed import data). 10,273 verts / 16,544
@@ -108,7 +94,11 @@ binds by bone name; strides derive sanely from authored speeds × durations. M2 
 ## M3 — ALS parity (the port proper)
 
 ALS Refactored's taxonomy as the checklist, replicated as closely as the web stack allows —
-data on the M1 substrate (weight-table entries, region rules, arbiter records), not new systems:
+data on the M1 substrate (weight-table entries, region rules, arbiter records), not new systems.
+**Every item derives from ALS source/content ONLY**: the plugin C++ (formulas/constants per the
+extracted math spec in session memory), the authored clips, and their curves. No constant without
+a citation; spec gaps resolve from ALS content first, original design second (flagged) — never
+from another project's implementation:
 
 - [ ] **Owned pose-buffer animation runtime FIRST** (decision 2026-07-23 — no building M3 on the
       mixer): sample clips into typed-array local-pose buffers → blend in pose space (lerp/slerp
@@ -131,7 +121,7 @@ data on the M1 substrate (weight-table entries, region rules, arbiter records), 
       pose-buffer runtime above makes it implementable; do it if parity footage demands it)
 - [ ] In-air: jump/fall with land recovery (`Land_Light`/`LandRoll` by fall speed)
 - [ ] Mantle/vault through the arbiter (one clock: warp + montage share normalized progress)
-- [ ] Foot IK with pelvis adaptation (the part exposure-r3f deliberately benched)
+- [ ] Foot IK with pelvis adaptation (ALS's Control Rig stage: ground trace + spring-damped Z offset + slope alignment — constants in the math spec; the pelvis-combine formula is graph-side and flagged original-design)
 - [ ] CUT for now: ragdoll, rolling physics blend, debug-camera parity — revisit on demand
 
 **Exit:** side-by-side with ALS Refactored in-editor footage, the web version reads as the same
@@ -154,9 +144,9 @@ in under an hour.
 ## Out of scope — downstream forks
 
 Stealth (exposure model, guards, TSO content) is DEFERRED OUT of this repo entirely (user
-2026-07-23): this repo is the standalone web port of ALS, and M4 is its final milestone. A
-completed transplant survey of `../exposure-demo`'s stealth layer (module inventory, port order,
-gates) is preserved in session memory for whichever downstream fork picks it up.
+2026-07-23): this repo is the standalone web port of ALS, and M4 is its final milestone. Survey
+notes for the stealth layer are preserved in session memory for whichever downstream fork picks
+it up.
 
 ---
 
@@ -173,8 +163,6 @@ gates) is preserved in session memory for whichever downstream fork picks it up.
 - Verify per-listing licenses on Fab before any new asset enters the curated pack.
 - ALS Refactored is the design north star, not a code-port target: its C++/AnimGraph stays in UE;
   we replicate behavior on the pure-module substrate.
-- `../exposure-r3f` is read-only reference from here — improvements flow forward into this repo,
-  not back.
 
 ---
 
