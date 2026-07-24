@@ -152,7 +152,13 @@ export function finalizePose(
   return out
 }
 
-/** Replaces a masked portion of `base` with `overlay` at a conventional 0..1 layer alpha. */
+/**
+ * Replaces a masked portion of `base` with `overlay` using Unreal's weighted transform-atom sum.
+ *
+ * Rotations use shortest-hemisphere normalized linear blending, matching
+ * FAnimationRuntime::BlendTwoPosesTogether. SLERP is not pose-equivalent once authored graph nodes
+ * are nested because Unreal normalizes the quaternion at every node boundary.
+ */
 export function blendPoseInPlace(
   base: LocalPoseBuffer,
   overlay: LocalPoseBuffer,
@@ -184,22 +190,15 @@ export function blendPoseInPlace(
     const ay = base.rotations[q + 1]
     const az = base.rotations[q + 2]
     const aw = base.rotations[q + 3]
-    let dot = ax * bx + ay * by + az * bz + aw * bw
+    const dot = ax * bx + ay * by + az * bz + aw * bw
     if (dot < 0) {
-      dot = -dot
       bx = -bx
       by = -by
       bz = -bz
       bw = -bw
     }
-    let aWeight = 1 - alpha
-    let bWeight = alpha
-    if (dot < 0.9995) {
-      const theta = Math.acos(Math.min(1, dot))
-      const sinTheta = Math.sin(theta)
-      aWeight = Math.sin((1 - alpha) * theta) / sinTheta
-      bWeight = Math.sin(alpha * theta) / sinTheta
-    }
+    const aWeight = 1 - alpha
+    const bWeight = alpha
     const x = ax * aWeight + bx * bWeight
     const y = ay * aWeight + by * bWeight
     const z = az * aWeight + bz * bWeight

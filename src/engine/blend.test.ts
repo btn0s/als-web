@@ -103,6 +103,23 @@ describe('pose blending', () => {
     expect(base.positions[3]).toBeCloseTo(reference.positions[3])
   })
 
+  it('uses Unreal normalized atom blending rather than quaternion SLERP', () => {
+    const { reference } = setup()
+    const base = copyPose(reference, createPoseBuffer(2))
+    const overlay = copyPose(reference, createPoseBuffer(2))
+    base.rotations.set([0, 0, 0, 1], 0)
+    overlay.rotations.set([Math.sqrt(3) / 2, 0, 0, 0.5], 0)
+
+    blendPoseInPlace(base, overlay, 0.25)
+
+    const rawX = Math.sqrt(3) / 2 * 0.25
+    const rawW = 0.75 + 0.5 * 0.25
+    const inverseLength = 1 / Math.hypot(rawX, rawW)
+    expect(base.rotations[0]).toBeCloseTo(rawX * inverseLength)
+    expect(base.rotations[3]).toBeCloseTo(rawW * inverseLength)
+    expect(base.rotations[0]).not.toBeCloseTo(Math.sin(Math.PI / 12), 3)
+  })
+
   it('derives a local dynamic additive that reconstructs its source over the reference', () => {
     const { rig, reference } = setup()
     const source = copyPose(reference, createPoseBuffer(2))

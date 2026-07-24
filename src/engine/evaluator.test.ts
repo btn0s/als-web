@@ -213,4 +213,37 @@ describe('pose evaluator', () => {
     expect(result.curves.values.get('AllowTransitions')).toBeCloseTo(0.5)
     expect(result.curves.values.get('FootstepSoundBlock')).toBeCloseTo(0.5)
   })
+
+  it('derives an authored additive inside the linked-overlay pose', () => {
+    const root = new THREE.Bone()
+    root.name = 'root'
+    const rig = createRigDefinition(root)
+    const evaluator = createPoseEvaluator(rig)
+    const base = compileClipSampler(constantPositionClip('base', 20), rig)
+    const overlay = compileClipSampler(constantPositionClip('overlay', 10), rig)
+    const rawSource = compileClipSampler(
+      constantPositionClip('secondary-motion', 13),
+      rig,
+    )
+    const authoredReference = resetPoseToReference(
+      createPoseBuffer(rig.boneCount),
+      rig,
+    )
+    authoredReference.positions[0] = 10
+
+    const result = evaluatePose(evaluator, {
+      base: [{ sampler: base, time: 0, weight: 1 }],
+      overlays: [{ sampler: overlay, time: 0, weight: 1 }],
+      overlayAdditives: [{
+        sampler: rawSource,
+        referencePose: authoredReference,
+        additiveSpace: 'local',
+        time: 0,
+        weight: 0.75,
+      }],
+    })
+
+    expect(evaluator.basePose.positions[0]).toBeCloseTo(20)
+    expect(result.pose.positions[0]).toBeCloseTo(12.25)
+  })
 })
