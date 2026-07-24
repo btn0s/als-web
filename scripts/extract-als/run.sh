@@ -9,7 +9,9 @@
 # → MovementSettingsDump.cs (MS_Als_Normal + every referenced rich curve) →
 # AnimationInstanceSettingsDump.cs (AIS_Als_Default stride curves + C++ cadence defaults) →
 # SkeletonProfilesDump.cs (SK_Als authored per-bone blend profiles) →
-# InputMappingDump.cs (IMC + action triggers/modifiers) → copy distributable assets
+# InputMappingDump.cs (IMC + action triggers/modifiers) →
+# CameraContentDump.cs (camera defaults + scalar graph + authored transition curves) →
+# copy distributable assets
 # with the upstream MIT notice.
 # clips.manifest is the audited M3 animation allowlist.
 set -euo pipefail
@@ -52,6 +54,8 @@ dotnet run -- dump-skeleton-profiles "$WORK/stage" "$WORK/skeleton-profiles.json
 dotnet run -- validate-skeleton-profiles "$WORK/skeleton-profiles.json"
 dotnet run -- dump-input-mappings "$WORK/stage" "$WORK/input-mappings.json"
 dotnet run -- validate-input-mappings "$WORK/input-mappings.json"
+dotnet run -- dump-camera-content "$WORK/stage" "$WORK/camera-content.json"
+dotnet run -- validate-camera-content "$WORK/camera-content.json"
 [ -d node_modules ] || pnpm install
 node assemble-glb.mjs "$WORK/als-dump.json" "$WORK/skm-als.glb"
 node assemble-glb.mjs "$WORK/als-rifle-dump.json" "$WORK/skm-als-rifle.glb"
@@ -78,6 +82,7 @@ cp "$WORK/animation-settings.json" "$REPO_ROOT/scripts/extract-als/animation-set
 cp "$WORK/skeleton-profiles.json" "$REPO_ROOT/scripts/extract-als/skeleton-profiles.json"
 cp "$WORK/blend-spaces.json" "$REPO_ROOT/scripts/extract-als/blend-spaces.json"
 cp "$WORK/input-mappings.json" "$REPO_ROOT/scripts/extract-als/input-mappings.json"
+cp "$WORK/camera-content.json" "$REPO_ROOT/scripts/extract-als/camera-content.json"
 echo "done: public/assets/skm-als.glb + skm-als-rifle.glb + LICENSE-ALS-Refactored.md"
 echo "done: $ABP_GRAPH_DESTINATION ($ABP_GRAPH_SIZE bytes)"
-echo "done: scripts/extract-als/{movement-settings,animation-settings,skeleton-profiles,blend-spaces,input-mappings}.json"
+echo "done: scripts/extract-als/{movement-settings,animation-settings,skeleton-profiles,blend-spaces,input-mappings,camera-content}.json"

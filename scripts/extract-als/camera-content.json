@@ -1,0 +1,3297 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "engineVersion": "UE5.5",
+    "referenceRelease": "ALS Refactored 4.15",
+    "settingsAssetPath": "ALS/Content/ALSCamera/Data/CS_Als_Default.uasset",
+    "cameraComponentAssetPath": "ALS/Content/ALSCamera/B_Als_CameraComponent.uasset",
+    "cameraBlueprintAssetPath": "ALS/Content/ALSCamera/AB_Als_Camera.uasset",
+    "skeletonAssetPath": "ALS/Content/ALS/Character/SK_Als.uasset",
+    "cpp": {
+      "settingsDefaults": "Source/ALSCamera/Public/AlsCameraSettings.h",
+      "componentDefaults": "Source/ALSCamera/Public/AlsCameraComponent.h",
+      "boneNames": "Source/ALS/Public/Utility/AlsConstants.h",
+      "curveNames": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+      "solver": "Source/ALSCamera/Private/AlsCameraComponent.cpp",
+      "stateInputs": "Source/ALSCamera/Private/AlsCameraAnimationInstance.cpp"
+    }
+  },
+  "settings": {
+    "asset": "CS_Als_Default",
+    "serializedOverrides": [],
+    "defaults": {
+      "bIgnoreTimeDilation": {
+        "value": true,
+        "source": {
+          "kind": "cppDefault",
+          "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+          "line": 73
+        }
+      },
+      "TeleportDistanceThreshold": {
+        "value": 200.0,
+        "source": {
+          "kind": "cppDefault",
+          "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+          "line": 78
+        },
+        "unit": "cm"
+      },
+      "FirstPerson": {
+        "FieldOfView": {
+          "value": 90.0,
+          "source": {
+            "kind": "cppDefault",
+            "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+            "line": 14
+          },
+          "unit": "deg"
+        },
+        "CameraSocketName": {
+          "value": "FirstPersonCamera",
+          "source": {
+            "kind": "cppDefault",
+            "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+            "line": 17
+          }
+        }
+      },
+      "ThirdPerson": {
+        "FieldOfView": {
+          "value": 90.0,
+          "source": {
+            "kind": "cppDefault",
+            "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+            "line": 35
+          },
+          "unit": "deg"
+        },
+        "FirstPivotSocketName": {
+          "value": "root",
+          "source": {
+            "kind": "cppDefaultResolvedConstant",
+            "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+            "line": 38
+          },
+          "resolvedSource": {
+            "kind": "cppConstant",
+            "path": "Source/ALS/Public/Utility/AlsConstants.h",
+            "line": 218
+          }
+        },
+        "SecondPivotSocketName": {
+          "value": "head",
+          "source": {
+            "kind": "cppDefaultResolvedConstant",
+            "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+            "line": 41
+          },
+          "resolvedSource": {
+            "kind": "cppConstant",
+            "path": "Source/ALS/Public/Utility/AlsConstants.h",
+            "line": 230
+          }
+        },
+        "TraceRadius": {
+          "value": 15.0,
+          "source": {
+            "kind": "cppDefault",
+            "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+            "line": 44
+          },
+          "unit": "cm"
+        },
+        "TraceChannel": {
+          "value": "ECC_Visibility",
+          "source": {
+            "kind": "cppDefault",
+            "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+            "line": 47
+          }
+        },
+        "TraceShoulderLeftSocketName": {
+          "value": "ThirdPersonTraceShoulderLeft",
+          "source": {
+            "kind": "cppDefault",
+            "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+            "line": 50
+          }
+        },
+        "TraceShoulderRightSocketName": {
+          "value": "ThirdPersonTraceShoulderRight",
+          "source": {
+            "kind": "cppDefault",
+            "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+            "line": 53
+          }
+        },
+        "TraceOverrideOffset": {
+          "value": [
+            0.0,
+            0.0,
+            40.0
+          ],
+          "source": {
+            "kind": "cppDefault",
+            "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+            "line": 56
+          },
+          "unit": "cm"
+        },
+        "bEnableTraceDistanceSmoothing": {
+          "value": true,
+          "source": {
+            "kind": "cppDefault",
+            "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+            "line": 59
+          }
+        },
+        "TraceDistanceSmoothing": {
+          "InterpolationSpeed": {
+            "value": 3.0,
+            "source": {
+              "kind": "cppDefault",
+              "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+              "line": 26
+            },
+            "unit": "rate"
+          }
+        }
+      },
+      "PostProcess": {
+        "value": "FPostProcessSettings default constructor",
+        "source": {
+          "kind": "cppDefaultConstructor",
+          "path": "Source/ALSCamera/Public/AlsCameraSettings.h",
+          "line": 87
+        }
+      }
+    }
+  },
+  "component": {
+    "asset": "B_Als_CameraComponent",
+    "serializedProperties": [
+      "AnimClass",
+      "Settings",
+      "SkeletalMesh",
+      "SkeletalMeshAsset",
+      "SkinnedAsset"
+    ],
+    "defaults": {
+      "bOverrideFieldOfView": {
+        "value": false,
+        "source": {
+          "kind": "cppDefault",
+          "path": "Source/ALSCamera/Public/AlsCameraComponent.h",
+          "line": 23
+        }
+      },
+      "FieldOfViewOverride": {
+        "value": 90.0,
+        "source": {
+          "kind": "cppDefault",
+          "path": "Source/ALSCamera/Public/AlsCameraComponent.h",
+          "line": 27
+        },
+        "unit": "deg"
+      },
+      "PostProcessWeight": {
+        "value": 0.0,
+        "source": {
+          "kind": "cppDefault",
+          "path": "Source/ALSCamera/Public/AlsCameraComponent.h",
+          "line": 30
+        },
+        "unit": "normalized"
+      },
+      "bRightShoulder": {
+        "value": true,
+        "source": {
+          "kind": "cppDefault",
+          "path": "Source/ALSCamera/Public/AlsCameraComponent.h",
+          "line": 75
+        }
+      }
+    }
+  },
+  "curveNames": [
+    {
+      "name": "CameraOffsetX",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 67
+      }
+    },
+    {
+      "name": "CameraOffsetY",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 73
+      }
+    },
+    {
+      "name": "CameraOffsetZ",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 79
+      }
+    },
+    {
+      "name": "FovOffset",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 85
+      }
+    },
+    {
+      "name": "PivotOffsetX",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 91
+      }
+    },
+    {
+      "name": "PivotOffsetY",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 97
+      }
+    },
+    {
+      "name": "PivotOffsetZ",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 103
+      }
+    },
+    {
+      "name": "LocationLagX",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 109
+      }
+    },
+    {
+      "name": "LocationLagY",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 115
+      }
+    },
+    {
+      "name": "LocationLagZ",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 121
+      }
+    },
+    {
+      "name": "RotationLag",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 127
+      }
+    },
+    {
+      "name": "FirstPersonOverride",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 133
+      }
+    },
+    {
+      "name": "TraceOverride",
+      "source": {
+        "kind": "cppConstant",
+        "path": "Source/ALSCamera/Public/Utility/AlsCameraConstants.h",
+        "line": 139
+      }
+    }
+  ],
+  "blendCurves": {
+    "CF_Als_CameraBlend_Quick": {
+      "assetPath": "ALS/Content/ALSCamera/Data/CF_Als_CameraBlend_Quick.uasset",
+      "keys": [
+        {
+          "InterpMode": "RCIM_Cubic",
+          "TangentMode": "RCTM_Auto",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 0.0,
+          "Value": 0.0,
+          "ArriveTangent": 0.0,
+          "ArriveTangentWeight": 0.0,
+          "LeaveTangent": 0.0,
+          "LeaveTangentWeight": 0.0
+        },
+        {
+          "InterpMode": "RCIM_Cubic",
+          "TangentMode": "RCTM_User",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 0.17499999701976776,
+          "Value": 0.20000001788139343,
+          "ArriveTangent": 2.9857969284057617,
+          "ArriveTangentWeight": 0.0,
+          "LeaveTangent": 2.9857969284057617,
+          "LeaveTangentWeight": 0.0
+        },
+        {
+          "InterpMode": "RCIM_Linear",
+          "TangentMode": "RCTM_Auto",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 1.0,
+          "Value": 1.0,
+          "ArriveTangent": 0.0,
+          "ArriveTangentWeight": 0.0,
+          "LeaveTangent": 0.0,
+          "LeaveTangentWeight": 0.0
+        }
+      ]
+    },
+    "CF_Als_CameraBlend_Smooth": {
+      "assetPath": "ALS/Content/ALSCamera/Data/CF_Als_CameraBlend_Smooth.uasset",
+      "keys": [
+        {
+          "InterpMode": "RCIM_Cubic",
+          "TangentMode": "RCTM_Auto",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 0.0,
+          "Value": 0.0,
+          "ArriveTangent": 0.0,
+          "ArriveTangentWeight": 0.0,
+          "LeaveTangent": 0.0,
+          "LeaveTangentWeight": 0.0
+        },
+        {
+          "InterpMode": "RCIM_Cubic",
+          "TangentMode": "RCTM_User",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 0.30000001192092896,
+          "Value": 0.25,
+          "ArriveTangent": 2.200195789337158,
+          "ArriveTangentWeight": 0.0,
+          "LeaveTangent": 2.200195789337158,
+          "LeaveTangentWeight": 0.0
+        },
+        {
+          "InterpMode": "RCIM_Linear",
+          "TangentMode": "RCTM_Auto",
+          "TangentWeightMode": "RCTWM_WeightedNone",
+          "Time": 1.0,
+          "Value": 1.0,
+          "ArriveTangent": 0.0,
+          "ArriveTangentWeight": 0.0,
+          "LeaveTangent": 0.0,
+          "LeaveTangentWeight": 0.0
+        }
+      ]
+    }
+  },
+  "sockets": [
+    {
+      "name": "FirstPersonCamera",
+      "export": "SkeletalMeshSocket_0",
+      "parentBone": "head",
+      "referencedBySkeleton": true,
+      "outer": "ALS/Content/ALS/Character/SK_Als.15",
+      "relativeTransformUnreal": {
+        "translationCm": {
+          "value": [
+            4.0,
+            14.0,
+            0.0
+          ],
+          "source": "serialized SK_Als socket property"
+        },
+        "rotationDegrees": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "source": "unserialized USkeletalMeshSocket identity default"
+        },
+        "scale": {
+          "value": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "source": "unserialized USkeletalMeshSocket unit-scale default"
+        }
+      }
+    },
+    {
+      "name": "ThirdPersonTraceShoulderLeft",
+      "export": "SkeletalMeshSocket_2",
+      "parentBone": "head",
+      "referencedBySkeleton": true,
+      "outer": "ALS/Content/ALS/Character/SK_Als.15",
+      "relativeTransformUnreal": {
+        "translationCm": {
+          "value": [
+            5.0,
+            0.0,
+            -20.0
+          ],
+          "source": "serialized SK_Als socket property"
+        },
+        "rotationDegrees": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "source": "unserialized USkeletalMeshSocket identity default"
+        },
+        "scale": {
+          "value": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "source": "unserialized USkeletalMeshSocket unit-scale default"
+        }
+      }
+    },
+    {
+      "name": "ThirdPersonTraceShoulderRight",
+      "export": "SkeletalMeshSocket_1",
+      "parentBone": "head",
+      "referencedBySkeleton": true,
+      "outer": "ALS/Content/ALS/Character/SK_Als.15",
+      "relativeTransformUnreal": {
+        "translationCm": {
+          "value": [
+            5.0,
+            0.0,
+            20.0
+          ],
+          "source": "serialized SK_Als socket property"
+        },
+        "rotationDegrees": {
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "source": "unserialized USkeletalMeshSocket identity default"
+        },
+        "scale": {
+          "value": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "source": "unserialized USkeletalMeshSocket unit-scale default"
+        }
+      }
+    }
+  ],
+  "animGraph": {
+    "asset": "AB_Als_Camera",
+    "compiledNodeCount": 83,
+    "serializedNodeCount": 83,
+    "playerNodeCount": 0,
+    "nodes": [
+      {
+        "index": 0,
+        "property": "AnimGraphNode_Root",
+        "type": "FAnimNode_Root",
+        "poseLinks": [
+          {
+            "input": "Result",
+            "sourceNodeIndex": 70,
+            "targetNodeIndex": 0
+          }
+        ],
+        "Name": "AnimGraph"
+      },
+      {
+        "index": 1,
+        "property": "AnimGraphNode_SaveCachedPose_2",
+        "type": "FAnimNode_SaveCachedPose",
+        "poseLinks": [
+          {
+            "input": "Pose",
+            "sourceNodeIndex": 76,
+            "targetNodeIndex": 1
+          }
+        ],
+        "CachePoseName": "Shoulder"
+      },
+      {
+        "index": 2,
+        "property": "AnimGraphNode_ModifyCurve_33",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 72,
+            "targetNodeIndex": 2
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetY"
+        ],
+        "CurveValues": [
+          1.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Scale"
+      },
+      {
+        "index": 3,
+        "property": "AnimGraphNode_ModifyCurve_32",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 73,
+            "targetNodeIndex": 3
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetY"
+        ],
+        "CurveValues": [
+          -1.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Scale"
+      },
+      {
+        "index": 4,
+        "property": "AnimGraphNode_ModifyCurve_31",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 79,
+            "targetNodeIndex": 4
+          }
+        ],
+        "CurveNames": [
+          "FirstPersonOverride",
+          "TraceOverride"
+        ],
+        "CurveValues": [
+          1.0,
+          1.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 5,
+        "property": "AnimGraphNode_ModifyCurve_30",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 80,
+            "targetNodeIndex": 5
+          }
+        ],
+        "CurveNames": [
+          "FirstPersonOverride"
+        ],
+        "CurveValues": [
+          0.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 6,
+        "property": "AnimGraphNode_TransitionResult_2",
+        "type": "FAnimNode_TransitionResult",
+        "poseLinks": []
+      },
+      {
+        "index": 7,
+        "property": "AnimGraphNode_TransitionResult_1",
+        "type": "FAnimNode_TransitionResult",
+        "poseLinks": []
+      },
+      {
+        "index": 8,
+        "property": "AnimGraphNode_TransitionResult",
+        "type": "FAnimNode_TransitionResult",
+        "poseLinks": []
+      },
+      {
+        "index": 9,
+        "property": "AlsAnimGraphNode_GameplayTagsBlend_10",
+        "type": "FAlsAnimNode_GameplayTagsBlend",
+        "poseLinks": [
+          {
+            "input": "BlendPose[0]",
+            "sourceNodeIndex": 24,
+            "targetNodeIndex": 9
+          },
+          {
+            "input": "BlendPose[1]",
+            "sourceNodeIndex": 26,
+            "targetNodeIndex": 9
+          }
+        ],
+        "Tags": [
+          "Als.Stance.Crouching"
+        ],
+        "BlendTime": [
+          1.0,
+          1.0
+        ],
+        "TransitionType": "EBlendListTransitionType::StandardBlend",
+        "BlendType": "EAlphaBlendOption::Cubic",
+        "bResetChildOnActivation": false
+      },
+      {
+        "index": 10,
+        "property": "AlsAnimGraphNode_GameplayTagsBlend_9",
+        "type": "FAlsAnimNode_GameplayTagsBlend",
+        "poseLinks": [
+          {
+            "input": "BlendPose[0]",
+            "sourceNodeIndex": 20,
+            "targetNodeIndex": 10
+          },
+          {
+            "input": "BlendPose[1]",
+            "sourceNodeIndex": 19,
+            "targetNodeIndex": 10
+          },
+          {
+            "input": "BlendPose[2]",
+            "sourceNodeIndex": 18,
+            "targetNodeIndex": 10
+          }
+        ],
+        "Tags": [
+          "Als.Gait.Running",
+          "Als.Gait.Sprinting"
+        ],
+        "BlendTime": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "TransitionType": "EBlendListTransitionType::StandardBlend",
+        "BlendType": "EAlphaBlendOption::Cubic",
+        "bResetChildOnActivation": true
+      },
+      {
+        "index": 11,
+        "property": "AlsAnimGraphNode_GameplayTagsBlend_8",
+        "type": "FAlsAnimNode_GameplayTagsBlend",
+        "poseLinks": [
+          {
+            "input": "BlendPose[0]",
+            "sourceNodeIndex": 23,
+            "targetNodeIndex": 11
+          },
+          {
+            "input": "BlendPose[1]",
+            "sourceNodeIndex": 22,
+            "targetNodeIndex": 11
+          },
+          {
+            "input": "BlendPose[2]",
+            "sourceNodeIndex": 21,
+            "targetNodeIndex": 11
+          }
+        ],
+        "Tags": [
+          "Als.Gait.Running",
+          "Als.Gait.Sprinting"
+        ],
+        "BlendTime": [
+          1.0,
+          1.0,
+          0.35
+        ],
+        "TransitionType": "EBlendListTransitionType::StandardBlend",
+        "BlendType": "EAlphaBlendOption::Cubic",
+        "bResetChildOnActivation": true
+      },
+      {
+        "index": 12,
+        "property": "AnimGraphNode_LocalRefPose_18",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 13,
+        "property": "AnimGraphNode_LocalRefPose_17",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 14,
+        "property": "AnimGraphNode_LocalRefPose_16",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 15,
+        "property": "AnimGraphNode_LocalRefPose_15",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 16,
+        "property": "AnimGraphNode_LocalRefPose_14",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 17,
+        "property": "AnimGraphNode_LocalRefPose_13",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 18,
+        "property": "AnimGraphNode_ModifyCurve_29",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 14,
+            "targetNodeIndex": 18
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -200.0,
+          60.0,
+          35.0,
+          15.0,
+          15.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 19,
+        "property": "AnimGraphNode_ModifyCurve_28",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 13,
+            "targetNodeIndex": 19
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -200.0,
+          60.0,
+          35.0,
+          15.0,
+          15.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 20,
+        "property": "AnimGraphNode_ModifyCurve_27",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 12,
+            "targetNodeIndex": 20
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -200.0,
+          60.0,
+          35.0,
+          15.0,
+          15.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 21,
+        "property": "AnimGraphNode_ModifyCurve_26",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 17,
+            "targetNodeIndex": 21
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -200.0,
+          70.0,
+          5.0,
+          10.0,
+          5.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 22,
+        "property": "AnimGraphNode_ModifyCurve_25",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 16,
+            "targetNodeIndex": 22
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -200.0,
+          70.0,
+          20.0,
+          15.0,
+          15.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 23,
+        "property": "AnimGraphNode_ModifyCurve_24",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 15,
+            "targetNodeIndex": 23
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -200.0,
+          70.0,
+          20.0,
+          15.0,
+          15.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 24,
+        "property": "AnimGraphNode_ModifyCurve_23",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 11,
+            "targetNodeIndex": 24
+          }
+        ],
+        "CurveNames": [
+          "PivotOffsetZ"
+        ],
+        "CurveValues": [
+          50.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 25,
+        "property": "AnimGraphNode_ModifyCurve_22",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 9,
+            "targetNodeIndex": 25
+          }
+        ],
+        "CurveNames": [
+          "RotationLag"
+        ],
+        "CurveValues": [
+          45.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 26,
+        "property": "AnimGraphNode_ModifyCurve_21",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 10,
+            "targetNodeIndex": 26
+          }
+        ],
+        "CurveNames": [
+          "PivotOffsetZ"
+        ],
+        "CurveValues": [
+          30.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 27,
+        "property": "AnimGraphNode_StateResult_2",
+        "type": "FAnimNode_StateResult",
+        "poseLinks": [
+          {
+            "input": "Result",
+            "sourceNodeIndex": 25,
+            "targetNodeIndex": 27
+          }
+        ],
+        "Name": "Aiming",
+        "StateIndex": 2
+      },
+      {
+        "index": 28,
+        "property": "AlsAnimGraphNode_GameplayTagsBlend_7",
+        "type": "FAlsAnimNode_GameplayTagsBlend",
+        "poseLinks": [
+          {
+            "input": "BlendPose[0]",
+            "sourceNodeIndex": 39,
+            "targetNodeIndex": 28
+          },
+          {
+            "input": "BlendPose[1]",
+            "sourceNodeIndex": 38,
+            "targetNodeIndex": 28
+          },
+          {
+            "input": "BlendPose[2]",
+            "sourceNodeIndex": 37,
+            "targetNodeIndex": 28
+          }
+        ],
+        "Tags": [
+          "Als.Gait.Running",
+          "Als.Gait.Sprinting"
+        ],
+        "BlendTime": [
+          1.5,
+          1.5,
+          1.5
+        ],
+        "TransitionType": "EBlendListTransitionType::StandardBlend",
+        "BlendType": "EAlphaBlendOption::Cubic",
+        "bResetChildOnActivation": true
+      },
+      {
+        "index": 29,
+        "property": "AlsAnimGraphNode_GameplayTagsBlend_6",
+        "type": "FAlsAnimNode_GameplayTagsBlend",
+        "poseLinks": [
+          {
+            "input": "BlendPose[0]",
+            "sourceNodeIndex": 42,
+            "targetNodeIndex": 29
+          },
+          {
+            "input": "BlendPose[1]",
+            "sourceNodeIndex": 41,
+            "targetNodeIndex": 29
+          },
+          {
+            "input": "BlendPose[2]",
+            "sourceNodeIndex": 40,
+            "targetNodeIndex": 29
+          }
+        ],
+        "Tags": [
+          "Als.Gait.Running",
+          "Als.Gait.Sprinting"
+        ],
+        "BlendTime": [
+          1.5,
+          2.0,
+          0.35
+        ],
+        "TransitionType": "EBlendListTransitionType::StandardBlend",
+        "BlendType": "EAlphaBlendOption::Cubic",
+        "bResetChildOnActivation": true
+      },
+      {
+        "index": 30,
+        "property": "AlsAnimGraphNode_GameplayTagsBlend_5",
+        "type": "FAlsAnimNode_GameplayTagsBlend",
+        "poseLinks": [
+          {
+            "input": "BlendPose[0]",
+            "sourceNodeIndex": 43,
+            "targetNodeIndex": 30
+          },
+          {
+            "input": "BlendPose[1]",
+            "sourceNodeIndex": 45,
+            "targetNodeIndex": 30
+          }
+        ],
+        "Tags": [
+          "Als.Stance.Crouching"
+        ],
+        "BlendTime": [
+          1.75,
+          1.75
+        ],
+        "TransitionType": "EBlendListTransitionType::StandardBlend",
+        "BlendType": "EAlphaBlendOption::Cubic",
+        "bResetChildOnActivation": false
+      },
+      {
+        "index": 31,
+        "property": "AnimGraphNode_LocalRefPose_12",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 32,
+        "property": "AnimGraphNode_LocalRefPose_11",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 33,
+        "property": "AnimGraphNode_LocalRefPose_10",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 34,
+        "property": "AnimGraphNode_LocalRefPose_9",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 35,
+        "property": "AnimGraphNode_LocalRefPose_8",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 36,
+        "property": "AnimGraphNode_LocalRefPose_7",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 37,
+        "property": "AnimGraphNode_ModifyCurve_20",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 34,
+            "targetNodeIndex": 37
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -250.0,
+          55.0,
+          35.0,
+          10.0,
+          5.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 38,
+        "property": "AnimGraphNode_ModifyCurve_19",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 35,
+            "targetNodeIndex": 38
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -250.0,
+          55.0,
+          35.0,
+          5.0,
+          5.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 39,
+        "property": "AnimGraphNode_ModifyCurve_18",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 36,
+            "targetNodeIndex": 39
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -250.0,
+          55.0,
+          35.0,
+          5.0,
+          5.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 40,
+        "property": "AnimGraphNode_ModifyCurve_17",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 31,
+            "targetNodeIndex": 40
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -250.0,
+          70.0,
+          5.0,
+          10.0,
+          5.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 41,
+        "property": "AnimGraphNode_ModifyCurve_16",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 32,
+            "targetNodeIndex": 41
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -275.0,
+          75.0,
+          35.0,
+          4.0,
+          6.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 42,
+        "property": "AnimGraphNode_ModifyCurve_15",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 33,
+            "targetNodeIndex": 42
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -280.0,
+          70.0,
+          35.0,
+          8.0,
+          8.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 43,
+        "property": "AnimGraphNode_ModifyCurve_14",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 29,
+            "targetNodeIndex": 43
+          }
+        ],
+        "CurveNames": [
+          "PivotOffsetZ"
+        ],
+        "CurveValues": [
+          40.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 44,
+        "property": "AnimGraphNode_ModifyCurve_13",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 30,
+            "targetNodeIndex": 44
+          }
+        ],
+        "CurveNames": [
+          "RotationLag"
+        ],
+        "CurveValues": [
+          20.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 45,
+        "property": "AnimGraphNode_ModifyCurve_12",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 28,
+            "targetNodeIndex": 45
+          }
+        ],
+        "CurveNames": [
+          "PivotOffsetZ"
+        ],
+        "CurveValues": [
+          25.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 46,
+        "property": "AnimGraphNode_StateResult_1",
+        "type": "FAnimNode_StateResult",
+        "poseLinks": [
+          {
+            "input": "Result",
+            "sourceNodeIndex": 44,
+            "targetNodeIndex": 46
+          }
+        ],
+        "Name": "View Direction",
+        "StateIndex": 1
+      },
+      {
+        "index": 47,
+        "property": "AlsAnimGraphNode_GameplayTagsBlend_4",
+        "type": "FAlsAnimNode_GameplayTagsBlend",
+        "poseLinks": [
+          {
+            "input": "BlendPose[0]",
+            "sourceNodeIndex": 62,
+            "targetNodeIndex": 47
+          },
+          {
+            "input": "BlendPose[1]",
+            "sourceNodeIndex": 64,
+            "targetNodeIndex": 47
+          }
+        ],
+        "Tags": [
+          "Als.Stance.Crouching"
+        ],
+        "BlendTime": [
+          2.0,
+          2.0
+        ],
+        "TransitionType": "EBlendListTransitionType::StandardBlend",
+        "BlendType": "EAlphaBlendOption::Cubic",
+        "bResetChildOnActivation": false
+      },
+      {
+        "index": 48,
+        "property": "AlsAnimGraphNode_GameplayTagsBlend_3",
+        "type": "FAlsAnimNode_GameplayTagsBlend",
+        "poseLinks": [
+          {
+            "input": "BlendPose[0]",
+            "sourceNodeIndex": 58,
+            "targetNodeIndex": 48
+          },
+          {
+            "input": "BlendPose[1]",
+            "sourceNodeIndex": 57,
+            "targetNodeIndex": 48
+          },
+          {
+            "input": "BlendPose[2]",
+            "sourceNodeIndex": 56,
+            "targetNodeIndex": 48
+          }
+        ],
+        "Tags": [
+          "Als.Gait.Running",
+          "Als.Gait.Sprinting"
+        ],
+        "BlendTime": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "TransitionType": "EBlendListTransitionType::StandardBlend",
+        "BlendType": "EAlphaBlendOption::Cubic",
+        "bResetChildOnActivation": true
+      },
+      {
+        "index": 49,
+        "property": "AlsAnimGraphNode_GameplayTagsBlend_2",
+        "type": "FAlsAnimNode_GameplayTagsBlend",
+        "poseLinks": [
+          {
+            "input": "BlendPose[0]",
+            "sourceNodeIndex": 61,
+            "targetNodeIndex": 49
+          },
+          {
+            "input": "BlendPose[1]",
+            "sourceNodeIndex": 60,
+            "targetNodeIndex": 49
+          },
+          {
+            "input": "BlendPose[2]",
+            "sourceNodeIndex": 59,
+            "targetNodeIndex": 49
+          }
+        ],
+        "Tags": [
+          "Als.Gait.Running",
+          "Als.Gait.Sprinting"
+        ],
+        "BlendTime": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "TransitionType": "EBlendListTransitionType::StandardBlend",
+        "BlendType": "EAlphaBlendOption::Cubic",
+        "bResetChildOnActivation": true
+      },
+      {
+        "index": 50,
+        "property": "AnimGraphNode_LocalRefPose_6",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 51,
+        "property": "AnimGraphNode_LocalRefPose_5",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 52,
+        "property": "AnimGraphNode_LocalRefPose_4",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 53,
+        "property": "AnimGraphNode_LocalRefPose_3",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 54,
+        "property": "AnimGraphNode_LocalRefPose_2",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 55,
+        "property": "AnimGraphNode_LocalRefPose_1",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 56,
+        "property": "AnimGraphNode_ModifyCurve_11",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 50,
+            "targetNodeIndex": 56
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -325.0,
+          0.0,
+          20.0,
+          5.0,
+          5.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 57,
+        "property": "AnimGraphNode_ModifyCurve_10",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 51,
+            "targetNodeIndex": 57
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -325.0,
+          0.0,
+          20.0,
+          5.0,
+          5.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 58,
+        "property": "AnimGraphNode_ModifyCurve_9",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 52,
+            "targetNodeIndex": 58
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -325.0,
+          0.0,
+          20.0,
+          5.0,
+          5.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 59,
+        "property": "AnimGraphNode_ModifyCurve_8",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 53,
+            "targetNodeIndex": 59
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -325.0,
+          0.0,
+          20.0,
+          5.0,
+          5.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 60,
+        "property": "AnimGraphNode_ModifyCurve_7",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 54,
+            "targetNodeIndex": 60
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -325.0,
+          0.0,
+          20.0,
+          5.0,
+          5.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 61,
+        "property": "AnimGraphNode_ModifyCurve_6",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 55,
+            "targetNodeIndex": 61
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          -325.0,
+          0.0,
+          20.0,
+          5.0,
+          5.0,
+          15.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 62,
+        "property": "AnimGraphNode_ModifyCurve_5",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 48,
+            "targetNodeIndex": 62
+          }
+        ],
+        "CurveNames": [
+          "PivotOffsetZ"
+        ],
+        "CurveValues": [
+          50.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 63,
+        "property": "AnimGraphNode_ModifyCurve_4",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 47,
+            "targetNodeIndex": 63
+          }
+        ],
+        "CurveNames": [
+          "RotationLag",
+          "TraceOverride"
+        ],
+        "CurveValues": [
+          20.0,
+          1.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 64,
+        "property": "AnimGraphNode_ModifyCurve_3",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 49,
+            "targetNodeIndex": 64
+          }
+        ],
+        "CurveNames": [
+          "PivotOffsetZ"
+        ],
+        "CurveValues": [
+          30.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 65,
+        "property": "AnimGraphNode_StateResult",
+        "type": "FAnimNode_StateResult",
+        "poseLinks": [
+          {
+            "input": "Result",
+            "sourceNodeIndex": 63,
+            "targetNodeIndex": 65
+          }
+        ],
+        "Name": "Velocity Direction",
+        "StateIndex": 0
+      },
+      {
+        "index": 66,
+        "property": "AnimGraphNode_StateMachine",
+        "type": "FAnimNode_StateMachine",
+        "poseLinks": [],
+        "StateMachineIndexInClass": 0,
+        "MaxTransitionsPerFrame": 3,
+        "MaxTransitionsRequests": 32,
+        "bSkipFirstUpdateTransition": true,
+        "bReinitializeOnBecomingRelevant": true
+      },
+      {
+        "index": 67,
+        "property": "AnimGraphNode_SaveCachedPose_1",
+        "type": "FAnimNode_SaveCachedPose",
+        "poseLinks": [
+          {
+            "input": "Pose",
+            "sourceNodeIndex": 66,
+            "targetNodeIndex": 67
+          }
+        ],
+        "CachePoseName": "Look States"
+      },
+      {
+        "index": 68,
+        "property": "AlsAnimGraphNode_GameplayTagsBlend_1",
+        "type": "FAlsAnimNode_GameplayTagsBlend",
+        "poseLinks": [
+          {
+            "input": "BlendPose[0]",
+            "sourceNodeIndex": 5,
+            "targetNodeIndex": 68
+          },
+          {
+            "input": "BlendPose[1]",
+            "sourceNodeIndex": 4,
+            "targetNodeIndex": 68
+          }
+        ],
+        "Tags": [
+          "Als.ViewMode.FirstPerson"
+        ],
+        "BlendTime": [
+          0.1,
+          0.1
+        ],
+        "TransitionType": "EBlendListTransitionType::StandardBlend",
+        "BlendType": "EAlphaBlendOption::HermiteCubic",
+        "bResetChildOnActivation": false
+      },
+      {
+        "index": 69,
+        "property": "AnimGraphNode_LocalRefPose",
+        "type": "FAnimNode_RefPose",
+        "poseLinks": [],
+        "RefPoseType": "EIT_LocalSpace"
+      },
+      {
+        "index": 70,
+        "property": "AlsAnimGraphNode_GameplayTagsBlend",
+        "type": "FAlsAnimNode_GameplayTagsBlend",
+        "poseLinks": [
+          {
+            "input": "BlendPose[0]",
+            "sourceNodeIndex": 75,
+            "targetNodeIndex": 70
+          },
+          {
+            "input": "BlendPose[1]",
+            "sourceNodeIndex": 74,
+            "targetNodeIndex": 70
+          },
+          {
+            "input": "BlendPose[2]",
+            "sourceNodeIndex": 77,
+            "targetNodeIndex": 70
+          },
+          {
+            "input": "BlendPose[3]",
+            "sourceNodeIndex": 78,
+            "targetNodeIndex": 70
+          }
+        ],
+        "Tags": [
+          "Als.LocomotionAction.Mantling",
+          "Als.LocomotionAction.Rolling",
+          "Als.LocomotionAction.Ragdolling"
+        ],
+        "BlendTime": [
+          0.4,
+          0.2,
+          0.2,
+          1.0
+        ],
+        "TransitionType": "EBlendListTransitionType::StandardBlend",
+        "BlendType": "EAlphaBlendOption::Cubic",
+        "bResetChildOnActivation": false
+      },
+      {
+        "index": 71,
+        "property": "AnimGraphNode_SaveCachedPose",
+        "type": "FAnimNode_SaveCachedPose",
+        "poseLinks": [
+          {
+            "input": "Pose",
+            "sourceNodeIndex": 68,
+            "targetNodeIndex": 71
+          }
+        ],
+        "CachePoseName": "View Mode"
+      },
+      {
+        "index": 72,
+        "property": "AnimGraphNode_UseCachedPose_6",
+        "type": "FAnimNode_UseCachedPose",
+        "poseLinks": [
+          {
+            "input": "LinkToCachingNode",
+            "sourceNodeIndex": 67,
+            "targetNodeIndex": 72
+          }
+        ],
+        "CachePoseName": "Look States"
+      },
+      {
+        "index": 73,
+        "property": "AnimGraphNode_UseCachedPose_5",
+        "type": "FAnimNode_UseCachedPose",
+        "poseLinks": [
+          {
+            "input": "LinkToCachingNode",
+            "sourceNodeIndex": 67,
+            "targetNodeIndex": 73
+          }
+        ],
+        "CachePoseName": "Look States"
+      },
+      {
+        "index": 74,
+        "property": "AnimGraphNode_ModifyCurve_2",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 81,
+            "targetNodeIndex": 74
+          }
+        ],
+        "CurveNames": [
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ"
+        ],
+        "CurveValues": [
+          5.0,
+          5.0,
+          3.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 75,
+        "property": "AnimGraphNode_UseCachedPose_4",
+        "type": "FAnimNode_UseCachedPose",
+        "poseLinks": [
+          {
+            "input": "LinkToCachingNode",
+            "sourceNodeIndex": 71,
+            "targetNodeIndex": 75
+          }
+        ],
+        "CachePoseName": "View Mode"
+      },
+      {
+        "index": 76,
+        "property": "AnimGraphNode_BlendListByBool",
+        "type": "FAnimNode_BlendListByBool",
+        "poseLinks": [
+          {
+            "input": "BlendPose[0]",
+            "sourceNodeIndex": 2,
+            "targetNodeIndex": 76
+          },
+          {
+            "input": "BlendPose[1]",
+            "sourceNodeIndex": 3,
+            "targetNodeIndex": 76
+          }
+        ],
+        "BlendTime": [
+          0.5,
+          0.5
+        ],
+        "TransitionType": "EBlendListTransitionType::StandardBlend",
+        "BlendType": "EAlphaBlendOption::Custom",
+        "bResetChildOnActivation": false,
+        "CustomBlendCurve": "CF_Als_CameraBlend_Quick"
+      },
+      {
+        "index": 77,
+        "property": "AnimGraphNode_ModifyCurve_1",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 82,
+            "targetNodeIndex": 77
+          }
+        ],
+        "CurveNames": [
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ",
+          "TraceOverride"
+        ],
+        "CurveValues": [
+          5.0,
+          5.0,
+          5.0,
+          1.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 78,
+        "property": "AnimGraphNode_ModifyCurve",
+        "type": "FAnimNode_ModifyCurve",
+        "poseLinks": [
+          {
+            "input": "SourcePose",
+            "sourceNodeIndex": 69,
+            "targetNodeIndex": 78
+          }
+        ],
+        "CurveNames": [
+          "CameraOffsetX",
+          "CameraOffsetY",
+          "CameraOffsetZ",
+          "PivotOffsetZ",
+          "LocationLagX",
+          "LocationLagY",
+          "LocationLagZ",
+          "RotationLag",
+          "TraceOverride"
+        ],
+        "CurveValues": [
+          -320.0,
+          0.0,
+          50.0,
+          25.0,
+          5.0,
+          5.0,
+          15.0,
+          20.0,
+          1.0
+        ],
+        "Alpha": 1.0,
+        "ApplyMode": "EModifyCurveApplyMode::Blend"
+      },
+      {
+        "index": 79,
+        "property": "AnimGraphNode_UseCachedPose_3",
+        "type": "FAnimNode_UseCachedPose",
+        "poseLinks": [
+          {
+            "input": "LinkToCachingNode",
+            "sourceNodeIndex": 1,
+            "targetNodeIndex": 79
+          }
+        ],
+        "CachePoseName": "Shoulder"
+      },
+      {
+        "index": 80,
+        "property": "AnimGraphNode_UseCachedPose_2",
+        "type": "FAnimNode_UseCachedPose",
+        "poseLinks": [
+          {
+            "input": "LinkToCachingNode",
+            "sourceNodeIndex": 1,
+            "targetNodeIndex": 80
+          }
+        ],
+        "CachePoseName": "Shoulder"
+      },
+      {
+        "index": 81,
+        "property": "AnimGraphNode_UseCachedPose_1",
+        "type": "FAnimNode_UseCachedPose",
+        "poseLinks": [
+          {
+            "input": "LinkToCachingNode",
+            "sourceNodeIndex": 71,
+            "targetNodeIndex": 81
+          }
+        ],
+        "CachePoseName": "View Mode"
+      },
+      {
+        "index": 82,
+        "property": "AnimGraphNode_UseCachedPose",
+        "type": "FAnimNode_UseCachedPose",
+        "poseLinks": [
+          {
+            "input": "LinkToCachingNode",
+            "sourceNodeIndex": 71,
+            "targetNodeIndex": 82
+          }
+        ],
+        "CachePoseName": "View Mode"
+      }
+    ],
+    "propertyBindings": [
+      {
+        "graph": "Aiming",
+        "editorNode": "AlsAnimGraphNode_GameplayTagsBlend_0",
+        "nodeType": "AlsAnimGraphNode_GameplayTagsBlend",
+        "targetProperty": "ActiveTag",
+        "sourceProperty": "Stance"
+      },
+      {
+        "graph": "Aiming",
+        "editorNode": "AlsAnimGraphNode_GameplayTagsBlend_1",
+        "nodeType": "AlsAnimGraphNode_GameplayTagsBlend",
+        "targetProperty": "ActiveTag",
+        "sourceProperty": "Gait"
+      },
+      {
+        "graph": "Aiming",
+        "editorNode": "AlsAnimGraphNode_GameplayTagsBlend_2",
+        "nodeType": "AlsAnimGraphNode_GameplayTagsBlend",
+        "targetProperty": "ActiveTag",
+        "sourceProperty": "Gait"
+      },
+      {
+        "graph": "AnimGraph",
+        "editorNode": "AlsAnimGraphNode_GameplayTagsBlend_0",
+        "nodeType": "AlsAnimGraphNode_GameplayTagsBlend",
+        "targetProperty": "ActiveTag",
+        "sourceProperty": "ViewMode"
+      },
+      {
+        "graph": "AnimGraph",
+        "editorNode": "AlsAnimGraphNode_GameplayTagsBlend_1",
+        "nodeType": "AlsAnimGraphNode_GameplayTagsBlend",
+        "targetProperty": "ActiveTag",
+        "sourceProperty": "LocomotionAction"
+      },
+      {
+        "graph": "AnimGraph",
+        "editorNode": "AnimGraphNode_BlendListByBool_2",
+        "nodeType": "AnimGraphNode_BlendListByBool",
+        "targetProperty": "bActiveValue",
+        "sourceProperty": "bRightShoulder"
+      },
+      {
+        "graph": "Velocity Direction",
+        "editorNode": "AlsAnimGraphNode_GameplayTagsBlend_0",
+        "nodeType": "AlsAnimGraphNode_GameplayTagsBlend",
+        "targetProperty": "ActiveTag",
+        "sourceProperty": "Stance"
+      },
+      {
+        "graph": "Velocity Direction",
+        "editorNode": "AlsAnimGraphNode_GameplayTagsBlend_1",
+        "nodeType": "AlsAnimGraphNode_GameplayTagsBlend",
+        "targetProperty": "ActiveTag",
+        "sourceProperty": "Gait"
+      },
+      {
+        "graph": "Velocity Direction",
+        "editorNode": "AlsAnimGraphNode_GameplayTagsBlend_2",
+        "nodeType": "AlsAnimGraphNode_GameplayTagsBlend",
+        "targetProperty": "ActiveTag",
+        "sourceProperty": "Gait"
+      },
+      {
+        "graph": "View Direction",
+        "editorNode": "AlsAnimGraphNode_GameplayTagsBlend_0",
+        "nodeType": "AlsAnimGraphNode_GameplayTagsBlend",
+        "targetProperty": "ActiveTag",
+        "sourceProperty": "Stance"
+      },
+      {
+        "graph": "View Direction",
+        "editorNode": "AlsAnimGraphNode_GameplayTagsBlend_1",
+        "nodeType": "AlsAnimGraphNode_GameplayTagsBlend",
+        "targetProperty": "ActiveTag",
+        "sourceProperty": "Gait"
+      },
+      {
+        "graph": "View Direction",
+        "editorNode": "AlsAnimGraphNode_GameplayTagsBlend_2",
+        "nodeType": "AlsAnimGraphNode_GameplayTagsBlend",
+        "targetProperty": "ActiveTag",
+        "sourceProperty": "Gait"
+      }
+    ],
+    "transitionRuleEditorGraphs": [
+      {
+        "graph": "AnimationTransitionGraph'AB_Als_Camera:AnimGraph.AnimGraphNode_StateMachine_0.Look States.AnimStateTransitionNode_3.Transition_1'",
+        "propertyPaths": [
+          "RotationMode"
+        ],
+        "operations": [
+          "BooleanOR",
+          "EqualEqual_GameplayTag",
+          "IsGameplayTagValid",
+          "Not_PreBool"
+        ],
+        "acceptsInvalidTag": true
+      },
+      {
+        "graph": "AnimationTransitionGraph'AB_Als_Camera:AnimGraph.AnimGraphNode_StateMachine_0.Look States.AnimStateTransitionNode_5.Transition'",
+        "propertyPaths": [
+          "RotationMode"
+        ],
+        "operations": [
+          "EqualEqual_GameplayTag"
+        ],
+        "acceptsInvalidTag": false
+      },
+      {
+        "graph": "AnimationTransitionGraph'AB_Als_Camera:AnimGraph.AnimGraphNode_StateMachine_0.Look States.AnimStateTransitionNode_6.Transition'",
+        "propertyPaths": [
+          "RotationMode"
+        ],
+        "operations": [
+          "EqualEqual_GameplayTag"
+        ],
+        "acceptsInvalidTag": false
+      }
+    ],
+    "stateMachine": {
+      "name": "Look States",
+      "initialState": "Velocity Direction",
+      "states": [
+        {
+          "name": "Velocity Direction",
+          "rootBakedNodeIndex": 17,
+          "rootCompiledNodeIndex": 65,
+          "playerNodeIndices": [],
+          "transitions": [
+            {
+              "transitionIndex": 0,
+              "ruleBakedNodeIndex": 74,
+              "ruleCompiledNodeIndex": 8,
+              "targetState": "View Direction",
+              "expression": {
+                "property": "RotationMode",
+                "operator": "Equals",
+                "value": "Als.RotationMode.ViewDirection",
+                "acceptsInvalidTag": false,
+                "source": "AB_Als_Camera transition editor graph and baked shared-rule topology"
+              }
+            },
+            {
+              "transitionIndex": 1,
+              "ruleBakedNodeIndex": 75,
+              "ruleCompiledNodeIndex": 7,
+              "targetState": "Aiming",
+              "expression": {
+                "property": "RotationMode",
+                "operator": "Equals",
+                "value": "Als.RotationMode.Aiming",
+                "acceptsInvalidTag": false,
+                "source": "AB_Als_Camera transition editor graph and baked shared-rule topology"
+              }
+            }
+          ]
+        },
+        {
+          "name": "View Direction",
+          "rootBakedNodeIndex": 36,
+          "rootCompiledNodeIndex": 46,
+          "playerNodeIndices": [],
+          "transitions": [
+            {
+              "transitionIndex": 2,
+              "ruleBakedNodeIndex": 75,
+              "ruleCompiledNodeIndex": 7,
+              "targetState": "Aiming",
+              "expression": {
+                "property": "RotationMode",
+                "operator": "Equals",
+                "value": "Als.RotationMode.Aiming",
+                "acceptsInvalidTag": false,
+                "source": "AB_Als_Camera transition editor graph and baked shared-rule topology"
+              }
+            },
+            {
+              "transitionIndex": 3,
+              "ruleBakedNodeIndex": 76,
+              "ruleCompiledNodeIndex": 6,
+              "targetState": "Velocity Direction",
+              "expression": {
+                "property": "RotationMode",
+                "operator": "Equals",
+                "value": "Als.RotationMode.VelocityDirection",
+                "acceptsInvalidTag": true,
+                "source": "AB_Als_Camera transition editor graph and baked shared-rule topology"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aiming",
+          "rootBakedNodeIndex": 55,
+          "rootCompiledNodeIndex": 27,
+          "playerNodeIndices": [],
+          "transitions": [
+            {
+              "transitionIndex": 4,
+              "ruleBakedNodeIndex": 76,
+              "ruleCompiledNodeIndex": 6,
+              "targetState": "Velocity Direction",
+              "expression": {
+                "property": "RotationMode",
+                "operator": "Equals",
+                "value": "Als.RotationMode.VelocityDirection",
+                "acceptsInvalidTag": true,
+                "source": "AB_Als_Camera transition editor graph and baked shared-rule topology"
+              }
+            },
+            {
+              "transitionIndex": 5,
+              "ruleBakedNodeIndex": 74,
+              "ruleCompiledNodeIndex": 8,
+              "targetState": "View Direction",
+              "expression": {
+                "property": "RotationMode",
+                "operator": "Equals",
+                "value": "Als.RotationMode.ViewDirection",
+                "acceptsInvalidTag": false,
+                "source": "AB_Als_Camera transition editor graph and baked shared-rule topology"
+              }
+            }
+          ]
+        }
+      ],
+      "transitions": [
+        {
+          "previousState": "Velocity Direction",
+          "nextState": "View Direction",
+          "duration": 1.0,
+          "blendMode": "EAlphaBlendOption::Custom",
+          "customCurve": "CF_Als_CameraBlend_Smooth"
+        },
+        {
+          "previousState": "Velocity Direction",
+          "nextState": "Aiming",
+          "duration": 0.3499999940395355,
+          "blendMode": "EAlphaBlendOption::Custom",
+          "customCurve": "CF_Als_CameraBlend_Quick"
+        },
+        {
+          "previousState": "View Direction",
+          "nextState": "Aiming",
+          "duration": 0.3499999940395355,
+          "blendMode": "EAlphaBlendOption::Custom",
+          "customCurve": "CF_Als_CameraBlend_Quick"
+        },
+        {
+          "previousState": "View Direction",
+          "nextState": "Velocity Direction",
+          "duration": 1.0,
+          "blendMode": "EAlphaBlendOption::Custom",
+          "customCurve": "CF_Als_CameraBlend_Smooth"
+        },
+        {
+          "previousState": "Aiming",
+          "nextState": "Velocity Direction",
+          "duration": 1.0,
+          "blendMode": "EAlphaBlendOption::Custom",
+          "customCurve": "CF_Als_CameraBlend_Smooth"
+        },
+        {
+          "previousState": "Aiming",
+          "nextState": "View Direction",
+          "duration": 1.0,
+          "blendMode": "EAlphaBlendOption::Custom",
+          "customCurve": "CF_Als_CameraBlend_Smooth"
+        }
+      ]
+    },
+    "branches": {
+      "lookStates": {
+        "stateMachineNodeIndex": 66,
+        "VelocityDirection": {
+          "resultNodeIndex": 65,
+          "finalModifier": {
+            "nodeIndex": 63,
+            "sourceNodeIndex": 47,
+            "curveNames": [
+              "RotationLag",
+              "TraceOverride"
+            ],
+            "values": [
+              20.0,
+              1.0
+            ],
+            "applyMode": "EModifyCurveApplyMode::Blend"
+          },
+          "stanceBlend": {
+            "nodeIndex": 47,
+            "sourceNodeIndices": [
+              62,
+              64
+            ],
+            "tags": [
+              "Als.Stance.Crouching"
+            ],
+            "blendTimes": [
+              2.0,
+              2.0
+            ],
+            "blendType": "EAlphaBlendOption::Cubic",
+            "customCurve": null,
+            "resetChildOnActivation": false
+          },
+          "Standing": {
+            "pivotModifier": {
+              "nodeIndex": 62,
+              "sourceNodeIndex": 48,
+              "curveNames": [
+                "PivotOffsetZ"
+              ],
+              "values": [
+                50.0
+              ],
+              "applyMode": "EModifyCurveApplyMode::Blend"
+            },
+            "gaitBlend": {
+              "nodeIndex": 48,
+              "sourceNodeIndices": [
+                58,
+                57,
+                56
+              ],
+              "tags": [
+                "Als.Gait.Running",
+                "Als.Gait.Sprinting"
+              ],
+              "blendTimes": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "blendType": "EAlphaBlendOption::Cubic",
+              "customCurve": null,
+              "resetChildOnActivation": true
+            },
+            "profiles": [
+              {
+                "nodeIndex": 58,
+                "sourceNodeIndex": 52,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -325.0,
+                  0.0,
+                  20.0,
+                  5.0,
+                  5.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              },
+              {
+                "nodeIndex": 57,
+                "sourceNodeIndex": 51,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -325.0,
+                  0.0,
+                  20.0,
+                  5.0,
+                  5.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              },
+              {
+                "nodeIndex": 56,
+                "sourceNodeIndex": 50,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -325.0,
+                  0.0,
+                  20.0,
+                  5.0,
+                  5.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              }
+            ]
+          },
+          "Crouching": {
+            "pivotModifier": {
+              "nodeIndex": 64,
+              "sourceNodeIndex": 49,
+              "curveNames": [
+                "PivotOffsetZ"
+              ],
+              "values": [
+                30.0
+              ],
+              "applyMode": "EModifyCurveApplyMode::Blend"
+            },
+            "gaitBlend": {
+              "nodeIndex": 49,
+              "sourceNodeIndices": [
+                61,
+                60,
+                59
+              ],
+              "tags": [
+                "Als.Gait.Running",
+                "Als.Gait.Sprinting"
+              ],
+              "blendTimes": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "blendType": "EAlphaBlendOption::Cubic",
+              "customCurve": null,
+              "resetChildOnActivation": true
+            },
+            "profiles": [
+              {
+                "nodeIndex": 61,
+                "sourceNodeIndex": 55,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -325.0,
+                  0.0,
+                  20.0,
+                  5.0,
+                  5.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              },
+              {
+                "nodeIndex": 60,
+                "sourceNodeIndex": 54,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -325.0,
+                  0.0,
+                  20.0,
+                  5.0,
+                  5.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              },
+              {
+                "nodeIndex": 59,
+                "sourceNodeIndex": 53,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -325.0,
+                  0.0,
+                  20.0,
+                  5.0,
+                  5.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              }
+            ]
+          }
+        },
+        "ViewDirection": {
+          "resultNodeIndex": 46,
+          "finalModifier": {
+            "nodeIndex": 44,
+            "sourceNodeIndex": 30,
+            "curveNames": [
+              "RotationLag"
+            ],
+            "values": [
+              20.0
+            ],
+            "applyMode": "EModifyCurveApplyMode::Blend"
+          },
+          "stanceBlend": {
+            "nodeIndex": 30,
+            "sourceNodeIndices": [
+              43,
+              45
+            ],
+            "tags": [
+              "Als.Stance.Crouching"
+            ],
+            "blendTimes": [
+              1.75,
+              1.75
+            ],
+            "blendType": "EAlphaBlendOption::Cubic",
+            "customCurve": null,
+            "resetChildOnActivation": false
+          },
+          "Standing": {
+            "pivotModifier": {
+              "nodeIndex": 43,
+              "sourceNodeIndex": 29,
+              "curveNames": [
+                "PivotOffsetZ"
+              ],
+              "values": [
+                40.0
+              ],
+              "applyMode": "EModifyCurveApplyMode::Blend"
+            },
+            "gaitBlend": {
+              "nodeIndex": 29,
+              "sourceNodeIndices": [
+                42,
+                41,
+                40
+              ],
+              "tags": [
+                "Als.Gait.Running",
+                "Als.Gait.Sprinting"
+              ],
+              "blendTimes": [
+                1.5,
+                2.0,
+                0.35
+              ],
+              "blendType": "EAlphaBlendOption::Cubic",
+              "customCurve": null,
+              "resetChildOnActivation": true
+            },
+            "profiles": [
+              {
+                "nodeIndex": 42,
+                "sourceNodeIndex": 33,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -280.0,
+                  70.0,
+                  35.0,
+                  8.0,
+                  8.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              },
+              {
+                "nodeIndex": 41,
+                "sourceNodeIndex": 32,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -275.0,
+                  75.0,
+                  35.0,
+                  4.0,
+                  6.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              },
+              {
+                "nodeIndex": 40,
+                "sourceNodeIndex": 31,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -250.0,
+                  70.0,
+                  5.0,
+                  10.0,
+                  5.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              }
+            ]
+          },
+          "Crouching": {
+            "pivotModifier": {
+              "nodeIndex": 45,
+              "sourceNodeIndex": 28,
+              "curveNames": [
+                "PivotOffsetZ"
+              ],
+              "values": [
+                25.0
+              ],
+              "applyMode": "EModifyCurveApplyMode::Blend"
+            },
+            "gaitBlend": {
+              "nodeIndex": 28,
+              "sourceNodeIndices": [
+                39,
+                38,
+                37
+              ],
+              "tags": [
+                "Als.Gait.Running",
+                "Als.Gait.Sprinting"
+              ],
+              "blendTimes": [
+                1.5,
+                1.5,
+                1.5
+              ],
+              "blendType": "EAlphaBlendOption::Cubic",
+              "customCurve": null,
+              "resetChildOnActivation": true
+            },
+            "profiles": [
+              {
+                "nodeIndex": 39,
+                "sourceNodeIndex": 36,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -250.0,
+                  55.0,
+                  35.0,
+                  5.0,
+                  5.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              },
+              {
+                "nodeIndex": 38,
+                "sourceNodeIndex": 35,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -250.0,
+                  55.0,
+                  35.0,
+                  5.0,
+                  5.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              },
+              {
+                "nodeIndex": 37,
+                "sourceNodeIndex": 34,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -250.0,
+                  55.0,
+                  35.0,
+                  10.0,
+                  5.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              }
+            ]
+          }
+        },
+        "Aiming": {
+          "resultNodeIndex": 27,
+          "finalModifier": {
+            "nodeIndex": 25,
+            "sourceNodeIndex": 9,
+            "curveNames": [
+              "RotationLag"
+            ],
+            "values": [
+              45.0
+            ],
+            "applyMode": "EModifyCurveApplyMode::Blend"
+          },
+          "stanceBlend": {
+            "nodeIndex": 9,
+            "sourceNodeIndices": [
+              24,
+              26
+            ],
+            "tags": [
+              "Als.Stance.Crouching"
+            ],
+            "blendTimes": [
+              1.0,
+              1.0
+            ],
+            "blendType": "EAlphaBlendOption::Cubic",
+            "customCurve": null,
+            "resetChildOnActivation": false
+          },
+          "Standing": {
+            "pivotModifier": {
+              "nodeIndex": 24,
+              "sourceNodeIndex": 11,
+              "curveNames": [
+                "PivotOffsetZ"
+              ],
+              "values": [
+                50.0
+              ],
+              "applyMode": "EModifyCurveApplyMode::Blend"
+            },
+            "gaitBlend": {
+              "nodeIndex": 11,
+              "sourceNodeIndices": [
+                23,
+                22,
+                21
+              ],
+              "tags": [
+                "Als.Gait.Running",
+                "Als.Gait.Sprinting"
+              ],
+              "blendTimes": [
+                1.0,
+                1.0,
+                0.35
+              ],
+              "blendType": "EAlphaBlendOption::Cubic",
+              "customCurve": null,
+              "resetChildOnActivation": true
+            },
+            "profiles": [
+              {
+                "nodeIndex": 23,
+                "sourceNodeIndex": 15,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -200.0,
+                  70.0,
+                  20.0,
+                  15.0,
+                  15.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              },
+              {
+                "nodeIndex": 22,
+                "sourceNodeIndex": 16,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -200.0,
+                  70.0,
+                  20.0,
+                  15.0,
+                  15.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              },
+              {
+                "nodeIndex": 21,
+                "sourceNodeIndex": 17,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -200.0,
+                  70.0,
+                  5.0,
+                  10.0,
+                  5.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              }
+            ]
+          },
+          "Crouching": {
+            "pivotModifier": {
+              "nodeIndex": 26,
+              "sourceNodeIndex": 10,
+              "curveNames": [
+                "PivotOffsetZ"
+              ],
+              "values": [
+                30.0
+              ],
+              "applyMode": "EModifyCurveApplyMode::Blend"
+            },
+            "gaitBlend": {
+              "nodeIndex": 10,
+              "sourceNodeIndices": [
+                20,
+                19,
+                18
+              ],
+              "tags": [
+                "Als.Gait.Running",
+                "Als.Gait.Sprinting"
+              ],
+              "blendTimes": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "blendType": "EAlphaBlendOption::Cubic",
+              "customCurve": null,
+              "resetChildOnActivation": true
+            },
+            "profiles": [
+              {
+                "nodeIndex": 20,
+                "sourceNodeIndex": 12,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -200.0,
+                  60.0,
+                  35.0,
+                  15.0,
+                  15.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              },
+              {
+                "nodeIndex": 19,
+                "sourceNodeIndex": 13,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -200.0,
+                  60.0,
+                  35.0,
+                  15.0,
+                  15.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              },
+              {
+                "nodeIndex": 18,
+                "sourceNodeIndex": 14,
+                "curveNames": [
+                  "CameraOffsetX",
+                  "CameraOffsetY",
+                  "CameraOffsetZ",
+                  "LocationLagX",
+                  "LocationLagY",
+                  "LocationLagZ"
+                ],
+                "values": [
+                  -200.0,
+                  60.0,
+                  35.0,
+                  15.0,
+                  15.0,
+                  15.0
+                ],
+                "applyMode": "EModifyCurveApplyMode::Blend"
+              }
+            ]
+          }
+        }
+      },
+      "viewMode": {
+        "blend": {
+          "nodeIndex": 68,
+          "sourceNodeIndices": [
+            5,
+            4
+          ],
+          "tags": [
+            "Als.ViewMode.FirstPerson"
+          ],
+          "blendTimes": [
+            0.1,
+            0.1
+          ],
+          "blendType": "EAlphaBlendOption::HermiteCubic",
+          "customCurve": null,
+          "resetChildOnActivation": false
+        },
+        "ThirdPerson": {
+          "nodeIndex": 5,
+          "sourceNodeIndex": 80,
+          "curveNames": [
+            "FirstPersonOverride"
+          ],
+          "values": [
+            0.0
+          ],
+          "applyMode": "EModifyCurveApplyMode::Blend"
+        },
+        "FirstPerson": {
+          "nodeIndex": 4,
+          "sourceNodeIndex": 79,
+          "curveNames": [
+            "FirstPersonOverride",
+            "TraceOverride"
+          ],
+          "values": [
+            1.0,
+            1.0
+          ],
+          "applyMode": "EModifyCurveApplyMode::Blend"
+        }
+      },
+      "shoulder": {
+        "cacheNodeIndex": 1,
+        "blend": {
+          "nodeIndex": 76,
+          "sourceNodeIndices": [
+            2,
+            3
+          ],
+          "tags": [],
+          "blendTimes": [
+            0.5,
+            0.5
+          ],
+          "blendType": "EAlphaBlendOption::Custom",
+          "customCurve": "CF_Als_CameraBlend_Quick",
+          "resetChildOnActivation": false
+        },
+        "branches": [
+          {
+            "nodeIndex": 2,
+            "sourceNodeIndex": 72,
+            "curveNames": [
+              "CameraOffsetY"
+            ],
+            "values": [
+              1.0
+            ],
+            "applyMode": "EModifyCurveApplyMode::Scale"
+          },
+          {
+            "nodeIndex": 3,
+            "sourceNodeIndex": 73,
+            "curveNames": [
+              "CameraOffsetY"
+            ],
+            "values": [
+              -1.0
+            ],
+            "applyMode": "EModifyCurveApplyMode::Scale"
+          }
+        ]
+      },
+      "locomotionAction": {
+        "blend": {
+          "nodeIndex": 70,
+          "sourceNodeIndices": [
+            75,
+            74,
+            77,
+            78
+          ],
+          "tags": [
+            "Als.LocomotionAction.Mantling",
+            "Als.LocomotionAction.Rolling",
+            "Als.LocomotionAction.Ragdolling"
+          ],
+          "blendTimes": [
+            0.4,
+            0.2,
+            0.2,
+            1.0
+          ],
+          "blendType": "EAlphaBlendOption::Cubic",
+          "customCurve": null,
+          "resetChildOnActivation": false
+        },
+        "Default": {
+          "nodeIndex": 75,
+          "sourceNodeIndex": 71,
+          "kind": "cachedPose"
+        },
+        "Mantling": {
+          "nodeIndex": 74,
+          "sourceNodeIndex": 81,
+          "curveNames": [
+            "LocationLagX",
+            "LocationLagY",
+            "LocationLagZ"
+          ],
+          "values": [
+            5.0,
+            5.0,
+            3.0
+          ],
+          "applyMode": "EModifyCurveApplyMode::Blend"
+        },
+        "Rolling": {
+          "nodeIndex": 77,
+          "sourceNodeIndex": 82,
+          "curveNames": [
+            "LocationLagX",
+            "LocationLagY",
+            "LocationLagZ",
+            "TraceOverride"
+          ],
+          "values": [
+            5.0,
+            5.0,
+            5.0,
+            1.0
+          ],
+          "applyMode": "EModifyCurveApplyMode::Blend"
+        },
+        "Ragdolling": {
+          "nodeIndex": 78,
+          "sourceNodeIndex": 69,
+          "curveNames": [
+            "CameraOffsetX",
+            "CameraOffsetY",
+            "CameraOffsetZ",
+            "PivotOffsetZ",
+            "LocationLagX",
+            "LocationLagY",
+            "LocationLagZ",
+            "RotationLag",
+            "TraceOverride"
+          ],
+          "values": [
+            -320.0,
+            0.0,
+            50.0,
+            25.0,
+            5.0,
+            5.0,
+            15.0,
+            20.0,
+            1.0
+          ],
+          "applyMode": "EModifyCurveApplyMode::Blend"
+        }
+      }
+    }
+  },
+  "validations": [
+    {
+      "name": "camera defaults and absent data-asset overrides",
+      "status": "pass",
+      "errors": []
+    },
+    {
+      "name": "13 camera curve names",
+      "status": "pass",
+      "errors": []
+    },
+    {
+      "name": "authored camera skeleton sockets",
+      "status": "pass",
+      "errors": []
+    },
+    {
+      "name": "authored Quick and Smooth rich curves",
+      "status": "pass",
+      "errors": []
+    },
+    {
+      "name": "camera graph topology and bindings",
+      "status": "pass",
+      "errors": []
+    },
+    {
+      "name": "rotation-mode, stance, and gait camera profiles",
+      "status": "pass",
+      "errors": []
+    },
+    {
+      "name": "view, shoulder, and action camera branches",
+      "status": "pass",
+      "errors": []
+    }
+  ]
+}
