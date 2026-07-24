@@ -90,6 +90,8 @@ export interface AlsCharacter {
   stance: AlsStance
   gait: AlsGait
   actorYawAngle: number
+  /** ACharacter::AnimRootMotionTranslationScale. */
+  animRootMotionTranslationScale: number
   viewYawAngle: number
   viewYawSpeed: number
   desiredVelocityYawAngle: number
@@ -161,6 +163,7 @@ export function createAlsCharacter(
     stance: desiredStance,
     gait: 'Walking',
     actorYawAngle,
+    animRootMotionTranslationScale: 1,
     viewYawAngle,
     viewYawSpeed: 0,
     desiredVelocityYawAngle: actorYawAngle,
@@ -203,6 +206,22 @@ export function setViewMode(
   viewMode: AlsViewMode,
 ): AlsCharacter {
   character.viewMode = viewMode
+  return character
+}
+
+/** ACharacter::GetAnimRootMotionTranslationScale(). */
+export function getAnimRootMotionTranslationScale(
+  character: Readonly<AlsCharacter>,
+): number {
+  return character.animRootMotionTranslationScale
+}
+
+/** ACharacter::SetAnimRootMotionTranslationScale(). */
+export function setAnimRootMotionTranslationScale(
+  character: AlsCharacter,
+  translationScale: number,
+): AlsCharacter {
+  character.animRootMotionTranslationScale = translationScale
   return character
 }
 

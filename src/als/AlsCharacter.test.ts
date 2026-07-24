@@ -10,6 +10,7 @@ import {
   calculateMaxAllowedGait,
   canSprint,
   createAlsCharacter,
+  getAnimRootMotionTranslationScale,
   refreshAlsCharacter,
   refreshGait,
   refreshGroundedFacingTarget,
@@ -19,6 +20,7 @@ import {
   refreshView,
   setLocomotionAction,
   setLocomotionMode,
+  setAnimRootMotionTranslationScale,
   setStance,
   setTargetYawAngle,
   setViewMode,
@@ -28,6 +30,15 @@ import type {
 } from './AlsCharacter'
 
 describe('AAlsCharacter input and gait policy', () => {
+  it('owns ACharacter animation root-motion translation scale', () => {
+    const character = createAlsCharacter()
+
+    expect(getAnimRootMotionTranslationScale(character)).toBe(1)
+    expect(setAnimRootMotionTranslationScale(character, 1.3))
+      .toBe(character)
+    expect(getAnimRootMotionTranslationScale(character)).toBe(1.3)
+  })
+
   it('owns exact rolling and ragdolling state records', () => {
     const first = createAlsCharacter()
     const second = createAlsCharacter()
