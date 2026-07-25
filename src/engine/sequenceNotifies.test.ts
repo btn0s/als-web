@@ -262,6 +262,47 @@ describe('UE animation-sequence notifies', () => {
     }])).toThrow('has no raw GLB event')
   })
 
+  it('binds same-name same-time payloads by their authored event index', () => {
+    const compiled = compileSequenceNotifies(clip([
+      { name: 'BMAnimNotifyFootstep', time: 0.1 },
+      { name: 'BMAnimNotifyFootstep', time: 0.1 },
+    ]), [
+      {
+        notifyIndex: 0,
+        name: 'BMAnimNotifyFootstep',
+        time: 0.1,
+        triggerWeightThreshold: 0.25,
+      },
+      {
+        notifyIndex: 1,
+        name: 'BMAnimNotifyFootstep',
+        time: 0.1,
+        triggerWeightThreshold: 0.75,
+      },
+    ])
+
+    expect(compiled.notifies.map((notify) => ({
+      index: notify.NotifyIndex,
+      threshold: notify.TriggerWeightThreshold,
+    }))).toEqual([
+      { index: 0, threshold: 0.25 },
+      { index: 1, threshold: 0.75 },
+    ])
+  })
+
+  it('verifies indexed oracle times through the GLB six-significant-digit contract', () => {
+    const compiled = compileSequenceNotifies(clip([
+      { name: 'BMAnimNotifyFootstep', time: 1.36667 },
+    ], 2), [{
+      notifyIndex: 0,
+      name: 'BMAnimNotifyFootstep',
+      time: 1.3666666746139526,
+      triggerWeightThreshold: 0.3,
+    }])
+
+    expect(compiled.notifies[0].Time).toBe(1.3666666746139526)
+  })
+
   it('refuses to approximate authored random chance without UE queue state', () => {
     expect(() => compileSequenceNotifies(clip([{
       name: 'Chance',

@@ -52,6 +52,10 @@ if (args.Length == 3 && args[0] == "dump-physics-asset")
     return PhysicsAssetDump.Run(args[1], args[2]);
 if (args.Length == 2 && args[0] == "validate-physics-asset")
     return PhysicsAssetDump.Validate(args[1]);
+if (args.Length == 4 && args[0] == "dump-footstep-audio")
+    return FootstepAudioDump.Run(args[1], args[2], args[3]);
+if (args.Length == 2 && args[0] == "validate-footstep-audio")
+    return FootstepAudioDump.Validate(args[1]);
 if (args.Length == 4 && args[0] == "inspect") return Inspect.Run(args[1], args[2], args[3]);
 if (args.Length == 3 && args[0] == "inspect-kismet")
     return KismetInspect.Run(args[1], args[2]);
@@ -105,6 +109,10 @@ Console.Error.WriteLine(
     "       dotnet run -- dump-physics-asset <stage-dir> <physics-asset.json>");
 Console.Error.WriteLine(
     "       dotnet run -- validate-physics-asset <physics-asset.json>");
+Console.Error.WriteLine(
+    "       dotnet run -- dump-footstep-audio <stage-dir> <clips.manifest> <footstep-audio.json>");
+Console.Error.WriteLine(
+    "       dotnet run -- validate-footstep-audio <footstep-audio.json>");
 Console.Error.WriteLine(
     "       dotnet run -- inspect-kismet <Asset.uasset> <out.json>");
 return 1;

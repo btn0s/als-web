@@ -63,6 +63,9 @@ import type {
   AlsAnimationInstance,
   AlsAnimationInstanceControls,
 } from './AlsAnimationInstance'
+import type {
+  AlsAnimNotifyFootstepEffectsEvent,
+} from './Notifies/AlsAnimNotify_FootstepEffects'
 
 describe('ALS ViewMode rotation gates', () => {
   it.each([
@@ -2407,6 +2410,82 @@ describe('AlsAnimationInstance playback regression', () => {
     )).toBe(true)
   })
 
+  it('queues authored footstep effects from the live standing BlendSpace clocks', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const events: AlsAnimNotifyFootstepEffectsEvent[] = []
+
+    refreshFrames(instance, 120, controls)
+    const dispatched =
+      instance.dispatchQueuedFootstepEffectsEvents(
+        (event) => events.push(event),
+      )
+
+    expect(dispatched).toBe(events.length)
+    expect(dispatched).toBeGreaterThanOrEqual(4)
+    expect(new Set(events.map(({ Sequence }) => Sequence)))
+      .toEqual(new Set(['A_Als_Run_Forward']))
+    expect(events.map(({ FootBone }) => FootBone))
+      .toEqual(expect.arrayContaining(['Left', 'Right']))
+    expect(events.every(({ SoundType }) => SoundType === 'WalkRun'))
+      .toBe(true)
+    expect(
+      instance.dispatchQueuedFootstepEffectsEvents(() => {}),
+    ).toBe(0)
+  })
+
+  it('queues all authored Roll footstep payloads from its Slot source clock', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const idleControls: AlsAnimationInstanceControls = {
+      ...controls,
+      gait: 'Walking',
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+    }
+    const events: AlsAnimNotifyFootstepEffectsEvent[] = []
+
+    instance.refresh(0, idleControls)
+    expect(instance.rollingMontage.Montage_Play(
+      ALS_ROLLING_MONTAGE.Name,
+      1,
+    )).toBeGreaterThan(0)
+    instance.refresh(0.1, idleControls)
+    instance.refresh(0.85, idleControls)
+    instance.refresh(0.1, idleControls)
+    instance.refresh(0.2, idleControls)
+    instance.dispatchQueuedFootstepEffectsEvents(
+      (event) => events.push(event),
+    )
+
+    expect(events.map((event) => ({
+      Sequence: event.Sequence,
+      EventIndex: event.EventIndex,
+      FootBone: event.FootBone,
+      bSpawnSound: event.bSpawnSound,
+    }))).toEqual([
+      {
+        Sequence: 'A_Als_Roll',
+        EventIndex: 4,
+        FootBone: 'Right',
+        bSpawnSound: true,
+      },
+      {
+        Sequence: 'A_Als_Roll',
+        EventIndex: 5,
+        FootBone: 'Right',
+        bSpawnSound: false,
+      },
+      {
+        Sequence: 'A_Als_Roll',
+        EventIndex: 6,
+        FootBone: 'Left',
+        bSpawnSound: false,
+      },
+    ])
+  })
+
   it('initializes direct Sprint SequencePlayers in seconds and leaves them dormant', async () => {
     const gltf = await loadAlsGltf()
     const instance = createAlsAnimationInstance(gltf)
@@ -3525,6 +3604,33 @@ describe('AlsAnimationInstance playback regression', () => {
     refreshFrames(instance, 60, groundedControls)
     expect(window.__weightTable?.LandToGroundedNotifyCount).toBe(1)
     expect(window.__weightTable?.['LocomotionState.Grounded']).toBe(1)
+    const footstepEvents: AlsAnimNotifyFootstepEffectsEvent[] = []
+    instance.dispatchQueuedFootstepEffectsEvents(
+      (event) => footstepEvents.push(event),
+    )
+    const landEvents = footstepEvents.filter(
+      ({ Sequence }) => Sequence === 'A_Als_Land_Light'
+        || Sequence === 'A_Als_Land_Heavy',
+    )
+    expect(landEvents.map((event) => ({
+      Sequence: event.Sequence,
+      EventIndex: event.EventIndex,
+      Time: event.Time,
+      bSpawnSound: event.bSpawnSound,
+    }))).toEqual([
+      {
+        Sequence: landEvents[0]?.Sequence,
+        EventIndex: 0,
+        Time: expect.closeTo(0.1, 7),
+        bSpawnSound: true,
+      },
+      {
+        Sequence: landEvents[0]?.Sequence,
+        EventIndex: 1,
+        Time: expect.closeTo(0.1, 7),
+        bSpawnSound: false,
+      },
+    ])
   })
 
   it('weights the shared Land sync group by its outer state blend before leader election', async () => {

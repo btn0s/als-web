@@ -7,9 +7,13 @@ import type {
 } from './AlsAnimationInstance'
 import {
   dispatchAlsQueuedAnimationEvents,
+  dispatchAlsQueuedFootstepEffectsEvents,
   refreshAlsAnimationMantlingNotifies,
   refreshAlsAnimationRollingNotifies,
 } from './AlsAnimationInstance.hooks'
+import type {
+  AlsAnimNotifyFootstepEffectsEvent,
+} from './Notifies/AlsAnimNotify_FootstepEffects'
 import {
   createRootMotionMovementParams,
 } from '../engine/rootMotion'
@@ -109,6 +113,30 @@ describe('UAnimInstance queued-notify frame seam', () => {
     expect(events).toEqual([
       ['B_Als_CameraShake_Sprint_C', 1.25],
     ])
+  })
+
+  it('dispatches the held footstep queue through its post-pose seam', () => {
+    const event = {
+      Sequence: 'A_Als_Run_Forward',
+      EventIndex: 0,
+    } as AlsAnimNotifyFootstepEffectsEvent
+    const events: AlsAnimNotifyFootstepEffectsEvent[] = []
+    const animationInstance = {
+      dispatchQueuedFootstepEffectsEvents(
+        sink: (
+          value: Readonly<AlsAnimNotifyFootstepEffectsEvent>,
+        ) => void,
+      ) {
+        sink(event)
+        return 1
+      },
+    }
+
+    expect(dispatchAlsQueuedFootstepEffectsEvents(
+      animationInstance,
+      (value) => events.push(value),
+    )).toBe(1)
+    expect(events).toEqual([event])
   })
 })
 

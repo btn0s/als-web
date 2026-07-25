@@ -28,6 +28,9 @@ import {
 } from '../als/AlsCharacter.hooks'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 import {
+  AlsFootstepAudioRuntime,
+} from '../engine/alsAudioBridge'
+import {
   createWorldTimeState,
   getWorldDeltaTime,
   setGlobalTimeDilation,
@@ -78,6 +81,7 @@ interface SceneProps {
   readonly overlayModeMenuElement:
     RefObject<HTMLDivElement | null>
   readonly worldTime: Readonly<WorldTimeState>
+  readonly footstepAudioRuntime: AlsFootstepAudioRuntime
 }
 
 function Scene({
@@ -85,6 +89,7 @@ function Scene({
   onOverlayModeBridgeChange,
   overlayModeMenuElement,
   worldTime,
+  footstepAudioRuntime,
 }: SceneProps) {
   const [, setCharacterSize] = useState(() => new THREE.Vector3())
   const poseSample = useRef(createCharacterPoseSample())
@@ -112,12 +117,14 @@ function Scene({
             onOverlayModeBridgeChange={
               onOverlayModeBridgeChange
             }
+            footstepSoundSink={footstepAudioRuntime}
           />
           <L_Als_GridFloorCollision />
           <AlsMantlingObstacleCourse />
           <AlsCamera
             poseSample={poseSample}
             worldTime={worldTime}
+            footstepAudioRuntime={footstepAudioRuntime}
           />
         </Physics>
       </Suspense>
@@ -146,6 +153,20 @@ function App() {
   const overlayModeMenuElement =
     useRef<HTMLDivElement>(null)
   const worldTime = useMemo(createWorldTimeState, [])
+  const footstepAudioEffectGeneration = useRef(0)
+  const footstepAudioRuntime = useMemo(
+    () => new AlsFootstepAudioRuntime({
+      AutoInstallUserGestureUnlock: false,
+      OnError(error) {
+        console.warn(
+          `[ALS Audio] ${error.Phase}`,
+          error.WaveAssetName ?? '',
+          error.Cause,
+        )
+      },
+    }),
+    [],
+  )
   const SetGlobalTimeDilation = useCallback((
     TimeDilation: number,
   ) => {
@@ -159,6 +180,23 @@ function App() {
       delete window.__effectiveGlobalTimeDilation
     }
   }, [effectiveGlobalTimeDilation])
+  useEffect(() => {
+    const generation = ++footstepAudioEffectGeneration.current
+    footstepAudioRuntime.InstallUserGestureUnlock()
+    return () => {
+      footstepAudioRuntime.RemoveUserGestureUnlock()
+      // StrictMode immediately replays this effect in development. Defer terminal disposal so
+      // that replay can retain the render-owned runtime; a real unmount has no newer generation
+      // and still closes its AudioContext and nodes in the microtask.
+      queueMicrotask(() => {
+        // The latest value is the StrictMode replay guard; capturing it would defeat the check.
+        // oxlint-disable-next-line react-hooks/exhaustive-deps
+        if (footstepAudioEffectGeneration.current === generation) {
+          void footstepAudioRuntime.Dispose()
+        }
+      })
+    }
+  }, [footstepAudioRuntime])
 
   return (
     <main className="app-shell">
@@ -181,6 +219,7 @@ function App() {
           onOverlayModeBridgeChange={setOverlayModeBridge}
           overlayModeMenuElement={overlayModeMenuElement}
           worldTime={worldTime}
+          footstepAudioRuntime={footstepAudioRuntime}
         />
       </Canvas>
       <B_Als_PlayerController

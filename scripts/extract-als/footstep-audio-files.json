@@ -1,0 +1,350 @@
+{
+  "schemaVersion": 2,
+  "format": "PCM signed 16-bit little-endian",
+  "waves": [
+    {
+      "name": "S_Als_Footstep_Concrete_Step_01",
+      "sourceAsset": "Content/ALS/Audio/Footsteps/S_Als_Footstep_Concrete_Step_01.uasset",
+      "output": "S_Als_Footstep_Concrete_Step_01.wav",
+      "sourceFileBytes": 40108,
+      "riffOffset": 5328,
+      "riffBytes": 34760,
+      "trailingAssetBytes": 20,
+      "sourceFormatTag": 65535,
+      "decodedFormatTag": 1,
+      "sourceEncoding": "UEWavComp 16-bit mono byte-plane delta",
+      "decodedEncoding": "PCM signed 16-bit little-endian",
+      "channels": 1,
+      "sampleRate": 48000,
+      "byteRate": 96000,
+      "blockAlign": 2,
+      "bitsPerSample": 16,
+      "sampleCount": 17217,
+      "dataOffset": 44,
+      "dataBytes": 34434,
+      "chunks": [
+        {
+          "id": "fmt ",
+          "bytes": 16
+        },
+        {
+          "id": "data",
+          "bytes": 34434
+        },
+        {
+          "id": "LIST",
+          "bytes": 132
+        },
+        {
+          "id": "id3 ",
+          "bytes": 134
+        }
+      ],
+      "sourceDataSha256": "d72c2a063f4e9846b90013e7311d91a032e076b0e76f9ba05d1a2a5019339c10",
+      "decodedDataSha256": "387fb6c5112777200dd442d5c5135c9b999d2a6f6dacc0b6968767fe550ebdac",
+      "sourceSha256": "94a11335bcdd9fc9b744e06c5f52341ebd0b52c61334ff986a175f9ac0b66d00",
+      "sha256": "7d84c2f259f4c74be5eb4a27529be61a8e1260b3c09a8a0c85a2f66fb08adf9a"
+    },
+    {
+      "name": "S_Als_Footstep_Concrete_Step_02",
+      "sourceAsset": "Content/ALS/Audio/Footsteps/S_Als_Footstep_Concrete_Step_02.uasset",
+      "output": "S_Als_Footstep_Concrete_Step_02.wav",
+      "sourceFileBytes": 41101,
+      "riffOffset": 5155,
+      "riffBytes": 35926,
+      "trailingAssetBytes": 20,
+      "sourceFormatTag": 65535,
+      "decodedFormatTag": 1,
+      "sourceEncoding": "UEWavComp 16-bit mono byte-plane delta",
+      "decodedEncoding": "PCM signed 16-bit little-endian",
+      "channels": 1,
+      "sampleRate": 48000,
+      "byteRate": 96000,
+      "blockAlign": 2,
+      "bitsPerSample": 16,
+      "sampleCount": 17800,
+      "dataOffset": 44,
+      "dataBytes": 35600,
+      "chunks": [
+        {
+          "id": "fmt ",
+          "bytes": 16
+        },
+        {
+          "id": "data",
+          "bytes": 35600
+        },
+        {
+          "id": "LIST",
+          "bytes": 132
+        },
+        {
+          "id": "id3 ",
+          "bytes": 134
+        }
+      ],
+      "sourceDataSha256": "8b2080c7d8f414b8480bd465cc9671ff275d517eeed4db7f6b099bfdfc55f18b",
+      "decodedDataSha256": "bc3dc2d068ce5cf08d1eea468489ba313666b397594018ec1c103d86ba354729",
+      "sourceSha256": "8cfc33c614d54910cedb75f073c436650263b0593980bdea1090446dee67def6",
+      "sha256": "f93df60552c64f63e97c4904602e09d09202162028004b0eefae38b0b2f4094d"
+    },
+    {
+      "name": "S_Als_Footstep_Concrete_Step_03",
+      "sourceAsset": "Content/ALS/Audio/Footsteps/S_Als_Footstep_Concrete_Step_03.uasset",
+      "output": "S_Als_Footstep_Concrete_Step_03.wav",
+      "sourceFileBytes": 44202,
+      "riffOffset": 5246,
+      "riffBytes": 38936,
+      "trailingAssetBytes": 20,
+      "sourceFormatTag": 65535,
+      "decodedFormatTag": 1,
+      "sourceEncoding": "UEWavComp 16-bit mono byte-plane delta",
+      "decodedEncoding": "PCM signed 16-bit little-endian",
+      "channels": 1,
+      "sampleRate": 48000,
+      "byteRate": 96000,
+      "blockAlign": 2,
+      "bitsPerSample": 16,
+      "sampleCount": 19305,
+      "dataOffset": 44,
+      "dataBytes": 38610,
+      "chunks": [
+        {
+          "id": "fmt ",
+          "bytes": 16
+        },
+        {
+          "id": "data",
+          "bytes": 38610
+        },
+        {
+          "id": "LIST",
+          "bytes": 132
+        },
+        {
+          "id": "id3 ",
+          "bytes": 134
+        }
+      ],
+      "sourceDataSha256": "8e35ca38793899abda83bd23b000cc430cb427811fea4345318b8efee0b2e5ed",
+      "decodedDataSha256": "2850af056c6442785275d63585b95f7ed0007a942bc966bd3edae5c4758807aa",
+      "sourceSha256": "739c9e9441f3d96e15bff3f99c291fb02c387b2c859c87404d194cd8408539dc",
+      "sha256": "61443f3ebf6f38bd90ce4fe5e1fcf0ae8ff8310ecb37de84c0bf6739c7db38db"
+    },
+    {
+      "name": "S_Als_Footstep_Concrete_Walk_01",
+      "sourceAsset": "Content/ALS/Audio/Footsteps/S_Als_Footstep_Concrete_Walk_01.uasset",
+      "output": "S_Als_Footstep_Concrete_Walk_01.wav",
+      "sourceFileBytes": 76041,
+      "riffOffset": 5189,
+      "riffBytes": 70832,
+      "trailingAssetBytes": 20,
+      "sourceFormatTag": 65535,
+      "decodedFormatTag": 1,
+      "sourceEncoding": "UEWavComp 16-bit mono byte-plane delta",
+      "decodedEncoding": "PCM signed 16-bit little-endian",
+      "channels": 1,
+      "sampleRate": 48000,
+      "byteRate": 96000,
+      "blockAlign": 2,
+      "bitsPerSample": 16,
+      "sampleCount": 35253,
+      "dataOffset": 44,
+      "dataBytes": 70506,
+      "chunks": [
+        {
+          "id": "fmt ",
+          "bytes": 16
+        },
+        {
+          "id": "data",
+          "bytes": 70506
+        },
+        {
+          "id": "LIST",
+          "bytes": 132
+        },
+        {
+          "id": "id3 ",
+          "bytes": 134
+        }
+      ],
+      "sourceDataSha256": "e5dc09792d18472580b34b58e5afd925b71901ad303985ff67c801de2c1ed475",
+      "decodedDataSha256": "9b0fd3dfb120fd14212c2ceaf2a0ca8ed6e87e70813cbf307ed3bcd41adc7108",
+      "sourceSha256": "72146bf4bcd1cfb806374c868b0e67b339f6806bde91d46e27ca638e2de43246",
+      "sha256": "5d13689a098d7c8fa99c2c370123a8293f6fd8a8e9c986ef168d6c0131ef128a"
+    },
+    {
+      "name": "S_Als_Footstep_Concrete_Walk_02",
+      "sourceAsset": "Content/ALS/Audio/Footsteps/S_Als_Footstep_Concrete_Walk_02.uasset",
+      "output": "S_Als_Footstep_Concrete_Walk_02.wav",
+      "sourceFileBytes": 75863,
+      "riffOffset": 5039,
+      "riffBytes": 70804,
+      "trailingAssetBytes": 20,
+      "sourceFormatTag": 65535,
+      "decodedFormatTag": 1,
+      "sourceEncoding": "UEWavComp 16-bit mono byte-plane delta",
+      "decodedEncoding": "PCM signed 16-bit little-endian",
+      "channels": 1,
+      "sampleRate": 48000,
+      "byteRate": 96000,
+      "blockAlign": 2,
+      "bitsPerSample": 16,
+      "sampleCount": 35239,
+      "dataOffset": 44,
+      "dataBytes": 70478,
+      "chunks": [
+        {
+          "id": "fmt ",
+          "bytes": 16
+        },
+        {
+          "id": "data",
+          "bytes": 70478
+        },
+        {
+          "id": "LIST",
+          "bytes": 132
+        },
+        {
+          "id": "id3 ",
+          "bytes": 134
+        }
+      ],
+      "sourceDataSha256": "f3e91eb7b12dd5444d878431dc276bb603d48ea5b97ea18e37d46421d8f5894e",
+      "decodedDataSha256": "113cc146289fc7387d24459c01c3addff24774e49c598d24df8b75fdca66dc82",
+      "sourceSha256": "04529a798f6148feef514a7fd9d6b4f13e3e066e88d59c34f225d33044c0a063",
+      "sha256": "4b43b3fd43fa28c7ea59306e75870c5cf0e749f25702f1816ac3d7d6478e60e6"
+    },
+    {
+      "name": "S_Als_Footstep_Concrete_Walk_03",
+      "sourceAsset": "Content/ALS/Audio/Footsteps/S_Als_Footstep_Concrete_Walk_03.uasset",
+      "output": "S_Als_Footstep_Concrete_Walk_03.wav",
+      "sourceFileBytes": 71407,
+      "riffOffset": 5043,
+      "riffBytes": 66344,
+      "trailingAssetBytes": 20,
+      "sourceFormatTag": 65535,
+      "decodedFormatTag": 1,
+      "sourceEncoding": "UEWavComp 16-bit mono byte-plane delta",
+      "decodedEncoding": "PCM signed 16-bit little-endian",
+      "channels": 1,
+      "sampleRate": 48000,
+      "byteRate": 96000,
+      "blockAlign": 2,
+      "bitsPerSample": 16,
+      "sampleCount": 33009,
+      "dataOffset": 44,
+      "dataBytes": 66018,
+      "chunks": [
+        {
+          "id": "fmt ",
+          "bytes": 16
+        },
+        {
+          "id": "data",
+          "bytes": 66018
+        },
+        {
+          "id": "LIST",
+          "bytes": 132
+        },
+        {
+          "id": "id3 ",
+          "bytes": 134
+        }
+      ],
+      "sourceDataSha256": "7e53407654c3c711eda813b48a6fb6b7526d0d700ff2de83fbaea22d6e169646",
+      "decodedDataSha256": "7268041f90a1d4676068c1816d6dbe33a04ab561392e9d99b0c994b569550624",
+      "sourceSha256": "7370cbb423b9632774b82cbf792674174f202fdae21f9135608f1e3a751bc6fb",
+      "sha256": "a65ffe1a1bd50f43af879ac1db01f914cc40a10d42f018d66118365062c6a6d0"
+    },
+    {
+      "name": "S_Als_Footstep_Concrete_Walk_04",
+      "sourceAsset": "Content/ALS/Audio/Footsteps/S_Als_Footstep_Concrete_Walk_04.uasset",
+      "output": "S_Als_Footstep_Concrete_Walk_04.wav",
+      "sourceFileBytes": 70766,
+      "riffOffset": 5168,
+      "riffBytes": 65578,
+      "trailingAssetBytes": 20,
+      "sourceFormatTag": 65535,
+      "decodedFormatTag": 1,
+      "sourceEncoding": "UEWavComp 16-bit mono byte-plane delta",
+      "decodedEncoding": "PCM signed 16-bit little-endian",
+      "channels": 1,
+      "sampleRate": 48000,
+      "byteRate": 96000,
+      "blockAlign": 2,
+      "bitsPerSample": 16,
+      "sampleCount": 32626,
+      "dataOffset": 44,
+      "dataBytes": 65252,
+      "chunks": [
+        {
+          "id": "fmt ",
+          "bytes": 16
+        },
+        {
+          "id": "data",
+          "bytes": 65252
+        },
+        {
+          "id": "LIST",
+          "bytes": 132
+        },
+        {
+          "id": "id3 ",
+          "bytes": 134
+        }
+      ],
+      "sourceDataSha256": "ffeb64955790077b2608a402ad08bf72a2e76318e22241e83bd8defdb6c2d010",
+      "decodedDataSha256": "9d8b54c70e5a1cd3ae423fd416fca6f1e9edeaf53ddded629615c4b3bf3c81a4",
+      "sourceSha256": "46c44f4dc5054bd218c49e88bdfc3aeeb1f2517e1839a170d47967ae8b7f9378",
+      "sha256": "f6cf997a41a9f1cccf275dae19c8559d8dde9cf8a7a6e9b7c1ac2bc1553cafe6"
+    },
+    {
+      "name": "S_Als_Footstep_Concrete_Walk_05",
+      "sourceAsset": "Content/ALS/Audio/Footsteps/S_Als_Footstep_Concrete_Walk_05.uasset",
+      "output": "S_Als_Footstep_Concrete_Walk_05.wav",
+      "sourceFileBytes": 42310,
+      "riffOffset": 5114,
+      "riffBytes": 37176,
+      "trailingAssetBytes": 20,
+      "sourceFormatTag": 65535,
+      "decodedFormatTag": 1,
+      "sourceEncoding": "UEWavComp 16-bit mono byte-plane delta",
+      "decodedEncoding": "PCM signed 16-bit little-endian",
+      "channels": 1,
+      "sampleRate": 48000,
+      "byteRate": 96000,
+      "blockAlign": 2,
+      "bitsPerSample": 16,
+      "sampleCount": 18425,
+      "dataOffset": 44,
+      "dataBytes": 36850,
+      "chunks": [
+        {
+          "id": "fmt ",
+          "bytes": 16
+        },
+        {
+          "id": "data",
+          "bytes": 36850
+        },
+        {
+          "id": "LIST",
+          "bytes": 132
+        },
+        {
+          "id": "id3 ",
+          "bytes": 134
+        }
+      ],
+      "sourceDataSha256": "2814c837dd25319885b2ea3e95fa5cff287921297fb87335de46b5673ea1db4a",
+      "decodedDataSha256": "29c17ae882abed8f357fe746c0d17ffa1a2e9c85e6638374c556dc0e422e01ab",
+      "sourceSha256": "07ec35065cf2e1cd126f9f5b467acddd5bf096e9a31de0d7bb1068b6a742e996",
+      "sha256": "65deaf0fdffbc0a1e56f1e2365ef6dfdcd4315be55be918cca045d19d0c409fe"
+    }
+  ]
+}

@@ -214,9 +214,15 @@ this repo is the standalone web port of ALS, and M4 is its final milestone.
 
 ## Guardrails
 
-- **Extraction scope facts (recon 2026-07-23, verified):** uncooked SoundWave assets contain NO
-  audio payload (streaming bulk exists only in cooked builds) — footstep SFX must be sourced
-  independently if ever wanted. Uncooked StaticMesh geometry needs a new custom bulk-data parser
+- **Extraction scope facts (recon corrected 2026-07-25, verified):** ALS's eight uncooked concrete
+  footstep SoundWave assets each embed one RIFF/WAVE source span near the end of the `.uasset`.
+  Its RIFF end is exactly `fileSize - 20`; all are mono 48 kHz, 16-bit-layout streams with an
+  authored `WAVE_INFO_FORMAT_OODLE_WAVE` (`0xFFFF`) tag. That payload is UEWavComp byte-planed,
+  biased-delta PCM, not playable PCM and not the SoundWave's RAD Audio cook target.
+  `scripts/extract-als/extract-footstep-audio.mjs` validates the container, reverses Unreal's
+  transform, pins the independently verified decoded PCM hashes, and only then writes PCM tag
+  `0x0001`. CUE4Parse's null `RawData` is therefore a serializer-path blind spot, not absent
+  audio. Uncooked StaticMesh geometry needs a new custom bulk-data parser
   (real unstarted work — budget before scoping env props). OverlayObjects skeletal meshes parse
   via the existing probe-based shim, no changes expected. Full decision tree is frozen in
   `scripts/extract-als/PLAYBOOK.md`.

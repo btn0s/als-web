@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 test('scene mounts with either the character GLB or its DOM load state', async ({ page }) => {
   const consoleErrors: string[] = []
   const pageErrors: string[] = []
+  const footstepAudioResponses = new Map<string, number>()
 
   page.on('console', (message) => {
     if (message.type() === 'error') {
@@ -10,6 +11,14 @@ test('scene mounts with either the character GLB or its DOM load state', async (
     }
   })
   page.on('pageerror', (error) => pageErrors.push(error.message))
+  page.on('response', (response) => {
+    const waveName = new URL(response.url()).pathname.match(
+      /\/assets\/audio\/footsteps\/([^/]+\.wav)$/,
+    )?.[1]
+    if (waveName) {
+      footstepAudioResponses.set(waveName, response.status())
+    }
+  })
 
   await page.goto('/')
 
@@ -102,6 +111,10 @@ test('scene mounts with either the character GLB or its DOM load state', async (
       ),
       initialPosition,
     )).toBeGreaterThan(0.02)
+    await expect.poll(() => footstepAudioResponses.size).toBe(8)
+    expect([...footstepAudioResponses.values()].every(
+      (status) => status === 200,
+    )).toBe(true)
 
     await page.keyboard.down('ShiftLeft')
     await expect.poll(() => page.evaluate(

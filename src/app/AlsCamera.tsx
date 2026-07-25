@@ -50,6 +50,9 @@ import {
   getAlsLocomotionActionTag,
   refreshAlsCameraViewBridge,
 } from '../engine/alsCameraBridge'
+import type {
+  AlsFootstepAudioRuntime,
+} from '../engine/alsAudioBridge'
 import { PlayerCameraManager } from '../engine/PlayerCameraManager'
 import {
   threeToUnrealVector,
@@ -264,9 +267,14 @@ function updateSocketLocation(
 export function AlsCamera({
   poseSample,
   worldTime,
+  footstepAudioRuntime,
 }: {
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
+  footstepAudioRuntime: Pick<
+    AlsFootstepAudioRuntime,
+    'SetListenerTransform'
+  >
 }) {
   const { camera, gl, scene, size } = useThree()
   const { world } = useRapier()
@@ -316,6 +324,11 @@ export function AlsCamera({
     gamepadLookRight: 0,
     projectionAspect: Number.NaN,
     projectionHorizontalFieldOfView: Number.NaN,
+  }), [])
+  const audioListenerTransform = useMemo(() => ({
+    Location: new THREE.Vector3(),
+    Forward: new THREE.Vector3(0, 0, -1),
+    Up: new THREE.Vector3(0, 1, 0),
   }), [])
   const trace = useMemo(
     () => createRapierAlsCameraTrace({
@@ -685,6 +698,15 @@ export function AlsCamera({
       scratch.cameraQuaternion,
     )
     camera.quaternion.copy(scratch.cameraQuaternion)
+    camera.getWorldPosition(audioListenerTransform.Location)
+    camera.getWorldDirection(audioListenerTransform.Forward)
+    audioListenerTransform.Up
+      .copy(camera.up)
+      .applyQuaternion(camera.quaternion)
+      .normalize()
+    footstepAudioRuntime.SetListenerTransform(
+      audioListenerTransform,
+    )
 
     const aspectRatio = size.width / size.height
     if (

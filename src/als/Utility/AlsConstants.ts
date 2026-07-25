@@ -15,6 +15,7 @@ export const FEET_CROSSING_CURVE_NAME = 'FeetCrossing'
 export const ROTATION_YAW_OFFSET_CURVE_NAME = 'RotationYawOffset'
 export const ROTATION_YAW_SPEED_CURVE_NAME = 'RotationYawSpeed'
 export const SPRINT_BLOCK_CURVE_NAME = 'SprintBlock'
+export const FOOTSTEP_SOUND_BLOCK_CURVE_NAME = 'FootstepSoundBlock'
 export const ALLOW_TRANSITIONS_CURVE_NAME = 'AllowTransitions'
 
 // UAlsConstants slot names plus SK_Als's authored AnimSlotGroup.

@@ -138,22 +138,22 @@ extracting asset class X from uncooked ALS-Refactored (.uasset only, no .uexp/.u
 │   inline; probe both. This is real, unstarted work — budget for it before committing to
 │   static-mesh env props being in scope.
 │
-├─ X = Audio (S_Als_Footstep_*) — PROBED, VERIFIED negative
-│   VERIFIED via `inspect` + CUE4Parse `USoundWave.cs` source: `RawData`, `CompressedFormatData`,
-│   `RunningPlatformData` are all `null` in the uncooked asset — and source-level, this is NOT
-│   a CUE4Parse gap to patch around. `USoundWave.Deserialize`'s `SerializePlatformData` only
-│   populates `RawData` (`new FByteBulkData(Ar)`) in the `!bStreaming` branch; for uncooked
-│   assets `bCooked` is false and `bStreaming` resolves true by default (no explicit
-│   `LoadingBehavior`/`bStreaming` tagged property found on these footstep assets → falls back
-│   to `Ar.Versions["SoundWave.UseAudioStreaming"]`, true at GAME_UE5_5) → the streaming
-│   branch never even attempts to read `RawData`, it just reads a GUID. There is no PCM/WAV
-│   payload serialized into these .uassets at all — this isn't a parser gap, the bytes
-│   genuinely aren't there (streaming-audio chunk data is built into the DDC only at cook
-│   time). `AssetImportData.SourceData[0].RelativeFilename` is also empty, so there's no
-│   recoverable link to an original .wav either. Conclusion: **uncooked-.uasset extraction of
-│   ALS footstep audio is a dead end** with this pipeline — don't spend more time probing
-│   variant SoundWave settings here; if audio is wanted, source it independently (record/find
-│   equivalent free SFX, or extract from a cooked build instead of this editor clone).
+├─ ✓ = Audio (S_Als_Footstep_*) — VERIFIED UEWavComp source-tail extraction
+│   `inspect` still reports `RawData`, `CompressedFormatData`, and `RunningPlatformData` as null;
+│   that is a CUE4Parse streaming serializer-path blind spot, NOT absence of the source payload.
+│   Byte-level independent check: each of the eight `.uasset`s contains exactly one `RIFF`; its
+│   little-endian size makes `riffOffset + 8 + riffSize == fileSize - 20`. The span is a WAVE
+│   container with mono/48000 Hz/block-align 2/16-bit layout, plus LIST metadata. Format tag
+│   `0xFFFF` is Unreal's `WAVE_INFO_FORMAT_OODLE_WAVE`, not PCM and not the SoundWave's RAD Audio
+│   cook target. `FEditorAudioBulkData::GetPayload()` calls `uewav_decode16()` before exposing it.
+│   For these mono assets, the data chunk stores all low bytes followed by all high bytes; merge
+│   them into signed 16-bit codes, keep code 0 as sample 0, then reconstruct each later sample as
+│   `previousSample + signedCode - 128` with int16 wrapping. Only after that lossless inverse may
+│   the tag become PCM `0x0001`. Independent oracle: all eight decoded streams correlate
+│   0.999946–0.999997 with the same ALS 4.13 PCM sources at the matching 48 kHz samples. The
+│   extractor pins each decoded PCM hash, verifies every container invariant, and refuses drift
+│   before writing `public/assets/audio/footsteps/*.wav`. Never scan for or copy arbitrary package
+│   tails, and never treat a browser/ffmpeg accepting a patched format tag as proof of a decode.
 │
 └─ Generalizable traps across all of the above
     - "strip-flags-before-native-payload": UE5.5 editor .uasset serialization repeatedly
@@ -205,7 +205,7 @@ extracting asset class X from uncooked ALS-Refactored (.uasset only, no .uexp/.u
 | Exit-134 abort mechanism (cursor desync → garbage array length → native abort) | HYPOTHESIS | plausible from source review of the old fixed-width `FSkinWeightInfo`, not directly reproduced (couldn't get the pre-fix file to test against) |
 | Bow/Pistol overlay meshes will parse the same way | HYPOTHESIS | not yet run; same code path as rifle, no reason to expect otherwise |
 | StaticMesh source geometry needs a new custom bulk-data class | HYPOTHESIS (with concrete next step) | `inspect` shows `RenderData:null` and an unparsed `StaticMeshDescriptionBulkData` stub |
-| Uncooked SoundWave audio is unextractable via this pipeline | VERIFIED (negative result) | `inspect` output + `USoundWave.Deserialize` source shows the streaming branch never reads `RawData` for uncooked assets |
+| ALS concrete footstep SoundWaves extract from uncooked uassets | VERIFIED | exact RIFF-span bounds, PCM-layout invariants, hash-checked extractor, and independent ffmpeg decode after the one-byte-field tag patch |
 
 ## AnimSequence sync markers and notifies
 

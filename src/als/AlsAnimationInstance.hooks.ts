@@ -32,6 +32,14 @@ import type {
   AlsPlayerCameraManager,
 } from './AlsCamera/Notifies/AlsAnimNotify_CameraShake'
 import {
+  notifyAlsAnimNotifyFootstepEffects,
+} from './Notifies/AlsAnimNotify_FootstepEffects'
+import type {
+  AlsAnimNotifyFootstepEffectsEvent,
+  AlsFootstepEffectsTrace,
+  AlsFootstepSoundSink,
+} from './Notifies/AlsAnimNotify_FootstepEffects'
+import {
   createAlsMantlingNotifyRuntime,
   refreshAlsMantlingNotifyRuntime,
 } from './AlsCharacter_Actions'
@@ -52,6 +60,7 @@ import {
 import {
   ROTATION_YAW_OFFSET_CURVE_NAME,
   ROTATION_YAW_SPEED_CURVE_NAME,
+  FOOTSTEP_SOUND_BLOCK_CURVE_NAME,
 } from './Utility/AlsConstants'
 
 function captureMetadata(frameControls: AlsAnimationInstanceControls) {
@@ -229,6 +238,21 @@ export function dispatchAlsQueuedAnimationEvents(
   return animationInstance.dispatchQueuedAnimEvents(cameraManager)
 }
 
+export function dispatchAlsQueuedFootstepEffectsEvents(
+  animationInstance: {
+    dispatchQueuedFootstepEffectsEvents(
+      sink: (
+        event: Readonly<AlsAnimNotifyFootstepEffectsEvent>,
+      ) => void,
+    ): number
+  },
+  sink: (
+    event: Readonly<AlsAnimNotifyFootstepEffectsEvent>,
+  ) => void,
+): number {
+  return animationInstance.dispatchQueuedFootstepEffectsEvents(sink)
+}
+
 /**
  * Thin React binding for the framework-free AlsAnimationInstance frame brain. Character policy
  * and physics own the controls; this hook owns pose evaluation and publishes the resulting curves
@@ -249,6 +273,10 @@ export function useAlsAnimationInstance(
   mantlingMontage?: MutableRefObject<AlsMantlingMontageBridge | null>,
   rollingMontage?: MutableRefObject<AlsRollingMontageBridge | null>,
   worldTime?: Readonly<WorldTimeState>,
+  footstepEffects?: Readonly<{
+    Trace: AlsFootstepEffectsTrace
+    SoundSink: AlsFootstepSoundSink
+  }>,
 ) {
   const camera = useThree((state) => state.camera)
   const renderer = useThree((state) => state.gl)
@@ -277,6 +305,43 @@ export function useAlsAnimationInstance(
     createAlsMantlingNotifyRuntime,
     [animationInstance],
   )
+  const dispatchFootstepEffectsEvent = useMemo(() => {
+    if (!footstepEffects) return null
+    const footLeft = gltf.scene.getObjectByName('foot_l')
+    const footRight = gltf.scene.getObjectByName('foot_r')
+    if (!footLeft || !footRight) return null
+    const location = new THREE.Vector3()
+    const rotation = new THREE.Quaternion()
+    const meshScale = new THREE.Vector3()
+
+    return (
+      event: Readonly<AlsAnimNotifyFootstepEffectsEvent>,
+    ) => {
+      const foot = event.FootBone === 'Left'
+        ? footLeft
+        : footRight
+      foot.getWorldPosition(location)
+      foot.getWorldQuaternion(rotation)
+      gltf.scene.getWorldScale(meshScale)
+      notifyAlsAnimNotifyFootstepEffects(event, {
+        LocomotionMode: character.current.locomotionMode,
+        FootWorldTransform: { Location: location, Rotation: rotation },
+        // Extractor C maps Unreal component Z (up) to three.js component Y.
+        MeshScaleZ: meshScale.y,
+        FootstepSoundBlock:
+          animationInstance.getCurveValue(
+            FOOTSTEP_SOUND_BLOCK_CURVE_NAME,
+          ),
+        Trace: footstepEffects.Trace,
+        SoundSink: footstepEffects.SoundSink,
+      })
+    }
+  }, [
+    animationInstance,
+    character,
+    footstepEffects,
+    gltf.scene,
+  ])
 
   useEffect(() => {
     onJumped.current = animationInstance.jump
@@ -381,6 +446,12 @@ export function useAlsAnimationInstance(
       animationInstance,
       cameraManager,
     )
+    if (dispatchFootstepEffectsEvent) {
+      dispatchAlsQueuedFootstepEffectsEvents(
+        animationInstance,
+        dispatchFootstepEffectsEvent,
+      )
+    }
   }, ALS_FRAME_PRIORITY.AnimNotifyDispatch)
 
   useFrame((_, deltaRealTime) => {

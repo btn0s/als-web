@@ -24,7 +24,16 @@ export interface SerializedSequenceNotify {
  * serialized FAnimNotifyEvent fields that glTF cannot carry, but it must match an existing raw
  * event rather than creating a second, sidecar-only timeline.
  */
-export type SequenceNotifyEnrichment = SerializedSequenceNotify
+export type SequenceNotifyEnrichment = SerializedSequenceNotify & {
+  /**
+   * Original index in UAnimSequence::Notifies.
+   *
+   * Name and time are insufficient for authored same-time events (ALS landing deliberately has
+   * two `BMAnimNotifyFootstep` entries at 0.1 seconds). Extractors that know the source index must
+   * preserve it so class payloads bind to the exact raw GLB event rather than relying on a sort.
+   */
+  readonly notifyIndex?: number
+}
 
 interface SequenceNotifyExtras {
   readonly notifies?: unknown
@@ -184,17 +193,27 @@ export function compileSequenceNotifies(
       enrichmentIndex++
     ) {
       const enrichment = enrichments[enrichmentIndex]
+      const serializedTime = serializedNotify.time
+      const timeMatches = typeof serializedTime === 'number'
+        && (
+          enrichment.notifyIndex === undefined
+            ? Math.abs(enrichment.time - serializedTime) <= 1e-6
+            : Number(enrichment.time.toPrecision(6))
+              === serializedTime
+        )
       if (
+        (
+          enrichment.notifyIndex !== undefined
+          && enrichment.notifyIndex !== index
+        )
+        ||
         enrichment.name !== serializedNotify.name
-        || typeof serializedNotify.time !== 'number'
-        || Math.abs(enrichment.time - serializedNotify.time) > 1e-6
+        || !timeMatches
       ) {
         continue
       }
       if (matchedEnrichments.has(enrichmentIndex)) {
-        throw new Error(
-          `${clip.name} notify enrichment ${enrichmentIndex} matched more than once`,
-        )
+        continue
       }
       matchedEnrichments.add(enrichmentIndex)
       rawNotify = { ...serializedNotify, ...enrichment }

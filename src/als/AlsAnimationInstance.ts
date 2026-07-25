@@ -316,6 +316,12 @@ import type {
   AlsPlayerCameraManager,
 } from './AlsCamera/Notifies/AlsAnimNotify_CameraShake'
 import {
+  ALS_ANIM_NOTIFY_FOOTSTEP_EFFECTS_EVENTS,
+} from './Notifies/AlsAnimNotify_FootstepEffects'
+import type {
+  AlsAnimNotifyFootstepEffectsEvent,
+} from './Notifies/AlsAnimNotify_FootstepEffects'
+import {
   createVelocityBlend,
   stepVelocityBlend,
 } from './State/AlsGroundedState'
@@ -619,6 +625,14 @@ interface RuntimeCameraShakeNotifyTrack {
     ReadonlyMap<CompiledSequenceNotify, AlsAnimNotifyCameraShakeEvent>
 }
 
+interface RuntimeFootstepEffectsNotifyTrack {
+  readonly track: CompiledSequenceNotifies
+  readonly payloadByNotify: ReadonlyMap<
+    CompiledSequenceNotify,
+    AlsAnimNotifyFootstepEffectsEvent
+  >
+}
+
 export interface AlsAnimationInstanceControls {
   gait: AlsGait
   moving: boolean
@@ -842,6 +856,17 @@ export interface AlsAnimationInstance {
    * the camera tick so animation evaluation never reaches into camera or React state.
    */
   dispatchQueuedAnimEvents: (sink: AlsPlayerCameraManager) => number
+  /**
+   * Queued `UAlsAnimNotify_FootstepEffects` payload dispatch.
+   *
+   * The hook invokes this after the final pose is published so the notify policy traces from the
+   * post-Control-Rig foot transform, matching `USkeletalMeshComponent::GetSocketTransform()`.
+   */
+  dispatchQueuedFootstepEffectsEvents: (
+    sink: (
+      event: Readonly<AlsAnimNotifyFootstepEffectsEvent>,
+    ) => void,
+  ) => number
   readonly mantlingMontage: AlsMantlingMontageBridge
   readonly rollingMontage: AlsRollingMontageBridge
   readonly state: AlsAnimationInstanceState
@@ -1099,6 +1124,58 @@ function compileCameraShakeNotifyTracks(
   return tracks
 }
 
+function compileFootstepEffectsNotifyTracks(
+  animations: readonly THREE.AnimationClip[],
+) {
+  const eventsBySequence = new Map<
+    string,
+    AlsAnimNotifyFootstepEffectsEvent[]
+  >()
+  for (const event of ALS_ANIM_NOTIFY_FOOTSTEP_EFFECTS_EVENTS) {
+    const events = eventsBySequence.get(event.Sequence)
+    if (events) events.push(event)
+    else eventsBySequence.set(event.Sequence, [event])
+  }
+
+  const tracks = new Map<string, RuntimeFootstepEffectsNotifyTrack>()
+  for (const [sequenceName, events] of eventsBySequence) {
+    const animation = animations.find(({ name }) => name === sequenceName)
+    if (!animation) continue
+    const track = compileSequenceNotifies(
+      animation,
+      events.map((event) => ({
+        notifyIndex: event.EventIndex,
+        name: event.NotifyName,
+        time: event.Time,
+        triggerWeightThreshold: event.TriggerWeightThreshold,
+        notifyTriggerChance: event.NotifyTriggerChance,
+        triggerOnFollower: event.bTriggerOnFollower,
+        triggerOnDedicatedServer: event.bTriggerOnDedicatedServer,
+      })),
+    )
+    const payloadByNotify = new Map<
+      CompiledSequenceNotify,
+      AlsAnimNotifyFootstepEffectsEvent
+    >()
+    for (const event of events) {
+      const notify = track.notifies[event.EventIndex]
+      if (
+        !notify
+        || notify.NotifyName !== event.NotifyName
+        || Math.abs(notify.Time - event.Time) > 1e-6
+      ) {
+        throw new Error(
+          `${sequenceName} notify ${event.EventIndex} is not authored `
+          + `${event.NotifyName} at ${event.Time}`,
+        )
+      }
+      payloadByNotify.set(notify, event)
+    }
+    tracks.set(sequenceName, { track, payloadByNotify })
+  }
+  return tracks
+}
+
 function compileRollSequenceNotifyTrack(
   animation: THREE.AnimationClip | undefined,
 ) {
@@ -1221,6 +1298,12 @@ export function createAlsAnimationInstance(gltf: {
   const cameraShakeNotifyTracks = compileCameraShakeNotifyTracks(
     gltf.animations,
   )
+  const footstepEffectsNotifyTracks =
+    compileFootstepEffectsNotifyTracks(gltf.animations)
+  const queuedNotifySequenceNames = new Set([
+    ...cameraShakeNotifyTracks.keys(),
+    ...footstepEffectsNotifyTracks.keys(),
+  ])
   const rollClip = clipsByName.get(ALS_ROLLING_MONTAGE.Sequence)
   const rollSequenceNotifyTrack = compileRollSequenceNotifyTrack(
     rollClip?.sampler.clip,
@@ -2576,7 +2659,13 @@ export function createAlsAnimationInstance(gltf: {
   const locomotionSlotMontageSamples: SlotMontageSample[] = []
   const gatheredSequenceNotifies: CompiledSequenceNotify[] = []
   const pendingQueuedAnimEvents: AlsAnimNotifyCameraShakeEvent[] = []
+  const pendingQueuedFootstepEffectsEvents:
+    AlsAnimNotifyFootstepEffectsEvent[] = []
   const locomotionPreviousTimes = new Map<SyncGroupMember, number>()
+  const locomotionSequencePreviousTimes = new Map<
+    RuntimeLocomotionSequencePlayer,
+    number
+  >()
   const slotMontageBindings = new Map<
     number,
     RuntimeSlotMontageBinding
@@ -2663,6 +2752,76 @@ export function createAlsAnimationInstance(gltf: {
       // If a sink fails, retry only the undelivered suffix. Already-delivered queued notifies
       // cannot legally fire twice on the next frame.
       pendingQueuedAnimEvents.splice(0, deliveredEventCount)
+    }
+    return deliveredEventCount
+  }
+
+  function queueFootstepEffectsNotifiesFromRange(
+    runtimeTrack: RuntimeFootstepEffectsNotifyTrack,
+    previousTime: number,
+    currentTime: number,
+    context: {
+      readonly bAllowLooping: boolean
+      readonly bSrcIsLeader: boolean
+      readonly InstanceWeight: number
+    },
+  ) {
+    gatheredSequenceNotifies.length = 0
+    gatherSequenceNotifiesFromDeltaPositions(
+      runtimeTrack.track,
+      previousTime,
+      currentTime,
+      context,
+      gatheredSequenceNotifies,
+    )
+    for (const notify of gatheredSequenceNotifies) {
+      const payload = runtimeTrack.payloadByNotify.get(notify)
+      if (payload) pendingQueuedFootstepEffectsEvents.push(payload)
+    }
+  }
+
+  function queueFootstepEffectsForClipRange(
+    clip: RuntimeClip,
+    previousTime: number,
+    currentTime: number,
+    bAllowLooping: boolean,
+    InstanceWeight: number,
+  ) {
+    const runtimeTrack = footstepEffectsNotifyTracks.get(
+      clip.sampler.clip.name,
+    )
+    if (!runtimeTrack) return
+    queueFootstepEffectsNotifiesFromRange(
+      runtimeTrack,
+      previousTime,
+      currentTime,
+      {
+        bAllowLooping,
+        bSrcIsLeader: true,
+        InstanceWeight,
+      },
+    )
+  }
+
+  function dispatchQueuedFootstepEffectsEvents(
+    sink: (
+      event: Readonly<AlsAnimNotifyFootstepEffectsEvent>,
+    ) => void,
+  ) {
+    const queuedEventCount =
+      pendingQueuedFootstepEffectsEvents.length
+    let deliveredEventCount = 0
+    try {
+      for (let index = 0; index < queuedEventCount; index++) {
+        sink(pendingQueuedFootstepEffectsEvents[index])
+        deliveredEventCount++
+      }
+    } finally {
+      // Match the camera queue: a failing sink retries only the undelivered suffix.
+      pendingQueuedFootstepEffectsEvents.splice(
+        0,
+        deliveredEventCount,
+      )
     }
     return deliveredEventCount
   }
@@ -4077,6 +4236,7 @@ export function createAlsAnimationInstance(gltf: {
   ) {
     const source = activeGroundedStanceState
     if (!source) return false
+    const previousTime = source.clip.time
 
     // The generic clip loop deliberately skips the graph-owned non-looping sequence. Continue its
     // state clock here before it becomes the source of ALS's authored transition-state -> stance
@@ -4088,6 +4248,13 @@ export function createAlsAnimationInstance(gltf: {
     )
     source.clip.entry.time = source.clip.time
     source.clip.entry.loop = false
+    queueFootstepEffectsForClipRange(
+      source.clip,
+      previousTime,
+      source.clip.time,
+      false,
+      1,
+    )
     groundedStanceTransitionSource = {
       clip: source.clip,
       sequencePlayRate: source.sequencePlayRate,
@@ -4482,12 +4649,45 @@ export function createAlsAnimationInstance(gltf: {
       referencedStates.add(transition.nextState)
     }
     refreshLocomotionPlayerWeights(referencedStates, input)
+    locomotionSequencePreviousTimes.clear()
+    for (const player of locomotionSequencePlayers) {
+      if (
+        player.weight > 0
+        && player.clip
+        && footstepEffectsNotifyTracks.has(
+          player.clip.sampler.clip.name,
+        )
+      ) {
+        locomotionSequencePreviousTimes.set(player, player.time)
+      }
+    }
     advanceLocomotionSyncGroup(locomotionSyncGroups.Fall, input.deltaTime)
     advanceLocomotionSyncGroup(locomotionSyncGroups.Jump, input.deltaTime)
     advanceLocomotionSyncGroup(locomotionSyncGroups.Flail, input.deltaTime)
     advanceLocomotionSyncGroup(locomotionSyncGroups.Land, input.deltaTime)
     if (fallFlailPlayer.weight > 0) {
       advanceLocomotionPlayer(fallFlailPlayer, input.deltaTime)
+    }
+    for (const group of Object.values(locomotionSyncGroups)) {
+      for (const player of group.members) {
+        const previousTime =
+          locomotionSequencePreviousTimes.get(player)
+        const sequenceName = player.clip?.sampler.clip.name
+        const runtimeTrack = sequenceName
+          ? footstepEffectsNotifyTracks.get(sequenceName)
+          : undefined
+        if (previousTime === undefined || !runtimeTrack) continue
+        queueFootstepEffectsNotifiesFromRange(
+          runtimeTrack,
+          previousTime,
+          player.time,
+          {
+            bAllowLooping: player.loop,
+            bSrcIsLeader: group.leaderKey === player.key,
+            InstanceWeight: player.weight,
+          },
+        )
+      }
     }
     sampleLocomotionSequencePlayers()
   }
@@ -4809,12 +5009,20 @@ export function createAlsAnimationInstance(gltf: {
     }
     if (groundedStanceTransitionSource) {
       const source = groundedStanceTransitionSource
+      const previousTime = source.clip.time
       source.clip.time = Math.min(
         source.clip.sampler.clip.duration,
         source.clip.time
           + Math.max(0, delta) * source.sequencePlayRate,
       )
       source.clip.entry.time = source.clip.time
+      queueFootstepEffectsForClipRange(
+        source.clip,
+        previousTime,
+        source.clip.time,
+        false,
+        groundedStanceTransitionSourceWeight,
+      )
     }
 
     if (!complete) {
@@ -4987,6 +5195,7 @@ export function createAlsAnimationInstance(gltf: {
 
     if (activeGroundedStanceState) {
       const source = activeGroundedStanceState
+      const previousTime = source.clip.time
       source.clip.time = Math.min(
         source.clip.sampler.clip.duration,
         source.clip.time
@@ -4994,6 +5203,13 @@ export function createAlsAnimationInstance(gltf: {
       )
       source.clip.entry.time = source.clip.time
       source.clip.entry.loop = false
+      queueFootstepEffectsForClipRange(
+        source.clip,
+        previousTime,
+        source.clip.time,
+        false,
+        1,
+      )
     }
 
     const activeTurnInPlaceSample =
@@ -5154,6 +5370,10 @@ export function createAlsAnimationInstance(gltf: {
     const rotationYawOffsets = sampleRotationYawOffsets(
       viewRelativeVelocityYawAngle,
     )
+    const standingRotateLeftPreviousTime =
+      standingGraphRuntime.rotateClocks.left.time
+    const standingRotateRightPreviousTime =
+      standingGraphRuntime.rotateClocks.right.time
     refreshAlsStandingGraphRuntime(
       standingGraphRuntime,
       {
@@ -5178,6 +5398,32 @@ export function createAlsAnimationInstance(gltf: {
         speedCmPerSecond: rawSpeed * 100,
       },
     )
+    if (
+      standingGraphRuntime.rotateClocks.left.relevant
+      && rotateInPlaceClips.Standing.Left
+    ) {
+      queueFootstepEffectsForClipRange(
+        rotateInPlaceClips.Standing.Left,
+        standingRotateLeftPreviousTime,
+        standingGraphRuntime.rotateClocks.left.time,
+        rotateInPlaceState.rotatingLeft,
+        standingGraphRuntime.standing.stateWeights['Rotate Left']
+          * standingGraphWeight,
+      )
+    }
+    if (
+      standingGraphRuntime.rotateClocks.right.relevant
+      && rotateInPlaceClips.Standing.Right
+    ) {
+      queueFootstepEffectsForClipRange(
+        rotateInPlaceClips.Standing.Right,
+        standingRotateRightPreviousTime,
+        standingGraphRuntime.rotateClocks.right.time,
+        rotateInPlaceState.rotatingRight,
+        standingGraphRuntime.standing.stateWeights['Rotate Right']
+          * standingGraphWeight,
+      )
+    }
     processStandingLifecycleEvents(controls)
     state.hipsDirection = standingGraphRuntime.hipsDirection
     const standingDirectionTransition =
@@ -5581,7 +5827,7 @@ export function createAlsAnimationInstance(gltf: {
       if (member) member.playRate = crouchingState.playRate
     }
     locomotionPreviousTimes.clear()
-    for (const [sequenceName] of cameraShakeNotifyTracks) {
+    for (const sequenceName of queuedNotifySequenceNames) {
       const clip = clipsByName.get(sequenceName)
       const member = clip
         ? locomotionMembersByClip.get(clip)
@@ -5614,6 +5860,54 @@ export function createAlsAnimationInstance(gltf: {
         },
       )
     }
+    for (
+      const [sequenceName, runtimeTrack]
+      of footstepEffectsNotifyTracks
+    ) {
+      const clip = clipsByName.get(sequenceName)
+      const member = clip
+        ? locomotionMembersByClip.get(clip)
+        : undefined
+      const previousTime = member
+        ? locomotionPreviousTimes.get(member)
+        : undefined
+      if (!member || previousTime === undefined) continue
+      queueFootstepEffectsNotifiesFromRange(
+        runtimeTrack,
+        previousTime,
+        member.time,
+        {
+          bAllowLooping: true,
+          bSrcIsLeader: syncResult.leader === member,
+          InstanceWeight: member.weight,
+        },
+      )
+    }
+    // Each BlendSpace sample owns a source-sequence clock. Its outer player is the Movement
+    // SyncGroup member; internal sample weight remains part of FAnimTickRecord's effective weight.
+    for (const direction of ALS_HIPS_DIRECTIONS) {
+      const result = groundedLocomotionPlayerResults[direction]
+      const sources = groundedLocomotionPlayerSources[direction]
+      for (const sample of result.samples) {
+        const source = sources[Number(sample.id)]
+        if (!source) continue
+        const runtimeTrack =
+          footstepEffectsNotifyTracks.get(source.name)
+        if (!runtimeTrack) continue
+        queueFootstepEffectsNotifiesFromRange(
+          runtimeTrack,
+          sample.previousTime,
+          sample.time,
+          {
+            bAllowLooping: true,
+            bSrcIsLeader:
+              syncResult.leader === result.syncMember,
+            InstanceWeight:
+              result.syncMember.weight * sample.weight,
+          },
+        )
+      }
+    }
     // PostLocomotion is a local Slot relevance gate. NotifyWeight already owns the sequence
     // threshold, so the final Slot/global graph weight must not be applied a second time.
     for (const sample of slotMontageSamples) {
@@ -5631,6 +5925,33 @@ export function createAlsAnimationInstance(gltf: {
       const runtimeTrack = cameraShakeNotifyTracks.get(sample.clipKey)
       if (!runtimeTrack) continue
       queueCameraShakeNotifiesFromRange(
+        runtimeTrack,
+        sample.sourceNotifyPreviousTime,
+        sample.sourceNotifyCurrentTime,
+        {
+          bAllowLooping: sample.loopCount > 1,
+          bSrcIsLeader: true,
+          InstanceWeight: sample.notifyWeight,
+        },
+      )
+    }
+    // Transition, TurnInPlace, Mantle, and Roll all use the same montage-source notify path.
+    // Unlike camera shake, ALS footstep effects are authored in both Grounded and Locomotion
+    // slot groups, so do not narrow this pass to PostLocomotion.
+    for (const sample of slotMontageSamples) {
+      if (
+        (
+          sample.notifyPreviousWeight <= 0
+          && sample.weight <= 0
+        )
+        || !canGatherSlotMontageSequenceNotifies(sample)
+      ) {
+        continue
+      }
+      const runtimeTrack =
+        footstepEffectsNotifyTracks.get(sample.clipKey)
+      if (!runtimeTrack) continue
+      queueFootstepEffectsNotifiesFromRange(
         runtimeTrack,
         sample.sourceNotifyPreviousTime,
         sample.sourceNotifyCurrentTime,
@@ -5909,6 +6230,10 @@ export function createAlsAnimationInstance(gltf: {
         }
       }
 
+      const crouchingRotateLeftPreviousTime =
+        crouchingRotateLeftTime
+      const crouchingRotateRightPreviousTime =
+        crouchingRotateRightTime
       const rotateDelta = Math.max(0, delta)
         * rotateInPlaceState.playRate
       const leftDuration =
@@ -5942,6 +6267,26 @@ export function createAlsAnimationInstance(gltf: {
               rightDuration,
               crouchingRotateRightTime + rotateDelta,
             )
+      }
+      if (crouchingStateRuntime.stateWeights['Rotate Left'] > 0) {
+        queueFootstepEffectsForClipRange(
+          rotateInPlaceClips.Crouching.Left,
+          crouchingRotateLeftPreviousTime,
+          crouchingRotateLeftTime,
+          rotateInPlaceState.rotatingLeft,
+          crouchingStateRuntime.stateWeights['Rotate Left']
+            * crouchingGraphWeight,
+        )
+      }
+      if (crouchingStateRuntime.stateWeights['Rotate Right'] > 0) {
+        queueFootstepEffectsForClipRange(
+          rotateInPlaceClips.Crouching.Right,
+          crouchingRotateRightPreviousTime,
+          crouchingRotateRightTime,
+          rotateInPlaceState.rotatingRight,
+          crouchingStateRuntime.stateWeights['Rotate Right']
+            * crouchingGraphWeight,
+        )
       }
       sampleSequencePoseNode(
         rig,
@@ -7014,6 +7359,7 @@ export function createAlsAnimationInstance(gltf: {
     jump,
     getCurveValue: (name) => publishedCurves.get(name) ?? 0,
     dispatchQueuedAnimEvents,
+    dispatchQueuedFootstepEffectsEvents,
     mantlingMontage: Object.freeze({
       play: playMantlingMontage,
       montageSetPosition: setMantlingMontagePosition,

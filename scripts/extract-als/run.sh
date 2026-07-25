@@ -15,6 +15,7 @@
 # MantlingContentDump.cs (character/mantling settings + montage clocks + correction curves) →
 # ActionContentDump.cs (Rolling/GettingUp settings + montage/notify/root-motion clocks) →
 # PhysicsAssetDump.cs (PA_Als bodies/shapes/constraints/collision-disable topology) →
+# FootstepAudioDump.cs (notify route/settings/content oracle) → RIFF source-tail extractor
 # copy distributable assets
 # with the upstream MIT notice.
 # clips.manifest is the audited M3 animation allowlist.
@@ -70,6 +71,10 @@ dotnet run -- dump-action-content "$WORK/stage" "$WORK/action-content.json"
 dotnet run -- validate-action-content "$WORK/action-content.json"
 dotnet run -- dump-physics-asset "$WORK/stage" "$WORK/physics-asset.json"
 dotnet run -- validate-physics-asset "$WORK/physics-asset.json"
+dotnet run -- dump-footstep-audio "$WORK/stage" "$REPO_ROOT/scripts/extract-als/clips.manifest" "$WORK/footstep-audio.json"
+dotnet run -- validate-footstep-audio "$WORK/footstep-audio.json"
+node extract-footstep-audio.mjs extract "$WORK/ALS-Refactored-$TAG" "$REPO_ROOT/public/assets/audio/footsteps" "$WORK/footstep-audio-files.json"
+node extract-footstep-audio.mjs validate "$REPO_ROOT/public/assets/audio/footsteps" "$WORK/footstep-audio-files.json"
 [ -d node_modules ] || pnpm install
 node assemble-glb.mjs "$WORK/als-dump.json" "$WORK/skm-als.glb"
 node assemble-glb.mjs "$WORK/als-rifle-dump.json" "$WORK/skm-als-rifle.glb"
@@ -102,6 +107,8 @@ cp "$WORK/grid-level-content.json" "$REPO_ROOT/scripts/extract-als/grid-level-co
 cp "$WORK/mantling-content.json" "$REPO_ROOT/scripts/extract-als/mantling-content.json"
 cp "$WORK/action-content.json" "$REPO_ROOT/scripts/extract-als/action-content.json"
 cp "$WORK/physics-asset.json" "$REPO_ROOT/scripts/extract-als/physics-asset.json"
+cp "$WORK/footstep-audio.json" "$REPO_ROOT/scripts/extract-als/footstep-audio.json"
+cp "$WORK/footstep-audio-files.json" "$REPO_ROOT/scripts/extract-als/footstep-audio-files.json"
 echo "done: public/assets/skm-als.glb + skm-als-rifle.glb + LICENSE-ALS-Refactored.md"
 echo "done: $ABP_GRAPH_DESTINATION ($ABP_GRAPH_SIZE bytes)"
 echo "done: scripts/extract-als/{movement-settings,character-settings,animation-settings,skeleton-profiles,blend-spaces,input-mappings,camera-content,grid-level-content,mantling-content,action-content,physics-asset}.json"

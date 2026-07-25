@@ -48,6 +48,9 @@ import {
   createRapierAlsControlRigFootTrace,
 } from '../engine/rapierAlsControlRigFootTrace'
 import {
+  createRapierAlsFootstepEffectsTrace,
+} from '../engine/rapierAlsFootstepEffectsTrace'
+import {
   createRapierAlsMantling,
 } from '../engine/rapierAlsMantling'
 import {
@@ -67,6 +70,9 @@ import { ALS_MESH_COMPONENT_YAW_RADIANS } from '../engine/unrealCoordinateSpace'
 import {
   ALS_MANTLING_SETTINGS,
 } from '../als/Settings/AlsMantlingSettings'
+import type {
+  AlsFootstepSoundSink,
+} from '../als/Notifies/AlsAnimNotify_FootstepEffects'
 
 const CHARACTER_URL = '/assets/skm-als.glb'
 const GLB_MAGIC = [0x67, 0x6c, 0x54, 0x46]
@@ -88,6 +94,7 @@ interface CharacterProps {
   onOverlayModeBridgeChange: (
     bridge: AlsOverlayModeBridge | null,
   ) => void
+  footstepSoundSink: AlsFootstepSoundSink
 }
 
 function compileAlsMantlingRootMotion(
@@ -264,6 +271,7 @@ function LoadedCharacter({
   poseSample,
   worldTime,
   onOverlayModeBridgeChange,
+  footstepSoundSink,
 }: {
   gltf: GLTF
   onSizeChange: CharacterProps['onSizeChange']
@@ -271,6 +279,7 @@ function LoadedCharacter({
   worldTime: CharacterProps['worldTime']
   onOverlayModeBridgeChange:
     CharacterProps['onOverlayModeBridgeChange']
+  footstepSoundSink: CharacterProps['footstepSoundSink']
 }) {
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
@@ -328,6 +337,31 @@ function LoadedCharacter({
     }),
     [
       gltf.scene,
+      RapierRay,
+      rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+      world,
+    ],
+  )
+  const footstepEffectsTrace = useMemo(
+    () => createRapierAlsFootstepEffectsTrace({
+      world,
+      Ray: RapierRay,
+      queryFilterForChannel: () => ({
+        flags: rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+      }),
+      resolveExcludeRigidBody: () => rigidBody.current,
+      getOwnerColliders: () => {
+        const colliders: RapierCollider[] = []
+        if (standingCapsule.current) {
+          colliders.push(standingCapsule.current)
+        }
+        if (crouchingCapsule.current) {
+          colliders.push(crouchingCapsule.current)
+        }
+        return colliders
+      },
+    }),
+    [
       RapierRay,
       rapier.QueryFilterFlags.EXCLUDE_SENSORS,
       world,
@@ -455,6 +489,10 @@ function LoadedCharacter({
     mantlingMontage,
     rollingMontage,
     worldTime,
+    {
+      Trace: footstepEffectsTrace,
+      SoundSink: footstepSoundSink,
+    },
   )
 
   useFrame(() => {
@@ -540,6 +578,7 @@ export function Character({
   poseSample,
   worldTime,
   onOverlayModeBridgeChange,
+  footstepSoundSink,
 }: CharacterProps) {
   const { gltf, status, progress, retry } = useCharacterGltf()
 
@@ -554,6 +593,7 @@ export function Character({
       poseSample={poseSample}
       worldTime={worldTime}
       onOverlayModeBridgeChange={onOverlayModeBridgeChange}
+      footstepSoundSink={footstepSoundSink}
     />
   ) : (
     <CharacterLoadState status={status} progress={progress} retry={retry} />
