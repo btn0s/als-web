@@ -454,6 +454,8 @@ describe('AlsAnimationInstance playback regression', () => {
       (candidate) => candidate.name === montage.Sequence,
     )
     if (!clip) throw new Error(`Missing ${montage.Sequence}`)
+    const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
+    const rootIndex = findBoneIndex(rig, 'root')
     expect(montage).toMatchObject({
       Name: 'AM_Als_Mantle_Low_Right',
       Sequence: 'A_Als_Mantle_Low_Right',
@@ -518,7 +520,6 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.PostLocomotionMontageTime)
       .toBeCloseTo(0.8, 12)
 
-    const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
     const sampled = createPoseBuffer(rig.boneCount)
     sampleClip(
       compileClipSampler(clip, rig),
@@ -527,18 +528,34 @@ describe('AlsAnimationInstance playback regression', () => {
       sampled,
       false,
     )
-    const rootIndex = findBoneIndex(rig, 'root')
     const root = bone(gltf.scene, 'root')
+    const authoredRootMotion = compileAuthoredRootMotion(clip)
+    if (!authoredRootMotion) {
+      throw new Error(`${montage.Sequence} is missing raw root motion`)
+    }
+    expect(authoredRootMotion).toMatchObject({
+      bEnableRootMotion: false,
+      bForceRootLock: true,
+      RootMotionRootLock: 'RefPose',
+      poseReset: { kind: 'referencePose' },
+    })
+
+    expect(
+      Math.abs(
+        sampled.positions[rootIndex * 3 + 1]
+          - rig.referencePositions[rootIndex * 3 + 1],
+      ),
+    ).toBeGreaterThan(0.5)
     expect(root.position.x).toBeCloseTo(
-      sampled.positions[rootIndex * 3],
+      rig.referencePositions[rootIndex * 3],
       6,
     )
     expect(root.position.y).toBeCloseTo(
-      sampled.positions[rootIndex * 3 + 1],
+      rig.referencePositions[rootIndex * 3 + 1],
       6,
     )
     expect(root.position.z).toBeCloseTo(
-      sampled.positions[rootIndex * 3 + 2],
+      rig.referencePositions[rootIndex * 3 + 2],
       6,
     )
 
@@ -557,6 +574,12 @@ describe('AlsAnimationInstance playback regression', () => {
     const gltf = await loadAlsGltf()
     const settings = ALS_MANTLING_SETTINGS.MS_Als_High
     const montage = settings.Montage
+    const clip = gltf.animations.find(
+      (candidate) => candidate.name === montage.Sequence,
+    )
+    if (!clip) throw new Error(`Missing ${montage.Sequence}`)
+    const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
+    const rootIndex = findBoneIndex(rig, 'root')
     expect(montage).toMatchObject({
       Name: 'AM_Als_Mantle_High',
       PlayLength: 2.6666667461395264,
@@ -585,6 +608,45 @@ describe('AlsAnimationInstance playback regression', () => {
       .toBeCloseTo(expectedMontageTime, 12)
     expect(window.__weightTable?.PostLocomotionSequenceTime)
       .toBeCloseTo(expectedMontageTime, 12)
+
+    const sampled = createPoseBuffer(rig.boneCount)
+    sampleClip(
+      compileClipSampler(clip, rig),
+      rig,
+      expectedMontageTime,
+      sampled,
+      false,
+    )
+    const root = bone(gltf.scene, 'root')
+    const authoredRootMotion = compileAuthoredRootMotion(clip)
+    if (!authoredRootMotion) {
+      throw new Error(`${montage.Sequence} is missing raw root motion`)
+    }
+    expect(authoredRootMotion).toMatchObject({
+      bEnableRootMotion: false,
+      bForceRootLock: true,
+      RootMotionRootLock: 'RefPose',
+      poseReset: { kind: 'referencePose' },
+    })
+
+    expect(
+      Math.abs(
+        sampled.positions[rootIndex * 3 + 1]
+          - rig.referencePositions[rootIndex * 3 + 1],
+      ),
+    ).toBeGreaterThan(1)
+    expect(root.position.x).toBeCloseTo(
+      rig.referencePositions[rootIndex * 3],
+      6,
+    )
+    expect(root.position.y).toBeCloseTo(
+      rig.referencePositions[rootIndex * 3 + 1],
+      6,
+    )
+    expect(root.position.z).toBeCloseTo(
+      rig.referencePositions[rootIndex * 3 + 2],
+      6,
+    )
   })
 
   it('places PostLocomotion after Grounded additive Transition montage output', async () => {

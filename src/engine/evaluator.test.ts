@@ -10,6 +10,7 @@ import { compileBoneMask } from './blend'
 import { accumulateAdditiveCurveValues } from './curves'
 import { createPoseBuffer, resetPoseToReference } from './poseBuffer'
 import { createRigDefinition } from './rig'
+import { compileAuthoredRootMotion } from './rootMotion'
 
 function constantPositionClip(name: string, x: number) {
   return new THREE.AnimationClip(name, 1, [
@@ -422,5 +423,64 @@ describe('pose evaluator', () => {
     // Transition first produces 10 + (7 - 2) = 15. The full PostLocomotion Slot then replaces
     // that complete result with 40. Applying Transition after node 15 would incorrectly yield 45.
     expect(result.pose.positions[0]).toBeCloseTo(40)
+  })
+
+  it('applies an authored root lock to a PostLocomotion montage pose', () => {
+    const root = new THREE.Bone()
+    root.name = 'root'
+    root.position.set(0.25, 0.5, 0.75)
+    const child = new THREE.Bone()
+    child.name = 'child'
+    child.position.set(0, 5, 0)
+    root.add(child)
+    const rig = createRigDefinition(root)
+    const evaluator = createPoseEvaluator(rig)
+    const base = compileClipSampler(
+      constantPositionClip('base', 0),
+      rig,
+    )
+    const mantle = new THREE.AnimationClip('mantle', 1, [
+      new THREE.VectorKeyframeTrack(
+        'root.position',
+        [0, 1],
+        [0, 0, 0, 0, 2, 0.65],
+      ),
+      new THREE.VectorKeyframeTrack(
+        'child.position',
+        [0, 1],
+        [0, 5, 0, 0, 7, 0],
+      ),
+    ])
+    mantle.userData = {
+      bEnableRootMotion: false,
+      bForceRootLock: true,
+      RootMotionRootLock: 'RefPose',
+      rawRootTrack: {
+        times: [0, 1],
+        translations: [[0, 0, 0], [0, 2, 0.65]],
+        rotations: [[0, 0, 0, 1], [0, 0, 0, 1]],
+      },
+    }
+    const rootMotion = compileAuthoredRootMotion(mantle)
+    if (!rootMotion) throw new Error('Synthetic mantle root did not compile')
+
+    const result = evaluatePose(evaluator, {
+      base: [{
+        sampler: base,
+        time: 0,
+        weight: 1,
+      }],
+      postLocomotionMontages: [{
+        sampler: compileClipSampler(mantle, rig),
+        rootMotion,
+        time: 1,
+        weight: 1,
+        loop: false,
+      }],
+    })
+
+    expect([...result.pose.positions.slice(0, 3)])
+      .toEqual([...rig.referencePositions.slice(0, 3)])
+    expect([...result.pose.positions.slice(3, 6)]).toEqual([0, 7, 0])
   })
 })

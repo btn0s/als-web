@@ -201,11 +201,11 @@ const clips = dump.anims.map((a) => {
     throw new Error(`${a.name} enables bForceRootLock but has no ${rootBoneName} track`);
   const rootTranslationChanges = sourceRootTrack?.pos.some((position) =>
     position.some((value, axis) => Math.abs(value - sourceRootTrack.pos[0][axis]) > 1e-6)) ?? false;
-  // Tactical compatibility seam: the evaluator currently extracts motion from
-  // the GLB root channel itself. Keep action trajectories there until it reads
-  // rawRootTrack and resets the output pose afterward. The current ALS pack's
-  // exact split is 12 rotational turn/rotate clips baked, with Roll and three
-  // translational Mantles kept raw.
+  // Translation-changing action roots stay raw in the GLB pose channel and in
+  // rawRootTrack. The runtime consumes the sidecar for movement, then applies
+  // the authored root lock to the sampled output pose. The current ALS pack's
+  // exact split is 12 rotational turn/rotate clips baked here, with Roll and
+  // three translational Mantles reset by the pose runtime.
   const shouldBakeRootLock = rootMotionSettings.bForceRootLock &&
     !rootMotionSettings.bEnableRootMotion &&
     !rootTranslationChanges;
@@ -219,8 +219,7 @@ const clips = dump.anims.map((a) => {
     additiveSettings,
     // Root-motion extraction reads the authored root trajectory before Unreal
     // resets bone 0 for the output pose. Keep that source trajectory beside the
-    // pose channels so the runtime can close the action-pose reset gap above
-    // without another content extraction change.
+    // pose channels so movement extraction and pose reset remain independent.
     rawRootTrack: rootMotionSettings.bForceRootLock ? sourceRootTrack : undefined,
     tracks: sourceTracks.map((track) => {
       return {

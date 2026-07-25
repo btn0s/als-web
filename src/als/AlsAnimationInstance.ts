@@ -533,6 +533,7 @@ const TRANSITION_DIAGNOSTIC_CLIPS = {
 interface RuntimeClip {
   readonly sampler: CompiledClipSampler
   readonly curves?: ClipCurveSamplers
+  readonly rootMotion?: CompiledAuthoredRootMotion
   readonly entry: EvaluatorLayerEntry
   time: number
 }
@@ -828,8 +829,16 @@ export interface AlsAnimationInstance {
 function createEntry(
   sampler: CompiledClipSampler,
   curves?: ClipCurveSamplers,
+  rootMotion?: CompiledAuthoredRootMotion,
 ): EvaluatorLayerEntry {
-  return { sampler, time: 0, weight: 0, loop: true, curves }
+  return {
+    sampler,
+    rootMotion,
+    time: 0,
+    weight: 0,
+    loop: true,
+    curves,
+  }
 }
 
 function advanceClip(clip: RuntimeClip, delta: number) {
@@ -1167,7 +1176,14 @@ export function createAlsAnimationInstance(gltf: {
     const sampler = compileClipSampler(clip, rig)
     const compiledCurves = compileClipCurveSamplers(clip)
     const curves = Object.keys(compiledCurves).length > 0 ? compiledCurves : undefined
-    return { sampler, curves, entry: createEntry(sampler, curves), time: 0 }
+    const authoredRootMotion = compileAuthoredRootMotion(clip)
+    return {
+      sampler,
+      curves,
+      rootMotion: authoredRootMotion,
+      entry: createEntry(sampler, curves, authoredRootMotion),
+      time: 0,
+    }
   })
   const clipsByName = new Map(clips.map((clip) => [clip.sampler.clip.name, clip]))
   const cameraShakeNotifyTracks = compileCameraShakeNotifyTracks(
@@ -1178,33 +1194,18 @@ export function createAlsAnimationInstance(gltf: {
     rollClip?.sampler.clip,
   )
   const rollAuthoredRootMotion: CompiledAuthoredRootMotion | undefined =
-    rollClip
-      ? compileAuthoredRootMotion(rollClip.sampler.clip)
-      : undefined
-  // UAnimSequence::ExtractRootMotion removes the trajectory from bone zero
-  // before pose publication. A_Als_Roll uses RefPose root lock, so sampling
-  // every non-root track with the ordinary reference fallback is the exact
-  // pose-side equivalent while the raw sidecar feeds movement separately.
-  const rollPoseSampler: CompiledClipSampler | undefined =
-    rollClip && directionTransitionRootIndex >= 0
-      ? {
-          ...rollClip.sampler,
-          bindings: rollClip.sampler.bindings.filter(
-            ({ boneIndex }) =>
-              boneIndex !== directionTransitionRootIndex,
-          ),
-        }
-      : undefined
+    rollClip?.rootMotion
   const groundedRollPose = createMutableUePoseNode(rig.boneCount)
-  if (rollClip && rollPoseSampler) {
+  if (rollClip && rollAuthoredRootMotion) {
     // FAnimNode_SequenceEvaluator owns bShouldLoop=true, but explicit-time
     // evaluation clamps its authored 1.5-second endpoint instead of advancing
     // a looping player clock.
     sampleSequencePoseNode(
       rig,
       {
-        sampler: rollPoseSampler,
+        sampler: rollClip.sampler,
         curves: rollClip.curves,
+        rootMotion: rollAuthoredRootMotion,
       },
       ALS_GROUNDED_ROLL_STATE.sequenceEvaluator.explicitTime,
       false,
@@ -2016,7 +2017,6 @@ export function createAlsAnimationInstance(gltf: {
     && standingTransitionLeftClip !== undefined
     && crouchingTransitionLeftClip !== undefined
     && rollClip !== undefined
-    && rollPoseSampler !== undefined
     && rollAuthoredRootMotion !== undefined
     && crouchingGraphSourceComplete
     && quickFeetBlendProfile !== null
@@ -2802,15 +2802,9 @@ export function createAlsAnimationInstance(gltf: {
 
     const curveKey =
       `Slot.${sample.slotName}.${sample.instanceId}.${sample.clipKey}`
-    const sampler = (
-      sample.bEnableRootMotion
-      && clip === rollClip
-      && rollPoseSampler
-    )
-      ? rollPoseSampler
-      : clip.sampler
     const entry: EvaluatorLayerEntry = {
-      sampler,
+      sampler: clip.sampler,
+      rootMotion: clip.rootMotion,
       curves: clip.curves,
       curveKey,
       time: sample.sampleTime,

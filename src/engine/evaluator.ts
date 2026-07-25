@@ -29,8 +29,15 @@ import type {
 import type { LocalPoseBuffer } from './poseBuffer'
 import { copyPose, createPoseBuffer, resetPoseToReference } from './poseBuffer'
 import type { RigDefinition } from './rig'
-import type { RootMotionDelta, RootMotionExtractor } from './rootMotion'
-import { extractRootMotionDelta } from './rootMotion'
+import type {
+  CompiledAuthoredRootMotion,
+  RootMotionDelta,
+  RootMotionExtractor,
+} from './rootMotion'
+import {
+  applyAuthoredRootMotionPoseReset,
+  extractRootMotionDelta,
+} from './rootMotion'
 import {
   applyInertialization,
   createInertialization,
@@ -39,6 +46,8 @@ import type { Inertialization } from './inertialization'
 
 export interface EvaluatorClipEntry {
   readonly sampler: CompiledClipSampler
+  /** Authored UAnimSequence root-lock metadata applied after raw pose sampling. */
+  readonly rootMotion?: Readonly<CompiledAuthoredRootMotion>
   time: number
   weight: number
   loop?: boolean
@@ -338,15 +347,29 @@ function sampleAndAccumulate(
   if (!entries) return
   for (const entry of entries) {
     if (entry.weight <= 0) continue
-    sampleClip(
-      entry.sampler,
-      evaluator.rig,
-      entry.time,
-      evaluator.samplePose,
-      entry.loop,
-    )
+    sampleEvaluatorEntryPose(evaluator, entry)
     accumulatePose(accumulator, evaluator.samplePose, entry.weight, entry.mask)
     sampleEntryCurves(evaluator, entry, stage)
+  }
+}
+
+function sampleEvaluatorEntryPose(
+  evaluator: PoseEvaluator,
+  entry: Readonly<EvaluatorClipEntry>,
+) {
+  sampleClip(
+    entry.sampler,
+    evaluator.rig,
+    entry.time,
+    evaluator.samplePose,
+    entry.loop,
+  )
+  if (entry.rootMotion) {
+    applyAuthoredRootMotionPoseReset(
+      entry.rootMotion,
+      evaluator.samplePose,
+      evaluator.rig,
+    )
   }
 }
 
@@ -396,13 +419,7 @@ function sampleRetainedSlotAndAccumulate(
   }
   for (const montage of montages) {
     if (montage.weight <= 0 || montage.additiveSpace) continue
-    sampleClip(
-      montage.sampler,
-      evaluator.rig,
-      montage.time,
-      evaluator.samplePose,
-      montage.loop,
-    )
+    sampleEvaluatorEntryPose(evaluator, montage)
     sampleEntryCurves(evaluator, montage, stage)
     accumulatePose(
       evaluator.slotAccumulator,
@@ -490,13 +507,7 @@ function sampleSlotAndAccumulate(
         continue
       }
 
-      sampleClip(
-        montage.sampler,
-        evaluator.rig,
-        montage.time,
-        evaluator.samplePose,
-        montage.loop,
-      )
+      sampleEvaluatorEntryPose(evaluator, montage)
       sampleEntryCurves(evaluator, montage, stage)
       blendPoseInPlace(
         evaluator.overlayPose,
@@ -507,13 +518,7 @@ function sampleSlotAndAccumulate(
       continue
     }
 
-    sampleClip(
-      montage.sampler,
-      evaluator.rig,
-      montage.time,
-      evaluator.samplePose,
-      montage.loop,
-    )
+    sampleEvaluatorEntryPose(evaluator, montage)
     sampleEntryCurves(evaluator, montage, stage)
     accumulatePose(evaluator.accumulator, evaluator.samplePose, slot.weight)
   }

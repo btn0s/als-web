@@ -449,9 +449,10 @@ dotnet run -- validate-blend-spaces blend-spaces.json
   clips set `bForceRootLock`: all 12 standing/crouched Turn/Rotate clips, `A_Als_Roll`, and
   the three Mantles. All use the default-valued (therefore omitted) `RefPose` lock mode.
   Roll alone sets `bEnableRootMotion=true`; Mantles keep it false because ALS drives them
-  through `FAlsRootMotionSource_Mantling`. The assembler bakes forced root locks into the
-  emitted root tracks and preserves all three settings in animation extras. Typed extraction
-  and independent generic uasset inspection agree on the Roll/Mantle values.
+  through `FAlsRootMotionSource_Mantling`. The assembler preserves the raw action trajectory
+  beside the pose channel; the runtime consumes that sidecar for movement and applies the
+  authored root lock before publishing the pose. All three settings remain in animation extras.
+  Typed extraction and independent generic uasset inspection agree on the Roll/Mantle values.
 
 ## Mantling settings, selection, montages, and curves
 
