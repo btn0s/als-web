@@ -198,6 +198,33 @@ export function resolveAlsActorLocation(
 }
 
 /**
+ * Reconstructs `GetOwner()->GetActorLocation()` from the rendered mesh-root frame.
+ *
+ * The camera must not combine an interpolated pose pivot with Rapier's fixed-step body
+ * translation. The mesh root includes `resolveAlsMeshRootRelativeY()` while the actor location
+ * includes the active-capsule adjustment and the same CharacterMovement floor offset. Keep both
+ * terms explicit even though that floor offset cancels algebraically.
+ */
+export function resolveAlsActorLocationFromPresentationGround(
+  presentationGround: Readonly<AlsVector3>,
+  stance: AlsStance,
+  locomotionMode: AlsLocomotionMode,
+  out: AlsVector3 = { x: 0, y: 0, z: 0 },
+): AlsVector3 {
+  const floorCompensation = getCharacterMovementFloorOffset(
+    locomotionMode === 'Grounded',
+  )
+  out.x = presentationGround.x
+  out.y = presentationGround.y
+  out.z = presentationGround.z
+    - resolveAlsMeshRootRelativeY(stance, locomotionMode)
+    + getAlsCapsuleHalfHeight(stance)
+    - ALS_STANDING_CAPSULE_HALF_HEIGHT
+    + floorCompensation
+  return out
+}
+
+/**
  * UCharacterMovementComponent::GetActorFeetLocation() uses the active scaled capsule, including
  * a crouching capsule. Keeping the subtraction explicit guards the mantling start seam from
  * accidentally assuming the standing half-height.

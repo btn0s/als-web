@@ -31,9 +31,7 @@ import type {
   AlsViewMode,
 } from '../als/AlsCharacter'
 import {
-  ALS_MESH_RELATIVE_LOCATION_Z,
-  ALS_STANDING_CAPSULE_HALF_HEIGHT,
-  getAlsCapsuleHalfHeight,
+  resolveAlsActorLocationFromPresentationGround,
 } from '../als/AlsCharacter.hooks'
 import type {
   AlsGait,
@@ -43,9 +41,6 @@ import type {
 import { unwindDegrees } from '../als/State/AlsLocomotionState'
 import { createRapierAlsCameraTrace } from '../engine/rapierAlsCameraTrace'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
-import {
-  getCharacterMovementFloorOffset,
-} from '../engine/characterMovementFloor'
 import {
   createAlsCameraShakeRequest,
   createAlsCameraViewBridgeState,
@@ -597,24 +592,16 @@ export function AlsCamera({
       scratch.socketThree,
       input.thirdPersonTraceStartLocation,
     )
-    // ALS uses GetOwner()->GetActorLocation(): the active capsule center. Our Rapier body stays at
-    // standing height while the crouching collider is offset to preserve the base, so convert its
-    // current post-physics transform and restore the actor-location shift CharacterMovement makes.
-    const activeCapsuleHalfHeight = getAlsCapsuleHalfHeight(character.stance)
-    const ownerRigidBody = sample.ownerRigidBody
-    if (ownerRigidBody) {
-      threeToUnrealVector(ownerRigidBody.translation(), input.ownerLocation)
-      input.ownerLocation.z +=
-        activeCapsuleHalfHeight - ALS_STANDING_CAPSULE_HALF_HEIGHT
-        + getCharacterMovementFloorOffset(
-          character.locomotionMode === 'Grounded',
-        )
-    } else {
-      threeToUnrealVector(sample.ground, input.ownerLocation)
-      input.ownerLocation.z +=
-        -ALS_MESH_RELATIVE_LOCATION_Z
-        - (ALS_STANDING_CAPSULE_HALF_HEIGHT - activeCapsuleHalfHeight)
-    }
+    // ALS uses GetOwner()->GetActorLocation(), but the camera pivot is evaluated from the
+    // rendered skeleton. Derive the active capsule root from that same presentation frame rather
+    // than reading Rapier's fixed-step body transform here.
+    threeToUnrealVector(sample.ground, input.ownerLocation)
+    resolveAlsActorLocationFromPresentationGround(
+      input.ownerLocation,
+      character.stance,
+      character.locomotionMode,
+      input.ownerLocation,
+    )
     input.cameraTargetRotation.pitch = rotation.pitch
     input.cameraTargetRotation.yaw = rotation.yaw
     input.cameraTargetRotation.roll = 0

@@ -29,6 +29,7 @@ import {
   publishAlsCharacterAnimationSnapshot,
   resolveAlsActorFeetLocation,
   resolveAlsActorLocation,
+  resolveAlsActorLocationFromPresentationGround,
   resolveAlsActorLocationWithFloorCompensation,
   resolveAlsCameraMovementBaseSnapshot,
   resolveAlsMantlingOverlayTag,
@@ -175,6 +176,32 @@ describe('AlsCharacter browser bridge math', () => {
       - ALS_STANDING_CAPSULE_HALF_HEIGHT,
     )
     expect(rapierBodyAnchor).toEqual({ x: 2, y: -3, z: 4 })
+  })
+
+  it('derives the camera owner location from the same rendered mesh-root frame as its pivot', () => {
+    const bodyAnchor = { x: 2, y: -3, z: 0.9 }
+
+    for (const [stance, locomotionMode] of [
+      ['Standing', 'Grounded'],
+      ['Crouching', 'Grounded'],
+      ['Standing', 'InAir'],
+      ['Crouching', 'InAir'],
+    ] as const) {
+      const ground = {
+        x: bodyAnchor.x,
+        y: bodyAnchor.y,
+        z: bodyAnchor.z + resolveAlsMeshRootRelativeY(stance, locomotionMode),
+      }
+      expect(resolveAlsActorLocationFromPresentationGround(
+        ground,
+        stance,
+        locomotionMode,
+      )).toEqual(resolveAlsActorLocation(
+        bodyAnchor,
+        stance,
+        locomotionMode,
+      ))
+    }
   })
 
   it('uses the active stance for feet and preserves the 0.0215m Custom-mode boundary', () => {
