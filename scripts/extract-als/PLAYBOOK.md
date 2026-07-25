@@ -453,6 +453,11 @@ dotnet run -- validate-blend-spaces blend-spaces.json
   beside the pose channel; the runtime consumes that sidecar for movement and applies the
   authored root lock before publishing the pose. All three settings remain in animation extras.
   Typed extraction and independent generic uasset inspection agree on the Roll/Mantle values.
+  **Diagnostic gotcha:** a Mantle that rises above its target and drops when the montage ends
+  usually has the raw bone-zero trajectory in the published pose while the mantling root-motion
+  source also moves the character. Verify that the movement boundary translates the body exactly
+  once and that the published bone-zero transform stays at the authored `RefPose`; do not compensate
+  for this double application by changing capsule height.
 
 ## Mantling settings, selection, montages, and curves
 
