@@ -41,6 +41,8 @@ import type {
 import { unwindDegrees } from '../als/State/AlsLocomotionState'
 import { createRapierAlsCameraTrace } from '../engine/rapierAlsCameraTrace'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import { getWorldDeltaTime } from '../engine/timeDilation'
+import type { WorldTimeState } from '../engine/timeDilation'
 import {
   createAlsCameraShakeRequest,
   createAlsCameraViewBridgeState,
@@ -261,8 +263,10 @@ function updateSocketLocation(
 
 export function AlsCamera({
   poseSample,
+  worldTime,
 }: {
   poseSample: MutableRefObject<CharacterPoseSample>
+  worldTime: Readonly<WorldTimeState>
 }) {
   const { camera, gl, scene, size } = useThree()
   const { world } = useRapier()
@@ -550,8 +554,13 @@ export function AlsCamera({
       cameraComponentState,
       ALS_CAMERA_SETTINGS,
       Object.assign(deltaTimeInput, {
-        deltaTime: rawDeltaTime,
+        deltaTime: getWorldDeltaTime(
+          worldTime,
+          rawDeltaTime,
+        ),
         deltaRealTime: rawDeltaTime,
+        effectiveGlobalTimeDilation:
+          worldTime.effectiveGlobalTimeDilation,
       }),
     )
 

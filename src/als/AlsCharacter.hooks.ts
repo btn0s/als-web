@@ -7,7 +7,7 @@ import {
 import { RigidBodyType } from '@dimforge/rapier3d-compat'
 import { useFrame } from '@react-three/fiber'
 import { folder, useControls } from 'leva'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { LEVA_ROOTS } from '../app/levaRoots'
@@ -36,6 +36,8 @@ import type {
   CharacterMovementGroundedMoveSweep,
 } from '../engine/characterMovementGroundedMove'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import { getWorldDeltaTime } from '../engine/timeDilation'
+import type { WorldTimeState } from '../engine/timeDilation'
 import {
   FInputActionInstance,
   UInputTriggerHold,
@@ -567,6 +569,8 @@ export interface AlsCharacterBridge {
    */
   readonly onJumped: MutableRefObject<(() => void) | null>
   readonly overlayMode: AlsOverlayMode
+  /** Exact AAlsCharacter::SetOverlayMode() control seam. */
+  readonly SetOverlayMode: (OverlayMode: AlsOverlayMode) => void
 }
 
 export interface AlsCharacterAnimationCurves {
@@ -1118,6 +1122,7 @@ export function useAlsCharacter(
   mantling?: AlsCharacterMantlingBridge,
   actions?: AlsCharacterActionBridge,
   groundedMoveSweep?: CharacterMovementGroundedMoveSweep,
+  worldTime?: Readonly<WorldTimeState>,
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1304,6 +1309,13 @@ export function useAlsCharacter(
     viewYawOverride,
     viewYaw,
   }
+  const SetOverlayMode = useCallback((
+    OverlayMode: AlsOverlayMode,
+  ) => {
+    if (ALS_OVERLAY_MODES.includes(OverlayMode)) {
+      setControls({ overlayMode: OverlayMode })
+    }
+  }, [setControls])
 
   const pressedKeys = useRef(new Set<string>())
   const aimingWithPointer = useRef(false)
@@ -1652,9 +1664,7 @@ export function useAlsCharacter(
         setControls({ desiredRotationMode: value })
       }
     }
-    window.__setOverlayMode = (value: AlsOverlayMode) => {
-      if (ALS_OVERLAY_MODES.includes(value)) setControls({ overlayMode: value })
-    }
+    window.__setOverlayMode = SetOverlayMode
     window.__setViewYaw = (value: number) => {
       debugViewYawWorld.current = unwindDegrees(
         character.current.actorYawAngle + value,
@@ -1681,9 +1691,12 @@ export function useAlsCharacter(
       delete window.__triggerJump
       delete window.__triggerRoll
     }
-  }, [setControls])
+  }, [SetOverlayMode, setControls])
 
-  useFrame((_, deltaTime) => {
+  useFrame((_, deltaRealTime) => {
+    const deltaTime = worldTime
+      ? getWorldDeltaTime(worldTime, deltaRealTime)
+      : deltaRealTime
     const current = character.current
     // AAlsCharacter::Tick() refreshes actor rotation once with the game-frame DeltaTime before
     // Super::Tick() enters CharacterMovement. Animation curves are intentionally from the
@@ -2173,6 +2186,7 @@ export function useAlsCharacter(
       desiredStance: current.desiredStance,
       gait: current.gait,
       stance: current.stance,
+      overlayMode: values.current.overlayMode,
       rotationMode: current.rotationMode,
       locomotionMode: current.locomotionMode,
       locomotionAction: current.locomotionAction,
@@ -2408,7 +2422,10 @@ export function useAlsCharacter(
     })
   })
 
-  useFrame((_, deltaTime) => {
+  useFrame((_, deltaRealTime) => {
+    const deltaTime = worldTime
+      ? getWorldDeltaTime(worldTime, deltaRealTime)
+      : deltaRealTime
     const current = character.current
     const root = characterRoot.current
     if (root) {
@@ -2466,5 +2483,6 @@ export function useAlsCharacter(
     animationCurves,
     onJumped,
     overlayMode: overlayMode as AlsOverlayMode,
+    SetOverlayMode,
   }
 }

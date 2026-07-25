@@ -32,7 +32,11 @@ import {
   resolveAlsMeshRootRelativeY,
   useAlsCharacter,
 } from '../als/AlsCharacter.hooks'
+import type {
+  AlsCharacterBridge,
+} from '../als/AlsCharacter.hooks'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import type { WorldTimeState } from '../engine/timeDilation'
 import {
   UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
 } from '../engine/characterMovementFloor'
@@ -72,9 +76,18 @@ const ALS_VISIBILITY_MANTLING_RESPONSE_CHANNELS = new Set([
   'Destructible',
 ])
 
+export type AlsOverlayModeBridge = Pick<
+  AlsCharacterBridge,
+  'overlayMode' | 'SetOverlayMode'
+>
+
 interface CharacterProps {
   onSizeChange: (size: THREE.Vector3) => void
   poseSample: MutableRefObject<CharacterPoseSample>
+  worldTime: Readonly<WorldTimeState>
+  onOverlayModeBridgeChange: (
+    bridge: AlsOverlayModeBridge | null,
+  ) => void
 }
 
 function compileAlsMantlingRootMotion(
@@ -249,10 +262,15 @@ function LoadedCharacter({
   gltf,
   onSizeChange,
   poseSample,
+  worldTime,
+  onOverlayModeBridgeChange,
 }: {
   gltf: GLTF
   onSizeChange: CharacterProps['onSizeChange']
   poseSample: CharacterProps['poseSample']
+  worldTime: CharacterProps['worldTime']
+  onOverlayModeBridgeChange:
+    CharacterProps['onOverlayModeBridgeChange']
 }) {
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
@@ -407,6 +425,21 @@ function LoadedCharacter({
       RollingMontage: rollingMontage,
     },
     groundedMoveSweep,
+    worldTime,
+  )
+  useEffect(() => {
+    onOverlayModeBridgeChange({
+      overlayMode: character.overlayMode,
+      SetOverlayMode: character.SetOverlayMode,
+    })
+  }, [
+    character.SetOverlayMode,
+    character.overlayMode,
+    onOverlayModeBridgeChange,
+  ])
+  useEffect(
+    () => () => onOverlayModeBridgeChange(null),
+    [onOverlayModeBridgeChange],
   )
   // The hook owns clip sampling, pose-space composition, and the one skeleton write per frame.
   // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
@@ -421,6 +454,7 @@ function LoadedCharacter({
     poseSample.current.cameraShakeRequests,
     mantlingMontage,
     rollingMontage,
+    worldTime,
   )
 
   useFrame(() => {
@@ -501,7 +535,12 @@ function LoadedCharacter({
   )
 }
 
-export function Character({ onSizeChange, poseSample }: CharacterProps) {
+export function Character({
+  onSizeChange,
+  poseSample,
+  worldTime,
+  onOverlayModeBridgeChange,
+}: CharacterProps) {
   const { gltf, status, progress, retry } = useCharacterGltf()
 
   useEffect(() => {
@@ -509,7 +548,13 @@ export function Character({ onSizeChange, poseSample }: CharacterProps) {
   }, [gltf])
 
   return gltf ? (
-    <LoadedCharacter gltf={gltf} onSizeChange={onSizeChange} poseSample={poseSample} />
+    <LoadedCharacter
+      gltf={gltf}
+      onSizeChange={onSizeChange}
+      poseSample={poseSample}
+      worldTime={worldTime}
+      onOverlayModeBridgeChange={onOverlayModeBridgeChange}
+    />
   ) : (
     <CharacterLoadState status={status} progress={progress} retry={retry} />
   )

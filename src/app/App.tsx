@@ -1,7 +1,18 @@
-import { Canvas } from '@react-three/fiber'
-import { Physics } from '@react-three/rapier'
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Canvas, useFrame } from '@react-three/fiber'
+import { Physics, useRapier } from '@react-three/rapier'
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import type { RefObject } from 'react'
 import * as THREE from 'three'
+import {
+  B_Als_PlayerController,
+} from '../als/ALSExtras/Core/B_Als_PlayerController'
 import {
   L_Als_GridFloor,
   L_Als_GridFloorCollision,
@@ -9,14 +20,24 @@ import {
   L_Als_GridSkySphere,
 } from '../als/ALSExtras/Levels/L_Als_Grid'
 import {
+  W_Als_OverlayModeMenuAnchor,
+} from '../als/ALSExtras/UI/W_Als_OverlayModeMenu'
+import {
   ALS_PHYSICS_TIMESTEP,
   ALS_RAPIER_GRAVITY,
 } from '../als/AlsCharacter.hooks'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import {
+  createWorldTimeState,
+  getWorldDeltaTime,
+  setGlobalTimeDilation,
+} from '../engine/timeDilation'
+import type { WorldTimeState } from '../engine/timeDilation'
 import { createCharacterPoseSample } from './CharacterPoseSample'
 import { AlsCamera } from './AlsCamera'
 import { AlsMantlingObstacleCourse } from './AlsMantlingObstacleCourse'
 import { Character } from './Character'
+import type { AlsOverlayModeBridge } from './Character'
 import { FramePerformanceMonitor } from './FramePerformanceMonitor'
 import { PostProcessing } from './PostProcessing'
 import './App.css'
@@ -29,9 +50,46 @@ function SceneReady() {
   return null
 }
 
-function Scene() {
+function TimeDilatedPhysicsStepper({
+  worldTime,
+}: {
+  worldTime: Readonly<WorldTimeState>
+}) {
+  const { step } = useRapier()
+
+  useFrame((_, deltaRealTime) => {
+    if (worldTime.effectiveGlobalTimeDilation === 1) return
+    /*
+     * @react-three/rapier has no externally supplied delta for its follow loop. While the
+     * world is paused above, feed its existing fixed-step accumulator the dilated game delta.
+     * Before/after-physics callbacks still execute at the authored 1/60 simulation step.
+     */
+    step(getWorldDeltaTime(worldTime, deltaRealTime))
+  }, ALS_FRAME_PRIORITY.Physics)
+
+  return null
+}
+
+interface SceneProps {
+  readonly effectiveGlobalTimeDilation: number
+  readonly onOverlayModeBridgeChange: (
+    bridge: AlsOverlayModeBridge | null,
+  ) => void
+  readonly overlayModeMenuElement:
+    RefObject<HTMLDivElement | null>
+  readonly worldTime: Readonly<WorldTimeState>
+}
+
+function Scene({
+  effectiveGlobalTimeDilation,
+  onOverlayModeBridgeChange,
+  overlayModeMenuElement,
+  worldTime,
+}: SceneProps) {
   const [, setCharacterSize] = useState(() => new THREE.Vector3())
   const poseSample = useRef(createCharacterPoseSample())
+  const bManuallyStepPhysics =
+    effectiveGlobalTimeDilation !== 1
 
   return (
     <>
@@ -42,25 +100,66 @@ function Scene() {
         <Physics
           colliders={false}
           gravity={[0, -ALS_RAPIER_GRAVITY, 0]}
+          paused={bManuallyStepPhysics}
           timeStep={ALS_PHYSICS_TIMESTEP}
           updatePriority={ALS_FRAME_PRIORITY.Physics}
         >
-          <Character onSizeChange={setCharacterSize} poseSample={poseSample} />
+          <TimeDilatedPhysicsStepper worldTime={worldTime} />
+          <Character
+            onSizeChange={setCharacterSize}
+            poseSample={poseSample}
+            worldTime={worldTime}
+            onOverlayModeBridgeChange={
+              onOverlayModeBridgeChange
+            }
+          />
           <L_Als_GridFloorCollision />
           <AlsMantlingObstacleCourse />
-          <AlsCamera poseSample={poseSample} />
+          <AlsCamera
+            poseSample={poseSample}
+            worldTime={worldTime}
+          />
         </Physics>
       </Suspense>
 
       <L_Als_GridFloor />
       <PostProcessing />
       <FramePerformanceMonitor />
+      <W_Als_OverlayModeMenuAnchor
+        Element={overlayModeMenuElement}
+        Pose={poseSample}
+      />
       <SceneReady />
     </>
   )
 }
 
 function App() {
+  const [canvasElement, setCanvasElement] =
+    useState<HTMLCanvasElement | null>(null)
+  const [
+    effectiveGlobalTimeDilation,
+    setEffectiveGlobalTimeDilation,
+  ] = useState(1)
+  const [overlayModeBridge, setOverlayModeBridge] =
+    useState<AlsOverlayModeBridge | null>(null)
+  const overlayModeMenuElement =
+    useRef<HTMLDivElement>(null)
+  const worldTime = useMemo(createWorldTimeState, [])
+  const SetGlobalTimeDilation = useCallback((
+    TimeDilation: number,
+  ) => {
+    setGlobalTimeDilation(worldTime, TimeDilation)
+    setEffectiveGlobalTimeDilation(TimeDilation)
+  }, [worldTime])
+  useEffect(() => {
+    window.__effectiveGlobalTimeDilation =
+      effectiveGlobalTimeDilation
+    return () => {
+      delete window.__effectiveGlobalTimeDilation
+    }
+  }, [effectiveGlobalTimeDilation])
+
   return (
     <main className="app-shell">
       <Canvas
@@ -70,10 +169,29 @@ function App() {
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1,
         }}
+        onCreated={({ gl }) => {
+          setCanvasElement(gl.domElement)
+        }}
         shadows="soft"
       >
-        <Scene />
+        <Scene
+          effectiveGlobalTimeDilation={
+            effectiveGlobalTimeDilation
+          }
+          onOverlayModeBridgeChange={setOverlayModeBridge}
+          overlayModeMenuElement={overlayModeMenuElement}
+          worldTime={worldTime}
+        />
       </Canvas>
+      <B_Als_PlayerController
+        CanvasElement={canvasElement}
+        OverlayMode={
+          overlayModeBridge?.overlayMode ?? 'Default'
+        }
+        OverlayModeMenuElement={overlayModeMenuElement}
+        SetGlobalTimeDilation={SetGlobalTimeDilation}
+        SetOverlayMode={overlayModeBridge?.SetOverlayMode}
+      />
     </main>
   )
 }

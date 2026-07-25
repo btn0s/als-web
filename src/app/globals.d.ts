@@ -20,6 +20,8 @@ declare global {
   interface Window {
     __appReady: boolean
     __characterStatus: 'glb' | 'placeholder'
+    /** Live UWorld::GetEffectiveTimeDilation() diagnostic. */
+    __effectiveGlobalTimeDilation?: number
     /** Dev/test hook: last frame's applied clip, gait, and Layer* weights. */
     __weightTable?: Record<string, number>
     /** Debug speed override; positive values also enable Moving. */
@@ -60,6 +62,7 @@ declare global {
       desiredStance: AlsStance
       gait: AlsGait
       stance: AlsStance
+      overlayMode: AlsOverlayMode
       rotationMode: AlsRotationMode
       locomotionMode: AlsLocomotionMode
       locomotionAction: AlsLocomotionAction

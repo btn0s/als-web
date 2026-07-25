@@ -172,6 +172,45 @@ test('scene mounts with either the character GLB or its DOM load state', async (
     await expect.poll(() => page.evaluate(
       () => window.__alsCameraState?.firstPersonOverride ?? 1,
     )).toBeLessThan(1e-5)
+
+    const overlayModeMenu = page.getByRole('listbox', {
+      name: 'Overlay mode',
+      includeHidden: true,
+    })
+    await expect(overlayModeMenu).toBeHidden()
+    await page.mouse.move(100, 100)
+    await page.keyboard.down('KeyQ')
+    await expect(overlayModeMenu).toBeVisible()
+    await expect.poll(() => page.evaluate(
+      () => window.__effectiveGlobalTimeDilation,
+    )).toBe(0.35)
+    await expect(
+      overlayModeMenu.getByRole('option', {
+        selected: true,
+      }),
+    ).toHaveText('Default')
+
+    await page.mouse.wheel(0, 100)
+    await expect(
+      overlayModeMenu.getByRole('option', {
+        selected: true,
+      }),
+    ).toHaveText('Rifle')
+    await expect.poll(() => page.evaluate(
+      () => window.__alsCharacterState?.overlayMode,
+    )).toBe('Default')
+
+    await page.keyboard.up('KeyQ')
+    await expect(overlayModeMenu).toBeHidden()
+    await expect.poll(() => page.evaluate(
+      () => window.__effectiveGlobalTimeDilation,
+    )).toBe(1)
+    await expect.poll(() => page.evaluate(
+      () => window.__alsCharacterState?.overlayMode,
+    )).toBe('Rifle')
+    await expect.poll(() => page.evaluate(
+      () => window.__weightTable?.overlayModeRifle,
+    )).toBe(1)
   }
   await page.waitForTimeout(250)
 

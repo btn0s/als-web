@@ -4,6 +4,8 @@ import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { AnimationFrameCapture } from '../engine/animationFrameCapture'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import { getWorldDeltaTime } from '../engine/timeDilation'
+import type { WorldTimeState } from '../engine/timeDilation'
 import {
   getAnimRootMotionTranslationScale,
   setAnimRootMotionTranslationScale,
@@ -246,6 +248,7 @@ export function useAlsAnimationInstance(
   cameraManager: AlsPlayerCameraManager,
   mantlingMontage?: MutableRefObject<AlsMantlingMontageBridge | null>,
   rollingMontage?: MutableRefObject<AlsRollingMontageBridge | null>,
+  worldTime?: Readonly<WorldTimeState>,
 ) {
   const camera = useThree((state) => state.camera)
   const renderer = useThree((state) => state.gl)
@@ -344,12 +347,15 @@ export function useAlsAnimationInstance(
     }
   }, [animationInstance, controls, frameCapture])
 
-  useFrame((_, delta) => {
+  useFrame((_, deltaRealTime) => {
+    const deltaTime = worldTime
+      ? getWorldDeltaTime(worldTime, deltaRealTime)
+      : deltaRealTime
     const frameControls = controls.current
     const current = character.current
     frameControls.hasInput = current.locomotionState.hasInput
     animationInstance.refresh(
-      delta,
+      deltaTime,
       frameControls,
       captureControlRigComponentPositions.current,
     )
@@ -377,9 +383,11 @@ export function useAlsAnimationInstance(
     )
   }, ALS_FRAME_PRIORITY.AnimNotifyDispatch)
 
-  useFrame((_, delta) => {
+  useFrame((_, deltaRealTime) => {
     frameCapture.recordFrame(
-      delta,
+      worldTime
+        ? getWorldDeltaTime(worldTime, deltaRealTime)
+        : deltaRealTime,
       captureMetadata(controls.current),
     )
   }, ALS_FRAME_PRIORITY.Diagnostics)
