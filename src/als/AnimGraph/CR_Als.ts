@@ -1229,6 +1229,8 @@ interface AlsControlRigFloatSpringState {
 
 export interface AlsControlRigFootIkState {
   readonly side: AlsControlRigFootSide
+  /** Whether RefreshFootOffset received a blocking hit during this evaluation. */
+  traceHit: boolean
   /** RefreshFootOffset output in glTF metres. */
   footOffsetLocation: number
   /** RefreshFootOffset output in the glTF basis. */
@@ -1345,6 +1347,7 @@ function createFootIkState(
 ): AlsControlRigFootIkState {
   return {
     side,
+    traceHit: false,
     footOffsetLocation: 0,
     footOffsetNormal: new THREE.Vector3(0, 1, 0),
     offsetLocation: 0,
@@ -1760,6 +1763,7 @@ function refreshFootOffset(
   for (let footIndex = 0; footIndex < runtime.feet.length; footIndex++) {
     const state = runtime.feet[footIndex]
     const solver = runtime.solvers[footIndex]
+    state.traceHit = false
     const ikAmount = curveValue(
       input.curves,
       solver.definition.curveName,
@@ -1793,6 +1797,7 @@ function refreshFootOffset(
       continue
     }
 
+    state.traceHit = true
     state.footOffsetNormal.copy(hit.impactNormal)
     const slopeAngleCos = hit.impactNormal.y
     const slopeOffset = slopeAngleCos > SMALL_NUMBER
@@ -2479,6 +2484,10 @@ export const ALS_CONTROL_RIG_FORWARD_SOLVE = {
 export interface AlsControlRigForwardSolveRuntime {
   readonly footIk: AlsControlRigFootIkRuntime
   readonly handIk: AlsControlRigHandIkRuntime
+  /** Component-space positions immediately before the six authored Forward Solve stages. */
+  readonly preForwardSolveComponentPositions: Float32Array
+  /** Component-space positions after all six authored Forward Solve stages. */
+  readonly postForwardSolveComponentPositions: Float32Array
   readonly footRootBoneWhenUsingFootIkBonesIndex: number
   readonly footRootBoneOtherwiseIndex: number
   readonly spineRotationBoneIndices: readonly number[]
@@ -2493,6 +2502,8 @@ export interface EvaluateAlsControlRigForwardSolveInput
   extends Omit<EvaluateAlsControlRigFootIkInput, 'rigInput'> {
   readonly isGameWorld: boolean
   readonly rigInput: AlsControlRigInputState
+  /** Opt-in diagnostics; avoids a second component-hierarchy refresh during normal play. */
+  readonly captureComponentPositionSnapshots?: boolean
 }
 
 function requireForwardSolveBoneIndex(
@@ -2512,9 +2523,14 @@ export function createAlsControlRigForwardSolveRuntime(
   rig: RigDefinition,
 ): AlsControlRigForwardSolveRuntime {
   const diagonalScaling = ALS_CONTROL_RIG_FORWARD_SOLVE.diagonalScaling
+  const componentPositionCount = rig.boneCount * 3
   return {
     footIk: createAlsControlRigFootIkRuntime(rig),
     handIk: createAlsControlRigHandIkRuntime(rig),
+    preForwardSolveComponentPositions:
+      new Float32Array(componentPositionCount),
+    postForwardSolveComponentPositions:
+      new Float32Array(componentPositionCount),
     footRootBoneWhenUsingFootIkBonesIndex:
       requireForwardSolveBoneIndex(
         rig,
@@ -2675,6 +2691,11 @@ export function evaluateAlsControlRigForwardSolve(
   if (!input.isGameWorld) return input.pose
 
   refreshComponentTransforms(runtime.footIk, input.pose)
+  if (input.captureComponentPositionSnapshots) {
+    runtime.preForwardSolveComponentPositions.set(
+      runtime.footIk.componentPositions,
+    )
+  }
   refreshDiagonalScaling(runtime, input)
   refreshSpineRotation(runtime, input)
   evaluateAlsControlRigFootIk(runtime.footIk, input)
@@ -2683,6 +2704,12 @@ export function evaluateAlsControlRigForwardSolve(
     curves: input.curves,
     useHandIkBones: input.rigInput.bUseHandIkBones,
   })
+  if (input.captureComponentPositionSnapshots) {
+    refreshComponentTransforms(runtime.footIk, input.pose)
+    runtime.postForwardSolveComponentPositions.set(
+      runtime.footIk.componentPositions,
+    )
+  }
   runtime.executed = true
   return input.pose
 }

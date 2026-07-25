@@ -52,6 +52,8 @@ describe('captureSkinnedMeshWorldBounds', () => {
     ).toEqual({
       min: [3, 2, 0],
       max: [3, 3, 0],
+      centroid: [3, 2.5, 0],
+      vertexCount: 2,
       minimumYByBone: { root: 2 },
     })
   })

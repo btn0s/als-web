@@ -409,7 +409,7 @@ describe('AlsAnimationInstance playback regression', () => {
       instance.refresh(1 / 60, {
         ...controls,
         direction: 45,
-      })
+      }, true)
 
       expect(rootPositionSet, branch).toHaveBeenCalledTimes(1)
       rootPositionSet.mockRestore()
@@ -418,6 +418,66 @@ describe('AlsAnimationInstance playback regression', () => {
         expect(window.__weightTable?.ControlRigExecuted).toBe(1)
         expect(window.__weightTable?.ControlRigDiagonalScalingFactor)
           .toBeCloseTo(1, 12)
+        expect(window.__weightTable).toMatchObject({
+          ControlRigPelvisOffset: 0,
+          ControlRigFootLeftTraceHit: 0,
+          ControlRigFootRightTraceHit: 0,
+          ControlRigFootLeftTraceOffset: 0,
+          ControlRigFootRightTraceOffset: 0,
+          ControlRigFootLeftAppliedOffset: 0,
+          ControlRigFootRightAppliedOffset: 0,
+        })
+        expect(window.__weightTable?.ControlRigFootLeftIkWeight)
+          .toBeTypeOf('number')
+        expect(window.__weightTable?.ControlRigFootRightIkWeight)
+          .toBeTypeOf('number')
+        gltf.scene.updateWorldMatrix(true, true)
+        const componentWorldInverse =
+          gltf.scene.matrixWorld.clone().invert()
+        for (const boneName of [
+          'root',
+          'pelvis',
+          'head',
+          'foot_l',
+          'foot_r',
+        ] as const) {
+          const postComponentPosition = bone(gltf.scene, boneName)
+            .getWorldPosition(new THREE.Vector3())
+            .applyMatrix4(componentWorldInverse)
+          for (const [axis, axisIndex] of [
+            ['X', 0],
+            ['Y', 1],
+            ['Z', 2],
+          ] as const) {
+            expect(
+              window.__weightTable?.[
+                `ControlRigPreComponentPosition.${boneName}.${axis}`
+              ],
+            ).toBeTypeOf('number')
+            expect(
+              window.__weightTable?.[
+                `ControlRigPostComponentPosition.${boneName}.${axis}`
+              ],
+            ).toBeCloseTo(
+              postComponentPosition.getComponent(axisIndex),
+              5,
+            )
+          }
+        }
+        instance.refresh(0, {
+          ...controls,
+          direction: 45,
+        })
+        expect(
+          window.__weightTable?.[
+            'ControlRigPreComponentPosition.root.X'
+          ],
+        ).toBeUndefined()
+        expect(
+          window.__weightTable?.[
+            'ControlRigPostComponentPosition.root.X'
+          ],
+        ).toBeUndefined()
       }
     }
   })

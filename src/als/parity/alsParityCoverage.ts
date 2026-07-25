@@ -70,7 +70,7 @@ const MAIN_GRAPH_EVIDENCE = partial(
   animationInstanceDefinition,
   [
     'src/als/AlsAnimationInstance.hooks.ts',
-    'animationInstance.refresh(delta, frameControls)',
+    'animationInstance.refresh(',
   ],
 )
 const GROUNDED_GRAPH_EVIDENCE = partial(

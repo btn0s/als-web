@@ -1122,10 +1122,19 @@ describe('CR_Als pure foot offset and pelvis stage', () => {
       ),
     )
     expect(sides).toEqual(['left'])
+    expect(runtime.feet[0].traceHit).toBe(true)
     expect(runtime.feet[0].footOffsetLocation).toBeCloseTo(0.2)
+    expect(runtime.feet[1].traceHit).toBe(false)
     expect(runtime.feet[1].footOffsetLocation).toBe(0)
     expect(runtime.feet[1].footOffsetNormal.toArray())
       .toEqual([0, 1, 0])
+
+    evaluateAlsControlRigFootIk(
+      runtime,
+      footTestInput(pose, new Map(), () => null),
+    )
+    expect(runtime.feet.map((foot) => foot.traceHit))
+      .toEqual([false, false])
   })
 
   it('applies slope-height correction and accepts every blocking hit normal', () => {
@@ -1569,6 +1578,86 @@ describe('CR_Als authored Forward Solve', () => {
     expect(result).toBe(pose)
     expect(pose.data).toEqual(before)
     expect(runtime.executed).toBe(false)
+  })
+
+  it('snapshots component positions before and after all six stages', () => {
+    const rig = createIkForwardSolveTestRig()
+    const runtime = createAlsControlRigForwardSolveRuntime(rig)
+    const pose = createTestPose(rig)
+    const expectedPre = componentTransforms(rig, pose)
+
+    evaluateAlsControlRigForwardSolve(
+      runtime,
+      {
+        ...footTestInput(
+          pose,
+          new Map([
+            ['PoseMoving', 1],
+            ['FootLeftIk', 1],
+            ['FootRightIk', 1],
+            ...allHandIkCurves(),
+          ]),
+          groundTrace(-0.2),
+          {
+            velocityBlendForwardAmount: 0.25,
+            velocityBlendBackwardAmount: 0.25,
+            spineYawAngle: 80,
+          },
+        ),
+        captureComponentPositionSnapshots: true,
+      },
+    )
+
+    const expectedPost = componentTransforms(rig, pose)
+    for (let boneIndex = 0; boneIndex < rig.boneCount; boneIndex++) {
+      for (let axisIndex = 0; axisIndex < 3; axisIndex++) {
+        expect(
+          runtime.preForwardSolveComponentPositions[
+            boneIndex * 3 + axisIndex
+          ],
+        ).toBeCloseTo(
+          expectedPre[boneIndex].position.getComponent(axisIndex),
+          5,
+        )
+        expect(
+          runtime.postForwardSolveComponentPositions[
+            boneIndex * 3 + axisIndex
+          ],
+        ).toBeCloseTo(
+          expectedPost[boneIndex].position.getComponent(axisIndex),
+          5,
+        )
+      }
+    }
+    const pelvisY = index(rig, 'pelvis') * 3 + 1
+    expect(runtime.postForwardSolveComponentPositions[pelvisY])
+      .not.toBeCloseTo(
+        runtime.preForwardSolveComponentPositions[pelvisY],
+        5,
+      )
+    expect(runtime.executed).toBe(true)
+  })
+
+  it('leaves component snapshot buffers dormant without diagnostic capture', () => {
+    const rig = createIkForwardSolveTestRig()
+    const runtime = createAlsControlRigForwardSolveRuntime(rig)
+    evaluateAlsControlRigForwardSolve(
+      runtime,
+      footTestInput(
+        createTestPose(rig),
+        new Map([
+          ['PoseMoving', 1],
+          ['FootLeftIk', 1],
+          ['FootRightIk', 1],
+        ]),
+        groundTrace(-0.2),
+      ),
+    )
+
+    expect([...runtime.preForwardSolveComponentPositions])
+      .toEqual(new Array(rig.boneCount * 3).fill(0))
+    expect([...runtime.postForwardSolveComponentPositions])
+      .toEqual(new Array(rig.boneCount * 3).fill(0))
   })
 
   it('ports the unclamped diagonal factor and weighted current-local scale', () => {

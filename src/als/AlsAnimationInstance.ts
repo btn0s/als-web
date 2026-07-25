@@ -502,6 +502,23 @@ const FOOT_RIGHT_IK_CURVE_NAME = 'FootRightIk'
 const GROUND_PREDICTION_BLOCK_CURVE_NAME = 'GroundPredictionBlock'
 const VIEW_BLOCK_CURVE_NAME = 'ViewBlock'
 const ALLOW_AIMING_CURVE_NAME = 'AllowAiming'
+const CONTROL_RIG_DEBUG_COMPONENT_LANDMARKS = [
+  'root',
+  'pelvis',
+  'head',
+  'foot_l',
+  'foot_r',
+] as const
+const CONTROL_RIG_DEBUG_COMPONENT_AXES = ['X', 'Y', 'Z'] as const
+type ControlRigDebugComponentStage = 'Pre' | 'Post'
+
+function controlRigDebugComponentPositionWeightName(
+  stage: ControlRigDebugComponentStage,
+  boneName: typeof CONTROL_RIG_DEBUG_COMPONENT_LANDMARKS[number],
+  axis: typeof CONTROL_RIG_DEBUG_COMPONENT_AXES[number],
+) {
+  return `ControlRig${stage}ComponentPosition.${boneName}.${axis}`
+}
 
 const NO_CONTROL_RIG_FOOT_TRACE: AlsControlRigFootOffsetTrace = () => null
 
@@ -823,7 +840,11 @@ export interface AlsAnimationInstance {
   readonly mantlingMontage: AlsMantlingMontageBridge
   readonly rollingMontage: AlsRollingMontageBridge
   readonly state: AlsAnimationInstanceState
-  refresh: (delta: number, controls: AlsAnimationInstanceControls) => void
+  refresh: (
+    delta: number,
+    controls: AlsAnimationInstanceControls,
+    captureControlRigComponentPositions?: boolean,
+  ) => void
 }
 
 function createEntry(
@@ -1141,6 +1162,12 @@ export function createAlsAnimationInstance(gltf: {
   const controlRigRuntime = hasCompleteAlsControlRig(rigBoneNames)
     ? createAlsControlRigForwardSolveRuntime(rig)
     : null
+  const controlRigDebugComponentLandmarks = controlRigRuntime
+    ? CONTROL_RIG_DEBUG_COMPONENT_LANDMARKS.flatMap((boneName) => {
+        const boneIndex = rig.boneNames.indexOf(boneName)
+        return boneIndex < 0 ? [] : [{ boneName, boneIndex }]
+      })
+    : []
   const feetPoseBridge = controlRigRuntime
     ? createAlsFeetPoseBridge(
         rig,
@@ -1969,6 +1996,7 @@ export function createAlsAnimationInstance(gltf: {
     gaitSprintingAmount: 0,
     overlayModeRifle: 0,
   }
+  let controlRigComponentDebugPublished = false
   for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) normalDebugWeights[role] = 0
   for (const clipName of groundedLocomotionClipNames) {
     normalDebugWeights[clipName] = 0
@@ -4363,6 +4391,7 @@ export function createAlsAnimationInstance(gltf: {
     result: ReturnType<typeof evaluatePose>,
     locomotionMode: AlsLocomotionMode,
     deltaTime: number,
+    captureControlRigComponentPositions = false,
   ) {
     const finalCurves = result.curves.values
     if (controlRigRuntime && feetPoseBridge) {
@@ -4379,6 +4408,8 @@ export function createAlsAnimationInstance(gltf: {
         }),
         deltaTime: Math.max(0, deltaTime),
         trace: gltf.controlRigFootTrace ?? NO_CONTROL_RIG_FOOT_TRACE,
+        captureComponentPositionSnapshots:
+          captureControlRigComponentPositions,
       })
     }
 
@@ -4390,7 +4421,11 @@ export function createAlsAnimationInstance(gltf: {
     return finalCurves
   }
 
-  function refresh(delta: number, controls: AlsAnimationInstanceControls) {
+  function refresh(
+    delta: number,
+    controls: AlsAnimationInstanceControls,
+    captureControlRigComponentPositions = false,
+  ) {
     if (rig.boneCount === 0) return
     const deltaTime = Math.max(0, delta)
     const pendingUpdateThisFrame = pendingUpdate
@@ -6074,6 +6109,7 @@ export function createAlsAnimationInstance(gltf: {
       result,
       locomotionMode,
       delta,
+      captureControlRigComponentPositions,
     )
     for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) {
       const clip = roles[role]
@@ -6673,10 +6709,84 @@ export function createAlsAnimationInstance(gltf: {
     )
     normalDebugWeights.ControlRigExecuted =
       Number(controlRigRuntime?.executed ?? false)
+    if (
+      captureControlRigComponentPositions
+      && controlRigRuntime?.executed
+    ) {
+      for (const [stage, positions] of [
+        [
+          'Pre',
+          controlRigRuntime.preForwardSolveComponentPositions,
+        ],
+        [
+          'Post',
+          controlRigRuntime.postForwardSolveComponentPositions,
+        ],
+      ] as const) {
+        for (
+          const { boneName, boneIndex }
+          of controlRigDebugComponentLandmarks
+        ) {
+          for (
+            let axisIndex = 0 as 0 | 1 | 2;
+            axisIndex < CONTROL_RIG_DEBUG_COMPONENT_AXES.length;
+            axisIndex++
+          ) {
+            const axis = CONTROL_RIG_DEBUG_COMPONENT_AXES[axisIndex]
+            normalDebugWeights[
+              controlRigDebugComponentPositionWeightName(
+                stage,
+                boneName,
+                axis,
+              )
+            ] = positions[boneIndex * 3 + axisIndex]
+          }
+        }
+      }
+      controlRigComponentDebugPublished = true
+    } else if (controlRigComponentDebugPublished) {
+      for (const stage of ['Pre', 'Post'] as const) {
+        for (
+          const { boneName }
+          of controlRigDebugComponentLandmarks
+        ) {
+          for (const axis of CONTROL_RIG_DEBUG_COMPONENT_AXES) {
+            delete normalDebugWeights[
+              controlRigDebugComponentPositionWeightName(
+                stage,
+                boneName,
+                axis,
+              )
+            ]
+          }
+        }
+      }
+      controlRigComponentDebugPublished = false
+    }
     normalDebugWeights.ControlRigDiagonalScalingFactor =
       controlRigRuntime?.diagonalScalingFactor ?? 0
     normalDebugWeights.ControlRigSpineRotationApplied =
       Number(controlRigRuntime?.spineRotationApplied ?? false)
+    const controlRigFootLeft = controlRigRuntime?.footIk.feet[0]
+    const controlRigFootRight = controlRigRuntime?.footIk.feet[1]
+    normalDebugWeights.ControlRigPelvisOffset =
+      controlRigRuntime?.footIk.pelvisOffset ?? 0
+    normalDebugWeights.ControlRigFootLeftTraceHit =
+      Number(controlRigFootLeft?.traceHit ?? false)
+    normalDebugWeights.ControlRigFootRightTraceHit =
+      Number(controlRigFootRight?.traceHit ?? false)
+    normalDebugWeights.ControlRigFootLeftTraceOffset =
+      controlRigFootLeft?.footOffsetLocation ?? 0
+    normalDebugWeights.ControlRigFootRightTraceOffset =
+      controlRigFootRight?.footOffsetLocation ?? 0
+    normalDebugWeights.ControlRigFootLeftAppliedOffset =
+      controlRigFootLeft?.offsetLocation ?? 0
+    normalDebugWeights.ControlRigFootRightAppliedOffset =
+      controlRigFootRight?.offsetLocation ?? 0
+    normalDebugWeights.ControlRigFootLeftIkWeight =
+      finalCurves.get(FOOT_LEFT_IK_CURVE_NAME) ?? 0
+    normalDebugWeights.ControlRigFootRightIkWeight =
+      finalCurves.get(FOOT_RIGHT_IK_CURVE_NAME) ?? 0
     normalDebugWeights.PublishedCurveFrameSize = publishedCurves.size
     normalDebugWeights.MovementBaseChanged =
       Number(movementBaseState.baseChanged)

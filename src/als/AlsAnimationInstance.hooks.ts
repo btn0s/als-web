@@ -1,5 +1,5 @@
-import { useFrame } from '@react-three/fiber'
-import { useEffect, useMemo } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
+import { useEffect, useMemo, useRef } from 'react'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { AnimationFrameCapture } from '../engine/animationFrameCapture'
@@ -247,6 +247,9 @@ export function useAlsAnimationInstance(
   mantlingMontage?: MutableRefObject<AlsMantlingMontageBridge | null>,
   rollingMontage?: MutableRefObject<AlsRollingMontageBridge | null>,
 ) {
+  const camera = useThree((state) => state.camera)
+  const renderer = useThree((state) => state.gl)
+  const captureControlRigComponentPositions = useRef(false)
   const animationInstance = useMemo(
     () => createAlsAnimationInstance({
       ...gltf,
@@ -256,8 +259,16 @@ export function useAlsAnimationInstance(
     [controlRigFootTrace, gltf, groundPredictionSweep],
   )
   const frameCapture = useMemo(
-    () => new AnimationFrameCapture(gltf.scene),
-    [gltf.scene],
+    () => new AnimationFrameCapture(
+      gltf.scene,
+      undefined,
+      {
+        camera,
+        getDrawingBufferSize: (out) =>
+          renderer.getDrawingBufferSize(out),
+      },
+    ),
+    [camera, gltf.scene, renderer],
   )
   const mantlingNotifyRuntime = useMemo(
     createAlsMantlingNotifyRuntime,
@@ -297,16 +308,37 @@ export function useAlsAnimationInstance(
 
   useEffect(() => {
     window.__playClip = animationInstance.playClip
-    window.__captureAlsAnimationFrames = (frameCount) => {
+    const startFrameCapture = (frameCount?: number) => {
+      if (captureControlRigComponentPositions.current) {
+        return frameCapture.start(frameCount)
+      }
       const report = frameCapture.start(frameCount)
+      captureControlRigComponentPositions.current = true
+      void report.then(
+        () => {
+          captureControlRigComponentPositions.current = false
+        },
+        () => {
+          captureControlRigComponentPositions.current = false
+        },
+      )
       // The synchronous baseline is the last fully evaluated source pose. A caller can start the
       // capture and toggle a control in the same browser task without losing the transition edge.
       frameCapture.recordFrame(0, captureMetadata(controls.current))
       return report
     }
+    window.__captureAlsAnimationFrames = startFrameCapture
+    window.__diagnoseAlsCharacterJitter = async (frameCount = 360) => {
+      const report = await startFrameCapture(frameCount)
+      window.__lastAlsJitterCapture = report
+      return report.diagnostics.transformJitterSummary.character
+    }
     return () => {
       delete window.__playClip
       delete window.__captureAlsAnimationFrames
+      delete window.__diagnoseAlsCharacterJitter
+      delete window.__lastAlsJitterCapture
+      captureControlRigComponentPositions.current = false
       frameCapture.cancel()
       animationInstance.clearSoloClip()
     }
@@ -316,7 +348,11 @@ export function useAlsAnimationInstance(
     const frameControls = controls.current
     const current = character.current
     frameControls.hasInput = current.locomotionState.hasInput
-    animationInstance.refresh(delta, frameControls)
+    animationInstance.refresh(
+      delta,
+      frameControls,
+      captureControlRigComponentPositions.current,
+    )
     const montage = animationInstance.mantlingMontage
     refreshAlsAnimationMantlingNotifies(
       mantlingNotifyRuntime,

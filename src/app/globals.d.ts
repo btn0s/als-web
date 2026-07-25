@@ -4,7 +4,10 @@ import type {
   AlsLocomotionMode,
   AlsViewMode,
 } from '../als/AlsCharacter'
-import type { AnimationFrameCaptureReport } from '../engine/animationFrameCapture'
+import type {
+  AnimationFrameCaptureReport,
+  AnimationFrameCharacterJitterSummary,
+} from '../engine/animationFrameCapture'
 import type {
   AlsGait,
   AlsRotationMode,
@@ -42,6 +45,14 @@ declare global {
     __captureAlsAnimationFrames?: (
       frameCount?: number,
     ) => Promise<AnimationFrameCaptureReport>
+    /**
+     * Capture about three seconds by default and return only the character-level jitter report.
+     * The complete capture remains available in `__lastAlsJitterCapture`.
+     */
+    __diagnoseAlsCharacterJitter?: (
+      frameCount?: number,
+    ) => Promise<AnimationFrameCharacterJitterSummary>
+    __lastAlsJitterCapture?: AnimationFrameCaptureReport
     /** Live read-only bridge diagnostics for browser verification. */
     __alsCharacterState?: {
       actorYawAngle: number

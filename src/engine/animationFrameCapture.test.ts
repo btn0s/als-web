@@ -12,6 +12,50 @@ function twoBoneScene() {
   return { root, child }
 }
 
+function skinnedLineScene(includeChildBone = true) {
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute([
+      0, 0, 0,
+      0, 1, 0,
+    ], 3),
+  )
+  geometry.setAttribute(
+    'skinIndex',
+    new THREE.Uint16BufferAttribute([
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+    ], 4),
+  )
+  geometry.setAttribute(
+    'skinWeight',
+    new THREE.Float32BufferAttribute([
+      1, 0, 0, 0,
+      1, 0, 0, 0,
+    ], 4),
+  )
+  const bone = new THREE.Bone()
+  bone.name = 'root'
+  const skeletonBones = [bone]
+  if (includeChildBone) {
+    const child = new THREE.Bone()
+    child.name = 'pelvis'
+    bone.add(child)
+    skeletonBones.push(child)
+  }
+  const mesh = new THREE.SkinnedMesh(
+    geometry,
+    new THREE.MeshBasicMaterial(),
+  )
+  const scene = new THREE.Group()
+  scene.add(bone)
+  scene.add(mesh)
+  scene.updateMatrixWorld(true)
+  mesh.bind(new THREE.Skeleton(skeletonBones), mesh.matrixWorld)
+  return { bone, mesh, scene }
+}
+
 describe('AnimationFrameCapture', () => {
   it('keeps a bounded baseline-to-frame report and identifies the popping bone', async () => {
     const { root, child } = twoBoneScene()
@@ -157,6 +201,134 @@ describe('AnimationFrameCapture', () => {
     })
   })
 
+  it('measures fixed-step coupling independently on both adjacent edges', async () => {
+    const { root } = twoBoneScene()
+    const capture = new AnimationFrameCapture(root)
+    const reportPromise = capture.start(8)
+    const positions = [0, 0, 1, 1, 2, 2, 3, 3]
+    const physicsSteps = [0, 0, 1, 1, 2, 2, 3, 3]
+
+    for (let index = 0; index < positions.length; index++) {
+      root.position.x = positions[index]
+      capture.recordFrame(index === 0 ? 0 : 1 / 120, {
+        characterPositionX: positions[index],
+        characterPositionY: 0,
+        characterPositionZ: 0,
+        physicsStepIndex: physicsSteps[index],
+      })
+    }
+
+    const coupling = (await reportPromise).diagnostics.transformJitter
+      .rawCharacterPosition?.physicsCadenceCoupling
+    expect(coupling).toMatchObject({
+      edge: 'FromPreviousFrame',
+      mode: 'TangentialResidual',
+      correlation: 1,
+      sampleCount: 6,
+      zeroStepSampleCount: 3,
+      oneStepSampleCount: 3,
+      zeroStepSignalMean: -0.5,
+      oneStepSignalMean: 0.5,
+      amplitude: 0.5,
+    })
+  })
+
+  it('detects a fixed-step-held oscillating path without signed cancellation', async () => {
+    const { root } = twoBoneScene()
+    const capture = new AnimationFrameCapture(root)
+    const frameCount = 48
+    const reportPromise = capture.start(frameCount)
+
+    for (let index = 0; index < frameCount; index++) {
+      const physicsStepIndex = Math.floor(index / 2)
+      const position = Math.sin(physicsStepIndex * 0.37)
+      root.position.x = position
+      capture.recordFrame(index === 0 ? 0 : 1 / 120, {
+        characterPositionX: position,
+        characterPositionY: 0,
+        characterPositionZ: 0,
+        physicsStepIndex,
+      })
+    }
+
+    const coupling = (await reportPromise).diagnostics.transformJitter
+      .rawCharacterPosition?.physicsCadenceCoupling
+    expect(Math.abs(coupling?.correlation ?? 0)).toBeGreaterThan(0.85)
+    expect(coupling?.amplitude).toBeGreaterThan(0.05)
+  })
+
+  it('ranks fixed-step-held local bone rotation jitter while every bone origin stays fixed', async () => {
+    const { root, child } = twoBoneScene()
+    const capture = new AnimationFrameCapture(root, ['root', 'child'])
+    const frameCount = 48
+    const reportPromise = capture.start(frameCount)
+
+    for (let index = 0; index < frameCount; index++) {
+      const physicsStepIndex = Math.floor(index / 2)
+      child.rotation.z = Math.sin(physicsStepIndex * 0.37) * 0.6
+      capture.recordFrame(index === 0 ? 0 : 1 / 120, {
+        physicsStepIndex,
+      })
+    }
+
+    const report = await reportPromise
+    expect(report.diagnostics.transformJitter.bonePositions.root.component)
+      .toMatchObject({ magnitude: 0 })
+    expect(report.frames.every((frame) => (
+      frame.bones.child.componentPosition[0] === 0
+      && frame.bones.child.componentPosition[1] === 1
+      && frame.bones.child.componentPosition[2] === 0
+    ))).toBe(true)
+    const childRotation = report.diagnostics.transformJitterSummary.character
+      .localRotations.find(({ bone }) => bone === 'child')
+    expect(childRotation).toMatchObject({ bone: 'child' })
+    expect(childRotation?.physicsCadenceMode).not.toBeNull()
+    expect(childRotation?.peakDegrees).toBeGreaterThan(1)
+    expect(childRotation?.rmsDegrees).toBeGreaterThan(0.5)
+    expect(Math.abs(childRotation?.physicsCadenceCorrelation ?? 0))
+      .toBeGreaterThan(0.85)
+    expect(childRotation?.physicsCadenceAmplitudeDegrees).toBeGreaterThan(0.5)
+  })
+
+  it('localizes fixed-step jitter before and after Control Rig Forward Solve', async () => {
+    const { root } = twoBoneScene()
+    const capture = new AnimationFrameCapture(root)
+    const frameCount = 24
+    const reportPromise = capture.start(frameCount)
+
+    for (let index = 0; index < frameCount; index++) {
+      const physicsStepIndex = Math.floor(index / 2)
+      const preX = index * 0.01
+      const solveX = Math.sin(physicsStepIndex * 0.37) * 0.1
+      capture.recordFrame(index === 0 ? 0 : 1 / 120, {
+        ControlRigExecuted: 1,
+        physicsStepIndex,
+        'ControlRigPreComponentPosition.root.X': preX,
+        'ControlRigPreComponentPosition.root.Y': 0,
+        'ControlRigPreComponentPosition.root.Z': 0,
+        'ControlRigPostComponentPosition.root.X': preX + solveX,
+        'ControlRigPostComponentPosition.root.Y': 0,
+        'ControlRigPostComponentPosition.root.Z': 0,
+      })
+    }
+
+    const controlRig = (await reportPromise).diagnostics
+      .transformJitterSummary.character.controlRig
+    const rootStage = controlRig.stageLandmarks.find(
+      ({ bone }) => bone === 'root',
+    )
+    expect(controlRig.executedFrameCount).toBe(frameCount)
+    expect(rootStage?.preRmsMillimeters).toBeCloseTo(0)
+    expect(rootStage?.prePhysicsCadenceAmplitudeMillimeters)
+      .toBeCloseTo(0)
+    expect(rootStage?.solveDeltaRmsMillimeters).toBeGreaterThan(10)
+    expect(rootStage?.solveDeltaPhysicsCadenceAmplitudeMillimeters)
+      .toBeGreaterThan(5)
+    expect(Math.abs(
+      rootStage?.solveDeltaPhysicsCadenceCorrelation ?? 0,
+    )).toBeGreaterThan(0.85)
+  })
+
   it('reports the largest signed raw and rendered transform excursions', async () => {
     const { root } = twoBoneScene()
     const capture = new AnimationFrameCapture(root)
@@ -222,6 +394,118 @@ describe('AnimationFrameCapture', () => {
       .toMatchObject({ residual: [0, 0, 0], magnitude: 0 })
     expect(report.diagnostics.transformJitter.cameraPivotWorldPosition)
       .toMatchObject({ residual: [1, 0, 0], magnitude: 1, frame: 1 })
+  })
+
+  it('detects rotated skin while component and bone origins stay still', async () => {
+    const { bone, scene } = skinnedLineScene()
+    const camera = new THREE.PerspectiveCamera(90, 1, 0.1, 100)
+    camera.position.z = 5
+    const capture = new AnimationFrameCapture(
+      scene,
+      ['root'],
+      {
+        camera,
+        getDrawingBufferSize: (out) => out.set(100, 100),
+      },
+    )
+    const reportPromise = capture.start(3)
+
+    capture.recordFrame(0)
+    bone.rotation.z = Math.PI / 2
+    capture.recordFrame(1 / 60)
+    bone.rotation.z = 0
+    capture.recordFrame(1 / 60)
+
+    const report = await reportPromise
+    const jitter = report.diagnostics.transformJitter
+    expect(jitter.renderedRootWorldPosition).toMatchObject({
+      magnitude: 0,
+    })
+    expect(jitter.skinWorldCentroid?.residual[0]).toBeCloseTo(-0.5)
+    expect(jitter.skinWorldCentroid?.residual[1]).toBeCloseTo(-0.5)
+    expect(jitter.skinWorldCentroid?.residual[2]).toBe(0)
+    expect(jitter.skinWorldCentroid?.magnitude)
+      .toBeCloseTo(Math.SQRT1_2)
+    expect(jitter.skinViewCentroid?.residual[0]).toBeCloseTo(-0.5)
+    expect(jitter.skinViewCentroid?.residual[1]).toBeCloseTo(-0.5)
+    expect(jitter.skinViewCentroid?.residual[2]).toBe(0)
+    expect(jitter.skinScreenCentroidPixels?.residual[0])
+      .toBeCloseTo(-5)
+    expect(jitter.skinScreenCentroidPixels?.residual[1])
+      .toBeCloseTo(5)
+    expect(jitter.skinScreenCentroidPixels?.residual[2]).toBe(0)
+    expect(jitter.skinScreenCentroidPixels?.magnitude)
+      .toBeCloseTo(Math.SQRT1_2 * 10)
+    expect(jitter.bonePositions.root.component).toMatchObject({
+      residual: [0, 0, 0],
+      magnitude: 0,
+    })
+    expect(report.diagnostics.transformJitterSummary.character).toMatchObject({
+      drawingBufferSizePixels: [100, 100],
+      skin: {
+        world: { unit: 'Millimeters' },
+        screen: { unit: 'Pixels', peakMagnitude: expect.any(Number) },
+      },
+      landmarks: [
+        expect.objectContaining({
+          bone: 'root',
+          componentRmsMillimeters: 0,
+          screenRmsPixels: 0,
+        }),
+      ],
+    })
+    expect(report.diagnostics.transformJitterSummary.character.skin.world
+      ?.peakMagnitude).toBeCloseTo(Math.SQRT1_2 * 1_000)
+  })
+
+  it('averages projected skin vertices instead of projecting their world centroid', async () => {
+    const { mesh, scene } = skinnedLineScene()
+    mesh.geometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute([
+        1, 0, 0,
+        -1, 0, -5,
+      ], 3),
+    )
+    const camera = new THREE.PerspectiveCamera(90, 1, 0.1, 100)
+    camera.position.z = 5
+    const capture = new AnimationFrameCapture(
+      scene,
+      ['root'],
+      {
+        camera,
+        getDrawingBufferSize: (out) => out.set(100, 100),
+      },
+    )
+    const reportPromise = capture.start(3)
+    capture.recordFrame(0)
+    capture.recordFrame(1 / 60)
+    capture.recordFrame(1 / 60)
+
+    const first = (await reportPromise).frames[0]
+    expect(first.skinnedMeshBounds?.centroid).toEqual([0, 0, -2.5])
+    expect(first.skinScreenCentroidPixels?.[0]).toBeCloseTo(52.5)
+    expect(first.skinScreenCentroidPixels?.[1]).toBeCloseTo(50)
+  })
+
+  it('excludes a later attached overlay skeleton from body diagnostics', async () => {
+    const { bone, scene } = skinnedLineScene()
+    const overlay = skinnedLineScene(false)
+    overlay.scene.position.x = 100
+    bone.add(overlay.scene)
+
+    const capture = new AnimationFrameCapture(scene, ['root'])
+    const reportPromise = capture.start(3)
+    capture.recordFrame(0)
+    capture.recordFrame(1 / 60)
+    capture.recordFrame(1 / 60)
+
+    const report = await reportPromise
+    expect(report.boneCount).toBe(2)
+    expect(report.frames[0].skinnedMeshBounds).toMatchObject({
+      centroid: [0, 0.5, 0],
+      vertexCount: 2,
+    })
   })
 
   it('finds a repeating signed residual period and loop-phase context', async () => {

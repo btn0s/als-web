@@ -3,6 +3,8 @@ import * as THREE from 'three'
 export interface SkinnedMeshWorldBounds {
   readonly min: readonly [number, number, number]
   readonly max: readonly [number, number, number]
+  readonly centroid: readonly [number, number, number]
+  readonly vertexCount: number
   readonly minimumYByBone: Readonly<Record<string, number>>
 }
 
@@ -18,6 +20,8 @@ function tuple3(vector: THREE.Vector3): [number, number, number] {
 export function captureSkinnedMeshWorldBounds(
   root: THREE.Object3D,
   tracedBones: ReadonlySet<string> = new Set(),
+  includedMeshes: ReadonlySet<THREE.SkinnedMesh> | null = null,
+  visitWorldVertex?: (vertex: THREE.Vector3) => void,
 ): SkinnedMeshWorldBounds | null {
   const min = new THREE.Vector3(
     Number.POSITIVE_INFINITY,
@@ -29,12 +33,17 @@ export function captureSkinnedMeshWorldBounds(
     Number.NEGATIVE_INFINITY,
     Number.NEGATIVE_INFINITY,
   )
+  const centroid = new THREE.Vector3()
+  let vertexCount = 0
   const minimumYByBone: Record<string, number> = {}
   const vertex = new THREE.Vector3()
 
   root.updateWorldMatrix(true, true)
   root.traverse((object) => {
-    if (!(object instanceof THREE.SkinnedMesh)) return
+    if (
+      !(object instanceof THREE.SkinnedMesh)
+      || (includedMeshes && !includedMeshes.has(object))
+    ) return
     const positions = object.geometry.getAttribute('position')
     const skinIndices = object.geometry.getAttribute('skinIndex')
     if (!positions || !skinIndices) {
@@ -50,6 +59,9 @@ export function captureSkinnedMeshWorldBounds(
       vertex.applyMatrix4(object.matrixWorld)
       min.min(vertex)
       max.max(vertex)
+      centroid.add(vertex)
+      vertexCount++
+      visitWorldVertex?.(vertex)
 
       const bone = object.skeleton.bones[skinIndices.getX(vertexIndex)]
       if (!bone || !tracedBones.has(bone.name)) continue
@@ -64,6 +76,8 @@ export function captureSkinnedMeshWorldBounds(
   return {
     min: tuple3(min),
     max: tuple3(max),
+    centroid: tuple3(centroid.multiplyScalar(1 / vertexCount)),
+    vertexCount,
     minimumYByBone,
   }
 }
