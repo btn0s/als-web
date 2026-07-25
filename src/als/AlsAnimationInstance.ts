@@ -154,6 +154,10 @@ import {
   ALS_ROLLING_MONTAGE,
   ALS_ROLL_SEQUENCE,
 } from './AnimGraph/rolling'
+import {
+  ALS_QUICK_STOP_SETTINGS,
+  playQuickStopAnimation as resolveQuickStopAnimation,
+} from './AnimGraph/quickStop'
 import type {
   AlsGroundedEntryMode as AlsGroundedEntryModeGameplayTag,
 } from './Notifies/AlsAnimNotify_SetGroundedEntryMode'
@@ -516,6 +520,15 @@ const ROTATE_IN_PLACE_CLIPS = {
     Right: 'A_Als_Crouch_Rotate_90_Right',
   },
 } as const satisfies Record<AlsStance, Record<'Left' | 'Right', string>>
+
+const TRANSITION_DIAGNOSTIC_CLIPS = {
+  StandingLeft: ALS_QUICK_STOP_SETTINGS.sequences.Standing.Left,
+  StandingRight: ALS_QUICK_STOP_SETTINGS.sequences.Standing.Right,
+  CrouchingLeft: ALS_QUICK_STOP_SETTINGS.sequences.Crouching.Left,
+  CrouchingRight: ALS_QUICK_STOP_SETTINGS.sequences.Crouching.Right,
+  StopLeft: ALS_STOP_TRANSITION_ANIMATIONS.Left.clip,
+  StopRight: ALS_STOP_TRANSITION_ANIMATIONS.Right.clip,
+} as const
 
 interface RuntimeClip {
   readonly sampler: CompiledClipSampler
@@ -2392,7 +2405,8 @@ export function createAlsAnimationInstance(gltf: {
   const crouchingNode34Output = createOutputInertialization()
   let crouchingRotateLeftTime = 0
   let crouchingRotateRightTime = 0
-  let stopQuickNotifyCount = 0
+  let crouchingStopQuickNotifyCount = 0
+  let standingStopQuickNotifyCount = 0
   const stanceTransitionState = createAlsStanceTransitionCurveState()
   const groundedStanceTransitionState =
     createAlsGroundedStanceTransitionState()
@@ -2610,7 +2624,31 @@ export function createAlsAnimationInstance(gltf: {
     )
   }
 
-  function processCrouchingLifecycleEvents() {
+  function PlayQuickStopAnimation(
+    controls: AlsAnimationInstanceControls,
+  ) {
+    const request = resolveQuickStopAnimation({
+      rotationMode: controls.rotationMode,
+      stance: controls.stance,
+      hasInput: controls.hasInput ?? false,
+      inputYawAngle: controls.inputYawAngle ?? 0,
+      targetYawAngle: controls.targetYawAngle ?? 0,
+      actorYawAngle: controls.actorYawAngle ?? 0,
+    })
+    const clip = clipsByName.get(request.clip)
+    if (!clip) return
+    queueTransitionAnimation(transitionsState, {
+      clip: clip.sampler.clip.name,
+      blendInDuration: request.blendInDuration,
+      blendOutDuration: request.blendOutDuration,
+      playRate: request.playRate,
+      startTime: request.startTime,
+    })
+  }
+
+  function processCrouchingLifecycleEvents(
+    controls: AlsAnimationInstanceControls,
+  ) {
     for (const event of crouchingStateRuntime.lifecycleEvents) {
       if (
         event.kind === 'CallFunction'
@@ -2642,10 +2680,9 @@ export function createAlsAnimationInstance(gltf: {
         }
         continue
       }
-      // StopQuick is an authored state-machine start notify. ALS has no native receiver for it;
-      // retain the event at the live seam without assigning unverified Transition-slot behavior.
       if (event.kind === 'AnimNotify' && event.name === 'StopQuick') {
-        stopQuickNotifyCount++
+        crouchingStopQuickNotifyCount++
+        PlayQuickStopAnimation(controls)
       }
     }
   }
@@ -2719,7 +2756,10 @@ export function createAlsAnimationInstance(gltf: {
       return
     }
 
-    if (event.name === 'StopQuick') stopQuickNotifyCount++
+    if (event.name === 'StopQuick') {
+      standingStopQuickNotifyCount++
+      PlayQuickStopAnimation(controls)
+    }
   }
 
   function processStandingLifecycleEvents(
@@ -4902,7 +4942,7 @@ export function createAlsAnimationInstance(gltf: {
         crouchingRotateRightTime = 0
       }
     }
-    processCrouchingLifecycleEvents()
+    processCrouchingLifecycleEvents(controls)
     if (
       crouchingGraphRelevant
       && crouchingStateRuntime.stateWeights.Idle > Number.EPSILON
@@ -6295,7 +6335,31 @@ export function createAlsAnimationInstance(gltf: {
     normalDebugWeights.CrouchingAutomaticRuleBlocked =
       Number(automaticRotateRuleBlocked)
     normalDebugWeights.CrouchingStopQuickNotifyCount =
-      stopQuickNotifyCount
+      crouchingStopQuickNotifyCount
+    normalDebugWeights.StandingStopQuickNotifyCount =
+      standingStopQuickNotifyCount
+    for (const [prefix, stateWeights] of [
+      ['StandingState', standingGraphRuntime.standing.stateWeights],
+      [
+        'StandingMovementDetailsState',
+        standingGraphRuntime.movementDetails.stateWeights,
+      ],
+      ['StandingStopState', standingGraphRuntime.stop.stateWeights],
+    ] as const) {
+      for (const [graphState, weight] of Object.entries(stateWeights)) {
+        normalDebugWeights[
+          `${prefix}${graphState.replaceAll(' ', '')}`
+        ] = weight
+      }
+    }
+    normalDebugWeights.StandingTransitionCount =
+      standingGraphRuntime.standingTransitionsTakenThisFrame
+    normalDebugWeights.StandingMovementDetailsTransitionCount =
+      standingGraphRuntime.movementDetailsTransitionsTakenThisFrame
+    normalDebugWeights.StandingStopTransitionCount =
+      standingGraphRuntime.stopTransitionsTakenThisFrame
+    normalDebugWeights.StandingPivotActive =
+      Number(standingGraphRuntime.pivotActive)
     normalDebugWeights.CrouchingInertializationRequestCount =
       crouchingNode34.requestCount
     normalDebugWeights.CrouchingInertializationCorrectionMagnitude =
@@ -6381,6 +6445,22 @@ export function createAlsAnimationInstance(gltf: {
       activeTransitionSample?.montageTime ?? 0
     normalDebugWeights.TransitionSequenceTime =
       activeTransitionSample?.sampleTime ?? 0
+    normalDebugWeights.TransitionQueued =
+      Number(transitionsState.queuedTransition !== null)
+    normalDebugWeights.TransitionStopQueued =
+      Number(transitionsState.stopTransitionsQueued)
+    normalDebugWeights.TransitionQueuedPlayRate =
+      transitionsState.queuedTransition?.playRate ?? 0
+    normalDebugWeights.TransitionQueuedStartTime =
+      transitionsState.queuedTransition?.startTime ?? 0
+    for (const [name, clip] of Object.entries(
+      TRANSITION_DIAGNOSTIC_CLIPS,
+    )) {
+      normalDebugWeights[`TransitionQueued${name}`] =
+        Number(transitionsState.queuedTransition?.clip === clip)
+      normalDebugWeights[`TransitionPlaying${name}`] =
+        Number(activeTransitionSample?.clipKey === clip)
+    }
     const postLocomotionWeightData = calculateSlotMontageWeight(
       postLocomotionSlotBindings.map((binding) => binding.sample),
     )

@@ -2364,6 +2364,53 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.['HipsDirection.Backward']).toBeCloseTo(0.5, 7)
   })
 
+  it('runs the authored Standing start, pivot, and Stop journey in production', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const idle = {
+      ...controls,
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+    }
+    const moving = {
+      ...controls,
+      speed: 1.5,
+    }
+
+    instance.refresh(0, idle)
+    refreshFrames(instance, 60, moving)
+    expect(window.__weightTable?.StandingStateMove).toBe(1)
+    expect(window.__weightTable?.StandingMovementDetailsStateRun).toBe(1)
+
+    const reversing = {
+      ...moving,
+      direction: 180,
+    }
+    instance.refresh(1 / 60, reversing)
+    expect(window.__weightTable?.GroundedDirectionTransitionActivatePivot)
+      .toBe(1)
+    expect(window.__weightTable?.StandingMovementDetailsStateFirstPivot).toBe(1)
+    // First Pivot's authored OnBecomeRelevant callback immediately resets the activation latch.
+    expect(window.__weightTable?.StandingPivotActive).toBe(0)
+
+    instance.refresh(0, idle)
+    expect(window.__weightTable?.StandingStateStop).toBe(1)
+    expect(window.__weightTable?.StandingStopTransitionCount).toBe(1)
+    expect(window.__weightTable?.StandingStopQuickNotifyCount).toBe(0)
+    expect(
+      (window.__weightTable?.TransitionQueuedStopLeft ?? 0)
+      + (window.__weightTable?.TransitionQueuedStopRight ?? 0),
+    ).toBe(1)
+
+    instance.refresh(0.05, idle)
+    expect(window.__weightTable?.TransitionMontageWeight).toBeGreaterThan(0)
+    expect(window.__weightTable?.TransitionSequenceTime).toBeCloseTo(
+      0.4 + 0.05 * 1.5,
+      12,
+    )
+  })
+
   it('consumes previous resolved HipsDirectionLock and FeetCrossing values', async () => {
     const gltf = await loadAlsGltf()
     const instance = createAlsAnimationInstance(gltf)
@@ -2410,6 +2457,39 @@ describe('AlsAnimationInstance playback regression', () => {
     instance.refresh(0.1, controls)
     expect(window.__weightTable?.idle).toBe(0)
     expect(window.__weightTable?.runFwd).toBe(1)
+  })
+
+  it('plays Standing StopQuick through the production Transition slot', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const idle = {
+      ...controls,
+      gait: 'Walking' as const,
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+    }
+    const moving = {
+      ...controls,
+      gait: 'Walking' as const,
+      speed: 1.5,
+    }
+    instance.refresh(0, idle)
+    instance.refresh(0.1, moving)
+    expect(window.__weightTable?.StandingStateIdle).toBeCloseTo(0.5, 12)
+    expect(window.__weightTable?.StandingStateMove).toBeCloseTo(0.5, 12)
+
+    instance.refresh(0, idle)
+    expect(window.__weightTable?.StandingStopQuickNotifyCount).toBe(1)
+    expect(window.__weightTable?.TransitionQueuedStandingLeft).toBe(1)
+
+    instance.refresh(0.05, idle)
+    expect(window.__weightTable?.TransitionPlayingStandingLeft).toBe(1)
+    expect(window.__weightTable?.TransitionMontageWeight).toBeCloseTo(0.5, 12)
+    expect(window.__weightTable?.TransitionSequenceTime).toBeCloseTo(
+      0.3 + 0.05 * 1.75,
+      12,
+    )
   })
 
   it('keeps locomotion live through ALS moving stance changes and reserves the full-body clip for idle', async () => {
@@ -2509,12 +2589,18 @@ describe('AlsAnimationInstance playback regression', () => {
     instance.refresh(0, idleCrouching)
     expect(window.__weightTable?.CrouchingTransitionBlocked).toBe(0)
     expect(window.__weightTable?.CrouchingStopQuickNotifyCount).toBe(1)
+    expect(window.__weightTable?.TransitionQueuedCrouchingLeft).toBe(1)
     expect(window.__weightTable?.CrouchingStateIdle).toBeCloseTo(0.5, 12)
     expect(window.__weightTable?.CrouchingStateMove).toBeCloseTo(0.5, 12)
 
     // UE shortens the new transition because Idle already owns half of the state weight, while
     // the retained Idle-to-Move source continues advancing beneath it.
     instance.refresh(0.05, idleCrouching)
+    expect(window.__weightTable?.TransitionPlayingCrouchingLeft).toBe(1)
+    expect(window.__weightTable?.TransitionSequenceTime).toBeCloseTo(
+      0.3 + 0.05 * 1.75,
+      12,
+    )
     expect(window.__weightTable?.CrouchingStateIdle).toBeCloseTo(0.578125, 12)
     expect(window.__weightTable?.CrouchingStateMove).toBeCloseTo(0.421875, 12)
     instance.refresh(0.05, idleCrouching)

@@ -178,7 +178,11 @@ export const ALS_PARITY_ASSET_COVERAGE = [
   },
   unportedAsset('AB_Als_Torch'),
   partialAsset('AB_Als_Crouching', CROUCHING_GRAPH_EVIDENCE),
-  partialAsset('AB_Als_Standing', STANDING_GRAPH_EVIDENCE),
+  {
+    asset: 'AB_Als_Standing',
+    status: 'live',
+    evidence: STANDING_GRAPH_EVIDENCE,
+  },
 ] as const satisfies readonly AlsParityAssetCoverage[]
 
 const machine = (
@@ -273,28 +277,32 @@ export const ALS_PARITY_MACHINE_COVERAGE = [
     0,
     CROUCHING_GRAPH_EVIDENCE,
   ),
-  partialMachine(
+  machine(
     'AB_Als_Standing',
     'Movement States',
     0,
+    'live',
     STANDING_GRAPH_EVIDENCE,
   ),
-  partialMachine(
+  machine(
     'AB_Als_Standing',
     'Movement Details States',
     0,
+    'live',
     STANDING_GRAPH_EVIDENCE,
   ),
-  partialMachine(
+  machine(
     'AB_Als_Standing',
     'Standing States',
     0,
+    'live',
     STANDING_GRAPH_EVIDENCE,
   ),
-  partialMachine(
+  machine(
     'AB_Als_Standing',
     'Stop States',
     0,
+    'live',
     STANDING_GRAPH_EVIDENCE,
   ),
 ] as const satisfies readonly AlsParityMachineCoverage[]

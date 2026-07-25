@@ -136,8 +136,9 @@ second (flagged) — never from another project's implementation:
       with action montage semantics, not as a mixer-era limitation.
 - [ ] Gaits: Walking / Running / Sprinting through the exact six-state grounded graph. Authored
       movement speeds, all nine BlendSpace topologies, graph state selection, per-bone
-      MoveDirectionChange transition profiles, and sprint state wiring evaluate today;
-      start/stop/pivot states remain open
+      MoveDirectionChange transition profiles, sprint state wiring, and the complete authored
+      `AB_Als_Standing` start / stop / pivot state graph evaluate today; exact authored
+      directional sample evaluation remains tracked under Rotation modes
 - [x] Stances: Standing / Crouching with authored StandToCrouch/CrouchToStand transitions
       following their own PoseCrouching curves *(2026-07-23; non-ALS stance additions stay in
       downstream forks)*
@@ -163,7 +164,9 @@ second (flagged) — never from another project's implementation:
       `AB_Als_View` Look state machine is live in the exact Layering → View → CR_Als stage order,
       including its mesh-space additive, side-switch curves, and `LookDirectionChange` profile
       *(2026-07-24)*; directional locomotion remains open
-- [x] Turn-in-place + rotate-in-place per spec constants, RotationYawSpeed drives yaw *(2026-07-23)*; start/stop/pivot transitions still open (quick-stop math transliterated, unwired)
+- [x] Turn-in-place + rotate-in-place per spec constants, RotationYawSpeed drives yaw
+      *(2026-07-23)*; `StopQuick` now invokes the exact authored transition sequence, timing,
+      side selection, and velocity-direction play-rate scaling *(2026-07-24)*
 - [x] Overlay states: curve-driven per-region layering + spawning overlay objects (Rifle end-to-end; full `AB_Als_Rifle` state/action graph live 2026-07-24) — original plan: SEED
       rule alphas from the overlay assets' authored `Layer*` curves (dumped in M2), don't hand-tune
       from scratch. (Mesh-space arm layering: previously an accepted mixer limitation — the
