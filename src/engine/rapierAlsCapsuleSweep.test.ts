@@ -363,13 +363,21 @@ describe('Rapier ALS capsule sweep', () => {
     })
     const queries: Parameters<typeof sweep>[0][] = []
     const hits: ReturnType<typeof sweep>[] = []
-    const ground = probeRapierAlsGround(
-      (query) => {
+    const observedSweep = Object.assign(
+      (query: Parameters<typeof sweep>[0]) => {
         queries.push(query)
         const hit = sweep(query)
         hits.push(hit)
         return hit
       },
+      {
+        lineTrace(query: Parameters<typeof sweep.lineTrace>[0]) {
+          return sweep.lineTrace(query)
+        },
+      },
+    )
+    const ground = probeRapierAlsGround(
+      observedSweep,
       {
         // The obstacle face is x=2.25. At x=1.951 the 0.3 m capsule starts the
         // floor sweep 1 mm into that face, reproducing the live false-InAir edge.

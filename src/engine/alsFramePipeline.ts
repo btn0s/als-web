@@ -8,6 +8,9 @@
  */
 export const ALS_FRAME_PRIORITY = {
   ControlRotation: -4,
+  // AAlsCharacter::Tick() consumes the preceding animation curves once per game frame before
+  // Super::Tick() enters CharacterMovement / physics.
+  Character: -3.5,
   Physics: -3,
   // CharacterMovement updates the capsule before the skeletal mesh. This presentation seam also
   // cancels fixed-step interpolation across base-maintaining crouch teleports.

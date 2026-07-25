@@ -4,6 +4,7 @@ import {
   type RapierCollider,
   type RapierRigidBody,
 } from '@react-three/rapier'
+import { useFrame } from '@react-three/fiber'
 import { folder, useControls } from 'leva'
 import { useEffect, useRef } from 'react'
 import type { MutableRefObject } from 'react'
@@ -24,6 +25,7 @@ import type {
 import {
   getCharacterMovementFloorOffset,
 } from '../engine/characterMovementFloor'
+import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 import {
   FInputActionInstance,
   UInputTriggerHold,
@@ -1708,6 +1710,24 @@ export function useAlsCharacter(
     }
   }, [setControls])
 
+  useFrame((_, deltaTime) => {
+    const current = character.current
+    // AAlsCharacter::Tick() refreshes actor rotation once with the game-frame DeltaTime before
+    // Super::Tick() enters CharacterMovement. Animation curves are intentionally from the
+    // preceding skeletal-mesh update; applying them in fixed Rapier substeps visibly quantized
+    // turn-in-place and could consume one curve sample multiple times on a slow render frame.
+    if (current.locomotionMode === 'InAir') {
+      stepInAirCharacterYaw(current, deltaTime)
+    } else if (current.locomotionMode === 'Grounded') {
+      stepGroundedCharacterYaw(
+        current,
+        deltaTime,
+        animationCurves.current.rotationYawOffset,
+        animationCurves.current.rotationYawSpeed,
+      )
+    }
+  }, ALS_FRAME_PRIORITY.Character)
+
   useBeforePhysicsStep(() => {
     const body = rigidBody.current
     if (!body) return
@@ -1908,17 +1928,6 @@ export function useAlsCharacter(
     acceleration.current.z =
       (current.locomotionState.velocity.z - previousVelocityZ)
       / ALS_PHYSICS_TIMESTEP
-    if (current.locomotionMode === 'InAir') {
-      stepInAirCharacterYaw(current, ALS_PHYSICS_TIMESTEP)
-    } else if (current.locomotionMode === 'Grounded') {
-      stepGroundedCharacterYaw(
-        current,
-        ALS_PHYSICS_TIMESTEP,
-        animationCurves.current.rotationYawOffset,
-        animationCurves.current.rotationYawSpeed,
-      )
-    }
-
     // AAlsCharacter::Tick(): action attempts/refresh happen after both rotation branches and
     // immediately before Super::Tick() enters CharacterMovement's root-source boundary.
     if (current.locomotionMode === 'InAir') {
@@ -2059,21 +2068,6 @@ export function useAlsCharacter(
     }
     threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
 
-    const root = characterRoot.current
-    if (root) {
-      root.position.y = current.locomotionMode === null
-        ? resolveAlsMeshRootRelativeYWithFloorCompensation(
-            mantlingFloorCompensation.current,
-          )
-        : resolveAlsMeshRootRelativeY(
-            current.stance,
-            current.locomotionMode,
-          )
-      root.rotation.y = unrealYawDegreesToThreeRadians(
-        current.actorYawAngle,
-      )
-    }
-
     if (current.stance !== previousStance.current) {
       previousStance.current = current.stance
       setRapierAlsStanceCapsules(
@@ -2108,10 +2102,6 @@ export function useAlsCharacter(
       : current.locomotionMode === 'Grounded'
         ? rapierAlsMovementBase(groundSupport.current)
         : ALS_NO_BASED_MOVEMENT
-    animationLocomotionYawSpeed.current = unwindDegrees(
-      current.actorYawAngle - previousAnimationActorYawAngle.current,
-    ) / ALS_PHYSICS_TIMESTEP
-    previousAnimationActorYawAngle.current = current.actorYawAngle
     publishAlsCharacterAnimationSnapshot(frame, {
       character: current,
       location: actorLocation.current,
@@ -2300,21 +2290,6 @@ export function useAlsCharacter(
         current.stance,
       )
     }
-    const root = characterRoot.current
-    if (root) {
-      root.position.y = current.locomotionMode === null
-        ? resolveAlsMeshRootRelativeYWithFloorCompensation(
-            mantlingFloorCompensation.current,
-          )
-        : resolveAlsMeshRootRelativeY(
-            current.stance,
-            current.locomotionMode,
-          )
-      root.rotation.y = unrealYawDegreesToThreeRadians(
-        current.actorYawAngle,
-      )
-    }
-
     // UAlsAnimationInstance::NativeUpdateAnimation runs after CharacterMovement. Publish the
     // post-step tags/location/base, but take Speed/Velocity/VelocityYaw/bMoving together from the
     // Character's retained LocomotionState just as RefreshLocomotionOnGameThread() does.
@@ -2344,6 +2319,68 @@ export function useAlsCharacter(
       locomotionYawSpeed: animationLocomotionYawSpeed.current,
     })
   })
+
+  useFrame((_, deltaTime) => {
+    const current = character.current
+    const root = characterRoot.current
+    if (root) {
+      root.position.y = current.locomotionMode === null
+        ? resolveAlsMeshRootRelativeYWithFloorCompensation(
+            mantlingFloorCompensation.current,
+          )
+        : resolveAlsMeshRootRelativeY(
+            current.stance,
+            current.locomotionMode,
+          )
+      root.rotation.y = unrealYawDegreesToThreeRadians(
+        current.actorYawAngle,
+      )
+    }
+
+    animationLocomotionYawSpeed.current = deltaTime > 0
+      ? unwindDegrees(
+          current.actorYawAngle - previousAnimationActorYawAngle.current,
+        ) / deltaTime
+      : 0
+    previousAnimationActorYawAngle.current = current.actorYawAngle
+
+    const snapshotFloorCompensation =
+      current.locomotionMode === null
+        ? mantlingFloorCompensation.current
+        : getCharacterMovementFloorOffset(
+            current.locomotionMode === 'Grounded',
+          )
+    resolveAlsActorLocationWithFloorCompensation(
+      rapierBodyAnchor.current,
+      current.stance,
+      snapshotFloorCompensation,
+      actorLocation.current,
+    )
+    const mantlingTarget = activeMantlingTarget.current
+    const basedMovement = (
+      current.locomotionMode === null
+      && mantlingTarget !== null
+    )
+      ? rapierAlsMovementBaseFromPrimitive(
+          mantlingTarget as RapierAlsSupportingCollider,
+        )
+      : current.locomotionMode === 'Grounded'
+        ? rapierAlsMovementBase(groundSupport.current)
+        : ALS_NO_BASED_MOVEMENT
+    const controls = values.current
+    publishAlsCharacterAnimationSnapshot(animationControls.current, {
+      character: current,
+      location: actorLocation.current,
+      basedMovement,
+      acceleration: acceleration.current,
+      overlayMode: controls.overlayMode,
+      movementOverride: controls.movementOverride,
+      speedOverride: controls.speed,
+      directionOverride: controls.direction,
+      rotateInPlaceOverride: controls.rotateInPlace,
+      locomotionYawSpeed: animationLocomotionYawSpeed.current,
+    })
+  }, ALS_FRAME_PRIORITY.MeshBase)
 
   return {
     character,
