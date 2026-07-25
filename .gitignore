@@ -39,3 +39,4 @@ playwright-report/
 scripts/extract-als/bin/
 scripts/extract-als/obj/
 scripts/extract-als/node_modules/
+.vercel
