@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Purchased/private assets are never part of the template
+public/assets/private/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

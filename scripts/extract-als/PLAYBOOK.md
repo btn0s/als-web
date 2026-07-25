@@ -6,7 +6,7 @@ is cracked — agents in fresh sessions have no other source.
 
 ## Recon complete
 
-Read-only throughout; all probing happened in `/Users/btnorris/.claude/jobs/c3251c49/tmp/ser-recon/extract-als-probe` (a copy of `scripts/extract-als`, instrumented and rebuilt there — nothing in the repo was touched). Repo files read: `scripts/extract-als/AlsSkeletalMesh.cs`, `Dump.cs`, `Program.cs`, `Inspect.cs`, `run.sh`, `assemble-glb.mjs` (grep only), `clips.manifest`, `ROADMAP.md`. Verified against CUE4Parse 1.2.2 source at `github.com/FabianFG/CUE4Parse` (`USkeletalMesh.cs`, `FStaticLODModel.cs`, `FSkelMeshSection.cs`, `FSoftVertex.cs`, `FSkinWeightInfo.cs`, `USoundWave.cs`).
+Read-only throughout; all probing happened in a throwaway copy of `scripts/extract-als` outside the repository, instrumented and rebuilt there. Repo files read: `scripts/extract-als/AlsSkeletalMesh.cs`, `Dump.cs`, `Program.cs`, `Inspect.cs`, `run.sh`, `assemble-glb.mjs` (grep only), `clips.manifest`, `ROADMAP.md`. Verified against CUE4Parse 1.2.2 source at `github.com/FabianFG/CUE4Parse` (`USkeletalMesh.cs`, `FStaticLODModel.cs`, `FSkelMeshSection.cs`, `FSoftVertex.cs`, `FSkinWeightInfo.cs`, `USoundWave.cs`).
 
 Note: while I was working, the parallel agent kept moving (`scripts/extract-als` now also shows `assemble-glb.mjs`/`run.sh` modified and new `props.manifest`/`validate-rifle-glb.mjs`, none of which I touched) — the rifle divergence below may already be landing there in parallel.
 
@@ -251,10 +251,10 @@ extracting asset class X from uncooked ALS-Refactored (.uasset only, no .uexp/.u
   with a parse failure.
 
 ## Key file/line references
-- `/Users/btnorris/dev/games/echelon/tech-demos/als-ue5-r3f/scripts/extract-als/AlsSkeletalMesh.cs` — the shim; `ProbeInfluenceLayout` (lines ~199-272) is the generalized fix, header comment (lines ~11-17) needs the uint8→uint16-weight correction
-- `/Users/btnorris/dev/games/echelon/tech-demos/als-ue5-r3f/scripts/extract-als/Dump.cs` — `expectedWeightSum` per-mesh magnitude handling (~line 108-115)
-- `/Users/btnorris/dev/games/echelon/tech-demos/als-ue5-r3f/scripts/extract-als/assemble-glb.mjs` — bone canonicalization (`canonicalBoneName`), winding note (~line 270-277)
-- Probe artifacts (throwaway, in tmp): `/Users/btnorris/.claude/jobs/c3251c49/tmp/ser-recon/extract-als-probe/` (instrumented copy), `rifle-dump.json`, `/tmp/main-dump.json`, `/tmp/rifle-dump2.json`, `/tmp/sm-box.json`, `/tmp/sound.json`
+- `scripts/extract-als/AlsSkeletalMesh.cs` — the shim; `ProbeInfluenceLayout` (lines ~199-272) is the generalized fix, header comment (lines ~11-17) needs the uint8→uint16-weight correction
+- `scripts/extract-als/Dump.cs` — `expectedWeightSum` per-mesh magnitude handling (~line 108-115)
+- `scripts/extract-als/assemble-glb.mjs` — bone canonicalization (`canonicalBoneName`), winding note (~line 270-277)
+- Probe artifacts (throwaway, outside the repo): the instrumented extractor copy plus `rifle-dump.json`, `main-dump.json`, `rifle-dump2.json`, `sm-box.json`, and `sound.json`
 
 ## Compiled AnimBlueprint graph serialization
 

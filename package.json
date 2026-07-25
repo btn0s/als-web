@@ -2,7 +2,19 @@
   "name": "als-ue5-r3f",
   "private": true,
   "version": "0.0.0",
+  "description": "A standalone web port of ALS Refactored on React Three Fiber.",
+  "keywords": [
+    "advanced-locomotion-system",
+    "als-refactored",
+    "react-three-fiber",
+    "three.js",
+    "rapier"
+  ],
   "type": "module",
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
