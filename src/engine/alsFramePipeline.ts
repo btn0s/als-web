@@ -18,5 +18,7 @@ export const ALS_FRAME_PRIORITY = {
   Animation: -2,
   PosePublication: -1,
   AnimNotifyDispatch: -0.5,
-  Camera: 0,
+  Camera: -0.25,
+  // Read-only instrumentation samples the fully composed character and camera frame.
+  Diagnostics: 0,
 } as const

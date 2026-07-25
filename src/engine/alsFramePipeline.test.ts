@@ -12,6 +12,7 @@ describe('ALS frame pipeline', () => {
       ALS_FRAME_PRIORITY.PosePublication,
       ALS_FRAME_PRIORITY.AnimNotifyDispatch,
       ALS_FRAME_PRIORITY.Camera,
-    ]).toEqual([-4, -3.5, -3, -2.5, -2, -1, -0.5, 0])
+      ALS_FRAME_PRIORITY.Diagnostics,
+    ]).toEqual([-4, -3.5, -3, -2.5, -2, -1, -0.5, -0.25, 0])
   })
 })

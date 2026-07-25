@@ -54,6 +54,7 @@ import {
 
 function captureMetadata(frameControls: AlsAnimationInstanceControls) {
   const characterState = window.__alsCharacterState
+  const cameraState = window.__alsCameraState
   return {
     ...window.__weightTable,
     gait: frameControls.gait,
@@ -70,6 +71,9 @@ function captureMetadata(frameControls: AlsAnimationInstanceControls) {
       ? 'Grounded'
       : frameControls.locomotionMode ?? 'Invalid',
     hasInput: frameControls.hasInput ?? false,
+    ...(frameControls.actorYawAngle === undefined
+      ? {}
+      : { actorYawAngle: frameControls.actorYawAngle }),
     ...(characterState
       ? {
           locomotionAction:
@@ -88,6 +92,15 @@ function captureMetadata(frameControls: AlsAnimationInstanceControls) {
             characterState.animRootMotionConsumedTranslation.z,
           rootMotionApplied: characterState.animRootMotionApplied,
           rootMotionOwned: characterState.animRootMotionOwned,
+        }
+      : {}),
+    ...(cameraState
+      ? {
+          // Camera debug state is published in Unreal axes. Convert it to the same Three/Rapier
+          // world axes as the raw body and rendered root before the transform-jitter comparison.
+          cameraPositionX: cameraState.location.x,
+          cameraPositionY: cameraState.location.z,
+          cameraPositionZ: cameraState.location.y,
         }
       : {}),
   }
@@ -294,7 +307,6 @@ export function useAlsAnimationInstance(
       animationInstance.getCurveValue(ROTATION_YAW_OFFSET_CURVE_NAME)
     animationCurves.current.rotationYawSpeed =
       animationInstance.getCurveValue(ROTATION_YAW_SPEED_CURVE_NAME)
-    frameCapture.recordFrame(delta, captureMetadata(frameControls))
   }, ALS_FRAME_PRIORITY.Animation)
 
   useFrame(() => {
@@ -303,4 +315,11 @@ export function useAlsAnimationInstance(
       cameraManager,
     )
   }, ALS_FRAME_PRIORITY.AnimNotifyDispatch)
+
+  useFrame((_, delta) => {
+    frameCapture.recordFrame(
+      delta,
+      captureMetadata(controls.current),
+    )
+  }, ALS_FRAME_PRIORITY.Diagnostics)
 }

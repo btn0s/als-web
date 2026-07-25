@@ -36,6 +36,8 @@ export interface AnimationFrameCaptureFrame {
   readonly index: number
   readonly deltaTime: number
   readonly metadata: AnimationFrameCaptureMetadata
+  /** World position of the supplied rendered component root at this evaluated frame. */
+  readonly rootWorldPosition: readonly [number, number, number]
   readonly bones: Readonly<Record<string, AnimationFrameBoneTrace>>
   /** Exact deformed-vertex world bounds at this evaluated pose. */
   readonly skinnedMeshBounds: SkinnedMeshWorldBounds | null
@@ -75,11 +77,43 @@ export interface AnimationFrameRootMotionDiagnostics {
   readonly absoluteDifferenceMeters: number
 }
 
+export interface AnimationFrameTurnInPlaceDiagnostics {
+  /** Number of active edges that had the actor-yaw and published-curve inputs. */
+  readonly edgeCount: number
+  /** Sum of wrapped actor-yaw deltas over eligible active TurnInPlace edges. */
+  readonly signedActorYawDegrees: number
+  /** Sum of `PublishedRotationYawSpeed * currentFrame.deltaTime` on those edges. */
+  readonly signedCurveYawDegrees: number
+  /** Largest absolute difference between one actor-yaw edge and its preceding curve integral. */
+  readonly maximumIntegrationErrorDegrees: number
+  readonly maximumIntegrationErrorFrame: number
+  /** Largest absolute wrapped actor-yaw step during the active turn. */
+  readonly maximumActorStepDegrees: number
+  readonly maximumActorStepFrame: number
+  /** Largest whole-pose rotation detour centered on an active TurnInPlace frame. */
+  readonly largestPoseRotationDetour: AnimationFramePoseDetour | null
+}
+
+export interface AnimationFrameTransformJitterVector {
+  /** Signed middle-frame departure from cadence-correct linear travel. */
+  readonly residual: readonly [number, number, number]
+  readonly magnitude: number
+  readonly frame: number
+}
+
+export interface AnimationFrameTransformJitterDiagnostics {
+  readonly rawCharacterPosition: AnimationFrameTransformJitterVector | null
+  readonly renderedRootWorldPosition: AnimationFrameTransformJitterVector | null
+  readonly cameraWorldPosition: AnimationFrameTransformJitterVector | null
+}
+
 export interface AnimationFrameCaptureDiagnostics {
   readonly poseDetours: readonly AnimationFramePoseDetour[]
   readonly groundedContact: AnimationFrameGroundContactDiagnostics | null
   readonly rollingContact: AnimationFrameGroundContactDiagnostics | null
   readonly rollingRootMotion: AnimationFrameRootMotionDiagnostics | null
+  readonly turnInPlace: AnimationFrameTurnInPlaceDiagnostics | null
+  readonly transformJitter: AnimationFrameTransformJitterDiagnostics
 }
 
 export interface AnimationFrameCaptureReport {
@@ -162,6 +196,10 @@ function tuple4(
     values[offset + 2],
     values[offset + 3],
   ]
+}
+
+function tupleFromVector3(vector: THREE.Vector3): [number, number, number] {
+  return [vector.x, vector.y, vector.z]
 }
 
 function captureTracedBones(
@@ -374,6 +412,143 @@ function numericMetadata(
     : null
 }
 
+function unwindDegrees(angle: number) {
+  let result = angle % 360
+  if (result > 180) result -= 360
+  if (result <= -180) result += 360
+  return result
+}
+
+function activeTurnInPlace(frame: AnimationFrameCaptureFrame) {
+  return (numericMetadata(frame, 'TurnInPlaceMontageWeight') ?? 0) > 0
+}
+
+function turnInPlaceDiagnostics(
+  frames: readonly AnimationFrameCaptureFrame[],
+  poseDetours: readonly AnimationFramePoseDetour[],
+): AnimationFrameTurnInPlaceDiagnostics | null {
+  let edgeCount = 0
+  let signedActorYawDegrees = 0
+  let signedCurveYawDegrees = 0
+  let maximumIntegrationErrorDegrees = -1
+  let maximumIntegrationErrorFrame = -1
+  let maximumActorStepDegrees = -1
+  let maximumActorStepFrame = -1
+
+  for (let index = 1; index < frames.length; index++) {
+    const previous = frames[index - 1]
+    const current = frames[index]
+    // Actor yaw at this edge consumed the curve published by the preceding evaluated frame.
+    if (!activeTurnInPlace(previous)) continue
+    const previousYaw = numericMetadata(previous, 'actorYawAngle')
+    const currentYaw = numericMetadata(current, 'actorYawAngle')
+    const previousPublishedYawSpeed = numericMetadata(
+      previous,
+      'PublishedRotationYawSpeed',
+    )
+    if (
+      previousYaw === null
+      || currentYaw === null
+      || previousPublishedYawSpeed === null
+      || current.deltaTime <= 0
+    ) continue
+    const actualYawDegrees = unwindDegrees(currentYaw - previousYaw)
+    const curveYawDegrees = previousPublishedYawSpeed * current.deltaTime
+    const integrationErrorDegrees = Math.abs(
+      actualYawDegrees - curveYawDegrees,
+    )
+    edgeCount++
+    signedActorYawDegrees += actualYawDegrees
+    signedCurveYawDegrees += curveYawDegrees
+    if (integrationErrorDegrees > maximumIntegrationErrorDegrees) {
+      maximumIntegrationErrorDegrees = integrationErrorDegrees
+      maximumIntegrationErrorFrame = current.index
+    }
+    if (Math.abs(actualYawDegrees) > maximumActorStepDegrees) {
+      maximumActorStepDegrees = Math.abs(actualYawDegrees)
+      maximumActorStepFrame = current.index
+    }
+  }
+
+  if (edgeCount === 0) return null
+  let largestPoseRotationDetour: AnimationFramePoseDetour | null = null
+  for (const detour of poseDetours) {
+    const frame = frames[detour.frame]
+    if (!frame || !activeTurnInPlace(frame)) continue
+    if (
+      !largestPoseRotationDetour
+      || detour.rotationDegrees.value
+        > largestPoseRotationDetour.rotationDegrees.value
+    ) {
+      largestPoseRotationDetour = detour
+    }
+  }
+  return {
+    edgeCount,
+    signedActorYawDegrees,
+    signedCurveYawDegrees,
+    maximumIntegrationErrorDegrees: Math.max(0, maximumIntegrationErrorDegrees),
+    maximumIntegrationErrorFrame,
+    maximumActorStepDegrees: Math.max(0, maximumActorStepDegrees),
+    maximumActorStepFrame,
+    largestPoseRotationDetour,
+  }
+}
+
+function transformJitterVector(
+  frames: readonly AnimationFrameCaptureFrame[],
+  position: (frame: AnimationFrameCaptureFrame) => readonly [number, number, number] | null,
+): AnimationFrameTransformJitterVector | null {
+  let maximum: AnimationFrameTransformJitterVector | null = null
+  for (let index = 1; index + 1 < frames.length; index++) {
+    const previous = frames[index - 1]
+    const current = frames[index]
+    const next = frames[index + 1]
+    const previousPosition = position(previous)
+    const currentPosition = position(current)
+    const nextPosition = position(next)
+    const duration = current.deltaTime + next.deltaTime
+    if (
+      !previousPosition
+      || !currentPosition
+      || !nextPosition
+      || !Number.isFinite(duration)
+      || duration <= 0
+      || current.deltaTime < 0
+      || next.deltaTime < 0
+    ) continue
+    const alpha = current.deltaTime / duration
+    const residual: [number, number, number] = [
+      currentPosition[0] - (previousPosition[0] + (nextPosition[0] - previousPosition[0]) * alpha),
+      currentPosition[1] - (previousPosition[1] + (nextPosition[1] - previousPosition[1]) * alpha),
+      currentPosition[2] - (previousPosition[2] + (nextPosition[2] - previousPosition[2]) * alpha),
+    ]
+    const magnitude = Math.hypot(...residual)
+    if (!maximum || magnitude > maximum.magnitude) {
+      maximum = { residual, magnitude, frame: current.index }
+    }
+  }
+  return maximum
+}
+
+function rawCharacterPosition(
+  frame: AnimationFrameCaptureFrame,
+): [number, number, number] | null {
+  const x = numericMetadata(frame, 'characterPositionX')
+  const y = numericMetadata(frame, 'characterPositionY')
+  const z = numericMetadata(frame, 'characterPositionZ')
+  return x === null || y === null || z === null ? null : [x, y, z]
+}
+
+function cameraWorldPosition(
+  frame: AnimationFrameCaptureFrame,
+): [number, number, number] | null {
+  const x = numericMetadata(frame, 'cameraPositionX')
+  const y = numericMetadata(frame, 'cameraPositionY')
+  const z = numericMetadata(frame, 'cameraPositionZ')
+  return x === null || y === null || z === null ? null : [x, y, z]
+}
+
 function contactDiagnostics(
   frames: readonly AnimationFrameCaptureFrame[],
   include: (frame: AnimationFrameCaptureFrame) => boolean,
@@ -461,8 +636,9 @@ function createDiagnostics(
   poses: readonly PoseSnapshot[],
   bones: readonly THREE.Bone[],
 ): AnimationFrameCaptureDiagnostics {
+  const poseDetours = measurePoseDetours(bones, poses)
   return {
-    poseDetours: measurePoseDetours(bones, poses),
+    poseDetours,
     groundedContact: contactDiagnostics(
       frames,
       ({ metadata }) => metadata.locomotionMode === 'Grounded',
@@ -472,6 +648,18 @@ function createDiagnostics(
       ({ metadata }) => metadata.locomotionAction === 'Rolling',
     ),
     rollingRootMotion: rollingRootMotionDiagnostics(frames),
+    turnInPlace: turnInPlaceDiagnostics(frames, poseDetours),
+    transformJitter: {
+      rawCharacterPosition: transformJitterVector(frames, rawCharacterPosition),
+      renderedRootWorldPosition: transformJitterVector(
+        frames,
+        (frame) => frame.rootWorldPosition,
+      ),
+      cameraWorldPosition: transformJitterVector(
+        frames,
+        cameraWorldPosition,
+      ),
+    },
   }
 }
 
@@ -524,11 +712,14 @@ export class AnimationFrameCapture {
     const pending = this.pending
     if (!pending) return false
     const frameIndex = pending.frames.length
+    const rootWorldPosition = new THREE.Vector3()
+    this.root.getWorldPosition(rootWorldPosition)
     pending.poses.push(capturePose(this.bones))
     pending.frames.push({
       index: frameIndex,
       deltaTime: Number.isFinite(deltaTime) ? Math.max(0, deltaTime) : 0,
       metadata: { ...metadata },
+      rootWorldPosition: tupleFromVector3(rootWorldPosition),
       bones: captureTracedBones(
         this.bonesByName,
         this.tracedBones,

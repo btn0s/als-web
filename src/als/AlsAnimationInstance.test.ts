@@ -11,6 +11,7 @@ import {
 } from '../engine/blend'
 import { compileClipSampler, sampleClip } from '../engine/clipSampler'
 import { compileClipCurveSamplers } from '../engine/curves'
+import { AnimationFrameCapture } from '../engine/animationFrameCapture'
 import { createPoseBuffer } from '../engine/poseBuffer'
 import { createRigDefinition, findBoneIndex } from '../engine/rig'
 import {
@@ -40,6 +41,7 @@ import {
   shouldMarkAlsTeleported,
 } from './AlsAnimationInstance'
 import {
+  applyRotationYawSpeedAnimationCurve,
   createAlsCharacter,
 } from './AlsCharacter'
 import type { AlsLocomotionMode } from './AlsCharacter'
@@ -1808,6 +1810,62 @@ describe('AlsAnimationInstance playback regression', () => {
     )
     expect(window.__weightTable?.idleAdditive).toBeCloseTo(0.75, 7)
     expect(requestCount()).toBe(inertializationRequests)
+  })
+
+  it('diagnoses full turn continuity across irregular render cadence', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const frameCapture = new AnimationFrameCapture(gltf.scene)
+    const turnControls = {
+      ...controls,
+      gait: 'Walking' as const,
+      moving: false,
+      movingSmooth: false,
+      speed: 0,
+      actorYawAngle: 0,
+      viewYawAngle: 0,
+      viewYawSpeed: 0,
+    }
+    instance.refresh(0, turnControls)
+    let actorYawAngle = 0
+    let rotationYawSpeed = instance.getCurveValue('RotationYawSpeed')
+    const reportPromise = frameCapture.start(240)
+    frameCapture.recordFrame(0, {
+      actorYawAngle,
+      PublishedRotationYawSpeed: rotationYawSpeed,
+      TurnInPlaceMontageWeight:
+        window.__weightTable?.TurnInPlaceMontageWeight ?? 0,
+    })
+    const deltaTimes = [1 / 144, 1 / 60, 1 / 90, 1 / 50]
+    for (let frame = 1; frame < 240; frame++) {
+      const deltaTime = deltaTimes[(frame - 1) % deltaTimes.length]
+      actorYawAngle = applyRotationYawSpeedAnimationCurve(
+        actorYawAngle,
+        rotationYawSpeed,
+        deltaTime,
+      )
+      turnControls.actorYawAngle = actorYawAngle
+      turnControls.viewYawAngle = THREE.MathUtils.euclideanModulo(
+        90 - actorYawAngle + 180,
+        360,
+      ) - 180
+      instance.refresh(deltaTime, turnControls)
+      rotationYawSpeed = instance.getCurveValue('RotationYawSpeed')
+      frameCapture.recordFrame(deltaTime, {
+        actorYawAngle,
+        PublishedRotationYawSpeed: rotationYawSpeed,
+        TurnInPlaceMontageWeight:
+          window.__weightTable?.TurnInPlaceMontageWeight ?? 0,
+      })
+    }
+    const report = await reportPromise
+    expect(report.diagnostics.turnInPlace).not.toBeNull()
+    expect(report.diagnostics.turnInPlace?.maximumIntegrationErrorDegrees)
+      .toBeLessThan(1e-9)
+    expect(report.diagnostics.turnInPlace?.signedActorYawDegrees)
+      .toBeCloseTo(76.76046973786603, 8)
+    expect(report.diagnostics.turnInPlace?.signedCurveYawDegrees)
+      .toBeCloseTo(76.76046973786603, 8)
   })
 
   it('retains the terminal turn sample through the authored 0.2s automatic fade without global inertialization', async () => {
