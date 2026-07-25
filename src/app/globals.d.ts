@@ -70,6 +70,8 @@ declare global {
       meshBaseOffsetY: number
       position: { x: number; y: number; z: number }
       velocity: { x: number; y: number; z: number }
+      physicsStepIndex: number
+      physicsTimeStep: number
       physicsBodyType: 'Dynamic' | 'KinematicPositionBased'
       verticalVelocity: number
       groundFloorDistance: number | null
@@ -98,6 +100,10 @@ declare global {
       firstPersonOverride: number
       traceDistanceRatio: number
       horizontalFieldOfView: number
+      pivotTargetLocation: { x: number; y: number; z: number }
+      pivotLagLocation: { x: number; y: number; z: number }
+      pivotLocation: { x: number; y: number; z: number }
+      componentLocation: { x: number; y: number; z: number }
       location: { x: number; y: number; z: number }
       rotation: { pitch: number; yaw: number; roll: number }
     }

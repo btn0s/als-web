@@ -7,9 +7,12 @@ import type {
 } from './skinnedMeshBounds'
 
 const DEFAULT_FRAME_COUNT = 90
-const MAX_FRAME_COUNT = 240
+// Four seconds at 120 Hz is long enough to compare several authored locomotion loops while
+// keeping the retained pose/frame buffers bounded.
+const MAX_FRAME_COUNT = 480
 const DEFAULT_TRACED_BONES = [
   'root',
+  'head',
   'pelvis',
   'foot_l',
   'foot_r',
@@ -38,6 +41,8 @@ export interface AnimationFrameCaptureFrame {
   readonly metadata: AnimationFrameCaptureMetadata
   /** World position of the supplied rendered component root at this evaluated frame. */
   readonly rootWorldPosition: readonly [number, number, number]
+  /** ALS camera's rendered root/head midpoint, when both bones are available. */
+  readonly cameraPivotWorldPosition: readonly [number, number, number] | null
   readonly bones: Readonly<Record<string, AnimationFrameBoneTrace>>
   /** Exact deformed-vertex world bounds at this evaluated pose. */
   readonly skinnedMeshBounds: SkinnedMeshWorldBounds | null
@@ -99,12 +104,155 @@ export interface AnimationFrameTransformJitterVector {
   readonly residual: readonly [number, number, number]
   readonly magnitude: number
   readonly frame: number
+  /** Root-relative elapsed capture time and the edge duration used to reach this frame. */
+  readonly peakWindow: readonly AnimationFrameTransformJitterSample[]
+  readonly rmsMagnitude: number
+  readonly dominantAxis: 'X' | 'Y' | 'Z'
+  readonly signedResidualMinimum: readonly [number, number, number]
+  readonly signedResidualMaximum: readonly [number, number, number]
+  /**
+   * Mean-centered Pearson autocorrelation of signed dominant-axis residuals. Lags begin at two
+   * samples (never the misleading adjacent-frame trend), use at least three pairs, and search
+   * through half the bounded capture. `null` means a constant or insufficient series.
+   */
+  readonly autocorrelationPeak: AnimationFrameTransformJitterAutocorrelation | null
+  readonly loopPhase: AnimationFrameLoopPhaseDiagnostics | null
+}
+
+export interface AnimationFrameTransformJitterSample {
+  readonly frame: number
+  readonly elapsedSeconds: number
+  readonly deltaTime: number
+  readonly residual: readonly [number, number, number]
+  readonly magnitude: number
+  readonly cameraTraceDistanceRatio: number | null
+  readonly speed: number | null
+  readonly gait: string | null
+  readonly moving: boolean | null
+  readonly locomotionMode: string | null
+  /** Fixed physics update published with this rendered sample, when available. */
+  readonly physicsStepIndex: number | null
+  readonly physicsStepsFromPreviousFrame: number | null
+  readonly physicsStepsToNextFrame: number | null
+  /** Highest-weight sampled locomotion loop phase, if capture metadata exposed one. */
+  readonly loop: AnimationFrameLoopPhase | null
+}
+
+export interface AnimationFrameLoopPhase {
+  readonly clip: string
+  readonly phase: number
+  readonly weight: number
+}
+
+export interface AnimationFrameLoopPhaseBin {
+  readonly phaseStart: number
+  readonly phaseEnd: number
+  readonly signedResidualMean: number | null
+  readonly sampleCount: number
+}
+
+export interface AnimationFrameLoopPhaseDiagnostics {
+  readonly clip: string
+  readonly contiguousSampleCount: number
+  readonly completeCycleCount: number
+  readonly observedMedianLoopPeriodSeconds: number | null
+  readonly meanWeight: number
+  readonly minimumWeight: number
+  readonly matchedPhaseBinCount: number
+  readonly phaseBins: readonly AnimationFrameLoopPhaseBin[]
+  /** Pearson correlation between adjacent inferred cycles at the same phase bins. */
+  readonly cycleToCycleCorrelation: number | null
+}
+
+export interface AnimationFrameTransformJitterAutocorrelation {
+  readonly lagFrames: number
+  readonly periodSeconds: number
+  readonly coefficient: number
+  readonly pairCount: number
+}
+
+export interface AnimationFrameCadenceDiagnostics {
+  readonly frameCount: number
+  readonly durationSeconds: number
+  readonly minimumDeltaTime: number
+  readonly medianDeltaTime: number
+  readonly medianFramesPerSecond: number
+  readonly maximumDeltaTime: number
+  /** Descriptive only: the capture's longest render edge is not automatically a hitch. */
+  readonly maximumDeltaTimeFrame: number
+}
+
+export interface AnimationFramePhysicsCadenceDiagnostics {
+  readonly fixedTimeStepSeconds: number | null
+  readonly edgeCount: number
+  readonly totalStepCount: number
+  readonly minimumStepsPerRenderEdge: number
+  readonly medianStepsPerRenderEdge: number
+  readonly maximumStepsPerRenderEdge: number
+  readonly maximumStepsFrame: number
+  readonly zeroStepEdgeCount: number
+  readonly singleStepEdgeCount: number
+  readonly multipleStepEdgeCount: number
+  readonly resetEdgeCount: number
 }
 
 export interface AnimationFrameTransformJitterDiagnostics {
   readonly rawCharacterPosition: AnimationFrameTransformJitterVector | null
   readonly renderedRootWorldPosition: AnimationFrameTransformJitterVector | null
   readonly cameraWorldPosition: AnimationFrameTransformJitterVector | null
+  readonly cameraPivotWorldPosition: AnimationFrameTransformJitterVector | null
+  readonly cameraPivotTargetPosition: AnimationFrameTransformJitterVector | null
+  readonly cameraPivotLagPosition: AnimationFrameTransformJitterVector | null
+  readonly cameraPivotPosition: AnimationFrameTransformJitterVector | null
+  readonly cameraComponentPosition: AnimationFrameTransformJitterVector | null
+  readonly frameCadence: AnimationFrameCadenceDiagnostics | null
+  readonly physicsCadence: AnimationFramePhysicsCadenceDiagnostics | null
+}
+
+export interface AnimationFrameTransformJitterPathSummary {
+  readonly peakResidualMillimeters: readonly [number, number, number]
+  readonly peakMagnitudeMillimeters: number
+  readonly rmsMagnitudeMillimeters: number
+  readonly peakFrame: number
+  readonly dominantAxis: 'X' | 'Y' | 'Z'
+  /** Descriptive candidate only; loop attribution comes from `loopPhase`. */
+  readonly autocorrelationPeak: AnimationFrameTransformJitterAutocorrelation | null
+  readonly loopPhase: {
+    readonly clip: string
+    readonly contiguousSampleCount: number
+    readonly completeCycleCount: number
+    readonly observedMedianLoopPeriodSeconds: number | null
+    readonly meanWeight: number
+    readonly minimumWeight: number
+    readonly matchedPhaseBinCount: number
+    readonly cycleToCycleCorrelation: number | null
+    readonly signedResidualMeanMillimetersByPhaseBin:
+      readonly (number | null)[]
+    readonly sampleCountByPhaseBin: readonly number[]
+  } | null
+}
+
+export interface AnimationFrameTransformJitterSummary {
+  readonly frameCadence: AnimationFrameCadenceDiagnostics | null
+  readonly physicsCadence: AnimationFramePhysicsCadenceDiagnostics | null
+  readonly paths: {
+    readonly rawCharacterPosition:
+      AnimationFrameTransformJitterPathSummary | null
+    readonly renderedRootWorldPosition:
+      AnimationFrameTransformJitterPathSummary | null
+    readonly cameraPivotWorldPosition:
+      AnimationFrameTransformJitterPathSummary | null
+    readonly cameraPivotTargetPosition:
+      AnimationFrameTransformJitterPathSummary | null
+    readonly cameraPivotLagPosition:
+      AnimationFrameTransformJitterPathSummary | null
+    readonly cameraPivotPosition:
+      AnimationFrameTransformJitterPathSummary | null
+    readonly cameraComponentPosition:
+      AnimationFrameTransformJitterPathSummary | null
+    readonly cameraWorldPosition:
+      AnimationFrameTransformJitterPathSummary | null
+  }
 }
 
 export interface AnimationFrameCaptureDiagnostics {
@@ -114,6 +262,8 @@ export interface AnimationFrameCaptureDiagnostics {
   readonly rollingRootMotion: AnimationFrameRootMotionDiagnostics | null
   readonly turnInPlace: AnimationFrameTurnInPlaceDiagnostics | null
   readonly transformJitter: AnimationFrameTransformJitterDiagnostics
+  /** Token-efficient first read; full peak windows remain in `transformJitter`. */
+  readonly transformJitterSummary: AnimationFrameTransformJitterSummary
 }
 
 export interface AnimationFrameCaptureReport {
@@ -220,6 +370,19 @@ function captureTracedBones(
     }
   }
   return result
+}
+
+function captureCameraPivotWorldPosition(
+  bonesByName: ReadonlyMap<string, THREE.Bone>,
+): [number, number, number] | null {
+  const root = bonesByName.get('root')
+  const head = bonesByName.get('head')
+  if (!root || !head) return null
+  const rootPosition = new THREE.Vector3()
+  const headPosition = new THREE.Vector3()
+  root.getWorldPosition(rootPosition)
+  head.getWorldPosition(headPosition)
+  return tupleFromVector3(rootPosition.add(headPosition).multiplyScalar(0.5))
 }
 
 function maximumDelta(
@@ -495,11 +658,58 @@ function turnInPlaceDiagnostics(
   }
 }
 
-function transformJitterVector(
+function median(values: readonly number[]) {
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) * 0.5
+    : sorted[middle]
+}
+
+function elapsedCaptureSeconds(frames: readonly AnimationFrameCaptureFrame[]) {
+  const elapsed = new Float64Array(frames.length)
+  for (let index = 1; index < frames.length; index++) {
+    elapsed[index] = elapsed[index - 1] + frames[index].deltaTime
+  }
+  return elapsed
+}
+
+function sampledLoopPhase(
+  frame: AnimationFrameCaptureFrame,
+): AnimationFrameLoopPhase | null {
+  let result: AnimationFrameLoopPhase | null = null
+  for (const [name, value] of Object.entries(frame.metadata)) {
+    if (
+      !name.startsWith('clipPhase.')
+      || typeof value !== 'number'
+      || !Number.isFinite(value)
+    ) {
+      continue
+    }
+    const clip = name.slice('clipPhase.'.length)
+    const weight =
+      numericMetadata(frame, clip)
+      ?? numericMetadata(frame, `InAirPlayer.${clip}`)
+    if (
+      weight === null
+      || weight <= 0
+      || (result && weight <= result.weight)
+    ) {
+      continue
+    }
+    result = { clip, phase: value, weight }
+  }
+  return result
+}
+
+function transformJitterSamples(
   frames: readonly AnimationFrameCaptureFrame[],
-  position: (frame: AnimationFrameCaptureFrame) => readonly [number, number, number] | null,
-): AnimationFrameTransformJitterVector | null {
-  let maximum: AnimationFrameTransformJitterVector | null = null
+  position: (
+    frame: AnimationFrameCaptureFrame
+  ) => readonly [number, number, number] | null,
+): AnimationFrameTransformJitterSample[] {
+  const elapsed = elapsedCaptureSeconds(frames)
+  const samples: AnimationFrameTransformJitterSample[] = []
   for (let index = 1; index + 1 < frames.length; index++) {
     const previous = frames[index - 1]
     const current = frames[index]
@@ -519,16 +729,321 @@ function transformJitterVector(
     ) continue
     const alpha = current.deltaTime / duration
     const residual: [number, number, number] = [
-      currentPosition[0] - (previousPosition[0] + (nextPosition[0] - previousPosition[0]) * alpha),
-      currentPosition[1] - (previousPosition[1] + (nextPosition[1] - previousPosition[1]) * alpha),
-      currentPosition[2] - (previousPosition[2] + (nextPosition[2] - previousPosition[2]) * alpha),
+      currentPosition[0] - (
+        previousPosition[0]
+        + (nextPosition[0] - previousPosition[0]) * alpha
+      ),
+      currentPosition[1] - (
+        previousPosition[1]
+        + (nextPosition[1] - previousPosition[1]) * alpha
+      ),
+      currentPosition[2] - (
+        previousPosition[2]
+        + (nextPosition[2] - previousPosition[2]) * alpha
+      ),
     ]
     const magnitude = Math.hypot(...residual)
-    if (!maximum || magnitude > maximum.magnitude) {
-      maximum = { residual, magnitude, frame: current.index }
+    const previousPhysicsStep = numericMetadata(previous, 'physicsStepIndex')
+    const currentPhysicsStep = numericMetadata(current, 'physicsStepIndex')
+    const nextPhysicsStep = numericMetadata(next, 'physicsStepIndex')
+    samples.push({
+      frame: current.index,
+      elapsedSeconds: elapsed[index],
+      deltaTime: current.deltaTime,
+      residual,
+      magnitude,
+      loop: sampledLoopPhase(current),
+      cameraTraceDistanceRatio: numericMetadata(
+        current,
+        'cameraTraceDistanceRatio',
+      ),
+      speed: numericMetadata(current, 'speed'),
+      gait: typeof current.metadata.gait === 'string' ? current.metadata.gait : null,
+      moving: typeof current.metadata.moving === 'boolean' ? current.metadata.moving : null,
+      locomotionMode: typeof current.metadata.locomotionMode === 'string'
+        ? current.metadata.locomotionMode
+        : null,
+      physicsStepIndex: currentPhysicsStep,
+      physicsStepsFromPreviousFrame:
+        previousPhysicsStep === null || currentPhysicsStep === null
+          ? null
+          : currentPhysicsStep - previousPhysicsStep,
+      physicsStepsToNextFrame:
+        currentPhysicsStep === null || nextPhysicsStep === null
+          ? null
+          : nextPhysicsStep - currentPhysicsStep,
+    })
+  }
+  return samples
+}
+
+function pearsonCorrelation(
+  left: readonly number[],
+  right: readonly number[],
+): number | null {
+  if (left.length < 2 || left.length !== right.length) return null
+  const leftMean = left.reduce((sum, value) => sum + value, 0) / left.length
+  const rightMean = right.reduce((sum, value) => sum + value, 0) / right.length
+  let numerator = 0
+  let leftEnergy = 0
+  let rightEnergy = 0
+  for (let index = 0; index < left.length; index++) {
+    const centeredLeft = left[index] - leftMean
+    const centeredRight = right[index] - rightMean
+    numerator += centeredLeft * centeredRight
+    leftEnergy += centeredLeft * centeredLeft
+    rightEnergy += centeredRight * centeredRight
+  }
+  const denominator = Math.sqrt(leftEnergy * rightEnergy)
+  return denominator === 0 ? null : numerator / denominator
+}
+
+function loopPhaseDiagnostics(
+  samples: readonly AnimationFrameTransformJitterSample[],
+  axis: 0 | 1 | 2,
+): AnimationFrameLoopPhaseDiagnostics | null {
+  const counts = new Map<string, number>()
+  for (const sample of samples) {
+    if (sample.loop) {
+      counts.set(
+        sample.loop.clip,
+        (counts.get(sample.loop.clip) ?? 0) + 1,
+      )
     }
   }
-  return maximum
+  const ranked = [...counts.entries()].sort(
+    (left, right) => right[1] - left[1],
+  )
+  const dominant = ranked[0]
+  // The dominant source wins more rendered samples than every other source. Ties deliberately
+  // yield no claim, and the analysis below never bridges gaps where another source wins.
+  if (!dominant || (ranked[1] && dominant[1] === ranked[1][1])) return null
+  let run: AnimationFrameTransformJitterSample[] = []
+  let candidate: AnimationFrameTransformJitterSample[] = []
+  for (const sample of samples) {
+    if (sample.loop?.clip === dominant[0]) candidate.push(sample)
+    else {
+      if (candidate.length > run.length) run = candidate
+      candidate = []
+    }
+  }
+  if (candidate.length > run.length) run = candidate
+  if (run.length === 0) return null
+  const binCount = 8
+  const wraps: number[] = []
+  for (let index = 1; index < run.length; index++) {
+    if (run[index].loop!.phase % 1 < run[index - 1].loop!.phase % 1) {
+      wraps.push(index)
+    }
+  }
+  const completeCycles = wraps.slice(0, -1).map(
+    (start, index) => run.slice(start, wraps[index + 1]),
+  )
+  const bins = Array.from({ length: binCount }, () => [] as number[])
+  const cycles = completeCycles.map(() => ({
+    sums: Array.from({ length: binCount }, () => 0),
+    counts: Array.from({ length: binCount }, () => 0),
+  }))
+  for (
+    let cycleIndex = 0;
+    cycleIndex < completeCycles.length;
+    cycleIndex++
+  ) {
+    for (const sample of completeCycles[cycleIndex]) {
+      const phase = sample.loop!.phase - Math.floor(sample.loop!.phase)
+      const bin = Math.min(binCount - 1, Math.floor(phase * binCount))
+      bins[bin].push(sample.residual[axis])
+      cycles[cycleIndex].sums[bin] += sample.residual[axis]
+      cycles[cycleIndex].counts[bin]++
+    }
+  }
+  const adjacentLeft: number[] = []
+  const adjacentRight: number[] = []
+  for (let cycle = 1; cycle < cycles.length; cycle++) {
+    for (let bin = 0; bin < binCount; bin++) {
+      const previous = cycles[cycle - 1]
+      const current = cycles[cycle]
+      if (previous.counts[bin] > 0 && current.counts[bin] > 0) {
+        adjacentLeft.push(previous.sums[bin] / previous.counts[bin])
+        adjacentRight.push(current.sums[bin] / current.counts[bin])
+      }
+    }
+  }
+  const matchedPhaseBinCount = adjacentLeft.length
+  const wrapPeriods = wraps.slice(1).map((wrap, index) => (
+    run[wrap].elapsedSeconds - run[wraps[index]].elapsedSeconds
+  ))
+  const weights = run.map((sample) => sample.loop!.weight)
+  return {
+    clip: dominant[0],
+    contiguousSampleCount: run.length,
+    completeCycleCount: completeCycles.length,
+    observedMedianLoopPeriodSeconds:
+      wrapPeriods.length === 0 ? null : median(wrapPeriods),
+    meanWeight:
+      weights.reduce((sum, weight) => sum + weight, 0) / weights.length,
+    minimumWeight: Math.min(...weights),
+    matchedPhaseBinCount,
+    phaseBins: bins.map((values, bin) => ({
+      phaseStart: bin / binCount,
+      phaseEnd: (bin + 1) / binCount,
+      signedResidualMean: values.length === 0
+        ? null
+        : values.reduce((sum, value) => sum + value, 0) / values.length,
+      sampleCount: values.length,
+    })),
+    cycleToCycleCorrelation:
+      completeCycles.length >= 2 && matchedPhaseBinCount >= 3
+        ? pearsonCorrelation(adjacentLeft, adjacentRight)
+        : null,
+  }
+}
+
+function jitterAutocorrelationPeak(
+  samples: readonly AnimationFrameTransformJitterSample[],
+  axis: 0 | 1 | 2,
+): AnimationFrameTransformJitterAutocorrelation | null {
+  // Lag one is intentionally excluded: a monotonic transient can look highly related without
+  // being a repeating pattern. Mean-centering removes constant offsets.
+  const values = samples.map((sample) => sample.residual[axis])
+  if (values.length < 5) return null
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length
+  const maximumLag = Math.floor(values.length / 2)
+  let best: AnimationFrameTransformJitterAutocorrelation | null = null
+  for (let lag = 2; lag <= maximumLag; lag++) {
+    const pairCount = values.length - lag
+    if (pairCount < 3) continue
+    let numerator = 0
+    let leftEnergy = 0
+    let rightEnergy = 0
+    const periods: number[] = []
+    for (let index = 0; index < pairCount; index++) {
+      const left = values[index] - mean
+      const right = values[index + lag] - mean
+      numerator += left * right
+      leftEnergy += left * left
+      rightEnergy += right * right
+      periods.push(samples[index + lag].elapsedSeconds - samples[index].elapsedSeconds)
+    }
+    const denominator = Math.sqrt(leftEnergy * rightEnergy)
+    if (denominator === 0) continue
+    const coefficient = numerator / denominator
+    if (!best || coefficient > best.coefficient) {
+      best = {
+        lagFrames: lag,
+        periodSeconds: median(periods),
+        coefficient,
+        pairCount,
+      }
+    }
+  }
+  return best
+}
+
+function transformJitterVector(
+  frames: readonly AnimationFrameCaptureFrame[],
+  position: (
+    frame: AnimationFrameCaptureFrame
+  ) => readonly [number, number, number] | null,
+): AnimationFrameTransformJitterVector | null {
+  const samples = transformJitterSamples(frames, position)
+  if (samples.length === 0) return null
+  let maximum = samples[0]
+  const minimum: [number, number, number] = [...samples[0].residual]
+  const maximumSigned: [number, number, number] = [...samples[0].residual]
+  const axisSquares: [number, number, number] = [0, 0, 0]
+  let magnitudeSquares = 0
+  for (const sample of samples) {
+    if (sample.magnitude > maximum.magnitude) maximum = sample
+    magnitudeSquares += sample.magnitude * sample.magnitude
+    for (let axis = 0 as 0 | 1 | 2; axis < 3; axis++) {
+      minimum[axis] = Math.min(minimum[axis], sample.residual[axis])
+      maximumSigned[axis] = Math.max(maximumSigned[axis], sample.residual[axis])
+      axisSquares[axis] += sample.residual[axis] * sample.residual[axis]
+    }
+  }
+  const dominantAxisIndex = axisSquares[1] > axisSquares[0]
+    ? axisSquares[2] > axisSquares[1] ? 2 : 1
+    : axisSquares[2] > axisSquares[0] ? 2 : 0
+  const peakIndex = samples.indexOf(maximum)
+  return {
+    residual: maximum.residual,
+    magnitude: maximum.magnitude,
+    frame: maximum.frame,
+    peakWindow: samples.slice(
+      Math.max(0, peakIndex - 2),
+      Math.min(samples.length, peakIndex + 3),
+    ),
+    rmsMagnitude: Math.sqrt(magnitudeSquares / samples.length),
+    dominantAxis: (['X', 'Y', 'Z'] as const)[dominantAxisIndex],
+    signedResidualMinimum: minimum,
+    signedResidualMaximum: maximumSigned,
+    autocorrelationPeak: jitterAutocorrelationPeak(samples, dominantAxisIndex),
+    loopPhase: loopPhaseDiagnostics(samples, dominantAxisIndex),
+  }
+}
+
+function frameCadenceDiagnostics(
+  frames: readonly AnimationFrameCaptureFrame[],
+): AnimationFrameCadenceDiagnostics | null {
+  const samples = frames.slice(1).filter((frame) => frame.deltaTime > 0)
+  if (samples.length === 0) return null
+  let longestEdge = samples[0]
+  for (const frame of samples) {
+    if (frame.deltaTime > longestEdge.deltaTime) longestEdge = frame
+  }
+  const deltas = samples.map((frame) => frame.deltaTime)
+  const medianDeltaTime = median(deltas)
+  return {
+    frameCount: samples.length,
+    durationSeconds: deltas.reduce((sum, deltaTime) => sum + deltaTime, 0),
+    minimumDeltaTime: Math.min(...deltas),
+    medianDeltaTime,
+    medianFramesPerSecond: 1 / medianDeltaTime,
+    maximumDeltaTime: longestEdge.deltaTime,
+    maximumDeltaTimeFrame: longestEdge.index,
+  }
+}
+
+function physicsCadenceDiagnostics(
+  frames: readonly AnimationFrameCaptureFrame[],
+): AnimationFramePhysicsCadenceDiagnostics | null {
+  const steps: Array<{ frame: number; count: number }> = []
+  let resetEdgeCount = 0
+  for (let index = 1; index < frames.length; index++) {
+    const previous = numericMetadata(frames[index - 1], 'physicsStepIndex')
+    const current = numericMetadata(frames[index], 'physicsStepIndex')
+    if (previous === null || current === null) continue
+    const count = current - previous
+    if (count < 0) {
+      resetEdgeCount++
+      continue
+    }
+    steps.push({ frame: frames[index].index, count })
+  }
+  if (steps.length === 0) return null
+  let maximum = steps[0]
+  for (const step of steps) {
+    if (step.count > maximum.count) maximum = step
+  }
+  const counts = steps.map(({ count }) => count)
+  const fixedTimeSteps = frames
+    .map((frame) => numericMetadata(frame, 'physicsTimeStep'))
+    .filter((value): value is number => value !== null && value > 0)
+  return {
+    fixedTimeStepSeconds:
+      fixedTimeSteps.length === 0 ? null : median(fixedTimeSteps),
+    edgeCount: counts.length,
+    totalStepCount: counts.reduce((sum, count) => sum + count, 0),
+    minimumStepsPerRenderEdge: Math.min(...counts),
+    medianStepsPerRenderEdge: median(counts),
+    maximumStepsPerRenderEdge: maximum.count,
+    maximumStepsFrame: maximum.frame,
+    zeroStepEdgeCount: counts.filter((count) => count === 0).length,
+    singleStepEdgeCount: counts.filter((count) => count === 1).length,
+    multipleStepEdgeCount: counts.filter((count) => count > 1).length,
+    resetEdgeCount,
+  }
 }
 
 function rawCharacterPosition(
@@ -540,14 +1055,22 @@ function rawCharacterPosition(
   return x === null || y === null || z === null ? null : [x, y, z]
 }
 
-function cameraWorldPosition(
-  frame: AnimationFrameCaptureFrame,
-): [number, number, number] | null {
-  const x = numericMetadata(frame, 'cameraPositionX')
-  const y = numericMetadata(frame, 'cameraPositionY')
-  const z = numericMetadata(frame, 'cameraPositionZ')
-  return x === null || y === null || z === null ? null : [x, y, z]
+function metadataPosition(
+  prefix: string,
+): (frame: AnimationFrameCaptureFrame) => [number, number, number] | null {
+  return (frame) => {
+    const x = numericMetadata(frame, `${prefix}X`)
+    const y = numericMetadata(frame, `${prefix}Y`)
+    const z = numericMetadata(frame, `${prefix}Z`)
+    return x === null || y === null || z === null ? null : [x, y, z]
+  }
 }
+
+const cameraWorldPosition = metadataPosition('cameraPosition')
+const cameraPivotTargetPosition = metadataPosition('cameraPivotTargetPosition')
+const cameraPivotLagPosition = metadataPosition('cameraPivotLagPosition')
+const cameraPivotPosition = metadataPosition('cameraPivotPosition')
+const cameraComponentPosition = metadataPosition('cameraComponentPosition')
 
 function contactDiagnostics(
   frames: readonly AnimationFrameCaptureFrame[],
@@ -631,12 +1154,115 @@ function rollingRootMotionDiagnostics(
   }
 }
 
+function transformJitterDiagnostics(
+  frames: readonly AnimationFrameCaptureFrame[],
+): AnimationFrameTransformJitterDiagnostics {
+  return {
+    rawCharacterPosition: transformJitterVector(frames, rawCharacterPosition),
+    renderedRootWorldPosition: transformJitterVector(
+      frames,
+      (frame) => frame.rootWorldPosition,
+    ),
+    cameraWorldPosition: transformJitterVector(
+      frames,
+      cameraWorldPosition,
+    ),
+    cameraPivotWorldPosition: transformJitterVector(
+      frames,
+      (frame) => frame.cameraPivotWorldPosition,
+    ),
+    cameraPivotTargetPosition: transformJitterVector(
+      frames,
+      cameraPivotTargetPosition,
+    ),
+    cameraPivotLagPosition: transformJitterVector(
+      frames,
+      cameraPivotLagPosition,
+    ),
+    cameraPivotPosition: transformJitterVector(frames, cameraPivotPosition),
+    cameraComponentPosition: transformJitterVector(
+      frames,
+      cameraComponentPosition,
+    ),
+    frameCadence: frameCadenceDiagnostics(frames),
+    physicsCadence: physicsCadenceDiagnostics(frames),
+  }
+}
+
+function transformJitterPathSummary(
+  diagnostics: AnimationFrameTransformJitterVector | null,
+): AnimationFrameTransformJitterPathSummary | null {
+  if (!diagnostics) return null
+  const loop = diagnostics.loopPhase
+  return {
+    peakResidualMillimeters: diagnostics.residual.map(
+      (value) => value * 1_000,
+    ) as [number, number, number],
+    peakMagnitudeMillimeters: diagnostics.magnitude * 1_000,
+    rmsMagnitudeMillimeters: diagnostics.rmsMagnitude * 1_000,
+    peakFrame: diagnostics.frame,
+    dominantAxis: diagnostics.dominantAxis,
+    autocorrelationPeak: diagnostics.autocorrelationPeak,
+    loopPhase: loop
+      ? {
+          clip: loop.clip,
+          contiguousSampleCount: loop.contiguousSampleCount,
+          completeCycleCount: loop.completeCycleCount,
+          observedMedianLoopPeriodSeconds:
+            loop.observedMedianLoopPeriodSeconds,
+          meanWeight: loop.meanWeight,
+          minimumWeight: loop.minimumWeight,
+          matchedPhaseBinCount: loop.matchedPhaseBinCount,
+          cycleToCycleCorrelation: loop.cycleToCycleCorrelation,
+          signedResidualMeanMillimetersByPhaseBin: loop.phaseBins.map(
+            ({ signedResidualMean }) => (
+              signedResidualMean === null
+                ? null
+                : signedResidualMean * 1_000
+            ),
+          ),
+          sampleCountByPhaseBin: loop.phaseBins.map(
+            ({ sampleCount }) => sampleCount,
+          ),
+        }
+      : null,
+  }
+}
+
+function transformJitterSummary(
+  diagnostics: AnimationFrameTransformJitterDiagnostics,
+): AnimationFrameTransformJitterSummary {
+  return {
+    frameCadence: diagnostics.frameCadence,
+    physicsCadence: diagnostics.physicsCadence,
+    paths: {
+      rawCharacterPosition:
+        transformJitterPathSummary(diagnostics.rawCharacterPosition),
+      renderedRootWorldPosition:
+        transformJitterPathSummary(diagnostics.renderedRootWorldPosition),
+      cameraPivotWorldPosition:
+        transformJitterPathSummary(diagnostics.cameraPivotWorldPosition),
+      cameraPivotTargetPosition:
+        transformJitterPathSummary(diagnostics.cameraPivotTargetPosition),
+      cameraPivotLagPosition:
+        transformJitterPathSummary(diagnostics.cameraPivotLagPosition),
+      cameraPivotPosition:
+        transformJitterPathSummary(diagnostics.cameraPivotPosition),
+      cameraComponentPosition:
+        transformJitterPathSummary(diagnostics.cameraComponentPosition),
+      cameraWorldPosition:
+        transformJitterPathSummary(diagnostics.cameraWorldPosition),
+    },
+  }
+}
+
 function createDiagnostics(
   frames: readonly AnimationFrameCaptureFrame[],
   poses: readonly PoseSnapshot[],
   bones: readonly THREE.Bone[],
 ): AnimationFrameCaptureDiagnostics {
   const poseDetours = measurePoseDetours(bones, poses)
+  const transformJitter = transformJitterDiagnostics(frames)
   return {
     poseDetours,
     groundedContact: contactDiagnostics(
@@ -649,17 +1275,8 @@ function createDiagnostics(
     ),
     rollingRootMotion: rollingRootMotionDiagnostics(frames),
     turnInPlace: turnInPlaceDiagnostics(frames, poseDetours),
-    transformJitter: {
-      rawCharacterPosition: transformJitterVector(frames, rawCharacterPosition),
-      renderedRootWorldPosition: transformJitterVector(
-        frames,
-        (frame) => frame.rootWorldPosition,
-      ),
-      cameraWorldPosition: transformJitterVector(
-        frames,
-        cameraWorldPosition,
-      ),
-    },
+    transformJitter,
+    transformJitterSummary: transformJitterSummary(transformJitter),
   }
 }
 
@@ -720,6 +1337,9 @@ export class AnimationFrameCapture {
       deltaTime: Number.isFinite(deltaTime) ? Math.max(0, deltaTime) : 0,
       metadata: { ...metadata },
       rootWorldPosition: tupleFromVector3(rootWorldPosition),
+      cameraPivotWorldPosition: captureCameraPivotWorldPosition(
+        this.bonesByName,
+      ),
       bones: captureTracedBones(
         this.bonesByName,
         this.tracedBones,

@@ -141,6 +141,10 @@ interface CameraDebugState {
   firstPersonOverride: number
   traceDistanceRatio: number
   horizontalFieldOfView: number
+  pivotTargetLocation: { x: number; y: number; z: number }
+  pivotLagLocation: { x: number; y: number; z: number }
+  pivotLocation: { x: number; y: number; z: number }
+  componentLocation: { x: number; y: number; z: number }
   location: { x: number; y: number; z: number }
   rotation: AlsCameraRotation
 }
@@ -354,6 +358,10 @@ export function AlsCamera({
     firstPersonOverride: 0,
     traceDistanceRatio: 1,
     horizontalFieldOfView: 90,
+    pivotTargetLocation: { x: 0, y: 0, z: 0 },
+    pivotLagLocation: { x: 0, y: 0, z: 0 },
+    pivotLocation: { x: 0, y: 0, z: 0 },
+    componentLocation: { x: 0, y: 0, z: 0 },
     location: { x: 0, y: 0, z: 0 },
     rotation: { pitch: 0, yaw: 0, roll: 0 },
   }), [])
@@ -698,6 +706,30 @@ export function AlsCamera({
       cameraComponentState.traceDistanceRatio
     debugState.horizontalFieldOfView =
       renderView.cameraFieldOfView
+    debugState.pivotTargetLocation.x =
+      cameraComponentState.pivotTargetLocation.x
+    debugState.pivotTargetLocation.y =
+      cameraComponentState.pivotTargetLocation.y
+    debugState.pivotTargetLocation.z =
+      cameraComponentState.pivotTargetLocation.z
+    debugState.pivotLagLocation.x =
+      cameraComponentState.pivotLagLocation.x
+    debugState.pivotLagLocation.y =
+      cameraComponentState.pivotLagLocation.y
+    debugState.pivotLagLocation.z =
+      cameraComponentState.pivotLagLocation.z
+    debugState.pivotLocation.x =
+      cameraComponentState.pivotLocation.x
+    debugState.pivotLocation.y =
+      cameraComponentState.pivotLocation.y
+    debugState.pivotLocation.z =
+      cameraComponentState.pivotLocation.z
+    debugState.componentLocation.x =
+      cameraComponentState.cameraLocation.x
+    debugState.componentLocation.y =
+      cameraComponentState.cameraLocation.y
+    debugState.componentLocation.z =
+      cameraComponentState.cameraLocation.z
     debugState.location.x = renderView.cameraLocation.x
     debugState.location.y = renderView.cameraLocation.y
     debugState.location.z = renderView.cameraLocation.z

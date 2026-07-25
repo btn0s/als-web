@@ -1356,6 +1356,7 @@ export function useAlsCharacter(
   const groundedMoveStart = useRef({ x: 0, y: 0, z: 0 })
   const groundedMoveTarget = useRef({ x: 0, y: 0, z: 0 })
   const groundedMoveApplied = useRef(false)
+  const physicsStepIndex = useRef(0)
   const pendingGroundedBodyHeight = useRef<number | null>(null)
   const extractedAnimRootMotion = useRef(
     createRootMotionMovementParams(),
@@ -1703,6 +1704,7 @@ export function useAlsCharacter(
   useBeforePhysicsStep(() => {
     const body = rigidBody.current
     if (!body) return
+    physicsStepIndex.current++
     if (!capsulesInitialized.current) {
       setRapierAlsStanceCapsules(
         standingCapsule.current,
@@ -2194,6 +2196,8 @@ export function useAlsCharacter(
         characterRoot.current?.position.y ?? Number.NaN,
       position: bodyTranslation,
       velocity: body.linvel(),
+      physicsStepIndex: physicsStepIndex.current,
+      physicsTimeStep: ALS_PHYSICS_TIMESTEP,
       physicsBodyType:
         body.bodyType() === RigidBodyType.Dynamic
           ? 'Dynamic'
@@ -2249,6 +2253,15 @@ export function useAlsCharacter(
     const current = character.current
     const bodyTranslation = body.translation()
     threeToUnrealVector(bodyTranslation, rapierBodyAnchor.current)
+    const debugState = window.__alsCharacterState
+    if (debugState) {
+      // The object is first assembled during the matching pre-physics callback. Replace its raw
+      // body snapshot here so Diagnostics compares the completed Rapier step with the rendered
+      // component and camera from that same game frame.
+      debugState.position = bodyTranslation
+      debugState.velocity = body.linvel()
+      debugState.physicsStepIndex = physicsStepIndex.current
+    }
     if (groundedMoveApplied.current) {
       actualVelocity.current.x = (
         bodyTranslation.x - groundedMoveStart.current.x

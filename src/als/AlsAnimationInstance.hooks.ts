@@ -81,6 +81,8 @@ function captureMetadata(frameControls: AlsAnimationInstanceControls) {
           characterPositionX: characterState.position.x,
           characterPositionY: characterState.position.y,
           characterPositionZ: characterState.position.z,
+          physicsStepIndex: characterState.physicsStepIndex,
+          physicsTimeStep: characterState.physicsTimeStep,
           capsuleBottomY: characterState.capsuleBottomY,
           actorFeetY: characterState.actorFeet.y,
           meshBaseOffsetY: characterState.meshBaseOffsetY,
@@ -94,13 +96,36 @@ function captureMetadata(frameControls: AlsAnimationInstanceControls) {
           rootMotionOwned: characterState.animRootMotionOwned,
         }
       : {}),
-    ...(cameraState
+    ...(cameraState?.activated
       ? {
           // Camera debug state is published in Unreal axes. Convert it to the same Three/Rapier
           // world axes as the raw body and rendered root before the transform-jitter comparison.
           cameraPositionX: cameraState.location.x,
           cameraPositionY: cameraState.location.z,
           cameraPositionZ: cameraState.location.y,
+          cameraPivotTargetPositionX:
+            cameraState.pivotTargetLocation.x,
+          cameraPivotTargetPositionY:
+            cameraState.pivotTargetLocation.z,
+          cameraPivotTargetPositionZ:
+            cameraState.pivotTargetLocation.y,
+          cameraPivotLagPositionX:
+            cameraState.pivotLagLocation.x,
+          cameraPivotLagPositionY:
+            cameraState.pivotLagLocation.z,
+          cameraPivotLagPositionZ:
+            cameraState.pivotLagLocation.y,
+          cameraPivotPositionX: cameraState.pivotLocation.x,
+          cameraPivotPositionY: cameraState.pivotLocation.z,
+          cameraPivotPositionZ: cameraState.pivotLocation.y,
+          cameraComponentPositionX:
+            cameraState.componentLocation.x,
+          cameraComponentPositionY:
+            cameraState.componentLocation.z,
+          cameraComponentPositionZ:
+            cameraState.componentLocation.y,
+          cameraTraceDistanceRatio:
+            cameraState.traceDistanceRatio,
         }
       : {}),
   }

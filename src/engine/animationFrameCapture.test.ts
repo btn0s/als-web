@@ -50,7 +50,7 @@ describe('AnimationFrameCapture', () => {
     expect(report.diagnostics.rollingContact).toBeNull()
     expect(report.diagnostics.rollingRootMotion).toBeNull()
     expect(report.diagnostics.turnInPlace).toBeNull()
-    expect(report.diagnostics.transformJitter).toEqual({
+    expect(report.diagnostics.transformJitter).toMatchObject({
       rawCharacterPosition: null,
       renderedRootWorldPosition: expect.objectContaining({
         residual: [0, 0, 0],
@@ -94,7 +94,7 @@ describe('AnimationFrameCapture', () => {
     })
 
     const report = await reportPromise
-    expect(report.diagnostics.transformJitter).toEqual({
+    expect(report.diagnostics.transformJitter).toMatchObject({
       rawCharacterPosition: {
         residual: [0, 0, 0], magnitude: 0, frame: 1,
       },
@@ -104,6 +104,56 @@ describe('AnimationFrameCapture', () => {
       cameraWorldPosition: {
         residual: [0, 0, 0], magnitude: 0, frame: 1,
       },
+    })
+    expect(
+      report.diagnostics.transformJitter.rawCharacterPosition?.autocorrelationPeak,
+    ).toBeNull()
+  })
+
+  it('reports fixed-step cadence beside the residual timeline', async () => {
+    const { root } = twoBoneScene()
+    const capture = new AnimationFrameCapture(root)
+    const reportPromise = capture.start(5)
+    const physicsSteps = [10, 11, 11, 13, 14]
+
+    for (let index = 0; index < physicsSteps.length; index++) {
+      root.position.x = index
+      capture.recordFrame(index === 0 ? 0 : 1 / 60, {
+        characterPositionX: index,
+        characterPositionY: 0,
+        characterPositionZ: 0,
+        physicsStepIndex: physicsSteps[index],
+        physicsTimeStep: 1 / 60,
+      })
+    }
+
+    const jitter = (await reportPromise).diagnostics.transformJitter
+    expect(jitter.frameCadence).toEqual({
+      frameCount: 4,
+      durationSeconds: 4 / 60,
+      minimumDeltaTime: 1 / 60,
+      medianDeltaTime: 1 / 60,
+      medianFramesPerSecond: 60,
+      maximumDeltaTime: 1 / 60,
+      maximumDeltaTimeFrame: 1,
+    })
+    expect(jitter.physicsCadence).toEqual({
+      fixedTimeStepSeconds: 1 / 60,
+      edgeCount: 4,
+      totalStepCount: 4,
+      minimumStepsPerRenderEdge: 0,
+      medianStepsPerRenderEdge: 1,
+      maximumStepsPerRenderEdge: 2,
+      maximumStepsFrame: 3,
+      zeroStepEdgeCount: 1,
+      singleStepEdgeCount: 2,
+      multipleStepEdgeCount: 1,
+      resetEdgeCount: 0,
+    })
+    expect(jitter.rawCharacterPosition?.peakWindow[0]).toMatchObject({
+      physicsStepIndex: 11,
+      physicsStepsFromPreviousFrame: 1,
+      physicsStepsToNextFrame: 0,
     })
   })
 
@@ -140,7 +190,7 @@ describe('AnimationFrameCapture', () => {
     })
 
     const report = await reportPromise
-    expect(report.diagnostics.transformJitter).toEqual({
+    expect(report.diagnostics.transformJitter).toMatchObject({
       rawCharacterPosition: {
         residual: [2, -2, 1], magnitude: 3, frame: 1,
       },
@@ -151,6 +201,216 @@ describe('AnimationFrameCapture', () => {
         residual: [-1, 2, -2], magnitude: 3, frame: 1,
       },
     })
+  })
+
+  it('captures camera pivot bob independently from a smooth component root', async () => {
+    const { root, child } = twoBoneScene()
+    child.name = 'head'
+    const capture = new AnimationFrameCapture(root)
+    const reportPromise = capture.start(3)
+
+    capture.recordFrame(0)
+    root.position.x = 5
+    child.position.x = 2
+    capture.recordFrame(0.1)
+    root.position.x = 10
+    child.position.x = 0
+    capture.recordFrame(0.1)
+
+    const report = await reportPromise
+    expect(report.diagnostics.transformJitter.renderedRootWorldPosition)
+      .toMatchObject({ residual: [0, 0, 0], magnitude: 0 })
+    expect(report.diagnostics.transformJitter.cameraPivotWorldPosition)
+      .toMatchObject({ residual: [1, 0, 0], magnitude: 1, frame: 1 })
+  })
+
+  it('finds a repeating signed residual period and loop-phase context', async () => {
+    const { root } = twoBoneScene()
+    const capture = new AnimationFrameCapture(root)
+    const frameCount = 14
+    const reportPromise = capture.start(frameCount)
+
+    for (let index = 0; index < frameCount; index++) {
+      root.position.x = index % 2
+      capture.recordFrame(index === 0 ? 0 : 0.1, {
+        characterPositionX: index % 2,
+        characterPositionY: 0,
+        characterPositionZ: 0,
+        runFwd: 1,
+        'clipPhase.runFwd': (index % 4) / 4,
+        speed: 3.75,
+        gait: 'Running',
+        moving: true,
+        locomotionMode: 'Grounded',
+        cameraTraceDistanceRatio: 0.75,
+      })
+    }
+
+    const report = await reportPromise
+    const raw = report.diagnostics.transformJitter.rawCharacterPosition
+    expect(raw).toMatchObject({
+      dominantAxis: 'X',
+      autocorrelationPeak: {
+        lagFrames: 2,
+        coefficient: 1,
+        pairCount: 10,
+      },
+      loopPhase: {
+        clip: 'runFwd',
+        contiguousSampleCount: 12,
+        completeCycleCount: 2,
+        meanWeight: 1,
+        minimumWeight: 1,
+        cycleToCycleCorrelation: 1,
+      },
+    })
+    expect(raw?.autocorrelationPeak?.periodSeconds).toBeCloseTo(0.2)
+    expect(raw?.loopPhase?.observedMedianLoopPeriodSeconds).toBeCloseTo(0.4)
+    expect(raw?.loopPhase?.phaseBins[0]).toMatchObject({
+      sampleCount: 2,
+      signedResidualMean: -1,
+    })
+    expect(raw?.loopPhase?.phaseBins[2]).toMatchObject({
+      sampleCount: 2,
+      signedResidualMean: 1,
+    })
+    const summary = report.diagnostics.transformJitterSummary.paths
+      .rawCharacterPosition
+    expect(summary).toMatchObject({
+      peakResidualMillimeters: [1_000, 0, 0],
+      peakMagnitudeMillimeters: 1_000,
+      rmsMagnitudeMillimeters: 1_000,
+      dominantAxis: 'X',
+      loopPhase: {
+        clip: 'runFwd',
+        completeCycleCount: 2,
+        signedResidualMeanMillimetersByPhaseBin:
+          [-1_000, null, 1_000, null, -1_000, null, 1_000, null],
+        sampleCountByPhaseBin: [2, 0, 2, 0, 2, 0, 2, 0],
+      },
+    })
+    expect(summary).not.toHaveProperty('peakWindow')
+    expect(raw?.peakWindow[0]).toMatchObject({
+      loop: { clip: 'runFwd', phase: 0.25, weight: 1 },
+      speed: 3.75,
+      gait: 'Running',
+      moving: true,
+      locomotionMode: 'Grounded',
+      cameraTraceDistanceRatio: 0.75,
+    })
+  })
+
+  it('uses true per-cycle phase-bin means and represents empty bins as null', async () => {
+    const { root } = twoBoneScene()
+    const capture = new AnimationFrameCapture(root)
+    const phases = [
+      0.75,
+      0, 0.02, 0.04, 0.25, 0.5, 0.75,
+      0, 0.02, 0.04, 0.25, 0.5, 0.75,
+      0, 0.25, 0.5,
+    ]
+    const reportPromise = capture.start(phases.length)
+
+    for (let index = 0; index < phases.length; index++) {
+      root.position.x = index % 2
+      capture.recordFrame(index === 0 ? 0 : 0.1, {
+        characterPositionX: index % 2,
+        characterPositionY: 0,
+        characterPositionZ: 0,
+        runFwd: 1,
+        'clipPhase.runFwd': phases[index],
+      })
+    }
+
+    const report = await reportPromise
+    const bins = report.diagnostics.transformJitter.rawCharacterPosition
+      ?.loopPhase?.phaseBins
+    expect(bins?.[0]).toMatchObject({
+      sampleCount: 3,
+      signedResidualMean: 1 / 3,
+    })
+    expect(bins?.[1]).toMatchObject({
+      sampleCount: 0,
+      signedResidualMean: null,
+    })
+  })
+
+  it('keeps loop analysis inside the longest clip-contiguous run and excludes partial cycles', async () => {
+    const { root } = twoBoneScene()
+    const capture = new AnimationFrameCapture(root)
+    const reportPromise = capture.start(12)
+    for (let index = 0; index < 12; index++) {
+      root.position.x = index % 2
+      const switched = index === 4
+      capture.recordFrame(index === 0 ? 0 : 0.1, {
+        characterPositionX: index % 2,
+        characterPositionY: 0,
+        characterPositionZ: 0,
+        runFwd: switched ? 0 : 1,
+        walkFwd: switched ? 1 : 0,
+        'clipPhase.runFwd': (index % 4) / 4,
+        'clipPhase.walkFwd': 0,
+      })
+    }
+    const loop = (await reportPromise).diagnostics.transformJitter
+      .rawCharacterPosition?.loopPhase
+    expect(loop).toMatchObject({
+      clip: 'runFwd',
+      contiguousSampleCount: 6,
+      completeCycleCount: 0,
+      cycleToCycleCorrelation: null,
+    })
+    expect(loop?.phaseBins).toEqual([
+      ...Array.from({ length: 8 }, () => expect.objectContaining({
+        sampleCount: 0,
+        signedResidualMean: null,
+      })),
+    ])
+  })
+
+  it('resolves the InAir player weight paired with a clip phase', async () => {
+    const { root } = twoBoneScene()
+    const capture = new AnimationFrameCapture(root)
+    const reportPromise = capture.start(10)
+    for (let index = 0; index < 10; index++) {
+      root.position.x = index % 2
+      capture.recordFrame(index === 0 ? 0 : 0.1, {
+        characterPositionX: index % 2,
+        characterPositionY: 0,
+        characterPositionZ: 0,
+        'InAirPlayer.inAirFall': 1,
+        'clipPhase.inAirFall': (index % 4) / 4,
+      })
+    }
+    expect(
+      (await reportPromise).diagnostics.transformJitter
+        .rawCharacterPosition?.loopPhase,
+    ).toMatchObject({
+      clip: 'inAirFall',
+      contiguousSampleCount: 8,
+      completeCycleCount: 1,
+      meanWeight: 1,
+    })
+  })
+
+  it('searches autocorrelation lags beyond sixty frames', async () => {
+    const { root } = twoBoneScene()
+    const capture = new AnimationFrameCapture(root)
+    const frameCount = 128
+    const reportPromise = capture.start(frameCount)
+    for (let index = 0; index < frameCount; index++) {
+      const value = Math.cos(2 * Math.PI * index / 62)
+      root.position.x = value
+      capture.recordFrame(index === 0 ? 0 : 0.1, {
+        characterPositionX: value,
+        characterPositionY: 0,
+        characterPositionZ: 0,
+      })
+    }
+    const peak = (await reportPromise).diagnostics.transformJitter
+      .rawCharacterPosition?.autocorrelationPeak
+    expect(peak?.lagFrames).toBe(62)
+    expect(peak?.coefficient).toBeCloseTo(1)
   })
 
   it('integrates active TurnInPlace actor yaw from the preceding published curve', async () => {
@@ -195,7 +455,7 @@ describe('AnimationFrameCapture', () => {
   it('validates the bound, rejects overlap, and cancels pending work', async () => {
     const { root } = twoBoneScene()
     const capture = new AnimationFrameCapture(root)
-    expect(() => capture.start(1)).toThrow('2-240 frames')
+    expect(() => capture.start(1)).toThrow('2-480 frames')
     const first = capture.start(2)
     await expect(capture.start(2)).rejects.toThrow('already in progress')
     capture.cancel('test cancellation')
