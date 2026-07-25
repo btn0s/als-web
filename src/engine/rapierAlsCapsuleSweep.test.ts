@@ -23,6 +23,19 @@ class FakeCapsule {
   }
 }
 
+class FakeRay {
+  origin: { x: number; y: number; z: number }
+  dir: { x: number; y: number; z: number }
+
+  constructor(
+    origin: { x: number; y: number; z: number },
+    dir: { x: number; y: number; z: number },
+  ) {
+    this.origin = origin
+    this.dir = dir
+  }
+}
+
 beforeAll(async () => {
   await RAPIER.init()
 })
@@ -56,6 +69,7 @@ describe('Rapier ALS capsule sweep', () => {
       | undefined
     const sweep = createRapierAlsCapsuleSweep({
       Capsule: FakeCapsule,
+      Ray: FakeRay,
       excludeRigidBody: excludedBody,
       world: {
         castShape(
@@ -88,6 +102,9 @@ describe('Rapier ALS capsule sweep', () => {
             normal1: { x: 0.1, y: 0.9, z: -0.2 },
             normal2: { x: -0.1, y: -0.9, z: 0.2 },
           }
+        },
+        castRayAndGetNormal() {
+          return null
         },
       },
     })
@@ -171,6 +188,86 @@ describe('Rapier ALS capsule sweep', () => {
         walkableFloorAngleCos: 0.71,
       },
     )).toBeNull()
+  })
+
+  it('converts the ALS center floor ray, normal, support, and owner exclusion once', () => {
+    const excludedBody = {}
+    const supportingBody = {
+      handle: 31,
+      translation: () => ({ x: 0, y: 0, z: 0 }),
+      rotation: () => ({ x: 0, y: 0, z: 0, w: 1 }),
+      isFixed: () => true,
+    }
+    const supportingCollider = {
+      handle: 32,
+      translation: () => ({ x: 0, y: 0, z: 0 }),
+      rotation: () => ({ x: 0, y: 0, z: 0, w: 1 }),
+      parent: () => supportingBody,
+    }
+    let observed:
+      | {
+          origin: { x: number; y: number; z: number }
+          direction: { x: number; y: number; z: number }
+          maxTimeOfImpact: number
+          solid: boolean
+          excludedBody: unknown
+        }
+      | undefined
+    const sweep = createRapierAlsCapsuleSweep({
+      Capsule: FakeCapsule,
+      Ray: FakeRay,
+      excludeRigidBody: excludedBody,
+      world: {
+        castShape() {
+          return null
+        },
+        castRayAndGetNormal(
+          ray,
+          maxTimeOfImpact,
+          solid,
+          _flags,
+          _groups,
+          _collider,
+          body,
+        ) {
+          observed = {
+            origin: { ...ray.origin },
+            direction: { ...ray.dir },
+            maxTimeOfImpact,
+            solid,
+            excludedBody: body,
+          }
+          return {
+            timeOfImpact: 0.5,
+            collider: supportingCollider,
+            normal: { x: 0.1, y: 0.9, z: -0.2 },
+          }
+        },
+      },
+    })
+
+    const hit = sweep.lineTrace({
+      start: { x: 1, y: 2, z: 3 },
+      end: { x: 5, y: 7, z: -8 },
+    })
+
+    expect(observed).toEqual({
+      origin: { x: 1, y: 3, z: 2 },
+      direction: { x: 4, y: -11, z: 5 },
+      maxTimeOfImpact: 1,
+      solid: true,
+      excludedBody,
+    })
+    expect(hit).toEqual({
+      validBlockingHit: true,
+      time: 0.5,
+      impactNormal: { x: 0.1, y: -0.2, z: 0.9 },
+      impactPoint: { x: 3, y: 4.5, z: -2.5 },
+      bBlockingHit: true,
+      bStartPenetrating: false,
+      collider: supportingCollider,
+      rigidBody: supportingBody,
+    })
   })
 
   it('retries an adjacent wall hit with ALS exact overlap sweep dimensions', () => {
@@ -262,6 +359,7 @@ describe('Rapier ALS capsule sweep', () => {
     const sweep = createRapierAlsCapsuleSweep({
       world,
       Capsule: RAPIER.Capsule,
+      Ray: RAPIER.Ray,
     })
     const queries: Parameters<typeof sweep>[0][] = []
     const hits: ReturnType<typeof sweep>[] = []
@@ -300,6 +398,85 @@ describe('Rapier ALS capsule sweep', () => {
     world.free()
   })
 
+  it('uses ALS ComputeFloorDist center line fallback after a deep ledge penetration', () => {
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
+    const floorBody = world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.05, 0),
+    )
+    const floor = world.createCollider(
+      RAPIER.ColliderDesc.cuboid(20, 0.05, 20),
+      floorBody,
+    )
+    const obstacleBody = world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(3, 0.5, 0),
+    )
+    const obstacle = world.createCollider(
+      RAPIER.ColliderDesc.cuboid(0.75, 0.5, 1.5),
+      obstacleBody,
+    )
+    world.step()
+
+    const sweep = createRapierAlsCapsuleSweep({
+      world,
+      Capsule: RAPIER.Capsule,
+      Ray: RAPIER.Ray,
+    })
+    const capsuleHits: ReturnType<typeof sweep>[] = []
+    const lineQueries: Parameters<typeof sweep.lineTrace>[0][] = []
+    const observedSweep = Object.assign(
+      (query: Parameters<typeof sweep>[0]) => {
+        const hit = sweep(query)
+        capsuleHits.push(hit)
+        return hit
+      },
+      {
+        lineTrace(query: Parameters<typeof sweep.lineTrace>[0]) {
+          lineQueries.push(query)
+          return sweep.lineTrace(query)
+        },
+      },
+    )
+    const ground = probeRapierAlsGround(
+      observedSweep,
+      {
+        // The wall face is x=2.25. Here the capsule is 5 cm into it, so even the smaller
+        // retry capsule remains penetrating. The center ray is still clear and must recover
+        // the floor exactly as ComputeFloorDist's final line trace does.
+        location: {
+          x: 2,
+          y: 0,
+          z: 0.9 + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+        },
+        capsuleRadius: 0.3,
+        capsuleHalfHeight: 0.9,
+        walkableFloorAngleCos: 0.71,
+      },
+    )
+
+    expect(capsuleHits).toHaveLength(2)
+    expect(capsuleHits[0]?.collider.handle).toBe(obstacle.handle)
+    expect(capsuleHits[0]?.bStartPenetrating).toBe(true)
+    expect(capsuleHits[1]?.collider.handle).toBe(obstacle.handle)
+    expect(capsuleHits[1]?.bStartPenetrating).toBe(true)
+    expect(lineQueries).toEqual([{
+      start: {
+        x: 2,
+        y: 0,
+        z: 0.9 + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+      },
+      end: {
+        x: 2,
+        y: 0,
+        z: 0.9 + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE
+          - ALS_RAPIER_GROUND_PROBE_DISTANCE - 0.9,
+      },
+    }])
+    expect(ground?.collider.handle).toBe(floor.handle)
+    expect(ground?.impactNormal.z).toBeGreaterThanOrEqual(0.71)
+    expect(ground?.time).toBeGreaterThan(0)
+    world.free()
+  })
+
   it('returns null on a miss and resolves the owner at query time', () => {
     const firstBody = {}
     const secondBody = {}
@@ -307,6 +484,7 @@ describe('Rapier ALS capsule sweep', () => {
     let currentBody: unknown = firstBody
     const sweep = createRapierAlsCapsuleSweep({
       Capsule: FakeCapsule,
+      Ray: FakeRay,
       resolveExcludeRigidBody: () => currentBody,
       world: {
         castShape(
@@ -323,6 +501,9 @@ describe('Rapier ALS capsule sweep', () => {
           body,
         ) {
           observedBodies.push(body)
+          return null
+        },
+        castRayAndGetNormal() {
           return null
         },
       },
@@ -505,6 +686,7 @@ describe('Rapier ALS capsule sweep', () => {
     const sweep = createRapierAlsCapsuleSweep({
       world,
       Capsule: RAPIER.Capsule,
+      Ray: RAPIER.Ray,
       filterFlags: RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
     })
 
