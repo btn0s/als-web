@@ -798,47 +798,83 @@ function pearsonCorrelation(
   return denominator === 0 ? null : numerator / denominator
 }
 
-function loopPhaseDiagnostics(
-  samples: readonly AnimationFrameTransformJitterSample[],
-  axis: 0 | 1 | 2,
-): AnimationFrameLoopPhaseDiagnostics | null {
-  const counts = new Map<string, number>()
-  for (const sample of samples) {
-    if (sample.loop) {
-      counts.set(
-        sample.loop.clip,
-        (counts.get(sample.loop.clip) ?? 0) + 1,
-      )
-    }
-  }
-  const ranked = [...counts.entries()].sort(
-    (left, right) => right[1] - left[1],
-  )
-  const dominant = ranked[0]
-  // The dominant source wins more rendered samples than every other source. Ties deliberately
-  // yield no claim, and the analysis below never bridges gaps where another source wins.
-  if (!dominant || (ranked[1] && dominant[1] === ranked[1][1])) return null
-  let run: AnimationFrameTransformJitterSample[] = []
-  let candidate: AnimationFrameTransformJitterSample[] = []
-  for (const sample of samples) {
-    if (sample.loop?.clip === dominant[0]) candidate.push(sample)
-    else {
-      if (candidate.length > run.length) run = candidate
-      candidate = []
-    }
-  }
-  if (candidate.length > run.length) run = candidate
-  if (run.length === 0) return null
-  const binCount = 8
+function loopWrapIndices(
+  run: readonly AnimationFrameTransformJitterSample[],
+) {
   const wraps: number[] = []
   for (let index = 1; index < run.length; index++) {
     if (run[index].loop!.phase % 1 < run[index - 1].loop!.phase % 1) {
       wraps.push(index)
     }
   }
-  const completeCycles = wraps.slice(0, -1).map(
+  return wraps
+}
+
+function completeLoopCycles(
+  run: readonly AnimationFrameTransformJitterSample[],
+  wraps: readonly number[],
+) {
+  return wraps.slice(0, -1).map(
     (start, index) => run.slice(start, wraps[index + 1]),
   )
+}
+
+function loopPhaseDiagnostics(
+  samples: readonly AnimationFrameTransformJitterSample[],
+  axis: 0 | 1 | 2,
+): AnimationFrameLoopPhaseDiagnostics | null {
+  interface LoopRunCandidate {
+    readonly clip: string
+    readonly start: number
+    readonly samples: readonly AnimationFrameTransformJitterSample[]
+    readonly wraps: readonly number[]
+    readonly completeCycles:
+      readonly (readonly AnimationFrameTransformJitterSample[])[]
+    readonly meanWeight: number
+  }
+
+  const candidates: LoopRunCandidate[] = []
+  let start = 0
+  while (start < samples.length) {
+    const loop = samples[start].loop
+    if (!loop) {
+      start++
+      continue
+    }
+    let end = start + 1
+    while (end < samples.length && samples[end].loop?.clip === loop.clip) end++
+    const run = samples.slice(start, end)
+    const wraps = loopWrapIndices(run)
+    const completeCycles = completeLoopCycles(run, wraps)
+    candidates.push({
+      clip: loop.clip,
+      start,
+      samples: run,
+      wraps,
+      completeCycles,
+      meanWeight:
+        run.reduce((sum, sample) => sum + sample.loop!.weight, 0)
+        / run.length,
+    })
+    start = end
+  }
+  if (candidates.length === 0) return null
+
+  // A full wrap-to-wrap interval is evidence of a real loop; a longer one-shot landing or
+  // transition run is only a fallback when no observed candidate completed a cycle. Remaining
+  // ties are deliberately deterministic so the report never changes due to metadata ordering.
+  candidates.sort((left, right) => (
+    right.completeCycles.length - left.completeCycles.length
+    || right.samples.length - left.samples.length
+    || right.meanWeight - left.meanWeight
+    || (left.clip < right.clip ? -1 : left.clip > right.clip ? 1 : 0)
+    || left.start - right.start
+  ))
+  const selected = candidates[0]
+  const run = selected.samples
+  const wraps = selected.wraps
+  const completeCycles = selected.completeCycles
+  const binCount = 8
   const bins = Array.from({ length: binCount }, () => [] as number[])
   const cycles = completeCycles.map(() => ({
     sums: Array.from({ length: binCount }, () => 0),
@@ -875,7 +911,7 @@ function loopPhaseDiagnostics(
   ))
   const weights = run.map((sample) => sample.loop!.weight)
   return {
-    clip: dominant[0],
+    clip: selected.clip,
     contiguousSampleCount: run.length,
     completeCycleCount: completeCycles.length,
     observedMedianLoopPeriodSeconds:

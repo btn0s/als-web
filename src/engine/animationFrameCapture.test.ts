@@ -368,6 +368,60 @@ describe('AnimationFrameCapture', () => {
     ])
   })
 
+  it('prefers a shorter repeating loop over a longer one-shot clip run', async () => {
+    const { root } = twoBoneScene()
+    const capture = new AnimationFrameCapture(root)
+    const frameCount = 24
+    const reportPromise = capture.start(frameCount)
+    for (let index = 0; index < frameCount; index++) {
+      root.position.x = index % 2
+      const running = index >= 14
+      capture.recordFrame(index === 0 ? 0 : 0.1, {
+        characterPositionX: index % 2,
+        characterPositionY: 0,
+        characterPositionZ: 0,
+        'InAirPlayer.landMovementLight': running ? 0 : 1,
+        runFwd: running ? 1 : 0,
+        'clipPhase.landMovementLight': Math.min(index, 1) * 0.5,
+        'clipPhase.runFwd': ((index - 14 + 4) % 4) / 4,
+      })
+    }
+
+    expect(
+      (await reportPromise).diagnostics.transformJitter
+        .rawCharacterPosition?.loopPhase,
+    ).toMatchObject({
+      clip: 'runFwd',
+      contiguousSampleCount: 9,
+      completeCycleCount: 1,
+    })
+  })
+
+  it('breaks equally useful loop-run ties by clip name then occurrence', async () => {
+    const { root } = twoBoneScene()
+    const capture = new AnimationFrameCapture(root)
+    const frameCount = 18
+    const reportPromise = capture.start(frameCount)
+    for (let index = 0; index < frameCount; index++) {
+      root.position.x = index % 2
+      const alpha = index < 9
+      capture.recordFrame(index === 0 ? 0 : 0.1, {
+        characterPositionX: index % 2,
+        characterPositionY: 0,
+        characterPositionZ: 0,
+        alpha: alpha ? 1 : 0,
+        beta: alpha ? 0 : 1,
+        'clipPhase.alpha': (index % 4) / 4,
+        'clipPhase.beta': (index % 4) / 4,
+      })
+    }
+
+    expect(
+      (await reportPromise).diagnostics.transformJitter
+        .rawCharacterPosition?.loopPhase,
+    ).toMatchObject({ clip: 'alpha', completeCycleCount: 1 })
+  })
+
   it('resolves the InAir player weight paired with a clip phase', async () => {
     const { root } = twoBoneScene()
     const capture = new AnimationFrameCapture(root)
