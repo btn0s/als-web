@@ -171,7 +171,10 @@ second (flagged) — never from another project's implementation:
       rule alphas from the overlay assets' authored `Layer*` curves (dumped in M2), don't hand-tune
       from scratch. (Mesh-space arm layering: previously an accepted mixer limitation — the
       pose-buffer runtime above makes it implementable; do it if parity footage demands it)
-- [ ] In-air: jump/fall with land recovery (`Land_Light`/`LandRoll` by fall speed)
+- [x] In-air: exact Jump / Fall / Land / Land Movement graph, authored Light/Heavy
+      landing blends, Rapier-backed ground prediction, and character-owned landing
+      `AM_Als_Roll` at the authored 700 cm/s threshold. High-speed landing ragdoll remains
+      under the explicit CUT below *(2026-07-24)*
 - [ ] Mantle/vault through the arbiter (one clock: warp + montage share normalized progress)
 - [ ] **Engine features**: sync groups on authored Left/Right markers, final named-curve
       composition, and UE-style output inertialization landed *(2026-07-23)*; montage/slot blend

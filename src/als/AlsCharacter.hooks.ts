@@ -513,6 +513,33 @@ export interface AlsCharacterActionBridge {
   ) => void
 }
 
+export function createAlsLocomotionModeChangedLifecycleBridge(
+  Character: MutableRefObject<AlsCharacter>,
+  Actions: MutableRefObject<AlsCharacterActionBridge | undefined>,
+): AlsLocomotionModeChangedLifecycle {
+  return {
+    StartRagdolling() {
+      Actions.current?.StartRagdolling?.()
+    },
+    StartRolling(PlayRate, TargetYawAngle) {
+      const Animation = Actions.current?.RollingMontage.current
+      if (Animation) {
+        startRolling(
+          Character.current,
+          PlayRate,
+          TargetYawAngle,
+          Animation,
+        )
+      }
+    },
+    OnLocomotionModeChanged(PreviousLocomotionMode) {
+      Actions.current?.OnLocomotionModeChanged?.(
+        PreviousLocomotionMode,
+      )
+    },
+  }
+}
+
 export interface AlsCharacterBridge {
   readonly character: MutableRefObject<AlsCharacter>
   readonly animationControls:
@@ -1161,29 +1188,12 @@ export function useAlsCharacter(
   const character = useRef(createAlsCharacter())
   const actionBridge = useRef(actions)
   actionBridge.current = actions
-  const locomotionModeChangedLifecycle =
-    useRef<AlsLocomotionModeChangedLifecycle>({
-      StartRagdolling() {
-        actionBridge.current?.StartRagdolling?.()
-      },
-      StartRolling(PlayRate, TargetYawAngle) {
-        const Animation =
-          actionBridge.current?.RollingMontage.current
-        if (Animation) {
-          startRolling(
-            character.current,
-            PlayRate,
-            TargetYawAngle,
-            Animation,
-          )
-        }
-      },
-      OnLocomotionModeChanged(PreviousLocomotionMode) {
-        actionBridge.current?.OnLocomotionModeChanged?.(
-          PreviousLocomotionMode,
-        )
-      },
-    })
+  const locomotionModeChangedLifecycle = useRef(
+    createAlsLocomotionModeChangedLifecycleBridge(
+      character,
+      actionBridge,
+    ),
+  )
   const rollingPhysics = useRef<AlsRollingPhysicsAdapter>({
     GetUpdatedComponentRotation() {
       return {

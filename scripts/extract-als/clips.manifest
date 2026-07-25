@@ -83,7 +83,7 @@ A_Als_Land_Light_Additive|Authored additive layer driven by light landing recove
 A_Als_Land_Heavy_Additive|Authored additive layer driven by heavy landing recovery|M3 In-air: heavy landing recovery
 A_Als_GetUp_Back|Get-up action from a supine pose|M3 action arbiter coverage; retained despite ragdoll being cut
 A_Als_GetUp_Front|GettingUp action, front orientation|M3 action arbiter coverage; retained despite ragdoll being cut
-A_Als_Roll|Authored roll used as the available LandRoll-equivalent action|M3 In-air: fall-speed LandRoll recovery
+A_Als_Roll|Authored Rolling sequence referenced by AM_Als_Roll, selected by AAlsCharacter landing policy|M3 In-air: Rolling on land at authored fall-speed threshold
 A_Als_Mantle_High|High mantle action with preserved root translation|M3 Mantle/vault through the arbiter
 A_Als_Mantle_Low_Left|Low mantle action led from the left side with preserved root translation|M3 Mantle/vault through the arbiter
 A_Als_Mantle_Low_Right|Low mantle action led from the right side with preserved root translation|M3 Mantle/vault through the arbiter

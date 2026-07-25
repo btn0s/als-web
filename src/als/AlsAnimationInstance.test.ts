@@ -40,6 +40,14 @@ import {
   shouldMarkAlsTeleported,
 } from './AlsAnimationInstance'
 import {
+  createAlsCharacter,
+} from './AlsCharacter'
+import type { AlsLocomotionMode } from './AlsCharacter'
+import {
+  createAlsLocomotionModeChangedLifecycleBridge,
+  refreshRapierAlsLocomotionMode,
+} from './AlsCharacter.hooks'
+import {
   sampleGroundPredictionAmount,
 } from './Settings/AlsInAirSettings'
 import {
@@ -904,6 +912,77 @@ describe('AlsAnimationInstance playback regression', () => {
       notifyEventType: 'Begin',
       triggerTime: expect.closeTo(0.51, 12),
     }])
+  })
+
+  it('starts the real AM_Als_Roll montage from the exact landing policy edge', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const character = createAlsCharacter({
+      actorYawAngle: -25,
+      locomotionMode: 'InAir',
+      velocity: { x: 3, y: 0, z: -7 },
+    })
+    const events: unknown[] = []
+    const Character = { current: character }
+    const Actions = {
+      current: {
+        RollingMontage: { current: instance.rollingMontage },
+        StartRagdolling() {
+          events.push('StartRagdolling')
+        },
+        OnLocomotionModeChanged(
+          PreviousLocomotionMode: AlsLocomotionMode,
+        ) {
+          events.push([
+            'OnLocomotionModeChanged',
+            PreviousLocomotionMode,
+          ])
+        },
+      },
+    }
+
+    expect(refreshRapierAlsLocomotionMode(
+      character,
+      true,
+      0,
+      false,
+      createAlsLocomotionModeChangedLifecycleBridge(
+        Character,
+        Actions,
+      ),
+    )).toBe('Grounded')
+
+    expect(events).toEqual([
+      ['OnLocomotionModeChanged', 'InAir'],
+    ])
+    expect(character.locomotionMode).toBe('Grounded')
+    expect(character.locomotionAction).toBe('Rolling')
+    expect(character.stance).toBe('Crouching')
+    expect(character.locomotionState.speed).toBe(3)
+    expect(character.rollingState.TargetYawAngle).toBe(0)
+    expect(instance.rollingMontage.Montage_IsPlaying(
+      ALS_ROLLING_MONTAGE.Name,
+    )).toBe(true)
+    expect(instance.rollingMontage.IsPlayingRootMotion()).toBe(true)
+
+    instance.refresh(0.025, {
+      ...controls,
+      locomotionMode: character.locomotionMode,
+      locomotionAction: character.locomotionAction,
+      stance: character.stance,
+      speed: character.locomotionState.speed,
+      moving: character.locomotionState.moving,
+      velocity: character.locomotionState.velocity,
+      direction: character.locomotionState.velocityYawAngle
+        - character.actorYawAngle,
+    })
+    expect(window.__weightTable?.CrouchingGraphRelevant).toBe(1)
+    expect(window.__weightTable?.PostLocomotionMontageTime)
+      .toBeCloseTo(0.0325, 12)
+    expect(window.__weightTable?.PostLocomotionMontageWeight)
+      .toBeCloseTo(0.15625, 7)
+    expect(window.__weightTable?.PostLocomotionRootMotionEnabled)
+      .toBe(1)
   })
 
   it('plays AM_Als_Roll through PostLocomotion at the requested instance rate with authored root motion', async () => {
@@ -3142,11 +3221,11 @@ describe('AlsAnimationInstance playback regression', () => {
 
     expect(preTransitionWeights).toBeDefined()
     expect(preTransitionWeights?.InAirJumpLaunchRemainingTime)
-      .toBeGreaterThan(0.2)
+      .toBeGreaterThan(0)
     expect(preTransitionWeights?.InAirJumpTransitionCount).toBe(0)
     expect(loopTransitionWeights).toBeDefined()
     expect(loopTransitionWeights?.InAirJumpLaunchRemainingTime)
-      .toBeLessThanOrEqual(0.2)
+      .toBe(0)
     expect(loopTransitionWeights?.InAirJumpTransitionCount).toBe(2)
     expect(loopTransitionWeights?.['InAirPlayer.jumpLoop'])
       .toBeGreaterThan(0)

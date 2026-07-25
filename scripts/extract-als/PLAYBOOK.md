@@ -299,13 +299,18 @@ The 4.15/UE5.5 content currently yields 23 per-asset sections.
   blend profile, and notify indices. Confirmed in the monolithic, locomotion, grounded, view,
   stance, and weapon-overlay ABPs.
 
-- **VERIFIED negative — transition expressions are not legible from the baked description.**
-  `CanTakeDelegateIndex`, desired result, automatic-rule fields, and bound function names
-  survive, but CUE4Parse does not decompile the delegate's boolean expression. The dump marks
-  each expression `{unrecoverable: reason}` rather than implying that the delegate index is
-  the rule. **HYPOTHESIS:** a future Kismet bytecode decompiler plus property-access-library
-  mapping could recover these expressions; verify it by comparing decompiled predicates with
-  the saved editor transition graphs before treating them as ground truth.
+- **VERIFIED — `AB_Als_Locomotion` transition expressions are recovered from saved editor
+  graphs and targeted compiled Kismet.** `dump-abp` follows each `AnimStateTransitionNode`'s bound
+  `AnimationTransitionGraph`, serializes the linked K2 pins/property-access paths, and joins
+  its transition-result `NodeGuid` to the corresponding generated
+  `EvaluateGraphExposedInputs...TransitionResult_<Guid>` function. A targeted UAssetAPI Kismet
+  decode requires an `EX_LetBool` write to the compiled result's `bCanEnterTransition`; constants
+  and tags are attributed by tracing that assignment's local-variable producers to their
+  `EX_CallMath` functions. That Kismet source passes UAssetAPI's byte-for-byte package round-trip
+  check against the pinned asset. The saved editor graph half comes from CUE4Parse, and baked
+  `CanTakeDelegateIndex` remains a separate compiled-node-index oracle, not an inferred
+  expression identity. Other AnimBlueprints remain baked-rule-only until their editor graphs are
+  explicitly added to this oracle.
 
 - **VERIFIED — the package import table is directly available.** `Package.ImportMap` retains
   `ClassPackage`, `ClassName`, `ObjectName`, outer package path, package name, and optional

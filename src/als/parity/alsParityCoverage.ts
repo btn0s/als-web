@@ -144,7 +144,11 @@ export const ALS_PARITY_ASSET_COVERAGE = [
   unportedAsset('ALI_Overlay'),
   partialAsset('AB_Als_Grounded', GROUNDED_GRAPH_EVIDENCE),
   partialAsset('AB_Als_Layering', LAYERING_GRAPH_EVIDENCE),
-  partialAsset('AB_Als_Locomotion', LOCOMOTION_GRAPH_EVIDENCE),
+  {
+    asset: 'AB_Als_Locomotion',
+    status: 'live',
+    evidence: LOCOMOTION_GRAPH_EVIDENCE,
+  },
   {
     asset: 'AB_Als_Ragdolling',
     status: 'implemented-not-live',
@@ -209,6 +213,13 @@ const partialMachine = (
   evidence: AlsParitySourceEvidence,
 ) => machine(asset, name, occurrence, 'partial-live', evidence)
 
+const liveMachine = (
+  asset: string,
+  name: string,
+  occurrence: number,
+  evidence: AlsParitySourceEvidence,
+) => machine(asset, name, occurrence, 'live', evidence)
+
 export const ALS_PARITY_MACHINE_COVERAGE = [
   monolithic('Crouching States'),
   monolithic('Look States'),
@@ -226,13 +237,13 @@ export const ALS_PARITY_MACHINE_COVERAGE = [
     0,
     GROUNDED_GRAPH_EVIDENCE,
   ),
-  partialMachine(
+  liveMachine(
     'AB_Als_Locomotion',
     'Locomotion States',
     0,
     LOCOMOTION_GRAPH_EVIDENCE,
   ),
-  partialMachine(
+  liveMachine(
     'AB_Als_Locomotion',
     'Jump States',
     0,
@@ -412,7 +423,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
   },
   {
     family: 'RefreshInAir',
-    status: 'partial-live',
+    status: 'live',
     evidence: partial(
       [
         'src/als/State/AlsInAirState.ts',

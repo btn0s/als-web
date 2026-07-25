@@ -69,11 +69,49 @@ interface ExtractedStateMachine {
   readonly Transitions: readonly ExtractedTransition[]
 }
 
+interface ExtractedTransitionRuleGraph {
+  readonly resultNodeGuid: string
+  readonly bakedEdgeMapping: {
+    readonly status: 'resolved' | 'conduit-entry'
+    readonly machine: string
+    readonly transitionIndices?: readonly number[]
+    readonly compiledDelegateProperties: readonly string[]
+  }
+  readonly compiledRule: {
+    readonly generatedFunction: string
+    readonly compiledDelegateProperty: string
+    readonly assignment: {
+      readonly target: string
+      readonly expressionType: string
+    }
+    readonly constantBearingCalls: readonly {
+      readonly function: string
+      readonly numericConstants: readonly number[]
+      readonly nameConstants: readonly string[]
+    }[]
+    readonly numericConstants: readonly number[]
+    readonly nameConstants: readonly string[]
+  } | null
+  readonly nodes: readonly {
+    readonly function?: string
+    readonly sourceState?: string
+    readonly propertyPath?: readonly string[]
+  }[]
+}
+
 interface ExtractedAbpGraph {
   readonly assets: {
     readonly AB_Als_Locomotion: {
       readonly nodes: readonly ExtractedNode[]
       readonly stateMachines: readonly ExtractedStateMachine[]
+      readonly transitionRuleBytecodeSource: {
+        readonly parser: string
+        readonly binaryEqualityVerified: boolean
+        readonly ubergraph: string
+        readonly targetedRuleCount: number
+      }
+      readonly transitionRuleGraphs:
+        readonly ExtractedTransitionRuleGraph[]
     }
   }
 }
@@ -101,6 +139,20 @@ function machine(machineName: string) {
   )
   if (!result) throw new Error(`Missing state machine ${machineName}`)
   return result
+}
+
+function transitionRuleGraph(compiledDelegateProperty: string) {
+  const matches = locomotionAsset.transitionRuleGraphs.filter(
+    (graph) => graph.bakedEdgeMapping.compiledDelegateProperties
+      .includes(compiledDelegateProperty),
+  )
+  if (matches.length !== 1) {
+    throw new Error(
+      `Expected one transition graph for ${compiledDelegateProperty},`
+      + ` found ${matches.length}`,
+    )
+  }
+  return matches[0]
 }
 
 function baseTransitionInput(
@@ -285,7 +337,7 @@ describe('VERIFIED AB_Als_Locomotion InAir state machines', () => {
       'true',
       'LocomotionMode == Grounded',
       'Stance != Standing',
-      'GetRelevantAnimTimeRemaining(Land) <= 0.1',
+      'GetRelevantAnimTimeRemaining(Land) <= 0',
       'bHasInput || bRotatingLeft || bRotatingRight || Speed >= 650',
       'LocomotionMode == InAir && bJumped',
       'LocomotionMode == InAir',
@@ -320,10 +372,111 @@ describe('VERIFIED AB_Als_Locomotion InAir state machines', () => {
     )).toEqual([
       'FootPlantedAmount > 0',
       'FootPlantedAmount <= 0',
-      'GetRelevantAnimTimeRemaining(Left Foot) <= 0.2',
-      'GetRelevantAnimTimeRemaining(Right Foot) <= 0.2',
+      'GetRelevantAnimTimeRemaining(Left Foot) <= 0',
+      'GetRelevantAnimTimeRemaining(Right Foot) <= 0',
       'true',
     ])
+  })
+
+  it('pins the binary-equal editor-graph to compiled-rule oracle', () => {
+    expect(locomotionAsset.transitionRuleBytecodeSource).toEqual({
+      parser: 'UAssetAPI 1.1.0',
+      binaryEqualityVerified: true,
+      ubergraph: 'ExecuteUbergraph_AB_Als_Locomotion',
+      targetedRuleCount: 11,
+    })
+    expect(locomotionAsset.transitionRuleGraphs).toHaveLength(18)
+    expect(locomotionAsset.transitionRuleGraphs.filter(
+      (graph) => graph.bakedEdgeMapping.status === 'resolved',
+    )).toHaveLength(16)
+    expect(locomotionAsset.transitionRuleGraphs.filter(
+      (graph) => graph.bakedEdgeMapping.status === 'conduit-entry',
+    )).toHaveLength(2)
+
+    for (const [
+      compiledDelegateProperty,
+      compiledFunction,
+    ] of [
+      ['AnimGraphNode_TransitionResult_1', 'Greater_DoubleDouble'],
+      ['AnimGraphNode_TransitionResult_2', 'LessEqual_DoubleDouble'],
+      ['AnimGraphNode_TransitionResult_3', 'LessEqual_DoubleDouble'],
+      ['AnimGraphNode_TransitionResult_4', 'LessEqual_DoubleDouble'],
+      ['AnimGraphNode_TransitionResult_13', 'LessEqual_DoubleDouble'],
+    ] as const) {
+      const graph = transitionRuleGraph(compiledDelegateProperty)
+      expect(graph.compiledRule).toMatchObject({
+        compiledDelegateProperty,
+        assignment: {
+          target: `${compiledDelegateProperty}.bCanEnterTransition`,
+          expressionType: 'EX_LocalVariable',
+        },
+        constantBearingCalls: [{
+          function: compiledFunction,
+          numericConstants: [0],
+          nameConstants: [],
+        }],
+        numericConstants: [0],
+      })
+      expect(graph.compiledRule?.generatedFunction.endsWith(
+        graph.resultNodeGuid,
+      )).toBe(true)
+    }
+
+    const leftFootFinished = transitionRuleGraph(
+      'AnimGraphNode_TransitionResult_3',
+    )
+    const rightFootFinished = transitionRuleGraph(
+      'AnimGraphNode_TransitionResult_4',
+    )
+    expect(leftFootFinished.nodes).toContainEqual(expect.objectContaining({
+      function: 'GetRelevantAnimTimeRemaining',
+      sourceState: 'Left Foot',
+    }))
+    expect(rightFootFinished.nodes).toContainEqual(expect.objectContaining({
+      function: 'GetRelevantAnimTimeRemaining',
+      sourceState: 'Right Foot',
+    }))
+    expect(ALS_JUMP_STATES_MACHINE.launchRemainingTimeThreshold).toBe(
+      leftFootFinished.compiledRule?.numericConstants[0],
+    )
+    expect(rightFootFinished.compiledRule?.numericConstants[0]).toBe(
+      ALS_JUMP_STATES_MACHINE.launchRemainingTimeThreshold,
+    )
+
+    const landFinished = transitionRuleGraph(
+      'AnimGraphNode_TransitionResult_13',
+    )
+    expect(landFinished.nodes).toContainEqual(expect.objectContaining({
+      function: 'GetRelevantAnimTimeRemaining',
+      sourceState: 'Land',
+    }))
+    expect(ALS_LOCOMOTION_GRAPH_TRANSITIONS[7].rule).toBe(
+      `GetRelevantAnimTimeRemaining(Land) <= ${
+        landFinished.compiledRule?.numericConstants[0]
+      }`,
+    )
+
+    const landMovement = transitionRuleGraph(
+      'AnimGraphNode_TransitionResult_14',
+    )
+    expect(landMovement.compiledRule).toMatchObject({
+      assignment: {
+        target:
+          'AnimGraphNode_TransitionResult_14.bCanEnterTransition',
+      },
+      constantBearingCalls: [{
+        function: 'GreaterEqual_DoubleDouble',
+        numericConstants: [650],
+        nameConstants: [],
+      }],
+      numericConstants: [650],
+    })
+    expect(landMovement.nodes).toContainEqual(expect.objectContaining({
+      function: 'GreaterEqual_DoubleDouble',
+    }))
+    expect(landMovement.nodes).toContainEqual(expect.objectContaining({
+      propertyPath: ['GetParent', 'LocomotionState', 'Speed'],
+    }))
   })
 })
 
@@ -603,14 +756,14 @@ describe('VERIFIED outer Locomotion States decisions', () => {
     )).toBe(ALS_LOCOMOTION_GRAPH_TRANSITIONS[15])
   })
 
-  it('uses the exact Land <=0.1 and 650 cm/s boundaries', () => {
+  it('uses the exact Land <=0 and 650 cm/s boundaries', () => {
     expect(selectAlsLocomotionGraphTransition(
       'Land',
-      baseTransitionInput({ landRemainingTime: 0.100001 }),
+      baseTransitionInput({ landRemainingTime: Number.EPSILON }),
     )).toBeNull()
     expect(selectAlsLocomotionGraphTransition(
       'Land',
-      baseTransitionInput({ landRemainingTime: 0.1 }),
+      baseTransitionInput({ landRemainingTime: 0 }),
     )).toBe(ALS_LOCOMOTION_GRAPH_TRANSITIONS[7])
     expect(selectAlsLocomotionGraphTransition(
       'Land',
@@ -660,7 +813,7 @@ describe('VERIFIED outer Locomotion States decisions', () => {
 })
 
 describe('VERIFIED nested Jump States decisions and weights', () => {
-  it('uses FootPlantedAmount sign and the exact <=0.2 exit rule', () => {
+  it('uses FootPlantedAmount sign and the exact <=0 exit rule', () => {
     expect(selectAlsJumpGraphTransition('Entry Conduit', {
       footPlantedAmount: Number.EPSILON,
       launchRemainingTime: 1,
@@ -671,11 +824,11 @@ describe('VERIFIED nested Jump States decisions and weights', () => {
     })).toBe(ALS_JUMP_GRAPH_TRANSITIONS[1])
     expect(selectAlsJumpGraphTransition('Left Foot', {
       footPlantedAmount: 0,
-      launchRemainingTime: 0.200001,
+      launchRemainingTime: Number.EPSILON,
     })).toBeNull()
     expect(selectAlsJumpGraphTransition('Left Foot', {
       footPlantedAmount: 0,
-      launchRemainingTime: 0.2,
+      launchRemainingTime: 0,
     })).toBe(ALS_JUMP_GRAPH_TRANSITIONS[2])
     expect(selectAlsJumpGraphTransition('Loop', {
       footPlantedAmount: 0,
@@ -692,13 +845,13 @@ describe('VERIFIED nested Jump States decisions and weights', () => {
 
     refreshAlsJumpStateClock(clock, {
       deltaTime: 1,
-      launchRemainingTime: 0.200001,
+      launchRemainingTime: Number.EPSILON,
     })
     expect(clock.state).toBe('Right Foot')
 
     refreshAlsJumpStateClock(clock, {
       deltaTime: 0.25,
-      launchRemainingTime: 0.2,
+      launchRemainingTime: 0,
     })
     expect(clock).toMatchObject({
       state: 'Loop',

@@ -1,11 +1,16 @@
 using CUE4Parse.FileProvider;
 using CUE4Parse.UE4.Assets;
 using CUE4Parse.UE4.Assets.Exports;
+using CUE4Parse.UE4.Assets.Exports.EdGraph;
 using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.Assets.Objects.Properties;
 using CUE4Parse.UE4.Versions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Globalization;
+using UAssetAPI.ExportTypes;
+using UAssetAPI.Kismet.Bytecode;
+using UAssetAPI.Kismet.Bytecode.Expressions;
 
 // Dumps the compiled runtime representation of ALS animation blueprints.
 //
@@ -76,8 +81,13 @@ public static class AbpDump
         public required List<NodeRecord> Nodes { get; init; }
     }
 
+    sealed record CompiledTransitionRules(
+        JObject Source,
+        IReadOnlyDictionary<string, JObject> ByResultNodeGuid);
+
     public static int Run(string srcDir, string outJson)
     {
+        RegisterBlueprintNodeReaders();
         var provider = new DefaultFileProvider(
             srcDir,
             SearchOption.AllDirectories,
@@ -100,7 +110,11 @@ public static class AbpDump
             var loadedPackage = provider.LoadPackage(file);
             var exports = loadedPackage.GetExports().ToArray();
             var package = (Package)loadedPackage;
-            var record = DumpAsset(file.Path, package, exports);
+            var physicalPath = Path.GetFullPath(
+                Path.Combine(
+                    srcDir,
+                    file.Path.Replace('/', Path.DirectorySeparatorChar)));
+            var record = DumpAsset(file.Path, physicalPath, package, exports);
             if (!records.TryAdd(record.Name, record))
                 throw new Exception($"duplicate target asset name {record.Name}");
             assets.Add(record.Name, record.Json);
@@ -169,7 +183,11 @@ public static class AbpDump
                    || name.StartsWith("ALI_", StringComparison.Ordinal));
     }
 
-    static AssetRecord DumpAsset(string filePath, Package package, UObject[] exports)
+    static AssetRecord DumpAsset(
+        string filePath,
+        string physicalPath,
+        Package package,
+        UObject[] exports)
     {
         var assetName = Path.GetFileNameWithoutExtension(filePath);
         var cdo = exports.FirstOrDefault(
@@ -189,7 +207,19 @@ public static class AbpDump
             .ToDictionary(node => node.CompiledIndex!.Value);
         var bakedIndexMap = BuildBakedNodeIndexMap(nodes);
         var wiring = ReadWiring(nodes, exactIndexMap);
-        var stateMachines = ReadStateMachines(generatedClass, bakedIndexMap);
+        var stateMachines = ReadStateMachines(
+            generatedClass,
+            bakedIndexMap,
+            assetName == "AB_Als_Locomotion");
+        var compiledTransitionRules = assetName == "AB_Als_Locomotion"
+            ? ReadCompiledTransitionRules(physicalPath)
+            : null;
+        var transitionRuleGraphs = assetName == "AB_Als_Locomotion"
+            ? ReadTransitionRuleGraphs(
+                exports,
+                stateMachines,
+                compiledTransitionRules!.ByResultNodeGuid)
+            : new JArray();
         var unresolvedIndices = Enumerable.Range(0, compiledNodeCount)
             .Where(index => !exactIndexMap.ContainsKey(index))
             .ToArray();
@@ -206,7 +236,7 @@ public static class AbpDump
                 "external/unserialized nodes or lie in a property-order gap; candidate indices " +
                 "are retained per node and unresolved links keep their raw LinkID.");
         }
-        if (stateMachines.Count > 0)
+        if (stateMachines.Count > 0 && compiledTransitionRules is null)
         {
             unrecoverable.Add(
                 "Transition CanTakeDelegateIndex values and baked transition data are preserved, " +
@@ -233,6 +263,11 @@ public static class AbpDump
             ["unresolvedCompiledNodeIndices"] = new JArray(unresolvedIndices),
             ["unrecoverable"] = unrecoverable,
         };
+        // Keep editor-only evidence last so additions do not rewrite the
+        // stable compiled-runtime oracle sections above it.
+        if (compiledTransitionRules is not null)
+            json["transitionRuleBytecodeSource"] = compiledTransitionRules.Source;
+        json["transitionRuleGraphs"] = transitionRuleGraphs;
 
         return new AssetRecord
         {
@@ -240,6 +275,35 @@ public static class AbpDump
             Json = json,
             Nodes = nodes,
         };
+    }
+
+    static void RegisterBlueprintNodeReaders()
+    {
+        // Transition predicates live in editor-only AnimationTransitionGraph
+        // exports. Without UK2Node CUE4Parse drops their native Pins arrays.
+        foreach (var nodeClass in new[]
+                 {
+                     "K2Node_CallFunction",
+                     "K2Node_PromotableOperator",
+                     "K2Node_CommutativeAssociativeBinaryOperator",
+                     "K2Node_Literal",
+                     "K2Node_EnumLiteral",
+                     "K2Node_Self",
+                     "K2Node_VariableGet",
+                     "K2Node_PropertyAccess",
+                     "K2Node_AnimGetter",
+                     "K2Node_FunctionResult",
+                     "K2Node_FunctionEntry",
+                     "AnimGraphNode_TransitionResult",
+                     "AnimStateTransitionNode",
+                     "AnimStateNode",
+                     "AnimStateConduitNode",
+                     "AnimStateAliasNode",
+                     "AnimGraphNode_StateMachine",
+                 })
+        {
+            ObjectTypeRegistry.RegisterClass(nodeClass, typeof(UK2Node));
+        }
     }
 
     static List<NodeRecord> ReadNodes(UObject cdo)
@@ -450,9 +514,359 @@ public static class AbpDump
         };
     }
 
+    static CompiledTransitionRules ReadCompiledTransitionRules(string physicalPath)
+    {
+        // CUE4Parse exposes the saved editor graphs but deliberately does not
+        // decompile Kismet. UAssetAPI supplies the other half of the oracle:
+        // tiny generated transition evaluators that assign the compiled
+        // FAnimNode_TransitionResult property. Refuse to use that view unless
+        // its serializer reproduces the pinned package byte-for-byte.
+        var asset = new UAssetAPI.UAsset(
+            physicalPath,
+            UAssetAPI.UnrealTypes.EngineVersion.VER_UE5_5);
+        if (!asset.VerifyBinaryEquality())
+            throw new Exception(
+                $"{physicalPath} failed UAssetAPI binary-equality verification");
+
+        var functions = asset.Exports.OfType<FunctionExport>().ToArray();
+        var generatedRules = functions
+            .Where(function => FunctionName(function)
+                .Contains("_TransitionResult_", StringComparison.Ordinal))
+            .Select(function =>
+            {
+                var trampoline = function.ScriptBytecode
+                    .OfType<EX_LocalFinalFunction>()
+                    .SingleOrDefault()
+                    ?? throw new Exception(
+                        $"{FunctionName(function)} has no generated evaluator trampoline");
+                var entryPoint = trampoline.Parameters.SingleOrDefault() as EX_IntConst
+                                 ?? throw new Exception(
+                                     $"{FunctionName(function)} has no evaluator entry point");
+                var guidSuffix = FunctionName(function).Split('_').Last();
+                return new
+                {
+                    Name = FunctionName(function),
+                    EntryPoint = entryPoint.Value,
+                    ResultNodeGuid = NormalizeGuid(guidSuffix),
+                };
+            })
+            .ToArray();
+        if (generatedRules.Length == 0)
+            throw new Exception($"{physicalPath} has no generated transition evaluators");
+
+        const string UbergraphName = "ExecuteUbergraph_AB_Als_Locomotion";
+        var ubergraph = functions.Single(
+            function => FunctionName(function) == UbergraphName);
+        var expressions =
+            new List<(uint Start, KismetExpression Expression)>();
+        uint offset = 0;
+        foreach (var expression in ubergraph.ScriptBytecode)
+        {
+            var start = offset;
+            offset += expression.GetSize(asset);
+            expressions.Add((start, expression));
+        }
+
+        var terminalJumpGroup = expressions
+            .Where(item => item.Expression is EX_Jump)
+            .Select(item => ((EX_Jump)item.Expression).CodeOffset)
+            .GroupBy(codeOffset => codeOffset)
+            .OrderByDescending(group => group.Count())
+            .ThenBy(group => group.Key)
+            .FirstOrDefault()
+            ?? throw new Exception($"{UbergraphName} has no dispatch jumps");
+        if (terminalJumpGroup.Count() < generatedRules.Length)
+            throw new Exception(
+                $"{UbergraphName} has no shared generated-function terminal");
+        var terminalOffset = terminalJumpGroup.Key;
+
+        var rules = new Dictionary<string, JObject>(StringComparer.Ordinal);
+        foreach (var generatedRule in generatedRules.OrderBy(rule => rule.EntryPoint))
+        {
+            var expressionIndex = expressions.FindIndex(
+                item => item.Start == generatedRule.EntryPoint);
+            if (expressionIndex < 0)
+                throw new Exception(
+                    $"{generatedRule.Name} entry {generatedRule.EntryPoint} is not aligned");
+            while (expressions[expressionIndex].Expression
+                   is EX_Tracepoint or EX_WireTracepoint)
+                expressionIndex++;
+
+            if (expressions[expressionIndex].Expression is EX_Jump dispatch
+                && dispatch.CodeOffset != terminalOffset)
+            {
+                expressionIndex = expressions.FindIndex(
+                    item => item.Start == dispatch.CodeOffset);
+                if (expressionIndex < 0)
+                    throw new Exception(
+                        $"{generatedRule.Name} dispatch {dispatch.CodeOffset} is not aligned");
+            }
+
+            var routine = new JArray();
+            var foundTerminal = false;
+            for (; expressionIndex < expressions.Count; expressionIndex++)
+            {
+                var expression = expressions[expressionIndex].Expression;
+                routine.Add(
+                    JToken.Parse(asset.SerializeJsonObject(expression, false)));
+                if (expression is EX_Jump jump && jump.CodeOffset == terminalOffset)
+                {
+                    foundTerminal = true;
+                    break;
+                }
+            }
+            if (!foundTerminal)
+                throw new Exception($"{generatedRule.Name} has no terminal jump");
+
+            var assignments = routine
+                .OfType<JObject>()
+                .Where(expression => IsKismetExpression(expression, "EX_LetBool"))
+                .Select(expression => new
+                {
+                    Expression = expression,
+                    MemberPath = ReadSerializedFieldPath(
+                        expression.SelectToken(
+                            "VariableExpression.StructMemberExpression")),
+                    InstancePath = ReadSerializedFieldPath(
+                        expression.SelectToken(
+                            "VariableExpression.StructExpression.Variable")),
+                })
+                .Where(assignment =>
+                    assignment.MemberPath.SequenceEqual(
+                        ["bCanEnterTransition"],
+                        StringComparer.Ordinal)
+                    && assignment.InstancePath.Length == 1
+                    && assignment.InstancePath[0].StartsWith(
+                        "AnimGraphNode_TransitionResult",
+                        StringComparison.Ordinal))
+                .ToArray();
+            if (assignments.Length != 1)
+                throw new Exception(
+                    $"{generatedRule.Name} has {assignments.Length} structural writes to " +
+                    "bCanEnterTransition");
+            var resultProperty = assignments.Single().InstancePath.Single();
+            var assignmentExpressionType = KismetExpressionType(
+                assignments.Single().Expression["AssignmentExpression"] as JObject
+                ?? throw new Exception(
+                    $"{generatedRule.Name} transition assignment has no expression"));
+
+            var constantBearingCalls = TraceCompiledCalls(
+                    routine,
+                    assignments.Single().Expression["AssignmentExpression"]
+                    ?? throw new Exception(
+                        $"{generatedRule.Name} transition assignment has no expression"))
+                .Select(expression => ReadCompiledCall(asset, expression))
+                .Where(call =>
+                    call["numericConstants"]!.Any()
+                    || call["nameConstants"]!.Any())
+                .ToArray();
+            var numericConstants = constantBearingCalls
+                .SelectMany(call => call["numericConstants"]!.Values<double>())
+                .Distinct()
+                .Order()
+                .ToArray();
+            var nameConstants = constantBearingCalls
+                .SelectMany(call => call["nameConstants"]!.Values<string>())
+                .OfType<string>()
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+
+            var rule = new JObject
+            {
+                ["generatedFunction"] = generatedRule.Name,
+                ["entryPoint"] = generatedRule.EntryPoint,
+                ["compiledDelegateProperty"] = resultProperty,
+                ["assignment"] = new JObject
+                {
+                    ["target"] = $"{resultProperty}.bCanEnterTransition",
+                    ["expressionType"] = assignmentExpressionType,
+                },
+                ["constantBearingCalls"] = new JArray(constantBearingCalls),
+                ["numericConstants"] = new JArray(numericConstants),
+                ["nameConstants"] = new JArray(nameConstants),
+            };
+            if (!rules.TryAdd(generatedRule.ResultNodeGuid, rule))
+                throw new Exception(
+                    $"duplicate compiled transition result GUID {generatedRule.ResultNodeGuid}");
+        }
+
+        return new CompiledTransitionRules(
+            new JObject
+            {
+                ["parser"] = "UAssetAPI 1.1.0",
+                ["binaryEqualityVerified"] = true,
+                ["ubergraph"] = UbergraphName,
+                ["targetedRuleCount"] = rules.Count,
+            },
+            rules);
+    }
+
+    static string FunctionName(FunctionExport function) =>
+        function.ObjectName.Value.Value;
+
+    static double ParseKismetNumber(string value)
+    {
+        var number = double.Parse(
+            value,
+            NumberStyles.Float | NumberStyles.AllowLeadingSign,
+            CultureInfo.InvariantCulture);
+        return number == 0 ? 0 : number;
+    }
+
+    static JObject ReadCompiledCall(
+        UAssetAPI.UAsset asset,
+        JObject expression)
+    {
+        var stackNode = UAssetAPI.UnrealTypes.FPackageIndex.FromRawIndex(
+            expression.Value<int>("StackNode"));
+        var function = stackNode.IsImport()
+            ? stackNode.ToImport(asset).ObjectName.Value.Value
+            : stackNode.IsExport()
+                ? stackNode.ToExport(asset).ObjectName.Value.Value
+                : throw new Exception("compiled Kismet call has a null stack node");
+        var argumentExpressions = EnumerateCallArgumentExpressions(
+            expression["Parameters"] ?? new JArray()).ToArray();
+        var numericConstants = argumentExpressions
+            .Where(value =>
+                IsKismetExpression(value, "EX_DoubleConst")
+                || IsKismetExpression(value, "EX_FloatConst"))
+            .Select(value => ParseKismetNumber(
+                value["Value"]?.ToString()
+                ?? throw new Exception(
+                    $"{function} has a numeric constant without a value")))
+            .Distinct()
+            .Order()
+            .ToArray();
+        var nameConstants = argumentExpressions
+            .Where(value => IsKismetExpression(value, "EX_NameConst"))
+            .Select(value => value.Value<string>("Value"))
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        return new JObject
+        {
+            ["function"] = function,
+            ["numericConstants"] = new JArray(numericConstants),
+            ["nameConstants"] = new JArray(nameConstants),
+        };
+    }
+
+    static IReadOnlyList<JObject> TraceCompiledCalls(
+        JArray routine,
+        JToken assignmentExpression)
+    {
+        var localProducers = new Dictionary<string, JToken>(StringComparer.Ordinal);
+        foreach (var expression in routine.OfType<JObject>())
+        {
+            if (expression["VariableExpression"] is not JObject variableExpression
+                || !IsKismetExpression(variableExpression, "EX_LocalVariable")
+                || expression["AssignmentExpression"] is not JToken producer)
+                continue;
+            var variablePath = ReadSerializedFieldPath(
+                variableExpression["Variable"]);
+            if (variablePath.Length != 1)
+                continue;
+            if (!localProducers.TryAdd(variablePath[0], producer))
+                throw new Exception(
+                    $"compiled Kismet local {variablePath[0]} has multiple producers");
+        }
+
+        var calls = new List<JObject>();
+        var visitedLocals = new HashSet<string>(StringComparer.Ordinal);
+        Visit(assignmentExpression);
+        return calls;
+
+        void Visit(JToken token)
+        {
+            if (token is JArray array)
+            {
+                foreach (var child in array)
+                    Visit(child);
+                return;
+            }
+            if (token is not JObject expression)
+                return;
+
+            if (IsKismetExpression(expression, "EX_LocalVariable"))
+            {
+                var variablePath = ReadSerializedFieldPath(expression["Variable"]);
+                if (variablePath.Length == 1
+                    && visitedLocals.Add(variablePath[0])
+                    && localProducers.TryGetValue(variablePath[0], out var producer))
+                {
+                    Visit(producer);
+                }
+                return;
+            }
+
+            if (IsKismetExpression(expression, "EX_CallMath"))
+                calls.Add(expression);
+            foreach (var property in expression.Properties())
+            {
+                if (property.Name != "$type")
+                    Visit(property.Value);
+            }
+        }
+    }
+
+    static IEnumerable<JObject> EnumerateCallArgumentExpressions(JToken token)
+    {
+        if (token is JObject expression)
+        {
+            // Attribute a constant to the call that directly consumes it, not
+            // to an enclosing call that happens to contain another call.
+            if (IsKismetExpression(expression, "EX_CallMath"))
+                yield break;
+            yield return expression;
+            foreach (var property in expression.Properties())
+            {
+                foreach (var child in EnumerateCallArgumentExpressions(property.Value))
+                    yield return child;
+            }
+        }
+        else if (token is JArray array)
+        {
+            foreach (var childToken in array)
+            {
+                foreach (var child in EnumerateCallArgumentExpressions(childToken))
+                    yield return child;
+            }
+        }
+    }
+
+    static string[] ReadSerializedFieldPath(JToken? pointer) =>
+        pointer?.SelectToken("New.Path")?.Values<string>()
+            .OfType<string>()
+            .ToArray() ?? [];
+
+    static bool IsKismetExpression(JObject expression, string type) =>
+        KismetExpressionType(expression) == type;
+
+    static string KismetExpressionType(JObject expression)
+    {
+        var qualifiedType = expression.Value<string>("$type")
+                            ?? throw new Exception("serialized Kismet expression has no type");
+        var typeEnd = qualifiedType.IndexOf(',');
+        if (typeEnd < 0)
+            typeEnd = qualifiedType.Length;
+        var typeStart = qualifiedType.LastIndexOf('.', typeEnd - 1) + 1;
+        return qualifiedType[typeStart..typeEnd];
+    }
+
+    static string NormalizeGuid(string value)
+    {
+        var guid = string.Concat(value.Where(Uri.IsHexDigit)).ToUpperInvariant();
+        return guid.Length == 32
+            ? guid
+            : throw new Exception($"{value} is not a 128-bit GUID");
+    }
+
     static JArray ReadStateMachines(
         UObject? generatedClass,
-        Dictionary<int, NodeRecord> bakedIndexMap)
+        Dictionary<int, NodeRecord> bakedIndexMap,
+        bool hasCompiledTransitionRuleOracle)
     {
         var stateMachines = SerializeProperty(generatedClass, "BakedStateMachines") as JArray
                             ?? new JArray();
@@ -479,6 +893,24 @@ public static class AbpDump
                     state["StateRootNodeCompiledIndex"] = null;
                     state["StateRootNodeProperty"] = null;
                     state["StateRootNodeType"] = null;
+                }
+
+                if (hasCompiledTransitionRuleOracle)
+                {
+                    var entryRuleBakedIndex = state.Value<int?>("EntryRuleNodeIndex");
+                    NodeRecord? entryRuleNode = null;
+                    if (entryRuleBakedIndex is >= 0)
+                        bakedIndexMap.TryGetValue(entryRuleBakedIndex.Value, out entryRuleNode);
+                    state["EntryRuleNodeCompiledIndex"] =
+                        entryRuleNode?.CompiledIndex is int entryRuleCompiledIndex
+                            ? new JValue(entryRuleCompiledIndex)
+                            : JValue.CreateNull();
+                    state["EntryRuleNodeProperty"] = entryRuleNode is null
+                        ? JValue.CreateNull()
+                        : new JValue(entryRuleNode.PropertyName);
+                    state["EntryRuleNodeType"] = entryRuleNode is null
+                        ? JValue.CreateNull()
+                        : new JValue(entryRuleNode.Type);
                 }
 
                 var playerCompiledIndices = new JArray();
@@ -528,12 +960,19 @@ public static class AbpDump
                         ["compiledDelegateType"] = delegateNode is null
                             ? JValue.CreateNull()
                             : new JValue(delegateNode.Type),
-                        ["expression"] = new JObject
-                        {
-                            ["unrecoverable"] =
-                                "The baked class stores the delegate index but CUE4Parse does not " +
-                                "decompile the transition-rule boolean expression.",
-                        },
+                        ["expression"] = hasCompiledTransitionRuleOracle
+                            ? new JObject
+                            {
+                                ["source"] =
+                                    "See transitionRuleGraphs for the joined saved editor graph " +
+                                    "and targeted compiled Kismet facts.",
+                            }
+                            : new JObject
+                            {
+                                ["unrecoverable"] =
+                                    "The baked class stores the delegate index but CUE4Parse does " +
+                                    "not decompile the transition-rule boolean expression.",
+                            },
                     };
                 }
             }
@@ -552,6 +991,399 @@ public static class AbpDump
         }
 
         return stateMachines;
+    }
+
+    static JArray ReadTransitionRuleGraphs(
+        IEnumerable<UObject> exports,
+        JArray stateMachines,
+        IReadOnlyDictionary<string, JObject> compiledRulesByResultNodeGuid)
+    {
+        var allExports = exports.ToArray();
+        var editorNodes = allExports
+            .Where(export => export.ExportType.StartsWith("K2Node_", StringComparison.Ordinal)
+                             || export.ExportType == "AnimGraphNode_TransitionResult")
+            .Select(export => JObject.FromObject(export, Serializer))
+            .Where(node => node.SelectToken("Outer.ObjectName")?.Value<string>()
+                ?.Contains("AnimationTransitionGraph", StringComparison.Ordinal) == true)
+            .ToArray();
+        var transitionOwners = allExports
+            .Where(export => export.ExportType == "AnimStateTransitionNode")
+            .Select(export => JObject.FromObject(export, Serializer))
+            .ToArray();
+        var stateOwners = allExports
+            .Where(export => export.ExportType is "AnimStateNode" or "AnimStateConduitNode")
+            .Select(export => JObject.FromObject(export, Serializer))
+            .ToArray();
+        var aliases = allExports
+            .Where(export => export.ExportType == "AnimStateAliasNode")
+            .Select(export => JObject.FromObject(export, Serializer))
+            .ToArray();
+
+        var stateNames = stateOwners.ToDictionary(
+            EditorNodeScopeKey,
+            owner => ReferenceLeafLabel(
+                owner.SelectToken("Properties.BoundGraph.ObjectName")?.Value<string>()
+                ?? throw new Exception($"{owner.Value<string>("Name")} has no BoundGraph")),
+            StringComparer.Ordinal);
+        var aliasStates = aliases.ToDictionary(
+            EditorNodeScopeKey,
+            alias => alias.SelectTokens("Properties.AliasedStateNodes[*].ObjectName")
+                .Values<string>()
+                .Where(reference => reference is not null)
+                .Select(reference => ResolveEditorStateName(
+                    alias.SelectToken("Outer.ObjectPath")?.Value<string>()
+                    ?? throw new Exception($"{alias.Value<string>("Name")} has no outer"),
+                    ReferenceNodeName(reference!),
+                    stateNames))
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            StringComparer.Ordinal);
+
+        var graphs = new JArray();
+        foreach (var group in editorNodes
+                     .GroupBy(
+                         node => node.SelectToken("Outer.ObjectName")!.Value<string>()!,
+                         StringComparer.Ordinal)
+                     .OrderBy(group => group.Key, StringComparer.Ordinal))
+        {
+            var nodes = group
+                .OrderBy(node => node.Value<string>("Name"), StringComparer.Ordinal)
+                .ToArray();
+            var graphPath = nodes[0].SelectToken("Outer.ObjectPath")?.Value<string>()
+                            ?? throw new Exception($"{group.Key} has no object path");
+            var transitionOwner = transitionOwners.SingleOrDefault(
+                owner => owner.SelectToken("Properties.BoundGraph.ObjectPath")?.Value<string>()
+                         == graphPath);
+            JObject bakedEdgeMapping;
+            if (transitionOwner is not null)
+            {
+                bakedEdgeMapping = ResolveEditorTransitionMapping(
+                    transitionOwner,
+                    stateNames,
+                    aliasStates,
+                    stateMachines);
+            }
+            else
+            {
+                var conduit = stateOwners.SingleOrDefault(
+                    owner => owner.Value<string>("Type") == "AnimStateConduitNode"
+                             && owner.SelectToken("Properties.BoundGraph.ObjectPath")
+                                 ?.Value<string>() == graphPath)
+                              ?? throw new Exception(
+                                  $"{group.Key} has neither transition nor conduit owner");
+                var machineName = ReferenceLeafLabel(
+                    conduit.SelectToken("Outer.ObjectName")?.Value<string>()
+                    ?? throw new Exception($"{conduit.Value<string>("Name")} has no outer"));
+                var stateName = stateNames[EditorNodeScopeKey(conduit)];
+                var bakedMachine = stateMachines.OfType<JObject>().Single(
+                    machine => machine.Value<string>("MachineName") == machineName);
+                var bakedState = bakedMachine["States"]!.OfType<JObject>().Single(
+                    state => state.Value<string>("StateName") == stateName);
+                var compiledDelegateProperty =
+                    bakedState.Value<string>("EntryRuleNodeProperty")
+                    ?? throw new Exception(
+                        $"{machineName}.{stateName} has no compiled entry-rule property");
+                bakedEdgeMapping = new JObject
+                {
+                    ["status"] = "conduit-entry",
+                    ["machine"] = machineName,
+                    ["state"] = stateName,
+                    ["compiledDelegateProperties"] =
+                        new JArray(compiledDelegateProperty),
+                };
+            }
+
+            var pinTargets = nodes
+                .SelectMany(node => (node["Pins"]?.OfType<JObject>() ?? [])
+                    .Select(pin => new
+                    {
+                        Id = pin.Value<string>("PinId") is string pinId
+                            ? $"{node.Value<string>("Name")}|{pinId}"
+                            : null,
+                        Target =
+                            $"{node.Value<string>("Name")}:{pin.Value<string>("PinName")}",
+                    }))
+                .Where(pin => pin.Id is not null)
+                .ToDictionary(pin => pin.Id!, pin => pin.Target, StringComparer.Ordinal);
+            var resultNode = nodes.Single(
+                node => node.Value<string>("Type") == "AnimGraphNode_TransitionResult");
+            var resultNodeGuid = NormalizeGuid(
+                resultNode.SelectToken("Properties.NodeGuid")?.Value<string>()
+                ?? throw new Exception($"{group.Key} result node has no GUID"));
+            compiledRulesByResultNodeGuid.TryGetValue(
+                resultNodeGuid,
+                out var compiledRule);
+            if (compiledRule is not null)
+            {
+                var mappedProperties = bakedEdgeMapping["compiledDelegateProperties"]
+                    ?.Values<string>()
+                    .Where(value => value is not null)
+                    .Select(value => value!)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray() ?? [];
+                var compiledProperty =
+                    compiledRule.Value<string>("compiledDelegateProperty");
+                if (mappedProperties.Length != 1
+                    || mappedProperties[0] != compiledProperty)
+                {
+                    throw new Exception(
+                        $"{group.Key} maps editor GUID {resultNodeGuid} to " +
+                        $"{compiledProperty}, but baked edge maps to " +
+                        $"{string.Join(", ", mappedProperties)}");
+                }
+            }
+
+            graphs.Add(
+                new JObject
+                {
+                    ["graph"] = group.Key,
+                    ["resultNodeGuid"] = resultNodeGuid,
+                    ["bakedEdgeMapping"] = bakedEdgeMapping,
+                    ["compiledRule"] =
+                        compiledRule?.DeepClone() ?? JValue.CreateNull(),
+                    ["nodes"] = new JArray(
+                        nodes.Select(node => CompactTransitionRuleNode(node, pinTargets))),
+                });
+        }
+        return graphs;
+    }
+
+    static JObject ResolveEditorTransitionMapping(
+        JObject owner,
+        IReadOnlyDictionary<string, string> stateNames,
+        IReadOnlyDictionary<string, string[]> aliasStates,
+        JArray stateMachines)
+    {
+        var outerPath = owner.SelectToken("Outer.ObjectPath")?.Value<string>()
+                        ?? throw new Exception($"{owner.Value<string>("Name")} has no outer");
+        var machineName = ReferenceLeafLabel(
+            owner.SelectToken("Outer.ObjectName")?.Value<string>()
+            ?? throw new Exception($"{owner.Value<string>("Name")} has no outer name"));
+        var fromStates = ResolveEditorEndpointStates(
+            outerPath,
+            LinkedEditorNode(owner, "In"),
+            stateNames,
+            aliasStates);
+        var toStates = ResolveEditorEndpointStates(
+            outerPath,
+            LinkedEditorNode(owner, "Out"),
+            stateNames,
+            aliasStates);
+        var machine = stateMachines.OfType<JObject>().Single(
+            candidate => candidate.Value<string>("MachineName") == machineName);
+        var transitions = machine["Transitions"] as JArray ?? new JArray();
+        var settings = ReadEditorTransitionSettings(owner);
+        var transitionIndices = new List<int>();
+        foreach (var fromState in fromStates)
+        {
+            foreach (var toState in toStates)
+            {
+                var candidates = transitions
+                    .OfType<JObject>()
+                    .Select((transition, index) => (transition, index))
+                    .Where(candidate =>
+                        candidate.transition.Value<string>("PreviousStateName") == fromState
+                        && candidate.transition.Value<string>("NextStateName") == toState
+                        && Math.Abs(
+                            candidate.transition.Value<double>("CrossfadeDuration")
+                            - settings.Value<double>("crossfadeDuration")) < 1e-6
+                        && candidate.transition.Value<string>("BlendMode")
+                           == settings.Value<string>("blendMode")
+                        && candidate.transition.Value<string>("LogicType")
+                           == settings.Value<string>("logicType"))
+                    .ToArray();
+                if (candidates.Length != 1)
+                {
+                    throw new Exception(
+                        $"{machineName} {fromState}->{toState} editor rule maps to " +
+                        $"{candidates.Length} baked transitions");
+                }
+                transitionIndices.Add(candidates[0].index);
+            }
+        }
+        var distinctTransitionIndices = transitionIndices.Distinct().Order().ToArray();
+        var transitionIndexSet = distinctTransitionIndices.ToHashSet();
+        var compiledDelegateProperties = machine["States"]!
+            .OfType<JObject>()
+            .SelectMany(state => state["Transitions"]?.OfType<JObject>() ?? [])
+            .Where(transition =>
+                transitionIndexSet.Contains(transition.Value<int>("TransitionIndex")))
+            .Select(transition =>
+                transition.SelectToken("rule.compiledDelegateProperty")?.Value<string>())
+            .Where(property => property is not null)
+            .Select(property => property!)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (compiledDelegateProperties.Length != 1)
+        {
+            throw new Exception(
+                $"{machineName} {string.Join(",", distinctTransitionIndices)} maps to " +
+                $"{compiledDelegateProperties.Length} compiled transition properties");
+        }
+
+        return new JObject
+        {
+            ["status"] = "resolved",
+            ["machine"] = machineName,
+            ["editorTransitionNode"] = owner.Value<string>("Name"),
+            ["fromStates"] = new JArray(fromStates),
+            ["toStates"] = new JArray(toStates),
+            ["transitionIndices"] = new JArray(distinctTransitionIndices),
+            ["compiledDelegateProperties"] =
+                new JArray(compiledDelegateProperties),
+            ["settings"] = settings,
+        };
+    }
+
+    static JObject ReadEditorTransitionSettings(JObject owner)
+    {
+        var properties = owner["Properties"] as JObject ?? new JObject();
+        return new JObject
+        {
+            ["priorityOrder"] = properties.Value<int?>("PriorityOrder") ?? 1,
+            ["crossfadeDuration"] =
+                properties.Value<double?>("CrossfadeDuration") ?? 0.2,
+            ["blendMode"] = properties.Value<string>("BlendMode")
+                            ?? "EAlphaBlendOption::HermiteCubic",
+            ["logicType"] = properties.Value<string>("LogicType")
+                            ?? "ETransitionLogicType::TLT_StandardBlend",
+            ["automaticRemainingTimeRule"] =
+                properties.Value<bool?>("bAutomaticRuleBasedOnSequencePlayerInState")
+                ?? false,
+            ["blendProfile"] =
+                properties.SelectToken("BlendProfile.ObjectName")?.Value<string>(),
+            ["startNotify"] =
+                properties.SelectToken("TransitionStart.NotifyName")?.Value<string>(),
+        };
+    }
+
+    static string[] ResolveEditorEndpointStates(
+        string outerPath,
+        string nodeName,
+        IReadOnlyDictionary<string, string> stateNames,
+        IReadOnlyDictionary<string, string[]> aliasStates)
+    {
+        var key = EditorNodeScopeKey(outerPath, nodeName);
+        if (stateNames.TryGetValue(key, out var stateName))
+            return [stateName];
+        if (aliasStates.TryGetValue(key, out var states))
+            return states;
+        throw new Exception($"{nodeName} is not a state, conduit, or state alias");
+    }
+
+    static string ResolveEditorStateName(
+        string outerPath,
+        string nodeName,
+        IReadOnlyDictionary<string, string> stateNames) =>
+        stateNames.TryGetValue(EditorNodeScopeKey(outerPath, nodeName), out var stateName)
+            ? stateName
+            : throw new Exception($"{nodeName} has no editor state name");
+
+    static string LinkedEditorNode(JObject owner, string pinName)
+    {
+        var pin = owner["Pins"]?.OfType<JObject>().SingleOrDefault(
+            candidate => candidate.Value<string>("PinName") == pinName)
+                  ?? throw new Exception($"{owner.Value<string>("Name")}.{pinName} is missing");
+        var links = pin["LinkedTo"]?.OfType<JObject>().ToArray() ?? [];
+        if (links.Length != 1)
+            throw new Exception(
+                $"{owner.Value<string>("Name")}.{pinName} has {links.Length} links");
+        return ReferenceNodeName(
+            links[0].SelectToken("OwningNode.ObjectName")?.Value<string>()
+            ?? throw new Exception($"{owner.Value<string>("Name")}.{pinName} has no target"));
+    }
+
+    static string EditorNodeScopeKey(JObject node) => EditorNodeScopeKey(
+        node.SelectToken("Outer.ObjectPath")?.Value<string>()
+        ?? throw new Exception($"{node.Value<string>("Name")} has no outer path"),
+        node.Value<string>("Name")
+        ?? throw new Exception("editor node has no name"));
+
+    static string EditorNodeScopeKey(string outerPath, string nodeName) =>
+        $"{outerPath}|{nodeName}";
+
+    static string ReferenceNodeName(string objectName)
+    {
+        var finalDot = objectName.LastIndexOf('.');
+        var finalQuote = objectName.LastIndexOf('\'');
+        return finalDot >= 0 && finalQuote > finalDot
+            ? objectName[(finalDot + 1)..finalQuote]
+            : objectName;
+    }
+
+    static string ReferenceLeafLabel(string objectName)
+    {
+        var finalQuote = objectName.LastIndexOf('\'');
+        var end = finalQuote >= 0 ? finalQuote : objectName.Length;
+        var finalDot = objectName.LastIndexOf('.', end - 1);
+        return finalDot >= 0
+            ? objectName[(finalDot + 1)..end]
+            : objectName[..end];
+    }
+
+    static JObject CompactTransitionRuleNode(
+        JObject node,
+        IReadOnlyDictionary<string, string> pinTargets)
+    {
+        var compact = new JObject
+        {
+            ["name"] = node.Value<string>("Name"),
+            ["type"] = node.Value<string>("Type"),
+        };
+        var function = node.SelectToken("Properties.FunctionReference.MemberName")
+            ?.Value<string>();
+        if (function is not null) compact["function"] = function;
+        if (node.SelectToken("Properties.Path") is JToken path)
+            compact["propertyPath"] = path.DeepClone();
+        var sourceState = node.SelectToken(
+                "Properties.CachedTitle.Arguments[1].Value.SourceString")
+            ?.Value<string>();
+        if (sourceState is not null) compact["sourceState"] = sourceState;
+        var nodeGuid = node.SelectToken("Properties.NodeGuid")?.Value<string>();
+        if (nodeGuid is not null) compact["nodeGuid"] = nodeGuid;
+        compact["pins"] = new JArray(
+            (node["Pins"]?.OfType<JObject>() ?? [])
+            .Select(pin => CompactTransitionRulePin(pin, pinTargets))
+            .Where(pin => pin is not null));
+        return compact;
+    }
+
+    static JObject? CompactTransitionRulePin(
+        JObject pin,
+        IReadOnlyDictionary<string, string> pinTargets)
+    {
+        var links = pin["LinkedTo"]?.OfType<JObject>().ToArray() ?? [];
+        var direction = pin.Value<string>("Direction");
+        var defaultValue = pin.Value<string>("DefaultValue");
+        if (links.Length == 0
+            && (direction != "EGPD_Input" || string.IsNullOrEmpty(defaultValue)))
+            return null;
+
+        var compact = new JObject
+        {
+            ["name"] = pin["PinName"]?.DeepClone(),
+            ["direction"] = direction,
+        };
+        if (!string.IsNullOrEmpty(defaultValue))
+            compact["defaultValue"] = defaultValue;
+        if (links.Length > 0)
+        {
+            compact["linkedTo"] = new JArray(
+                links.Select(link =>
+                {
+                    var pinId = link.Value<string>("PinId");
+                    var nodeName = ReferenceNodeName(
+                        link.SelectToken("OwningNode.ObjectName")?.Value<string>()
+                        ?? "Unknown");
+                    var targetKey = pinId is null ? null : $"{nodeName}|{pinId}";
+                    return targetKey is not null
+                           && pinTargets.TryGetValue(targetKey, out var target)
+                        ? target
+                        : nodeName;
+                }));
+        }
+        return compact;
     }
 
     static JObject ReadCompiledClassMetadata(UObject? generatedClass)
@@ -691,6 +1523,7 @@ public static class AbpDump
         validations.Add(ValidateLayeringDynamicAdditive(payload));
         validations.Add(ValidateCrouchIdle(payload));
         validations.Add(ValidateBranchFilters(payload));
+        validations.Add(ValidateLocomotionInAirTransitionRuleGraphs(payload));
         return validations;
     }
 
@@ -1666,6 +2499,325 @@ public static class AbpDump
         }
 
         return Validation("layered-bone-blend-spine-clavicle-filters", matches.Count > 0, matches);
+    }
+
+    static JObject ValidateLocomotionInAirTransitionRuleGraphs(JObject payload)
+    {
+        var graphs = payload.SelectToken("assets.AB_Als_Locomotion.transitionRuleGraphs")
+                     as JArray ?? new JArray();
+        var source = payload.SelectToken(
+            "assets.AB_Als_Locomotion.transitionRuleBytecodeSource") as JObject;
+        var graphObjects = graphs.OfType<JObject>().ToArray();
+
+        JObject? GraphFor(string compiledDelegateProperty)
+        {
+            var matches = graphObjects.Where(
+                graph => graph.SelectToken(
+                        "bakedEdgeMapping.compiledDelegateProperties")
+                    ?.Values<string>()
+                    .Contains(compiledDelegateProperty, StringComparer.Ordinal) == true)
+                .ToArray();
+            return matches.Length == 1 ? matches[0] : null;
+        }
+
+        static bool HasFunction(JObject? graph, string function) =>
+            graph?["nodes"]?.OfType<JObject>().Any(
+                node => node.Value<string>("function") == function) == true;
+
+        static bool HasPath(JObject? graph, params string[] path) =>
+            graph?["nodes"]?.OfType<JObject>().Any(
+                node => node["propertyPath"]?.Values<string>()
+                    .SequenceEqual(path, StringComparer.Ordinal) == true) == true;
+
+        static bool HasSourceState(JObject? graph, string sourceState) =>
+            graph?["nodes"]?.OfType<JObject>().Any(
+                node => node.Value<string>("sourceState") == sourceState) == true;
+
+        static bool HasCompiledConstants(JObject? graph, params double[] expected) =>
+            graph?.SelectToken("compiledRule.numericConstants")
+                ?.Values<double>()
+                .SequenceEqual(expected) == true;
+
+        static bool HasCompiledNames(JObject? graph, params string[] expected) =>
+            graph?.SelectToken("compiledRule.nameConstants")
+                ?.Values<string>()
+                .SequenceEqual(expected, StringComparer.Ordinal) == true;
+
+        static bool HasCompiledCallConstants(
+            JObject? graph,
+            string function,
+            params double[] expected)
+        {
+            var calls = graph?.SelectToken("compiledRule.constantBearingCalls")
+                ?.OfType<JObject>()
+                .Where(call => call.Value<string>("function") == function)
+                .ToArray() ?? [];
+            return calls.Length == 1
+                   && calls[0]["numericConstants"]!.Values<double>()
+                       .SequenceEqual(expected);
+        }
+
+        static bool HasCompiledCallNames(
+            JObject? graph,
+            string function,
+            params string[] expected)
+        {
+            var calls = graph?.SelectToken("compiledRule.constantBearingCalls")
+                ?.OfType<JObject>()
+                .Where(call => call.Value<string>("function") == function)
+                .ToArray() ?? [];
+            return calls.Length == 1
+                   && calls[0]["nameConstants"]!.Values<string>()
+                       .SequenceEqual(expected, StringComparer.Ordinal);
+        }
+
+        static bool HasPinDefault(JObject? graph, string name, string value) =>
+            graph?["nodes"]?.OfType<JObject>()
+                .SelectMany(node => node["pins"]?.OfType<JObject>() ?? [])
+                .Any(pin =>
+                    pin.Value<string>("name") == name
+                    && pin.Value<string>("defaultValue") == value) == true;
+
+        static bool HasResultLink(JObject graph) =>
+            graph["nodes"]?.OfType<JObject>()
+                .SelectMany(node => node["pins"]?.OfType<JObject>() ?? [])
+                .SelectMany(pin => pin["linkedTo"]?.Values<string>() ?? [])
+                .Any(link =>
+                    link == "AnimGraphNode_TransitionResult_0:bCanEnterTransition")
+            == true;
+
+        static bool HasEdge(
+            JObject? graph,
+            string machine,
+            string[] fromStates,
+            string[] toStates) =>
+            graph?.SelectToken("bakedEdgeMapping.machine")?.Value<string>() == machine
+            && (graph.SelectToken("bakedEdgeMapping.fromStates")?.Values<string>() ?? [])
+                .SequenceEqual(fromStates, StringComparer.Ordinal)
+            && (graph.SelectToken("bakedEdgeMapping.toStates")?.Values<string>() ?? [])
+                .SequenceEqual(toStates, StringComparer.Ordinal);
+
+        var expectedEdges = Enumerable.Range(0, 16)
+            .Select(index => $"Locomotion States:{index}")
+            .Concat(
+                Enumerable.Range(0, 5)
+                    .Select(index => $"Jump States:{index}"))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var actualEdges = graphObjects
+            .Where(graph =>
+                graph.SelectToken("bakedEdgeMapping.status")?.Value<string>() == "resolved")
+            .SelectMany(
+                graph =>
+                {
+                    var machine = graph.SelectToken("bakedEdgeMapping.machine")
+                        ?.Value<string>() ?? "";
+                    return graph.SelectToken("bakedEdgeMapping.transitionIndices")
+                        ?.Values<int>()
+                        .Select(index => $"{machine}:{index}") ?? [];
+                })
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        var resolvedCount = graphObjects.Count(
+            graph =>
+                graph.SelectToken("bakedEdgeMapping.status")?.Value<string>() == "resolved");
+        var conduitCount = graphObjects.Count(
+            graph =>
+                graph.SelectToken("bakedEdgeMapping.status")?.Value<string>()
+                == "conduit-entry");
+        var compiledGraphs = graphObjects
+            .Where(graph => graph["compiledRule"] is JObject)
+            .ToArray();
+        var mappingsAreUnique = graphObjects.All(
+            graph => graph.SelectToken("bakedEdgeMapping.compiledDelegateProperties")
+                ?.Values<string>()
+                .Count() == 1);
+        var compiledJoinsMatch = compiledGraphs.All(
+            graph =>
+            {
+                var resultNodeGuid = graph.Value<string>("resultNodeGuid");
+                var generatedFunction =
+                    graph.SelectToken("compiledRule.generatedFunction")?.Value<string>();
+                var compiledProperty =
+                    graph.SelectToken("compiledRule.compiledDelegateProperty")?.Value<string>();
+                var assignmentTarget =
+                    graph.SelectToken("compiledRule.assignment.target")?.Value<string>();
+                var mappedProperty = graph.SelectToken(
+                        "bakedEdgeMapping.compiledDelegateProperties[0]")
+                    ?.Value<string>();
+                return resultNodeGuid?.Length == 32
+                       && generatedFunction?.EndsWith(
+                           resultNodeGuid,
+                           StringComparison.Ordinal) == true
+                       && compiledProperty == mappedProperty
+                       && assignmentTarget
+                          == $"{compiledProperty}.bCanEnterTransition"
+                       && HasResultLink(graph);
+            });
+        var uniqueResultGuids = graphObjects
+            .Select(graph => graph.Value<string>("resultNodeGuid"))
+            .Where(guid => guid is not null)
+            .Distinct(StringComparer.Ordinal)
+            .Count() == graphObjects.Length;
+
+        var result1 = GraphFor("AnimGraphNode_TransitionResult_1");
+        var result2 = GraphFor("AnimGraphNode_TransitionResult_2");
+        var result3 = GraphFor("AnimGraphNode_TransitionResult_3");
+        var result4 = GraphFor("AnimGraphNode_TransitionResult_4");
+        var result6 = GraphFor("AnimGraphNode_TransitionResult_6");
+        var result7 = GraphFor("AnimGraphNode_TransitionResult_7");
+        var result8 = GraphFor("AnimGraphNode_TransitionResult_8");
+        var result10 = GraphFor("AnimGraphNode_TransitionResult_10");
+        var result12 = GraphFor("AnimGraphNode_TransitionResult_12");
+        var result13 = GraphFor("AnimGraphNode_TransitionResult_13");
+        var result14 = GraphFor("AnimGraphNode_TransitionResult_14");
+
+        var checks = new JObject
+        {
+            ["source"] =
+                source?.Value<string>("parser") == "UAssetAPI 1.1.0"
+                && source.Value<bool?>("binaryEqualityVerified") == true
+                && source.Value<string>("ubergraph")
+                   == "ExecuteUbergraph_AB_Als_Locomotion"
+                && source.Value<int?>("targetedRuleCount") == 11,
+            ["graphInventory"] =
+                graphs.Count == 18 && resolvedCount == 16 && conduitCount == 2,
+            ["bakedEdgeCoverage"] = actualEdges.SequenceEqual(
+                expectedEdges,
+                StringComparer.Ordinal),
+            ["compiledJoins"] =
+                mappingsAreUnique && compiledGraphs.Length == 11
+                && compiledJoinsMatch && uniqueResultGuids,
+            ["jumpEntryRightFoot"] =
+                HasEdge(
+                    result1,
+                    "Jump States",
+                    ["Entry Conduit"],
+                    ["Right Foot"])
+                && HasFunction(result1, "Greater_DoubleDouble")
+                && HasPath(result1, "GetParent", "FeetState", "FootPlantedAmount")
+                && HasCompiledConstants(result1, 0)
+                && HasCompiledCallConstants(
+                    result1,
+                    "Greater_DoubleDouble",
+                    0),
+            ["jumpEntryLeftFoot"] =
+                HasEdge(
+                    result2,
+                    "Jump States",
+                    ["Entry Conduit"],
+                    ["Left Foot"])
+                && HasFunction(result2, "LessEqual_DoubleDouble")
+                && HasPath(result2, "GetParent", "FeetState", "FootPlantedAmount")
+                && HasCompiledConstants(result2, 0)
+                && HasCompiledCallConstants(
+                    result2,
+                    "LessEqual_DoubleDouble",
+                    0),
+            ["jumpLeftFootFinished"] =
+                HasEdge(result3, "Jump States", ["Left Foot"], ["Loop"])
+                && HasFunction(result3, "GetRelevantAnimTimeRemaining")
+                && HasFunction(result3, "LessEqual_DoubleDouble")
+                && HasSourceState(result3, "Left Foot")
+                && HasCompiledConstants(result3, 0)
+                && HasCompiledCallConstants(
+                    result3,
+                    "LessEqual_DoubleDouble",
+                    0),
+            ["jumpRightFootFinished"] =
+                HasEdge(result4, "Jump States", ["Right Foot"], ["Loop"])
+                && HasFunction(result4, "GetRelevantAnimTimeRemaining")
+                && HasFunction(result4, "LessEqual_DoubleDouble")
+                && HasSourceState(result4, "Right Foot")
+                && HasCompiledConstants(result4, 0)
+                && HasCompiledCallConstants(
+                    result4,
+                    "LessEqual_DoubleDouble",
+                    0),
+            ["landConduitGrounded"] =
+                result6?.SelectToken("bakedEdgeMapping.status")?.Value<string>()
+                    == "conduit-entry"
+                && HasFunction(result6, "EqualEqual_GameplayTag")
+                && HasPath(result6, "GetParent", "LocomotionMode")
+                && HasCompiledNames(result6, "Als.LocomotionMode.Grounded")
+                && HasCompiledCallNames(
+                    result6,
+                    "EqualEqual_GameplayTag",
+                    "Als.LocomotionMode.Grounded"),
+            ["groundedToJump"] =
+                HasFunction(result7, "EqualEqual_GameplayTag")
+                && HasFunction(result7, "BooleanAND")
+                && HasPath(result7, "GetParent", "LocomotionMode")
+                && HasPath(result7, "GetParent", "InAirState", "bJumped")
+                && HasCompiledNames(result7, "Als.LocomotionMode.InAir")
+                && HasCompiledCallNames(
+                    result7,
+                    "EqualEqual_GameplayTag",
+                    "Als.LocomotionMode.InAir"),
+            ["groundedToFall"] =
+                HasFunction(result8, "EqualEqual_GameplayTag")
+                && HasPath(result8, "GetParent", "LocomotionMode")
+                && HasCompiledNames(result8, "Als.LocomotionMode.InAir")
+                && HasCompiledCallNames(
+                    result8,
+                    "EqualEqual_GameplayTag",
+                    "Als.LocomotionMode.InAir"),
+            ["inAirToGrounded"] =
+                HasFunction(result10, "EqualEqual_GameplayTag")
+                && HasPath(result10, "GetParent", "LocomotionMode")
+                && HasCompiledNames(result10, "Als.LocomotionMode.Grounded")
+                && HasCompiledCallNames(
+                    result10,
+                    "EqualEqual_GameplayTag",
+                    "Als.LocomotionMode.Grounded"),
+            ["landCrouching"] =
+                HasFunction(result12, "NotEqual_GameplayTag")
+                && HasPath(result12, "GetParent", "Stance")
+                && HasCompiledNames(result12, "Als.Stance.Standing")
+                && HasCompiledCallNames(
+                    result12,
+                    "NotEqual_GameplayTag",
+                    "Als.Stance.Standing"),
+            ["landFinished"] =
+                HasEdge(result13, "Locomotion States", ["Land"], ["Grounded"])
+                && HasFunction(result13, "GetRelevantAnimTimeRemaining")
+                && HasFunction(result13, "LessEqual_DoubleDouble")
+                && HasSourceState(result13, "Land")
+                && HasCompiledConstants(result13, 0)
+                && HasCompiledCallConstants(
+                    result13,
+                    "LessEqual_DoubleDouble",
+                    0),
+            ["landMovement"] =
+                HasEdge(
+                    result14,
+                    "Locomotion States",
+                    ["Land"],
+                    ["Land Movement"])
+                && HasFunction(result14, "BooleanOR")
+                && HasFunction(result14, "GreaterEqual_DoubleDouble")
+                && HasPath(result14, "GetParent", "LocomotionState", "Speed")
+                && HasPinDefault(result14, "B", "650.000000")
+                && HasCompiledConstants(result14, 650)
+                && HasCompiledCallConstants(
+                    result14,
+                    "GreaterEqual_DoubleDouble",
+                    650),
+        };
+
+        return Validation(
+            "locomotion-in-air-transition-rule-oracle",
+            checks.Properties().All(check => check.Value.Value<bool>()),
+            new JObject
+            {
+                ["graphCount"] = graphs.Count,
+                ["resolvedGraphCount"] = resolvedCount,
+                ["conduitGraphCount"] = conduitCount,
+                ["compiledRuleCount"] = compiledGraphs.Length,
+                ["mappedBakedEdgeCount"] = actualEdges.Length,
+                ["checks"] = checks,
+            });
     }
 
     static JArray GetNodes(JObject payload, string assetName)

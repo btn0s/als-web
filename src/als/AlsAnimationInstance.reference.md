@@ -316,10 +316,38 @@ Given `SpineState.YawAngle` as a single `Rotation` quaternion and a list of `N` 
 5. Capsule sweep (`SweepSingleByChannel`, `Settings->InAir.GroundPredictionSweepChannel`/`SweepResponses`) from `LocomotionState.Location` along that vector, capsule shape from `CapsuleRadius`/`CapsuleHalfHeight`. Valid only if it's a blocking hit **and** `ImpactNormal.Z >= WalkableFloorAngleCos` (floor-angle check, same threshold the character movement component uses for "walkable").
 6. `GroundPredictionAmount = valid ? curve("GroundPredictionAmountCurve")(Hit.Time) · AllowanceAmount : 0` — `Hit.Time` is the sweep's normalized hit fraction (0=immediate, 1=no hit within range), remapped through an authored curve to the final blend amount (typically front-loaded so it ramps in quickly as the ground gets close).
 
-### Landing-recovery clip choice
-**Not present in this C++ file at all.** The fall-speed→`Land_Light` vs heavier-landing clip selection lives in AnimGraph transition rules (not extracted here). The only concrete fall-speed breakpoints in the whole plugin are gameplay-side, in `AlsCharacter.cpp:522-527`: `Rolling.RollingOnLandSpeedThreshold = 700 cm/s` and `Ragdolling.RagdollingOnLandSpeedThreshold = 1000 cm/s` (both features **CUT for M3** per ROADMAP). `InAirState.VerticalVelocity` at landing is the only signal C++ exposes for driving this choice.
+### In-air transition predicates
+The saved `AB_Als_Locomotion` editor graphs and compiled Kismet evaluators are joined in
+`scripts/extract-als/abp-graph.json`. Jump Entry selects Right Foot for
+`FootPlantedAmount > 0` and Left Foot for `<= 0`; each launch state exits only when its own
+`GetRelevantAnimTimeRemaining(...) <= 0`. Land exits through QuickFeet only at
+`GetRelevantAnimTimeRemaining(Land) <= 0`, while Land Movement wins earlier when input or either
+rotate-in-place flag is set, or when `Speed >= 650 cm/s`. The zero and 650 constants are decoded
+from the compiled calls that feed each result's `bCanEnterTransition` assignment, not inferred
+from transition blend durations.
 
-**Web-port mapping:** jump play-rate scaling and vertical-velocity tracking → `actionArbiter`/`InAirState`-equivalent record fields, direct port. Ground prediction → **flag as approximated**: it depends on a physics-engine capsule sweep against arbitrary level geometry with a walkable-normal check — Rapier can do this (`world.castShape`), so it's buildable as a new pure-ish module (`groundPrediction.ts`, sweep math is pure; the actual cast is an R3F/Rapier wiring concern, same split as `footIk.ts`/`ikChain.ts`), but it is new work, not a transplant, and needs the `GroundPredictionAmountCurve`/`GroundPredictionBlock` curve data from M2. Land-recovery clip selection by fall speed has **no C++ source of truth to replicate** — author your own thresholds (700/1000 cm/s from the cut ragdoll/roll features are a reasonable starting anchor for "light vs heavy landing" even though those specific features are cut) and treat it as original design, not a port.
+### Landing-recovery clip choice
+The C++ only publishes `InAirState.VerticalVelocity`; the authored blending lives in
+`AB_Als_Locomotion` content and is preserved in `scripts/extract-als/abp-graph.json`.
+The static `Land` state maps `-500..-1000 cm/s` to a `0..1` Heavy alpha between
+`A_Als_Land_Light` and `A_Als_Land_Heavy` (compiled node 27). `Land Movement` separately
+maps `-750..-1500 cm/s` to `0..0.75` between the Light/Heavy mesh-space additive clips
+(node 21), while node 18 maps `0..-200 cm/s` to the overall additive amount `0.25..1`.
+The Fall/Jump ground-prediction preview has its own `-1000..-500 cm/s` Light-pose map
+(nodes 35/63). These are continuous authored blends, not gameplay threshold choices.
+
+Landing Roll is a separate character action, not a `LandRoll` clip or an AnimGraph branch.
+`AlsCharacter.cpp:519-535` first starts ragdoll at
+`RagdollingOnLandSpeedThreshold = 1000 cm/s`, otherwise starts `AM_Als_Roll` at
+`RollingOnLandSpeedThreshold = 700 cm/s`, with play rate `1.3` and the cached
+velocity/actor yaw. Normal landing recovery and Roll are live in the web port; high-speed
+ragdoll remains explicitly cut in `ROADMAP.md`.
+
+**Web-port mapping:** jump latching/play-rate, vertical velocity, the authored
+Light/Heavy blends, ground prediction, and landing Roll are direct ports. Rapier
+`castShape` supplies the engine-equivalent capsule sweep; the extracted
+`GroundPredictionAmountCurve`, response filtering, and walkable-normal check retain ALS's
+policy rather than introducing a new landing heuristic.
 
 ---
 

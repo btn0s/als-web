@@ -2400,7 +2400,8 @@
       ],
       "referencedAnimationAssets": [],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Monolithic": {
       "assetPath": "ALS/Content/ALS/Character/AB_Als_Monolithic.uasset",
@@ -49837,7 +49838,8 @@
       "unresolvedCompiledNodeIndices": [],
       "unrecoverable": [
         "Transition CanTakeDelegateIndex values and baked transition data are preserved, but compiled transition-rule boolean expressions are not decompiled by CUE4Parse."
-      ]
+      ],
+      "transitionRuleGraphs": []
     },
     "ALI_Overlay": {
       "assetPath": "ALS/Content/ALS/Character/ALI_Overlay.uasset",
@@ -50234,7 +50236,8 @@
       ],
       "referencedAnimationAssets": [],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Grounded": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/AB_Als_Grounded.uasset",
@@ -55180,7 +55183,8 @@
       "unresolvedCompiledNodeIndices": [],
       "unrecoverable": [
         "Transition CanTakeDelegateIndex values and baked transition data are preserved, but compiled transition-rule boolean expressions are not decompiled by CUE4Parse."
-      ]
+      ],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Layering": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/AB_Als_Layering.uasset",
@@ -64570,7 +64574,8 @@
         }
       ],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Locomotion": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/AB_Als_Locomotion.uasset",
@@ -69117,7 +69122,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_7",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 },
@@ -69136,7 +69141,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_8",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 }
@@ -69153,6 +69158,9 @@
               "StateRootNodeCompiledIndex": 75,
               "StateRootNodeProperty": "AnimGraphNode_StateResult",
               "StateRootNodeType": "FAnimNode_StateResult",
+              "EntryRuleNodeCompiledIndex": null,
+              "EntryRuleNodeProperty": null,
+              "EntryRuleNodeType": null,
               "PlayerNodeCompiledIndices": [],
               "PlayerNodeProperties": [],
               "PlayerNodeTypes": []
@@ -69175,7 +69183,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_9",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 },
@@ -69194,7 +69202,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_10",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 }
@@ -69218,6 +69226,9 @@
               "StateRootNodeCompiledIndex": 73,
               "StateRootNodeProperty": "AnimGraphNode_StateResult_1",
               "StateRootNodeType": "FAnimNode_StateResult",
+              "EntryRuleNodeCompiledIndex": null,
+              "EntryRuleNodeProperty": null,
+              "EntryRuleNodeType": null,
               "PlayerNodeCompiledIndices": [
                 71,
                 70,
@@ -69261,7 +69272,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_11",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 },
@@ -69280,7 +69291,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_10",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 }
@@ -69307,6 +69318,9 @@
               "StateRootNodeCompiledIndex": 59,
               "StateRootNodeProperty": "AnimGraphNode_StateResult_2",
               "StateRootNodeType": "FAnimNode_StateResult",
+              "EntryRuleNodeCompiledIndex": null,
+              "EntryRuleNodeProperty": null,
+              "EntryRuleNodeType": null,
               "PlayerNodeCompiledIndices": [
                 37,
                 36,
@@ -69359,7 +69373,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_12",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 },
@@ -69378,7 +69392,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_13",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 },
@@ -69397,7 +69411,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_14",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 },
@@ -69416,7 +69430,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_7",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 },
@@ -69435,7 +69449,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_8",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 }
@@ -69455,6 +69469,9 @@
               "StateRootNodeCompiledIndex": 30,
               "StateRootNodeProperty": "AnimGraphNode_StateResult_7",
               "StateRootNodeType": "FAnimNode_StateResult",
+              "EntryRuleNodeCompiledIndex": null,
+              "EntryRuleNodeProperty": null,
+              "EntryRuleNodeType": null,
               "PlayerNodeCompiledIndices": [
                 29,
                 28
@@ -69486,7 +69503,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_15",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 },
@@ -69505,7 +69522,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_7",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 },
@@ -69524,7 +69541,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_8",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 }
@@ -69544,6 +69561,9 @@
               "StateRootNodeCompiledIndex": 24,
               "StateRootNodeProperty": "AnimGraphNode_StateResult_8",
               "StateRootNodeType": "FAnimNode_StateResult",
+              "EntryRuleNodeCompiledIndex": null,
+              "EntryRuleNodeProperty": null,
+              "EntryRuleNodeType": null,
               "PlayerNodeCompiledIndices": [
                 23,
                 22
@@ -69575,7 +69595,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_16",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 },
@@ -69594,7 +69614,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_17",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 }
@@ -69611,6 +69631,9 @@
               "StateRootNodeCompiledIndex": null,
               "StateRootNodeProperty": null,
               "StateRootNodeType": null,
+              "EntryRuleNodeCompiledIndex": 16,
+              "EntryRuleNodeProperty": "AnimGraphNode_TransitionResult_6",
+              "EntryRuleNodeType": "FAnimNode_TransitionResult",
               "PlayerNodeCompiledIndices": [],
               "PlayerNodeProperties": [],
               "PlayerNodeTypes": []
@@ -69884,7 +69907,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_1",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 },
@@ -69903,7 +69926,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_2",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 }
@@ -69920,6 +69943,9 @@
               "StateRootNodeCompiledIndex": null,
               "StateRootNodeProperty": null,
               "StateRootNodeType": null,
+              "EntryRuleNodeCompiledIndex": 45,
+              "EntryRuleNodeProperty": "AnimGraphNode_TransitionResult",
+              "EntryRuleNodeType": "FAnimNode_TransitionResult",
               "PlayerNodeCompiledIndices": [],
               "PlayerNodeProperties": [],
               "PlayerNodeTypes": []
@@ -69942,7 +69968,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_3",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 }
@@ -69962,6 +69988,9 @@
               "StateRootNodeCompiledIndex": 57,
               "StateRootNodeProperty": "AnimGraphNode_StateResult_3",
               "StateRootNodeType": "FAnimNode_StateResult",
+              "EntryRuleNodeCompiledIndex": null,
+              "EntryRuleNodeProperty": null,
+              "EntryRuleNodeType": null,
               "PlayerNodeCompiledIndices": [
                 56,
                 55
@@ -69993,7 +70022,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_4",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 }
@@ -70013,6 +70042,9 @@
               "StateRootNodeCompiledIndex": 53,
               "StateRootNodeProperty": "AnimGraphNode_StateResult_4",
               "StateRootNodeType": "FAnimNode_StateResult",
+              "EntryRuleNodeCompiledIndex": null,
+              "EntryRuleNodeProperty": null,
+              "EntryRuleNodeType": null,
               "PlayerNodeCompiledIndices": [
                 52,
                 51
@@ -70044,7 +70076,7 @@
                     "compiledDelegateProperty": "AnimGraphNode_TransitionResult_5",
                     "compiledDelegateType": "FAnimNode_TransitionResult",
                     "expression": {
-                      "unrecoverable": "The baked class stores the delegate index but CUE4Parse does not decompile the transition-rule boolean expression."
+                      "source": "See transitionRuleGraphs for the joined saved editor graph and targeted compiled Kismet facts."
                     }
                   }
                 }
@@ -70063,6 +70095,9 @@
               "StateRootNodeCompiledIndex": 49,
               "StateRootNodeProperty": "AnimGraphNode_StateResult_5",
               "StateRootNodeType": "FAnimNode_StateResult",
+              "EntryRuleNodeCompiledIndex": null,
+              "EntryRuleNodeProperty": null,
+              "EntryRuleNodeType": null,
               "PlayerNodeCompiledIndices": [
                 48
               ],
@@ -70090,6 +70125,9 @@
               "StateRootNodeCompiledIndex": 47,
               "StateRootNodeProperty": "AnimGraphNode_StateResult_6",
               "StateRootNodeType": "FAnimNode_StateResult",
+              "EntryRuleNodeCompiledIndex": null,
+              "EntryRuleNodeProperty": null,
+              "EntryRuleNodeType": null,
               "PlayerNodeCompiledIndices": [
                 46
               ],
@@ -73314,8 +73352,1720 @@
         }
       ],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": [
-        "Transition CanTakeDelegateIndex values and baked transition data are preserved, but compiled transition-rule boolean expressions are not decompiled by CUE4Parse."
+      "unrecoverable": [],
+      "transitionRuleBytecodeSource": {
+        "parser": "UAssetAPI 1.1.0",
+        "binaryEqualityVerified": true,
+        "ubergraph": "ExecuteUbergraph_AB_Als_Locomotion",
+        "targetedRuleCount": 11
+      },
+      "transitionRuleGraphs": [
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateConduitNode_3.Land Conduct'",
+          "resultNodeGuid": "8D1528064F6F3CEF01B1A4B755AEF9A5",
+          "bakedEdgeMapping": {
+            "status": "conduit-entry",
+            "machine": "Locomotion States",
+            "state": "Land Conduct",
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_6"
+            ]
+          },
+          "compiledRule": {
+            "generatedFunction": "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_Locomotion_AnimGraphNode_TransitionResult_8D1528064F6F3CEF01B1A4B755AEF9A5",
+            "entryPoint": 1955,
+            "compiledDelegateProperty": "AnimGraphNode_TransitionResult_6",
+            "assignment": {
+              "target": "AnimGraphNode_TransitionResult_6.bCanEnterTransition",
+              "expressionType": "EX_LocalVariable"
+            },
+            "constantBearingCalls": [
+              {
+                "function": "EqualEqual_GameplayTag",
+                "numericConstants": [],
+                "nameConstants": [
+                  "Als.LocomotionMode.Grounded"
+                ]
+              }
+            ],
+            "numericConstants": [],
+            "nameConstants": [
+              "Als.LocomotionMode.Grounded"
+            ]
+          },
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "8D152806-4F6F3CEF-01B1A4B7-55AEF9A5",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False",
+                  "linkedTo": [
+                    "K2Node_CallFunction_0:ReturnValue"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_CallFunction_0",
+              "type": "K2Node_CallFunction",
+              "function": "EqualEqual_GameplayTag",
+              "nodeGuid": "98111F19-437BC930-04E1E097-F2AA437E",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_PropertyAccess_0:Value"
+                  ]
+                },
+                {
+                  "name": "B",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "(TagName=\"Als.LocomotionMode.Grounded\")"
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "defaultValue": "false",
+                  "linkedTo": [
+                    "AnimGraphNode_TransitionResult_0:bCanEnterTransition"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PropertyAccess_0",
+              "type": "K2Node_PropertyAccess",
+              "propertyPath": [
+                "GetParent",
+                "LocomotionMode"
+              ],
+              "nodeGuid": "63EF64E8-49F12324-BE8A2489-9F218957",
+              "pins": [
+                {
+                  "name": "Value",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_CallFunction_0:A"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateNode_2.Jump.AnimGraphNode_StateMachine_0.Jump States.AnimStateConduitNode_0.Entry Conduit'",
+          "resultNodeGuid": "47B46D444120F86FF22A349206DA2DDD",
+          "bakedEdgeMapping": {
+            "status": "conduit-entry",
+            "machine": "Jump States",
+            "state": "Entry Conduit",
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult"
+            ]
+          },
+          "compiledRule": null,
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "47B46D44-4120F86F-F22A3492-06DA2DDD",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "true"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateNode_2.Jump.AnimGraphNode_StateMachine_0.Jump States.AnimStateTransitionNode_0.Transition'",
+          "resultNodeGuid": "72E9A57441D10787748770941DFB56FC",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Jump States",
+            "editorTransitionNode": "AnimStateTransitionNode_0",
+            "fromStates": [
+              "Entry Conduit"
+            ],
+            "toStates": [
+              "Left Foot"
+            ],
+            "transitionIndices": [
+              1
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_2"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.2,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_StandardBlend",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": {
+            "generatedFunction": "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_Locomotion_AnimGraphNode_TransitionResult_72E9A57441D10787748770941DFB56FC",
+            "entryPoint": 1908,
+            "compiledDelegateProperty": "AnimGraphNode_TransitionResult_2",
+            "assignment": {
+              "target": "AnimGraphNode_TransitionResult_2.bCanEnterTransition",
+              "expressionType": "EX_LocalVariable"
+            },
+            "constantBearingCalls": [
+              {
+                "function": "LessEqual_DoubleDouble",
+                "numericConstants": [
+                  0.0
+                ],
+                "nameConstants": []
+              }
+            ],
+            "numericConstants": [
+              0.0
+            ],
+            "nameConstants": []
+          },
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "72E9A574-41D10787-74877094-1DFB56FC",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_1:ReturnValue"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PromotableOperator_1",
+              "type": "K2Node_PromotableOperator",
+              "function": "LessEqual_DoubleDouble",
+              "nodeGuid": "14191F5A-400F2D37-12D18E81-822E7FF2",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_PropertyAccess_0:Value"
+                  ]
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "AnimGraphNode_TransitionResult_0:bCanEnterTransition"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PropertyAccess_0",
+              "type": "K2Node_PropertyAccess",
+              "propertyPath": [
+                "GetParent",
+                "FeetState",
+                "FootPlantedAmount"
+              ],
+              "nodeGuid": "A40F6866-40DD9474-E2842B9E-2C0B80FC",
+              "pins": [
+                {
+                  "name": "Value",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_1:A"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateNode_2.Jump.AnimGraphNode_StateMachine_0.Jump States.AnimStateTransitionNode_1.Transition'",
+          "resultNodeGuid": "C7F8072A4E3FE3E307ED3D9FE3B599C1",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Jump States",
+            "editorTransitionNode": "AnimStateTransitionNode_1",
+            "fromStates": [
+              "Entry Conduit"
+            ],
+            "toStates": [
+              "Right Foot"
+            ],
+            "transitionIndices": [
+              0
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_1"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.2,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_StandardBlend",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": {
+            "generatedFunction": "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_Locomotion_AnimGraphNode_TransitionResult_C7F8072A4E3FE3E307ED3D9FE3B599C1",
+            "entryPoint": 1479,
+            "compiledDelegateProperty": "AnimGraphNode_TransitionResult_1",
+            "assignment": {
+              "target": "AnimGraphNode_TransitionResult_1.bCanEnterTransition",
+              "expressionType": "EX_LocalVariable"
+            },
+            "constantBearingCalls": [
+              {
+                "function": "Greater_DoubleDouble",
+                "numericConstants": [
+                  0.0
+                ],
+                "nameConstants": []
+              }
+            ],
+            "numericConstants": [
+              0.0
+            ],
+            "nameConstants": []
+          },
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "C7F8072A-4E3FE3E3-07ED3D9F-E3B599C1",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_1:ReturnValue"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PromotableOperator_1",
+              "type": "K2Node_PromotableOperator",
+              "function": "Greater_DoubleDouble",
+              "nodeGuid": "B7BD3FF3-4038DE22-6D28D8B1-DE694A41",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_PropertyAccess_0:Value"
+                  ]
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "AnimGraphNode_TransitionResult_0:bCanEnterTransition"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PropertyAccess_0",
+              "type": "K2Node_PropertyAccess",
+              "propertyPath": [
+                "GetParent",
+                "FeetState",
+                "FootPlantedAmount"
+              ],
+              "nodeGuid": "8023EEA2-43C322C9-D5D999B6-FCA6F671",
+              "pins": [
+                {
+                  "name": "Value",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_1:A"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateNode_2.Jump.AnimGraphNode_StateMachine_0.Jump States.AnimStateTransitionNode_24.Transition'",
+          "resultNodeGuid": "2CA4F2B24C8AB6F3B4AB1BAC2396BFDC",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Jump States",
+            "editorTransitionNode": "AnimStateTransitionNode_24",
+            "fromStates": [
+              "Left Foot"
+            ],
+            "toStates": [
+              "Loop"
+            ],
+            "transitionIndices": [
+              2
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_3"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.2,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_Inertialization",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": {
+            "generatedFunction": "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_Locomotion_AnimGraphNode_TransitionResult_2CA4F2B24C8AB6F3B4AB1BAC2396BFDC",
+            "entryPoint": 1915,
+            "compiledDelegateProperty": "AnimGraphNode_TransitionResult_3",
+            "assignment": {
+              "target": "AnimGraphNode_TransitionResult_3.bCanEnterTransition",
+              "expressionType": "EX_LocalVariable"
+            },
+            "constantBearingCalls": [
+              {
+                "function": "LessEqual_DoubleDouble",
+                "numericConstants": [
+                  0.0
+                ],
+                "nameConstants": []
+              }
+            ],
+            "numericConstants": [
+              0.0
+            ],
+            "nameConstants": []
+          },
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "2CA4F2B2-4C8AB6F3-B4AB1BAC-2396BFDC",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_0:ReturnValue"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_AnimGetter_1",
+              "type": "K2Node_AnimGetter",
+              "function": "GetRelevantAnimTimeRemaining",
+              "sourceState": "Left Foot",
+              "nodeGuid": "420E92E7-4E8D09E1-450DF68A-94529841",
+              "pins": [
+                {
+                  "name": "MachineIndex",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "0"
+                },
+                {
+                  "name": "StateIndex",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "0"
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "defaultValue": "0.0",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_0:A"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PromotableOperator_0",
+              "type": "K2Node_PromotableOperator",
+              "function": "LessEqual_DoubleDouble",
+              "nodeGuid": "CB3656CF-4BBFCA0A-704F93A9-4FFAF71B",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_AnimGetter_1:ReturnValue"
+                  ]
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "AnimGraphNode_TransitionResult_0:bCanEnterTransition"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateNode_2.Jump.AnimGraphNode_StateMachine_0.Jump States.AnimStateTransitionNode_27.Transition'",
+          "resultNodeGuid": "5A0ABB5F4DD61A68BBB2399FA11B44F5",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Jump States",
+            "editorTransitionNode": "AnimStateTransitionNode_27",
+            "fromStates": [
+              "Loop"
+            ],
+            "toStates": [
+              "Flail"
+            ],
+            "transitionIndices": [
+              4
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_5"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 1.0,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_StandardBlend",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": null,
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "5A0ABB5F-4DD61A68-BBB2399F-A11B44F5",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "true"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateNode_2.Jump.AnimGraphNode_StateMachine_0.Jump States.AnimStateTransitionNode_28.Transition'",
+          "resultNodeGuid": "5E15359647F8A4197A7540BE51175BDF",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Jump States",
+            "editorTransitionNode": "AnimStateTransitionNode_28",
+            "fromStates": [
+              "Right Foot"
+            ],
+            "toStates": [
+              "Loop"
+            ],
+            "transitionIndices": [
+              3
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_4"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.2,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_Inertialization",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": {
+            "generatedFunction": "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_Locomotion_AnimGraphNode_TransitionResult_5E15359647F8A4197A7540BE51175BDF",
+            "entryPoint": 1922,
+            "compiledDelegateProperty": "AnimGraphNode_TransitionResult_4",
+            "assignment": {
+              "target": "AnimGraphNode_TransitionResult_4.bCanEnterTransition",
+              "expressionType": "EX_LocalVariable"
+            },
+            "constantBearingCalls": [
+              {
+                "function": "LessEqual_DoubleDouble",
+                "numericConstants": [
+                  0.0
+                ],
+                "nameConstants": []
+              }
+            ],
+            "numericConstants": [
+              0.0
+            ],
+            "nameConstants": []
+          },
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "5E153596-47F8A419-7A7540BE-51175BDF",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_0:ReturnValue"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_AnimGetter_1",
+              "type": "K2Node_AnimGetter",
+              "function": "GetRelevantAnimTimeRemaining",
+              "sourceState": "Right Foot",
+              "nodeGuid": "3956C6C5-427173D2-BD20D59D-ADA29CF4",
+              "pins": [
+                {
+                  "name": "MachineIndex",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "0"
+                },
+                {
+                  "name": "StateIndex",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "0"
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "defaultValue": "0.0",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_0:A"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PromotableOperator_0",
+              "type": "K2Node_PromotableOperator",
+              "function": "LessEqual_DoubleDouble",
+              "nodeGuid": "FF98BFB4-4FC84034-B4574CAA-E3BC8973",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_AnimGetter_1:ReturnValue"
+                  ]
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "AnimGraphNode_TransitionResult_0:bCanEnterTransition"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateTransitionNode_0.Transition'",
+          "resultNodeGuid": "2424DD65485D14BA84D88292FF73878E",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Locomotion States",
+            "editorTransitionNode": "AnimStateTransitionNode_0",
+            "fromStates": [
+              "Fall",
+              "Jump"
+            ],
+            "toStates": [
+              "Grounded"
+            ],
+            "transitionIndices": [
+              3,
+              5
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_10"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.2,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_StandardBlend",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": {
+            "generatedFunction": "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_Locomotion_AnimGraphNode_TransitionResult_2424DD65485D14BA84D88292FF73878E",
+            "entryPoint": 2321,
+            "compiledDelegateProperty": "AnimGraphNode_TransitionResult_10",
+            "assignment": {
+              "target": "AnimGraphNode_TransitionResult_10.bCanEnterTransition",
+              "expressionType": "EX_LocalVariable"
+            },
+            "constantBearingCalls": [
+              {
+                "function": "EqualEqual_GameplayTag",
+                "numericConstants": [],
+                "nameConstants": [
+                  "Als.LocomotionMode.Grounded"
+                ]
+              }
+            ],
+            "numericConstants": [],
+            "nameConstants": [
+              "Als.LocomotionMode.Grounded"
+            ]
+          },
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "2424DD65-485D14BA-84D88292-FF73878E",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False",
+                  "linkedTo": [
+                    "K2Node_CallFunction_0:ReturnValue"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_CallFunction_0",
+              "type": "K2Node_CallFunction",
+              "function": "EqualEqual_GameplayTag",
+              "nodeGuid": "96DCBE84-4B5BFF4F-8DF24096-FF60A390",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_PropertyAccess_0:Value"
+                  ]
+                },
+                {
+                  "name": "B",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "(TagName=\"Als.LocomotionMode.Grounded\")"
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "defaultValue": "false",
+                  "linkedTo": [
+                    "AnimGraphNode_TransitionResult_0:bCanEnterTransition"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PropertyAccess_0",
+              "type": "K2Node_PropertyAccess",
+              "propertyPath": [
+                "GetParent",
+                "LocomotionMode"
+              ],
+              "nodeGuid": "4AD1A28C-4D7AAEDE-EC409FBA-A49F6912",
+              "pins": [
+                {
+                  "name": "Value",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_CallFunction_0:A"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateTransitionNode_1.AnimationTransitionGraph_0'",
+          "resultNodeGuid": "538059B646B026672BA07396D842C166",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Locomotion States",
+            "editorTransitionNode": "AnimStateTransitionNode_1",
+            "fromStates": [
+              "Land"
+            ],
+            "toStates": [
+              "Land Movement"
+            ],
+            "transitionIndices": [
+              8
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_14"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.2,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_StandardBlend",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": {
+            "generatedFunction": "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_Locomotion_AnimGraphNode_TransitionResult_538059B646B026672BA07396D842C166",
+            "entryPoint": 1486,
+            "compiledDelegateProperty": "AnimGraphNode_TransitionResult_14",
+            "assignment": {
+              "target": "AnimGraphNode_TransitionResult_14.bCanEnterTransition",
+              "expressionType": "EX_LocalVariable"
+            },
+            "constantBearingCalls": [
+              {
+                "function": "GreaterEqual_DoubleDouble",
+                "numericConstants": [
+                  650.0
+                ],
+                "nameConstants": []
+              }
+            ],
+            "numericConstants": [
+              650.0
+            ],
+            "nameConstants": []
+          },
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "538059B6-46B02667-2BA07396-D842C166",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False",
+                  "linkedTo": [
+                    "K2Node_CommutativeAssociativeBinaryOperator_0:ReturnValue"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_CommutativeAssociativeBinaryOperator_0",
+              "type": "K2Node_CommutativeAssociativeBinaryOperator",
+              "function": "BooleanOR",
+              "nodeGuid": "8018BADE-47EBAEF9-C2BCDB8A-CAFBD371",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "false",
+                  "linkedTo": [
+                    "K2Node_PropertyAccess_1:Value"
+                  ]
+                },
+                {
+                  "name": "B",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "false",
+                  "linkedTo": [
+                    "K2Node_PropertyAccess_2:Value"
+                  ]
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "defaultValue": "false",
+                  "linkedTo": [
+                    "AnimGraphNode_TransitionResult_0:bCanEnterTransition"
+                  ]
+                },
+                {
+                  "name": "C",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_PropertyAccess_0:Value"
+                  ]
+                },
+                {
+                  "name": "D",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_1:ReturnValue"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PromotableOperator_1",
+              "type": "K2Node_PromotableOperator",
+              "function": "GreaterEqual_DoubleDouble",
+              "nodeGuid": "48CF1288-4833CC50-0CE94EAA-51EEB893",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_PropertyAccess_3:Value"
+                  ]
+                },
+                {
+                  "name": "B",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "650.000000"
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_CommutativeAssociativeBinaryOperator_0:D"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PropertyAccess_0",
+              "type": "K2Node_PropertyAccess",
+              "propertyPath": [
+                "GetParent",
+                "RotateInPlaceState",
+                "bRotatingRight"
+              ],
+              "nodeGuid": "5B984BAC-403BA543-367A72BC-3CD03D1C",
+              "pins": [
+                {
+                  "name": "Value",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_CommutativeAssociativeBinaryOperator_0:C"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PropertyAccess_1",
+              "type": "K2Node_PropertyAccess",
+              "propertyPath": [
+                "GetParent",
+                "LocomotionState",
+                "bHasInput"
+              ],
+              "nodeGuid": "E1B6D63C-45EFE2B6-B63DF6A0-D1B6130E",
+              "pins": [
+                {
+                  "name": "Value",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_CommutativeAssociativeBinaryOperator_0:A"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PropertyAccess_2",
+              "type": "K2Node_PropertyAccess",
+              "propertyPath": [
+                "GetParent",
+                "RotateInPlaceState",
+                "bRotatingLeft"
+              ],
+              "nodeGuid": "00A88729-48924568-6301B2A4-1039EED7",
+              "pins": [
+                {
+                  "name": "Value",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_CommutativeAssociativeBinaryOperator_0:B"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PropertyAccess_3",
+              "type": "K2Node_PropertyAccess",
+              "propertyPath": [
+                "GetParent",
+                "LocomotionState",
+                "Speed"
+              ],
+              "nodeGuid": "C41E57E5-4CBCE5BF-5337689B-30BC7B68",
+              "pins": [
+                {
+                  "name": "Value",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_1:A"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateTransitionNode_15.Transition'",
+          "resultNodeGuid": "C77F0F6D46DB70D960C6219466EFA9C9",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Locomotion States",
+            "editorTransitionNode": "AnimStateTransitionNode_15",
+            "fromStates": [
+              "Jump"
+            ],
+            "toStates": [
+              "Land Conduct"
+            ],
+            "transitionIndices": [
+              4
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_11"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.2,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_StandardBlend",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": null,
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "C77F0F6D-46DB70D9-60C62194-66EFA9C9",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "true"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateTransitionNode_17.Transition'",
+          "resultNodeGuid": "BB2B76BE4178CF592C931FA7091B146A",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Locomotion States",
+            "editorTransitionNode": "AnimStateTransitionNode_17",
+            "fromStates": [
+              "Fall"
+            ],
+            "toStates": [
+              "Land Conduct"
+            ],
+            "transitionIndices": [
+              2
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_9"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.2,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_StandardBlend",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": null,
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "BB2B76BE-4178CF59-2C931FA7-091B146A",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "true"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateTransitionNode_19.Transition'",
+          "resultNodeGuid": "47A8D2CF4E17746640B3A69AD1D0A9E9",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Locomotion States",
+            "editorTransitionNode": "AnimStateTransitionNode_19",
+            "fromStates": [
+              "Grounded",
+              "Land",
+              "Land Movement"
+            ],
+            "toStates": [
+              "Jump"
+            ],
+            "transitionIndices": [
+              0,
+              9,
+              12
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_7"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.10000000149011612,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_Inertialization",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": {
+            "generatedFunction": "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_Locomotion_AnimGraphNode_TransitionResult_47A8D2CF4E17746640B3A69AD1D0A9E9",
+            "entryPoint": 2090,
+            "compiledDelegateProperty": "AnimGraphNode_TransitionResult_7",
+            "assignment": {
+              "target": "AnimGraphNode_TransitionResult_7.bCanEnterTransition",
+              "expressionType": "EX_LocalVariable"
+            },
+            "constantBearingCalls": [
+              {
+                "function": "EqualEqual_GameplayTag",
+                "numericConstants": [],
+                "nameConstants": [
+                  "Als.LocomotionMode.InAir"
+                ]
+              }
+            ],
+            "numericConstants": [],
+            "nameConstants": [
+              "Als.LocomotionMode.InAir"
+            ]
+          },
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "47A8D2CF-4E177466-40B3A69A-D1D0A9E9",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False",
+                  "linkedTo": [
+                    "K2Node_CommutativeAssociativeBinaryOperator_0:ReturnValue"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_CallFunction_0",
+              "type": "K2Node_CallFunction",
+              "function": "EqualEqual_GameplayTag",
+              "nodeGuid": "DB8D0C6C-48441D9B-22C659A8-4A9B5DEA",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_PropertyAccess_0:Value"
+                  ]
+                },
+                {
+                  "name": "B",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "(TagName=\"Als.LocomotionMode.InAir\")"
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "defaultValue": "false",
+                  "linkedTo": [
+                    "K2Node_CommutativeAssociativeBinaryOperator_0:A"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_CommutativeAssociativeBinaryOperator_0",
+              "type": "K2Node_CommutativeAssociativeBinaryOperator",
+              "function": "BooleanAND",
+              "nodeGuid": "075B9BE3-4B2462B4-A720F981-83AFCB50",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "false",
+                  "linkedTo": [
+                    "K2Node_CallFunction_0:ReturnValue"
+                  ]
+                },
+                {
+                  "name": "B",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "false",
+                  "linkedTo": [
+                    "K2Node_PropertyAccess_1:Value"
+                  ]
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "defaultValue": "false",
+                  "linkedTo": [
+                    "AnimGraphNode_TransitionResult_0:bCanEnterTransition"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PropertyAccess_0",
+              "type": "K2Node_PropertyAccess",
+              "propertyPath": [
+                "GetParent",
+                "LocomotionMode"
+              ],
+              "nodeGuid": "0E9D50BD-4AB2FEE2-D9156DBC-A1FFD91F",
+              "pins": [
+                {
+                  "name": "Value",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_CallFunction_0:A"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PropertyAccess_1",
+              "type": "K2Node_PropertyAccess",
+              "propertyPath": [
+                "GetParent",
+                "InAirState",
+                "bJumped"
+              ],
+              "nodeGuid": "CAC61D4B-40048F6B-CB96A48B-74C41446",
+              "pins": [
+                {
+                  "name": "Value",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_CommutativeAssociativeBinaryOperator_0:B"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateTransitionNode_2.AnimationTransitionGraph_0'",
+          "resultNodeGuid": "1E553025472CCCAF49776E8774A8DC24",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Locomotion States",
+            "editorTransitionNode": "AnimStateTransitionNode_2",
+            "fromStates": [
+              "Land Movement"
+            ],
+            "toStates": [
+              "Grounded"
+            ],
+            "transitionIndices": [
+              11
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_15"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.30000001192092896,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_StandardBlend",
+              "automaticRemainingTimeRule": true,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": null,
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "1E553025-472CCCAF-49776E87-74A8DC24",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateTransitionNode_20.Transition'",
+          "resultNodeGuid": "0C29EA6C4514AF276E3A4C82AC613ADA",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Locomotion States",
+            "editorTransitionNode": "AnimStateTransitionNode_20",
+            "fromStates": [
+              "Grounded",
+              "Land",
+              "Land Movement"
+            ],
+            "toStates": [
+              "Fall"
+            ],
+            "transitionIndices": [
+              1,
+              10,
+              13
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_8"
+            ],
+            "settings": {
+              "priorityOrder": 2,
+              "crossfadeDuration": 0.6000000238418579,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_Inertialization",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": {
+            "generatedFunction": "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_Locomotion_AnimGraphNode_TransitionResult_0C29EA6C4514AF276E3A4C82AC613ADA",
+            "entryPoint": 2314,
+            "compiledDelegateProperty": "AnimGraphNode_TransitionResult_8",
+            "assignment": {
+              "target": "AnimGraphNode_TransitionResult_8.bCanEnterTransition",
+              "expressionType": "EX_LocalVariable"
+            },
+            "constantBearingCalls": [
+              {
+                "function": "EqualEqual_GameplayTag",
+                "numericConstants": [],
+                "nameConstants": [
+                  "Als.LocomotionMode.InAir"
+                ]
+              }
+            ],
+            "numericConstants": [],
+            "nameConstants": [
+              "Als.LocomotionMode.InAir"
+            ]
+          },
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "0C29EA6C-4514AF27-6E3A4C82-AC613ADA",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False",
+                  "linkedTo": [
+                    "K2Node_CallFunction_0:ReturnValue"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_CallFunction_0",
+              "type": "K2Node_CallFunction",
+              "function": "EqualEqual_GameplayTag",
+              "nodeGuid": "4C57E8A9-494370D0-53F2DC83-E60D1EEA",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_PropertyAccess_0:Value"
+                  ]
+                },
+                {
+                  "name": "B",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "(TagName=\"Als.LocomotionMode.InAir\")"
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "defaultValue": "false",
+                  "linkedTo": [
+                    "AnimGraphNode_TransitionResult_0:bCanEnterTransition"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PropertyAccess_0",
+              "type": "K2Node_PropertyAccess",
+              "propertyPath": [
+                "GetParent",
+                "LocomotionMode"
+              ],
+              "nodeGuid": "463B2928-4B4D059C-E5D89D99-D1D6A9C2",
+              "pins": [
+                {
+                  "name": "Value",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_CallFunction_0:A"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateTransitionNode_21.AnimationTransitionGraph_0'",
+          "resultNodeGuid": "B6726C584912524A19AA02A5078E89C2",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Locomotion States",
+            "editorTransitionNode": "AnimStateTransitionNode_21",
+            "fromStates": [
+              "Land Conduct"
+            ],
+            "toStates": [
+              "Land"
+            ],
+            "transitionIndices": [
+              15
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_17"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.10000000149011612,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_Inertialization",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": null,
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "B6726C58-4912524A-19AA02A5-078E89C2",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "true"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateTransitionNode_26.AnimationTransitionGraph_0'",
+          "resultNodeGuid": "1A0E86D1483831CDC9C2C5A52F2B5C61",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Locomotion States",
+            "editorTransitionNode": "AnimStateTransitionNode_26",
+            "fromStates": [
+              "Land Conduct"
+            ],
+            "toStates": [
+              "Land Movement"
+            ],
+            "transitionIndices": [
+              14
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_16"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.10000000149011612,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_Inertialization",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": null,
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "1A0E86D1-483831CD-C9C2C5A5-2F2B5C61",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateTransitionNode_3.AnimationTransitionGraph_0'",
+          "resultNodeGuid": "AB25170B4DC6F3FF3A91BB812979F4AA",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Locomotion States",
+            "editorTransitionNode": "AnimStateTransitionNode_3",
+            "fromStates": [
+              "Land"
+            ],
+            "toStates": [
+              "Grounded"
+            ],
+            "transitionIndices": [
+              7
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_13"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.800000011920929,
+              "blendMode": "EAlphaBlendOption::Cubic",
+              "logicType": "ETransitionLogicType::TLT_StandardBlend",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": "BlendProfile'SK_Als:QuickFeetBlend'",
+              "startNotify": "LandToGrounded"
+            }
+          },
+          "compiledRule": {
+            "generatedFunction": "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_Locomotion_AnimGraphNode_TransitionResult_AB25170B4DC6F3FF3A91BB812979F4AA",
+            "entryPoint": 2335,
+            "compiledDelegateProperty": "AnimGraphNode_TransitionResult_13",
+            "assignment": {
+              "target": "AnimGraphNode_TransitionResult_13.bCanEnterTransition",
+              "expressionType": "EX_LocalVariable"
+            },
+            "constantBearingCalls": [
+              {
+                "function": "LessEqual_DoubleDouble",
+                "numericConstants": [
+                  0.0
+                ],
+                "nameConstants": []
+              }
+            ],
+            "numericConstants": [
+              0.0
+            ],
+            "nameConstants": []
+          },
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "AB25170B-4DC6F3FF-3A91BB81-2979F4AA",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_0:ReturnValue"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_AnimGetter_0",
+              "type": "K2Node_AnimGetter",
+              "function": "GetRelevantAnimTimeRemaining",
+              "sourceState": "Land",
+              "nodeGuid": "19196CAB-4BE3DAC4-CE1333A5-1021CC25",
+              "pins": [
+                {
+                  "name": "MachineIndex",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "0"
+                },
+                {
+                  "name": "StateIndex",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "0"
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "defaultValue": "0.0",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_0:A"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PromotableOperator_0",
+              "type": "K2Node_PromotableOperator",
+              "function": "LessEqual_DoubleDouble",
+              "nodeGuid": "D60AD349-4B8963D6-D2807BBB-27141415",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_AnimGetter_0:ReturnValue"
+                  ]
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "AnimGraphNode_TransitionResult_0:bCanEnterTransition"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "graph": "AnimationTransitionGraph'AB_Als_Locomotion:AnimGraph.AnimGraphNode_StateMachine_9.Locomotion States.AnimStateTransitionNode_4.Transition'",
+          "resultNodeGuid": "E7381F9A47C57F6995C161A7CD852AE2",
+          "bakedEdgeMapping": {
+            "status": "resolved",
+            "machine": "Locomotion States",
+            "editorTransitionNode": "AnimStateTransitionNode_4",
+            "fromStates": [
+              "Land"
+            ],
+            "toStates": [
+              "Grounded"
+            ],
+            "transitionIndices": [
+              6
+            ],
+            "compiledDelegateProperties": [
+              "AnimGraphNode_TransitionResult_12"
+            ],
+            "settings": {
+              "priorityOrder": 1,
+              "crossfadeDuration": 0.2,
+              "blendMode": "EAlphaBlendOption::HermiteCubic",
+              "logicType": "ETransitionLogicType::TLT_StandardBlend",
+              "automaticRemainingTimeRule": false,
+              "blendProfile": null,
+              "startNotify": null
+            }
+          },
+          "compiledRule": {
+            "generatedFunction": "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_Locomotion_AnimGraphNode_TransitionResult_E7381F9A47C57F6995C161A7CD852AE2",
+            "entryPoint": 2328,
+            "compiledDelegateProperty": "AnimGraphNode_TransitionResult_12",
+            "assignment": {
+              "target": "AnimGraphNode_TransitionResult_12.bCanEnterTransition",
+              "expressionType": "EX_LocalVariable"
+            },
+            "constantBearingCalls": [
+              {
+                "function": "NotEqual_GameplayTag",
+                "numericConstants": [],
+                "nameConstants": [
+                  "Als.Stance.Standing"
+                ]
+              }
+            ],
+            "numericConstants": [],
+            "nameConstants": [
+              "Als.Stance.Standing"
+            ]
+          },
+          "nodes": [
+            {
+              "name": "AnimGraphNode_TransitionResult_0",
+              "type": "AnimGraphNode_TransitionResult",
+              "nodeGuid": "E7381F9A-47C57F69-95C161A7-CD852AE2",
+              "pins": [
+                {
+                  "name": "bCanEnterTransition",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "False",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_0:ReturnValue"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PromotableOperator_0",
+              "type": "K2Node_PromotableOperator",
+              "function": "NotEqual_GameplayTag",
+              "nodeGuid": "394A16D1-4DC12BE0-323EC59C-B6E5CD4D",
+              "pins": [
+                {
+                  "name": "A",
+                  "direction": "EGPD_Input",
+                  "linkedTo": [
+                    "K2Node_PropertyAccess_0:Value"
+                  ]
+                },
+                {
+                  "name": "B",
+                  "direction": "EGPD_Input",
+                  "defaultValue": "(TagName=\"Als.Stance.Standing\")"
+                },
+                {
+                  "name": "ReturnValue",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "AnimGraphNode_TransitionResult_0:bCanEnterTransition"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "K2Node_PropertyAccess_0",
+              "type": "K2Node_PropertyAccess",
+              "propertyPath": [
+                "GetParent",
+                "Stance"
+              ],
+              "nodeGuid": "F3710F80-49C6919D-A7ADCAAB-6A83669F",
+              "pins": [
+                {
+                  "name": "Value",
+                  "direction": "EGPD_Output",
+                  "linkedTo": [
+                    "K2Node_PromotableOperator_0:A"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     "AB_Als_Ragdolling": {
@@ -74972,7 +76722,8 @@
         }
       ],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_View": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/AB_Als_View.uasset",
@@ -78877,7 +80628,8 @@
       "unresolvedCompiledNodeIndices": [],
       "unrecoverable": [
         "Transition CanTakeDelegateIndex values and baked transition data are preserved, but compiled transition-rule boolean expressions are not decompiled by CUE4Parse."
-      ]
+      ],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Barrel": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_Barrel.uasset",
@@ -81699,7 +83451,8 @@
         }
       ],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Binoculars": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_Binoculars.uasset",
@@ -85303,7 +87056,8 @@
         }
       ],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Bow": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_Bow.uasset",
@@ -91319,7 +93073,8 @@
       "unresolvedCompiledNodeIndices": [],
       "unrecoverable": [
         "Transition CanTakeDelegateIndex values and baked transition data are preserved, but compiled transition-rule boolean expressions are not decompiled by CUE4Parse."
-      ]
+      ],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Box": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_Box.uasset",
@@ -94031,7 +95786,8 @@
         }
       ],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Default": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_Default.uasset",
@@ -96401,7 +98157,8 @@
         }
       ],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Feminine": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_Feminine.uasset",
@@ -98771,7 +100528,8 @@
         }
       ],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_HandsTied": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_HandsTied.uasset",
@@ -101905,7 +103663,8 @@
         }
       ],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Injured": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_Injured.uasset",
@@ -105035,7 +106794,8 @@
         }
       ],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Masculine": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_Masculine.uasset",
@@ -107405,7 +109165,8 @@
         }
       ],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_PistolOneHanded": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_PistolOneHanded.uasset",
@@ -113073,7 +114834,8 @@
       "unresolvedCompiledNodeIndices": [],
       "unrecoverable": [
         "Transition CanTakeDelegateIndex values and baked transition data are preserved, but compiled transition-rule boolean expressions are not decompiled by CUE4Parse."
-      ]
+      ],
+      "transitionRuleGraphs": []
     },
     "AB_Als_PistolTwoHanded": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_PistolTwoHanded.uasset",
@@ -118889,7 +120651,8 @@
       "unresolvedCompiledNodeIndices": [],
       "unrecoverable": [
         "Transition CanTakeDelegateIndex values and baked transition data are preserved, but compiled transition-rule boolean expressions are not decompiled by CUE4Parse."
-      ]
+      ],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Rifle": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_Rifle.uasset",
@@ -125793,7 +127556,8 @@
       "unresolvedCompiledNodeIndices": [],
       "unrecoverable": [
         "Transition CanTakeDelegateIndex values and baked transition data are preserved, but compiled transition-rule boolean expressions are not decompiled by CUE4Parse."
-      ]
+      ],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Torch": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Overlays/AB_Als_Torch.uasset",
@@ -129252,7 +131016,8 @@
         }
       ],
       "unresolvedCompiledNodeIndices": [],
-      "unrecoverable": []
+      "unrecoverable": [],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Crouching": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Stances/AB_Als_Crouching.uasset",
@@ -140207,7 +141972,8 @@
       "unresolvedCompiledNodeIndices": [],
       "unrecoverable": [
         "Transition CanTakeDelegateIndex values and baked transition data are preserved, but compiled transition-rule boolean expressions are not decompiled by CUE4Parse."
-      ]
+      ],
+      "transitionRuleGraphs": []
     },
     "AB_Als_Standing": {
       "assetPath": "ALS/Content/ALS/Character/AnimationInstances/Stances/AB_Als_Standing.uasset",
@@ -158638,7 +160404,8 @@
       "unresolvedCompiledNodeIndices": [],
       "unrecoverable": [
         "Transition CanTakeDelegateIndex values and baked transition data are preserved, but compiled transition-rule boolean expressions are not decompiled by CUE4Parse."
-      ]
+      ],
+      "transitionRuleGraphs": []
     }
   },
   "excludedTargets": [
@@ -159501,6 +161268,34 @@
           ]
         }
       ]
+    },
+    {
+      "id": "locomotion-in-air-transition-rule-oracle",
+      "passed": true,
+      "values": {
+        "graphCount": 18,
+        "resolvedGraphCount": 16,
+        "conduitGraphCount": 2,
+        "compiledRuleCount": 11,
+        "mappedBakedEdgeCount": 21,
+        "checks": {
+          "source": true,
+          "graphInventory": true,
+          "bakedEdgeCoverage": true,
+          "compiledJoins": true,
+          "jumpEntryRightFoot": true,
+          "jumpEntryLeftFoot": true,
+          "jumpLeftFootFinished": true,
+          "jumpRightFootFinished": true,
+          "landConduitGrounded": true,
+          "groundedToJump": true,
+          "groundedToFall": true,
+          "inAirToGrounded": true,
+          "landCrouching": true,
+          "landFinished": true,
+          "landMovement": true
+        }
+      }
     }
   ]
 }

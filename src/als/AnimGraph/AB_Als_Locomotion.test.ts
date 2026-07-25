@@ -1002,7 +1002,7 @@ describe('AB_Als_Locomotion exact state/frame behavior', () => {
 
     evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
       locomotionMode: 'InAir',
-      clocks: { jumpLaunchRemainingTime: 0.2 },
+      clocks: { jumpLaunchRemainingTime: 0 },
     }))
     expect(runtime.inAirGraphState.jumpState).toMatchObject({
       state: 'Loop',
@@ -1021,7 +1021,7 @@ describe('AB_Als_Locomotion exact state/frame behavior', () => {
     evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
       deltaTime: 0.1,
       locomotionMode: 'InAir',
-      clocks: { jumpLaunchRemainingTime: 0.2 },
+      clocks: { jumpLaunchRemainingTime: 0 },
     }))
     expect(runtime.jumpTransitionsTakenThisFrame).toBe(0)
     expect(runtime.inertializationRequests).toEqual([])
@@ -1055,7 +1055,7 @@ describe('AB_Als_Locomotion exact state/frame behavior', () => {
     }))
 
     evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
-      clocks: { landRemainingTime: 0.1 },
+      clocks: { landRemainingTime: 0 },
     }))
     expect(runtime.outerTransitionStack.activeTransitions).toHaveLength(1)
     expect(runtime.lifecycleEvents.filter(
@@ -1092,7 +1092,7 @@ describe('AB_Als_Locomotion exact state/frame behavior', () => {
 
     evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
       deltaTime: 0.2,
-      clocks: { landRemainingTime: 0.1 },
+      clocks: { landRemainingTime: 0 },
     }))
 
     const transition = runtime.outerTransitionStack.activeTransitions[0]
@@ -1110,7 +1110,7 @@ describe('AB_Als_Locomotion exact state/frame behavior', () => {
     evaluateAlsLocomotionPoseGraph(runtime, frame(poses, {
       locomotionMode: 'InAir',
       jumped: true,
-      clocks: { landRemainingTime: 0.1 },
+      clocks: { landRemainingTime: 0 },
     }))
     expect(runtime.transitionsTakenThisFrame).toBe(2)
     expect(runtime.outerTransitionStack.currentState).toBe('Jump')

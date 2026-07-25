@@ -15,8 +15,10 @@ import { fInterpTo } from '../State/AlsRotateInPlaceState'
  *   $.assets.AB_Als_Locomotion.stateMachines[?(@.MachineName=="Locomotion States")]
  *   $.assets.AB_Als_Locomotion.stateMachines[?(@.MachineName=="Jump States")]
  *   and compiled nodes 18..76.
- * - ALS Refactored 4.15 generated-class transition bytecode for
- *   AnimGraphNode_TransitionResult_1..17 (the boolean rules below).
+ * - scripts/extract-als/abp-graph.json transitionRuleGraphs joins each saved
+ *   editor graph/result NodeGuid to its generated-class Kismet evaluator after
+ *   UAssetAPI binary-equality verification. In particular, the compiled
+ *   Jump-foot and Land remaining-time predicates compare <= 0.
  * - AlsAnimationInstance.cpp:985-1125 for the bJumped latch, JumpPlayRate,
  *   VerticalVelocity, GroundPredictionAmount, and InAir lean inputs.
  *
@@ -52,7 +54,7 @@ export type AlsLocomotionTransitionRule =
   | 'LocomotionMode == InAir'
   | 'LocomotionMode == Grounded'
   | 'Stance != Standing'
-  | 'GetRelevantAnimTimeRemaining(Land) <= 0.1'
+  | 'GetRelevantAnimTimeRemaining(Land) <= 0'
   | 'bHasInput || bRotatingLeft || bRotatingRight || Speed >= 650'
   | 'AutomaticRemainingTimeRule'
   | 'bHasInput'
@@ -199,7 +201,7 @@ readonly LocomotionTransitionRow[] = [
   [
     'Land',
     'Grounded',
-    'GetRelevantAnimTimeRemaining(Land) <= 0.1',
+    'GetRelevantAnimTimeRemaining(Land) <= 0',
     null,
     0.8,
     'Cubic',
@@ -359,8 +361,8 @@ export const ALS_LOCOMOTION_STATES_MACHINE = {
 export type AlsJumpTransitionRule =
   | 'FootPlantedAmount > 0'
   | 'FootPlantedAmount <= 0'
-  | 'GetRelevantAnimTimeRemaining(Left Foot) <= 0.2'
-  | 'GetRelevantAnimTimeRemaining(Right Foot) <= 0.2'
+  | 'GetRelevantAnimTimeRemaining(Left Foot) <= 0'
+  | 'GetRelevantAnimTimeRemaining(Right Foot) <= 0'
   | 'true'
 
 export interface AlsJumpGraphTransition {
@@ -403,7 +405,7 @@ readonly AlsJumpGraphTransition[] = [
     transitionIndex: 2,
     from: 'Left Foot',
     to: 'Loop',
-    rule: 'GetRelevantAnimTimeRemaining(Left Foot) <= 0.2',
+    rule: 'GetRelevantAnimTimeRemaining(Left Foot) <= 0',
     duration: 0.2,
     blendOption: 'HermiteCubic',
     logic: 'Inertialization',
@@ -414,7 +416,7 @@ readonly AlsJumpGraphTransition[] = [
     transitionIndex: 3,
     from: 'Right Foot',
     to: 'Loop',
-    rule: 'GetRelevantAnimTimeRemaining(Right Foot) <= 0.2',
+    rule: 'GetRelevantAnimTimeRemaining(Right Foot) <= 0',
     duration: 0.2,
     blendOption: 'HermiteCubic',
     logic: 'Inertialization',
@@ -443,7 +445,7 @@ export const ALS_JUMP_STATES_MACHINE = {
   skipFirstUpdateTransition: true,
   reinitializeOnBecomingRelevant: true,
   allowConduitEntryStates: true,
-  launchRemainingTimeThreshold: 0.2,
+  launchRemainingTimeThreshold: 0,
 } as const
 
 export interface AlsLocomotionTransitionInput {
@@ -493,7 +495,7 @@ export function selectAlsLocomotionGraphTransition(
       if (input.stance !== 'Standing') {
         return locomotionTransition(6)
       }
-      if (input.landRemainingTime <= 0.1) {
+      if (input.landRemainingTime <= 0) {
         return locomotionTransition(7)
       }
       if (
@@ -542,11 +544,11 @@ export function selectAlsJumpGraphTransition(
         input.footPlantedAmount > 0 ? 0 : 1
       ]
     case 'Left Foot':
-      return input.launchRemainingTime <= 0.2
+      return input.launchRemainingTime <= 0
         ? ALS_JUMP_GRAPH_TRANSITIONS[2]
         : null
     case 'Right Foot':
-      return input.launchRemainingTime <= 0.2
+      return input.launchRemainingTime <= 0
         ? ALS_JUMP_GRAPH_TRANSITIONS[3]
         : null
     case 'Loop':
