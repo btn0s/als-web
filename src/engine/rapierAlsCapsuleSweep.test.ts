@@ -9,6 +9,9 @@ import {
   rapierAlsMovementBaseFromPrimitive,
   rapierAlsMovementBase,
 } from './rapierAlsCapsuleSweep'
+import {
+  UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+} from './characterMovementFloor'
 
 class FakeCapsule {
   readonly halfHeight: number
@@ -81,6 +84,7 @@ describe('Rapier ALS capsule sweep', () => {
           return {
             time_of_impact: 0.375,
             collider: supportingCollider,
+            witness1: { x: 4, y: 5, z: 6 },
             normal1: { x: 0.1, y: 0.9, z: -0.2 },
             normal2: { x: -0.1, y: -0.9, z: 0.2 },
           }
@@ -111,19 +115,27 @@ describe('Rapier ALS capsule sweep', () => {
       validBlockingHit: true,
       time: 0.375,
       impactNormal: { x: 0.1, y: -0.2, z: 0.9 },
+      impactPoint: { x: 4, y: 6, z: 5 },
+      bBlockingHit: true,
+      bStartPenetrating: false,
       collider: supportingCollider,
       rigidBody: supportingBody,
     })
   })
 
-  it('probes the whole capsule downward and rejects non-walkable normals', () => {
-    const queries: unknown[] = []
+  it('uses the first ALS ComputeFloorDist sweep and rejects non-walkable normals', () => {
+    const queries: Array<{
+      start: { x: number; y: number; z: number }
+      end: { x: number; y: number; z: number }
+      capsuleRadius: number
+      capsuleHalfHeight: number
+    }> = []
     const walkable = probeRapierAlsGround(
       (query) => {
         queries.push(query)
         return {
           validBlockingHit: true,
-          time: 0,
+          time: 0.5,
           impactNormal: { x: 0, y: 0, z: 0.8 },
         }
       },
@@ -134,16 +146,16 @@ describe('Rapier ALS capsule sweep', () => {
         walkableFloorAngleCos: 0.71,
       },
     )
-    expect(queries).toEqual([{
-      start: { x: 1, y: 2, z: 3 },
-      end: {
-        x: 1,
-        y: 2,
-        z: 3 - ALS_RAPIER_GROUND_PROBE_DISTANCE,
-      },
-      capsuleRadius: 0.3,
-      capsuleHalfHeight: 0.9,
-    }])
+    expect(queries).toHaveLength(1)
+    expect(queries[0].start).toEqual({ x: 1, y: 2, z: 3 })
+    expect(queries[0].end.x).toBe(1)
+    expect(queries[0].end.y).toBe(2)
+    expect(queries[0].end.z).toBeCloseTo(
+      3 - ALS_RAPIER_GROUND_PROBE_DISTANCE - 0.06,
+      12,
+    )
+    expect(queries[0].capsuleRadius).toBe(0.3)
+    expect(queries[0].capsuleHalfHeight).toBeCloseTo(0.84, 12)
     expect(walkable).not.toBeNull()
 
     expect(probeRapierAlsGround(
@@ -159,6 +171,133 @@ describe('Rapier ALS capsule sweep', () => {
         walkableFloorAngleCos: 0.71,
       },
     )).toBeNull()
+  })
+
+  it('retries an adjacent wall hit with ALS exact overlap sweep dimensions', () => {
+    const queries: Array<{
+      start: { x: number; y: number; z: number }
+      end: { x: number; y: number; z: number }
+      capsuleRadius: number
+      capsuleHalfHeight: number
+    }> = []
+    const floorHit = {
+      validBlockingHit: true,
+      time: 0.9,
+      impactNormal: { x: 0, y: 0, z: 1 },
+    }
+    const result = probeRapierAlsGround((query) => {
+      queries.push(query)
+      return queries.length === 1
+        ? {
+            validBlockingHit: true,
+            time: 0.125,
+            impactNormal: { x: -1, y: 0, z: 0 },
+            impactPoint: { x: 1.3, y: 2, z: 2.7 },
+          }
+        : floorHit
+    }, {
+      location: { x: 1, y: 2, z: 3 },
+      capsuleRadius: 0.3,
+      capsuleHalfHeight: 0.9,
+      walkableFloorAngleCos: 0.71,
+    })
+
+    expect(result).toBe(floorHit)
+    expect(queries).toHaveLength(2)
+    expect(queries[1].start).toEqual({ x: 1, y: 2, z: 3 })
+    expect(queries[1].end.z).toBeCloseTo(
+      3 - ALS_RAPIER_GROUND_PROBE_DISTANCE - 0.54,
+      12,
+    )
+    expect(queries[1].capsuleRadius).toBeCloseTo(0.298499, 12)
+    expect(queries[1].capsuleHalfHeight).toBeCloseTo(0.36, 12)
+  })
+
+  it('does not accept a retry that remains start-penetrating', () => {
+    let queryCount = 0
+    const result = probeRapierAlsGround(() => {
+      queryCount++
+      return queryCount === 1
+        ? {
+            validBlockingHit: true,
+            time: 0,
+            impactNormal: { x: -1, y: 0, z: 0 },
+          }
+        : {
+            validBlockingHit: true,
+            time: 0,
+            impactNormal: { x: 0, y: 0, z: 1 },
+            bBlockingHit: true,
+            bStartPenetrating: true,
+          }
+    }, {
+      location: { x: 0, y: 0, z: 0.9215 },
+      capsuleRadius: 0.3,
+      capsuleHalfHeight: 0.9,
+      walkableFloorAngleCos: 0.71,
+    })
+
+    expect(queryCount).toBe(2)
+    expect(result).toBeNull()
+  })
+
+  it('keeps floor support when the standing capsule presses into a vertical wall', () => {
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
+    const floorBody = world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.05, 0),
+    )
+    const floor = world.createCollider(
+      RAPIER.ColliderDesc.cuboid(20, 0.05, 20),
+      floorBody,
+    )
+    const obstacleBody = world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(3, 0.5, 0),
+    )
+    const obstacle = world.createCollider(
+      RAPIER.ColliderDesc.cuboid(0.75, 0.5, 1.5),
+      obstacleBody,
+    )
+    world.step()
+
+    const sweep = createRapierAlsCapsuleSweep({
+      world,
+      Capsule: RAPIER.Capsule,
+    })
+    const queries: Parameters<typeof sweep>[0][] = []
+    const hits: ReturnType<typeof sweep>[] = []
+    const ground = probeRapierAlsGround(
+      (query) => {
+        queries.push(query)
+        const hit = sweep(query)
+        hits.push(hit)
+        return hit
+      },
+      {
+        // The obstacle face is x=2.25. At x=1.951 the 0.3 m capsule starts the
+        // floor sweep 1 mm into that face, reproducing the live false-InAir edge.
+        location: {
+          x: 1.951,
+          y: 0,
+          z: 0.9 + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+        },
+        capsuleRadius: 0.3,
+        capsuleHalfHeight: 0.9,
+        walkableFloorAngleCos: 0.71,
+      },
+    )
+
+    expect(queries).toHaveLength(2)
+    expect(hits[0]?.collider.handle).toBe(obstacle.handle)
+    expect(hits[0]?.bBlockingHit).toBe(true)
+    expect(hits[0]?.validBlockingHit).toBe(false)
+    expect(hits[0]?.bStartPenetrating).toBe(true)
+    expect(hits[0]?.impactNormal.z).toBeLessThan(0.71)
+    // World.castShape's witness is world-space: this is the translated wall's x=2.25 face.
+    expect(hits[0]?.impactPoint.x).toBeCloseTo(2.25, 5)
+    expect(queries[1].capsuleRadius).toBeCloseTo(0.298499, 12)
+    expect(ground?.collider.handle).toBe(floor.handle)
+    expect(ground?.impactNormal.z).toBeGreaterThanOrEqual(0.71)
+    world.free()
   })
 
   it('returns null on a miss and resolves the owner at query time', () => {

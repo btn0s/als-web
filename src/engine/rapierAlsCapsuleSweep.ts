@@ -5,6 +5,7 @@ import type {
 } from '../als/State/AlsInAirState'
 import {
   UE_CHARACTER_MOVEMENT_MAX_FLOOR_DISTANCE,
+  UE_CHARACTER_MOVEMENT_SWEEP_EDGE_REJECT_DISTANCE,
 } from './characterMovementFloor'
 import {
   ALS_NO_BASED_MOVEMENT,
@@ -38,6 +39,12 @@ export interface RapierAlsSupportingCollider {
   translation(): RapierVector
   rotation(): RapierRotation
   parent(): RapierAlsSupportingRigidBody | null
+  contactShape?(
+    shape: unknown,
+    shapePosition: RapierVector,
+    shapeRotation: RapierRotation,
+    prediction: number,
+  ): { readonly distance: number } | null
 }
 
 interface RapierCapsuleConstructor {
@@ -47,6 +54,7 @@ interface RapierCapsuleConstructor {
 interface RapierShapeCastHit {
   readonly time_of_impact: number
   readonly collider: RapierAlsSupportingCollider
+  readonly witness1: RapierVector
   /**
    * Rapier World.castShape reports the world collider as shape one and the cast query as shape
    * two. `normal1` is therefore the outward normal of the hit collider; `normal2` points back into
@@ -90,11 +98,24 @@ export interface RapierAlsCapsuleSweepHit
   /** Retained so CharacterMovement's supporting primitive is not erased at the query seam. */
   readonly collider: RapierAlsSupportingCollider
   readonly rigidBody: RapierAlsSupportingRigidBody | null
+  /** World-space impact point used by CharacterMovement's floor edge-tolerance retry. */
+  readonly impactPoint?: RapierVector
+  /** FHitResult::bBlockingHit, retained separately from IsValidBlockingHit(). */
+  readonly bBlockingHit?: boolean
+  /** Rapier contact distance supplies UE's explicit FHitResult::bStartPenetrating fact. */
+  readonly bStartPenetrating?: boolean
+}
+
+interface RapierAlsLiveCapsuleSweepHit
+  extends RapierAlsCapsuleSweepHit {
+  readonly impactPoint: RapierVector
+  readonly bBlockingHit: boolean
+  readonly bStartPenetrating: boolean
 }
 
 export type RapierAlsCapsuleSweep = (
   query: Readonly<AlsGroundPredictionSweepQuery>
-) => RapierAlsCapsuleSweepHit | null
+) => RapierAlsLiveCapsuleSweepHit | null
 
 /**
  * Rapier bridge for ALS's Z-up capsule sweeps.
@@ -150,8 +171,17 @@ export function createRapierAlsCapsuleSweep(
     if (!hit) return null
 
     const rigidBody = hit.collider.parent()
-    const result: RapierAlsCapsuleSweepHit = {
-      validBlockingHit: true,
+    const startContact = hit.collider.contactShape?.(
+      capsule,
+      shapePosition,
+      shapeRotation,
+      0,
+    )
+    const bStartPenetrating = startContact
+      ? startContact.distance < 0
+      : hit.time_of_impact <= 0
+    const result: RapierAlsLiveCapsuleSweepHit = {
+      validBlockingHit: !bStartPenetrating,
       time: hit.time_of_impact,
       impactNormal: {
         x: hit.normal1.x,
@@ -160,6 +190,15 @@ export function createRapierAlsCapsuleSweep(
       },
       collider: hit.collider,
       rigidBody,
+      // World.castShape supplies its witness in world space; the translated-wall regression
+      // below pins this despite ShapeCastHit's stale local-space declaration comment.
+      impactPoint: {
+        x: hit.witness1.x,
+        y: hit.witness1.z,
+        z: hit.witness1.y,
+      },
+      bBlockingHit: true,
+      bStartPenetrating,
     }
     return result
   }
@@ -173,12 +212,73 @@ export interface AlsGroundProbeInput {
 }
 
 /*
- * Rapier does not expose UE CharacterMovement's FindFloor result. This short shape cast tests the
- * complete capsule, excludes its owner, applies CharacterMovement's MAX_FLOOR_DIST boundary, and
- * then applies ALS's inherited walkable-normal predicate.
+ * Rapier does not expose UE CharacterMovement's FindFloor result. Port the sweep portion of
+ * UAlsCharacterMovementComponent::ComputeFloorDist(): shorten the first capsule, and if an
+ * adjacent collider starts in penetration, retry with UE's smaller-radius, much shorter capsule.
+ * This keeps a vertical wall from hiding the walkable floor underneath the character.
  */
 export const ALS_RAPIER_GROUND_PROBE_DISTANCE =
   UE_CHARACTER_MOVEMENT_MAX_FLOOR_DISTANCE
+const UE_KINDA_SMALL_NUMBER_METRES = 1e-6
+const ALS_FLOOR_SWEEP_SHRINK_SCALE = 0.9
+const ALS_FLOOR_SWEEP_OVERLAP_SHRINK_SCALE = 0.1
+
+function isUsableGroundHit(
+  hit: AlsGroundPredictionSweepHitInput | null,
+  walkableFloorAngleCos: number,
+  traceDistance: number,
+  shrinkHeight: number,
+) {
+  const bStartPenetrating = (
+    hit as Partial<RapierAlsCapsuleSweepHit> | null
+  )?.bStartPenetrating === true
+  return hit?.validBlockingHit
+    && !bStartPenetrating
+    && hit.impactNormal.z >= walkableFloorAngleCos
+    && hit.time * traceDistance - shrinkHeight
+      <= ALS_RAPIER_GROUND_PROBE_DISTANCE
+}
+
+function sweepGroundCapsule(
+  sweepCapsule: AlsGroundPredictionCapsuleSweep,
+  input: Readonly<AlsGroundProbeInput>,
+  capsuleRadius: number,
+  capsuleHalfHeight: number,
+  traceDistance: number,
+) {
+  return sweepCapsule({
+    start: input.location,
+    end: {
+      x: input.location.x,
+      y: input.location.y,
+      z: input.location.z - traceDistance,
+    },
+    capsuleRadius,
+    capsuleHalfHeight,
+  })
+}
+
+function isOutsideFloorSweepEdgeTolerance(
+  hit: AlsGroundPredictionSweepHitInput,
+  location: Readonly<RapierVector>,
+  capsuleRadius: number,
+) {
+  const impactPoint = (
+    hit as Partial<RapierAlsCapsuleSweepHit>
+  ).impactPoint
+  if (!impactPoint) return false
+
+  const reducedRadius = Math.max(
+    UE_CHARACTER_MOVEMENT_SWEEP_EDGE_REJECT_DISTANCE
+      + UE_KINDA_SMALL_NUMBER_METRES,
+    capsuleRadius
+      - UE_CHARACTER_MOVEMENT_SWEEP_EDGE_REJECT_DISTANCE,
+  )
+  const deltaX = impactPoint.x - location.x
+  const deltaY = impactPoint.y - location.y
+  return deltaX * deltaX + deltaY * deltaY
+    >= reducedRadius * reducedRadius
+}
 
 export function probeRapierAlsGround(
   sweepCapsule: RapierAlsCapsuleSweep,
@@ -192,19 +292,79 @@ export function probeRapierAlsGround(
   sweepCapsule: AlsGroundPredictionCapsuleSweep,
   input: Readonly<AlsGroundProbeInput>,
 ): AlsGroundPredictionSweepHitInput | null {
-  const hit = sweepCapsule({
-    start: input.location,
-    end: {
-      x: input.location.x,
-      y: input.location.y,
-      z: input.location.z - ALS_RAPIER_GROUND_PROBE_DISTANCE,
-    },
-    capsuleRadius: input.capsuleRadius,
-    capsuleHalfHeight: input.capsuleHalfHeight,
-  })
-  return hit?.validBlockingHit
-    && hit.impactNormal.z >= input.walkableFloorAngleCos
-    ? hit
+  const capsuleCoreHalfHeight = Math.max(
+    0,
+    input.capsuleHalfHeight - input.capsuleRadius,
+  )
+  const shrinkHeight = capsuleCoreHalfHeight
+    * (1 - ALS_FLOOR_SWEEP_SHRINK_SCALE)
+  const traceDistance =
+    ALS_RAPIER_GROUND_PROBE_DISTANCE + shrinkHeight
+  const hit = sweepGroundCapsule(
+    sweepCapsule,
+    input,
+    input.capsuleRadius,
+    input.capsuleHalfHeight - shrinkHeight,
+    traceDistance,
+  )
+  if (!hit) return null
+  // ComputeFloorDist retries both explicit start penetrations and non-penetrating hits at the
+  // capsule's outer edge. Generic injected sweeps retain the old TOI fallback; the live Rapier
+  // bridge publishes bStartPenetrating from an exact signed contact-distance query.
+  const bStartPenetrating = (
+    hit as Partial<RapierAlsCapsuleSweepHit>
+  ).bStartPenetrating ?? hit.time <= 0
+  const bBlockingHit = (
+    hit as Partial<RapierAlsCapsuleSweepHit>
+  ).bBlockingHit ?? (hit.validBlockingHit || bStartPenetrating)
+  if (!bBlockingHit) return null
+  const shouldRetry = bStartPenetrating
+    || isOutsideFloorSweepEdgeTolerance(
+      hit,
+      input.location,
+      input.capsuleRadius,
+    )
+  if (!shouldRetry) {
+    return isUsableGroundHit(
+      hit,
+      input.walkableFloorAngleCos,
+      traceDistance,
+      shrinkHeight,
+    )
+      ? hit
+      : null
+  }
+
+  const retryRadius = Math.max(
+    0,
+    input.capsuleRadius
+      - UE_CHARACTER_MOVEMENT_SWEEP_EDGE_REJECT_DISTANCE
+      - UE_KINDA_SMALL_NUMBER_METRES,
+  )
+  if (retryRadius <= UE_KINDA_SMALL_NUMBER_METRES) return null
+
+  const overlapShrinkHeight = capsuleCoreHalfHeight
+    * (1 - ALS_FLOOR_SWEEP_OVERLAP_SHRINK_SCALE)
+  const retryHalfHeight = Math.max(
+    input.capsuleHalfHeight - overlapShrinkHeight,
+    retryRadius,
+  )
+  const retryTraceDistance =
+    ALS_RAPIER_GROUND_PROBE_DISTANCE + overlapShrinkHeight
+  const retryHit = sweepGroundCapsule(
+    sweepCapsule,
+    input,
+    retryRadius,
+    retryHalfHeight,
+    retryTraceDistance,
+  )
+  return isUsableGroundHit(
+    retryHit,
+    input.walkableFloorAngleCos,
+    retryTraceDistance,
+    overlapShrinkHeight,
+  )
+    ? retryHit
     : null
 }
 
