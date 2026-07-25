@@ -151,14 +151,19 @@ second (flagged) — never from another project's implementation:
       content-semantics failure class the unit suite structurally cannot (the shipped rifle-overlay
       defects were all this class). Implementation tests remain as regression pins, not equivalence
       evidence
-- [x] **Character controller (`AlsCharacter` + movement component analog)**: WASD/gamepad input →
-      acceleration/braking → velocity on a rapier capsule, feeding the existing VelocityBlend/
+- [ ] **Character controller (`AlsCharacter` + movement component analog)**: WASD/gamepad input →
+      acceleration/braking → query-owned Grounded capsule movement / dynamic InAir movement,
+      feeding the existing VelocityBlend/
       gait inputs (Leva/debug hooks are overrides, not the source). All policy constants
       from ALS source/content: `MS_Als_Normal` gait speeds + `AlsMovementSettings` accel/braking/
       direction-dependent speeds; actor yaw consumes the `RotationYawSpeed` curve while
       grounded-and-not-moving (`AlsCharacter.cpp:1798`). The numerical velocity integrator is
-      explicitly ORIGINAL because ALS delegates it to UE; source-backed policy and live input
-      lifecycle are covered by unit and Playwright gates *(2026-07-23)*
+      explicitly ORIGINAL because ALS delegates it to UE. Exact `ComputeFloorDist` sweep/retry/
+      line fallback with selected `FFindFloorResult` distances, `AdjustFloorHeight`, and the first
+      `SafeMoveUpdatedComponent` + one-wall `SlideAlongSurface` slice are live; complete
+      `MoveAlongFloor` still requires penetration adjustment, `StepUp`, `TwoWallAdjust`, and
+      ledge/perch behavior
+      *(updated 2026-07-24)*
 - [ ] Rotation modes: VelocityDirection / ViewDirection / Aiming — real 8-way blendspaces
       from authored directional clips (not cardinal-blend approximation). The complete authored
       `AB_Als_View` Look state machine is live in the exact Layering → View → CR_Als stage order,

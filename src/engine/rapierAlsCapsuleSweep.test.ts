@@ -4,6 +4,7 @@ import {
   ALS_RAPIER_GROUND_PROBE_DISTANCE,
   createRapierAlsCapsuleSweep,
   probeRapierAlsGround,
+  selectRapierAlsFloor,
   rapierAlsCameraMovementBaseFromPrimitive,
   rapierAlsCameraMovementBase,
   rapierAlsMovementBaseFromPrimitive,
@@ -41,6 +42,81 @@ beforeAll(async () => {
 })
 
 describe('Rapier ALS capsule sweep', () => {
+  it('retains ComputeFloorDist selected distances for first sweep, retry, and line fallback', () => {
+    const collider = {
+      handle: 90,
+      translation: () => ({ x: 0, y: 0, z: 0 }),
+      rotation: () => ({ x: 0, y: 0, z: 0, w: 1 }),
+      parent: () => null,
+    }
+    const input = {
+      location: { x: 0, y: 0, z: 0.9215 },
+      capsuleRadius: 0.3,
+      capsuleHalfHeight: 0.9,
+      walkableFloorAngleCos: 0.71,
+    }
+    const hit = (
+      time: number,
+      normalZ: number,
+      bStartPenetrating = false,
+    ) => ({
+      validBlockingHit: !bStartPenetrating,
+      time,
+      impactNormal: { x: 0, y: 0, z: normalZ },
+      impactPoint: { x: 0, y: 0, z: 0 },
+      bBlockingHit: true,
+      bStartPenetrating,
+      collider,
+      rigidBody: null,
+    })
+    const liveSweep = (
+      hits: ReturnType<typeof hit>[],
+      lineHit: ReturnType<typeof hit> | null = null,
+    ) => Object.assign(
+      () => hits.shift() ?? null,
+      { lineTrace: () => lineHit },
+    )
+
+    const first = selectRapierAlsFloor(liveSweep([hit(0.5, 1)]), input)
+    expect(first).toMatchObject({
+      bLineTrace: false,
+      bWalkableFloor: true,
+    })
+    expect(first?.FloorDist).toBeCloseTo(-0.018, 12)
+    expect(first?.LineDist).toBe(0)
+
+    const retry = selectRapierAlsFloor(liveSweep([
+      hit(0, 0, true),
+      hit(0.5, 1),
+    ]), input)
+    expect(retry).toMatchObject({
+      bLineTrace: false,
+      bWalkableFloor: true,
+    })
+    expect(retry?.FloorDist).toBeCloseTo(-0.258, 12)
+    expect(retry?.LineDist).toBe(0)
+
+    const lineTraceDistance = ALS_RAPIER_GROUND_PROBE_DISTANCE + 0.9
+    const line = selectRapierAlsFloor(liveSweep(
+      [hit(0, 0, true), hit(0, 0, true)],
+      hit((0.9 + 0.0215) / lineTraceDistance, 1),
+    ), input)
+    expect(line).toMatchObject({
+      bLineTrace: true,
+      bWalkableFloor: true,
+    })
+    expect(line?.FloorDist).toBeCloseTo(-0.3, 12)
+    expect(line?.LineDist).toBeCloseTo(0.0215, 12)
+    expect(line?.HitResult.collider).toBe(collider)
+
+    const penetratingLine = selectRapierAlsFloor(liveSweep(
+      [hit(0, 0, true), hit(0, 0, true)],
+      hit(Number.EPSILON, 1),
+    ), input)
+    expect(penetratingLine?.bLineTrace).toBe(true)
+    expect(penetratingLine?.LineDist).toBe(-0.3)
+  })
+
   it('converts the complete Z-up query once and preserves normalized hit time', () => {
     const excludedBody = {}
     const supportingBody = {

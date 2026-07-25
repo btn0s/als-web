@@ -9,7 +9,6 @@ import {
 import {
   ALS_CAPSULE_RADIUS,
   ALS_CROUCHING_CAPSULE_HALF_HEIGHT,
-  ALS_GROUNDED_FLOOR_COMPENSATION,
   ALS_MESH_RELATIVE_LOCATION_Z,
   ALS_PHYSICS_TIMESTEP,
   ALS_RAPIER_GRAVITY,
@@ -23,14 +22,12 @@ import {
   handleAlsJumpInput,
   prepareRapierAlsAnimRootMotionVelocity,
   prepareRapierAlsMantlingMovementBoundary,
-  preserveAlsActorFeetAcrossFloorCompensation,
   refreshRapierAlsLocomotionMode,
   requestAlsJumpInput,
   publishAlsCharacterAnimationSnapshot,
   resolveAlsActorFeetLocation,
   resolveAlsActorLocation,
   resolveAlsActorLocationFromPresentationGround,
-  resolveAlsActorLocationWithFloorCompensation,
   resolveAlsCameraMovementBaseSnapshot,
   resolveAlsMantlingOverlayTag,
   resolveAlsMeshRootRelativeY,
@@ -152,7 +149,7 @@ describe('AlsCharacter browser bridge math', () => {
     )).toEqual({
       x: 2,
       y: -3,
-      z: 4 + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+      z: 4,
     })
     expect(resolveAlsActorLocation(
       rapierBodyAnchor,
@@ -163,8 +160,7 @@ describe('AlsCharacter browser bridge math', () => {
       y: -3,
       z: 4
         + ALS_CROUCHING_CAPSULE_HALF_HEIGHT
-        - ALS_STANDING_CAPSULE_HALF_HEIGHT
-        + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+        - ALS_STANDING_CAPSULE_HALF_HEIGHT,
     })
     expect(resolveAlsActorLocation(
       rapierBodyAnchor,
@@ -204,64 +200,33 @@ describe('AlsCharacter browser bridge math', () => {
     }
   })
 
-  it('uses the active stance for feet and preserves the 0.0215m Custom-mode boundary', () => {
-    expect(ALS_GROUNDED_FLOOR_COMPENSATION).toBe(0.0215)
-    const bodyAnchor = { x: 2, y: -3, z: 0.9 }
-    const crouchingActor = resolveAlsActorLocationWithFloorCompensation(
-      bodyAnchor,
-      'Crouching',
-      ALS_GROUNDED_FLOOR_COMPENSATION,
-    )
-    expect(crouchingActor.z).toBeCloseTo(0.5815, 12)
-    expect(resolveAlsActorFeetLocation(
-      crouchingActor,
-      'Crouching',
-    ).z).toBeCloseTo(0.0215, 12)
-
-    const enteringCustom =
-      preserveAlsActorFeetAcrossFloorCompensation(
+  it('keeps both active capsule bases at CharacterMovement target floor distance', () => {
+    const bodyAnchor = {
+      x: 2,
+      y: -3,
+      z: ALS_STANDING_CAPSULE_HALF_HEIGHT
+        + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+    }
+    for (const stance of ['Standing', 'Crouching'] as const) {
+      const actor = resolveAlsActorLocation(
         bodyAnchor,
-        ALS_GROUNDED_FLOOR_COMPENSATION,
-        ALS_GROUNDED_FLOOR_COMPENSATION,
+        stance,
+        'Grounded',
       )
-    expect(enteringCustom).toEqual(bodyAnchor)
-
-    const inAirAnchor = { x: 2, y: -3, z: 1.4 }
-    const leavingCustom =
-      preserveAlsActorFeetAcrossFloorCompensation(
-        inAirAnchor,
-        0,
-        ALS_GROUNDED_FLOOR_COMPENSATION,
-      )
-    const feetBefore = resolveAlsActorFeetLocation(
-      resolveAlsActorLocationWithFloorCompensation(
-        inAirAnchor,
-        'Standing',
-        0,
-      ),
-      'Standing',
-    )
-    const feetAfter = resolveAlsActorFeetLocation(
-      resolveAlsActorLocationWithFloorCompensation(
-        leavingCustom,
-        'Standing',
-        ALS_GROUNDED_FLOOR_COMPENSATION,
-      ),
-      'Standing',
-    )
-    expect(feetAfter).toEqual(feetBefore)
+      expect(resolveAlsActorFeetLocation(actor, stance).z)
+        .toBeCloseTo(UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE, 12)
+    }
   })
 
   it('keeps the rendered mesh fixed while the crouching capsule root lowers', () => {
     // CharacterMovement lowers the capsule root to maintain its base. ACharacter::OnStartCrouch()
     // adds the same half-height adjustment to the relative mesh location, cancelling that motion.
     // Our Rapier body anchor is already fixed, so applying either adjustment again would be wrong.
-    const floorOffset = UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE
     expect(resolveAlsMeshRootRelativeY('Standing', 'Grounded')).toBe(
-      ALS_MESH_RELATIVE_LOCATION_Z + floorOffset,
+      ALS_MESH_RELATIVE_LOCATION_Z,
     )
     expect(resolveAlsMeshRootRelativeY('Crouching', 'Grounded')).toBe(
-      ALS_MESH_RELATIVE_LOCATION_Z + floorOffset,
+      ALS_MESH_RELATIVE_LOCATION_Z,
     )
     expect(
       resolveAlsMeshRootRelativeY('Crouching', 'Grounded')
@@ -666,10 +631,6 @@ describe('AlsCharacter browser bridge math', () => {
     const character = createAlsCharacter()
 
     expect(refreshRapierAlsLocomotionMode(character, false, 0))
-      .toBe('Grounded')
-    expect(refreshRapierAlsLocomotionMode(character, false, -1e-10))
-      .toBe('Grounded')
-    expect(refreshRapierAlsLocomotionMode(character, false, -0.01))
       .toBe('InAir')
     expect(refreshRapierAlsLocomotionMode(character, true, 1))
       .toBe('InAir')
@@ -829,12 +790,12 @@ describe('AlsCharacter browser bridge math', () => {
       },
     } as unknown as RapierAlsMantlingAdapter
     let translation = { x: 0, y: 0.9, z: 0 }
-    let setTranslationCount = 0
+    let setNextKinematicTranslationCount = 0
     let setLinvelCount = 0
     const Body = {
       translation: () => translation,
-      setTranslation(value: typeof translation) {
-        setTranslationCount++
+      setNextKinematicTranslation(value: typeof translation) {
+        setNextKinematicTranslationCount++
         translation = { ...value }
       },
       setLinvel(
@@ -861,7 +822,7 @@ describe('AlsCharacter browser bridge math', () => {
     expect(result.RootMotionResult?.valid).toBe(true)
     expect(rootMotionSource.Time).toBe(ALS_PHYSICS_TIMESTEP)
     expect(montageSetPositionCount).toBe(1)
-    expect(setTranslationCount).toBe(1)
+    expect(setNextKinematicTranslationCount).toBe(1)
     expect(setLinvelCount).toBe(1)
     expect(Object.keys(character.mantlingState))
       .toEqual(['RootMotionSourceId'])

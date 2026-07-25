@@ -4,6 +4,7 @@ import {
   type RapierCollider,
   type RapierRigidBody,
 } from '@react-three/rapier'
+import { RigidBodyType } from '@dimforge/rapier3d-compat'
 import { useFrame } from '@react-three/fiber'
 import { folder, useControls } from 'leva'
 import { useEffect, useRef } from 'react'
@@ -11,20 +12,29 @@ import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { LEVA_ROOTS } from '../app/levaRoots'
 import {
-  probeRapierAlsGround,
   rapierAlsCameraMovementBaseFromPrimitive,
   rapierAlsCameraMovementBase,
   rapierAlsMovementBaseFromPrimitive,
   rapierAlsMovementBase,
+  selectRapierAlsFloor,
 } from '../engine/rapierAlsCapsuleSweep'
 import type {
   RapierAlsCapsuleSweep,
   RapierAlsCapsuleSweepHit,
+  RapierAlsFindFloorResult,
   RapierAlsSupportingCollider,
 } from '../engine/rapierAlsCapsuleSweep'
 import {
-  getCharacterMovementFloorOffset,
-} from '../engine/characterMovementFloor'
+  getRapierAlsAdjustFloorHeightTarget,
+  getRapierAlsFindFloorDistance,
+  shouldAdjustRapierAlsFloorHeight,
+} from '../engine/rapierAlsCharacterMovement'
+import {
+  moveGroundedWithSlideAlongSurface,
+} from '../engine/characterMovementGroundedMove'
+import type {
+  CharacterMovementGroundedMoveSweep,
+} from '../engine/characterMovementGroundedMove'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 import {
   FInputActionInstance,
@@ -153,28 +163,30 @@ export const ALS_PHYSICS_TIMESTEP = 1 / 60
 export const ALS_RAPIER_JUMP_SPEED = 4.2
 export const ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS = 0.71
 export const ALS_RAPIER_GRAVITY = 9.8
-export const ALS_GROUNDED_FLOOR_COMPENSATION =
-  getCharacterMovementFloorOffset(true)
+
+function makeRapierAlsBodyPositionOwned(
+  body: RapierRigidBody,
+  translation?: Readonly<{ x: number; y: number; z: number }>,
+) {
+  if (body.bodyType() !== RigidBodyType.KinematicPositionBased) {
+    body.setBodyType(RigidBodyType.KinematicPositionBased, true)
+  }
+  if (translation) body.setTranslation(translation, true)
+  const current = body.translation()
+  body.setNextKinematicTranslation(current)
+  body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+}
+
+function makeRapierAlsBodyDynamic(body: RapierRigidBody) {
+  if (body.bodyType() !== RigidBodyType.Dynamic) {
+    body.setBodyType(RigidBodyType.Dynamic, true)
+  }
+}
 
 export function getAlsCapsuleHalfHeight(stance: AlsStance): number {
   return stance === 'Crouching'
     ? ALS_CROUCHING_CAPSULE_HALF_HEIGHT
     : ALS_STANDING_CAPSULE_HALF_HEIGHT
-}
-
-export function resolveAlsActorLocationWithFloorCompensation(
-  rapierBodyAnchor: Readonly<AlsVector3>,
-  stance: AlsStance,
-  floorCompensation: number,
-  out: AlsVector3 = { x: 0, y: 0, z: 0 },
-): AlsVector3 {
-  out.x = rapierBodyAnchor.x
-  out.y = rapierBodyAnchor.y
-  out.z = rapierBodyAnchor.z
-    + getAlsCapsuleHalfHeight(stance)
-    - ALS_STANDING_CAPSULE_HALF_HEIGHT
-    + floorCompensation
-  return out
 }
 
 /**
@@ -186,24 +198,23 @@ export function resolveAlsActorLocationWithFloorCompensation(
 export function resolveAlsActorLocation(
   rapierBodyAnchor: Readonly<AlsVector3>,
   stance: AlsStance,
-  locomotionMode: AlsLocomotionMode,
+  _locomotionMode: AlsLocomotionMode,
   out: AlsVector3 = { x: 0, y: 0, z: 0 },
 ): AlsVector3 {
-  return resolveAlsActorLocationWithFloorCompensation(
-    rapierBodyAnchor,
-    stance,
-    getCharacterMovementFloorOffset(locomotionMode === 'Grounded'),
-    out,
-  )
+  out.x = rapierBodyAnchor.x
+  out.y = rapierBodyAnchor.y
+  out.z = rapierBodyAnchor.z
+    + getAlsCapsuleHalfHeight(stance)
+    - ALS_STANDING_CAPSULE_HALF_HEIGHT
+  return out
 }
 
 /**
  * Reconstructs `GetOwner()->GetActorLocation()` from the rendered mesh-root frame.
  *
  * The camera must not combine an interpolated pose pivot with Rapier's fixed-step body
- * translation. The mesh root includes `resolveAlsMeshRootRelativeY()` while the actor location
- * includes the active-capsule adjustment and the same CharacterMovement floor offset. Keep both
- * terms explicit even though that floor offset cancels algebraically.
+ * translation. Grounded CharacterMovement already positions the physical capsule at UE's target
+ * floor distance, so presentation reconstruction must not add that distance a second time.
  */
 export function resolveAlsActorLocationFromPresentationGround(
   presentationGround: Readonly<AlsVector3>,
@@ -211,16 +222,12 @@ export function resolveAlsActorLocationFromPresentationGround(
   locomotionMode: AlsLocomotionMode,
   out: AlsVector3 = { x: 0, y: 0, z: 0 },
 ): AlsVector3 {
-  const floorCompensation = getCharacterMovementFloorOffset(
-    locomotionMode === 'Grounded',
-  )
   out.x = presentationGround.x
   out.y = presentationGround.y
   out.z = presentationGround.z
     - resolveAlsMeshRootRelativeY(stance, locomotionMode)
     + getAlsCapsuleHalfHeight(stance)
     - ALS_STANDING_CAPSULE_HALF_HEIGHT
-    + floorCompensation
   return out
 }
 
@@ -251,16 +258,9 @@ export function resolveAlsActorFeetLocation(
  */
 export function resolveAlsMeshRootRelativeY(
   _stance: AlsStance,
-  locomotionMode: AlsLocomotionMode,
+  _locomotionMode: AlsLocomotionMode,
 ): number {
   return ALS_MESH_RELATIVE_LOCATION_Z
-    + getCharacterMovementFloorOffset(locomotionMode === 'Grounded')
-}
-
-export function resolveAlsMeshRootRelativeYWithFloorCompensation(
-  floorCompensation: number,
-): number {
-  return ALS_MESH_RELATIVE_LOCATION_Z + floorCompensation
 }
 
 const ALS_MANTLING_OVERLAY_TAGS = new Map<string, string>([
@@ -359,25 +359,10 @@ export function applyAlsMantlingRotationDelta(
   )
 }
 
-export function preserveAlsActorFeetAcrossFloorCompensation(
-  rapierBodyAnchor: Readonly<AlsVector3>,
-  previousFloorCompensation: number,
-  nextFloorCompensation: number,
-  out: AlsVector3 = { x: 0, y: 0, z: 0 },
-): AlsVector3 {
-  out.x = rapierBodyAnchor.x
-  out.y = rapierBodyAnchor.y
-  out.z = rapierBodyAnchor.z
-    + previousFloorCompensation
-    - nextFloorCompensation
-  return out
-}
-
 interface RapierAlsMantlingMovementBody {
   translation(): { x: number; y: number; z: number }
-  setTranslation(
+  setNextKinematicTranslation(
     translation: { x: number; y: number; z: number },
-    wakeUp: boolean,
   ): void
   setLinvel(
     velocity: { x: number; y: number; z: number },
@@ -467,11 +452,11 @@ export function prepareRapierAlsMantlingMovementBoundary(
     z: selectedRootMotionResult.TranslationVelocity.z
       * input.DeltaTime,
   })
-  input.Body.setTranslation({
+  input.Body.setNextKinematicTranslation({
     x: translation.x + delta.x,
     y: translation.y + delta.y,
     z: translation.z + delta.z,
-  }, true)
+  })
   input.Body.setLinvel({ x: 0, y: 0, z: 0 }, true)
   input.Character.actorYawAngle = applyAlsMantlingRotationDelta(
     input.Character.actorYawAngle,
@@ -1054,9 +1039,6 @@ export function refreshRapierAlsLocomotionMode(
     setLocomotionMode(character, 'Grounded', Lifecycle)
   } else if (
     character.locomotionMode === 'Grounded'
-    // Resting Rapier contacts can oscillate by floating-point ulps; match UE's
-    // KINDA_SMALL_NUMBER tolerance before exposing Falling to ALS.
-    && verticalVelocity < -UE_KINDA_SMALL_NUMBER
     && !groundValid
   ) {
     setLocomotionMode(character, 'InAir', Lifecycle)
@@ -1135,6 +1117,7 @@ export function useAlsCharacter(
   sweepCapsule?: RapierAlsCapsuleSweep,
   mantling?: AlsCharacterMantlingBridge,
   actions?: AlsCharacterActionBridge,
+  groundedMoveSweep?: CharacterMovementGroundedMoveSweep,
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1366,7 +1349,14 @@ export function useAlsCharacter(
   const groundSupport = useRef<RapierAlsCapsuleSweepHit | null>(null)
   const acceleration = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const desiredVelocity = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const prePenetrationAdjustmentVelocity =
+    useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const prePenetrationAdjustmentVelocityValid = useRef(false)
   const renderedVelocity = useRef({ x: 0, y: 0, z: 0 })
+  const groundedMoveStart = useRef({ x: 0, y: 0, z: 0 })
+  const groundedMoveTarget = useRef({ x: 0, y: 0, z: 0 })
+  const groundedMoveApplied = useRef(false)
+  const pendingGroundedBodyHeight = useRef<number | null>(null)
   const extractedAnimRootMotion = useRef(
     createRootMotionMovementParams(),
   )
@@ -1380,9 +1370,6 @@ export function useAlsCharacter(
   const movementModeLocked = useRef(false)
   const networkSmoothingMode =
     useRef<'Disabled' | 'Exponential'>('Exponential')
-  const mantlingFloorCompensation = useRef(
-    ALS_GROUNDED_FLOOR_COMPENSATION,
-  )
   const activeMantlingTarget = useRef<RapierCollider | null>(null)
   const ragdollRequestedAfterMantlingTargetDestruction =
     useRef(false)
@@ -1392,8 +1379,6 @@ export function useAlsCharacter(
   const actorFeetLocation = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const floorAdjustedBodyAnchor =
     useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
-  const floorAdjustedRapierAnchor =
-    useRef({ x: 0, y: 0, z: 0 })
 
   const mantlingMontageProxy = useRef<AlsMantlingMontageBridge>({
     play(settings, startTime) {
@@ -1422,46 +1407,15 @@ export function useAlsCharacter(
     },
   })
 
-  const preserveFeetWhileSettingFloorCompensation = (
-    nextFloorCompensation: number,
-  ) => {
-    const previousFloorCompensation =
-      mantlingFloorCompensation.current
-    if (previousFloorCompensation === nextFloorCompensation) return
-    const body = rigidBody.current
-    if (body) {
-      threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
-      preserveAlsActorFeetAcrossFloorCompensation(
-        rapierBodyAnchor.current,
-        previousFloorCompensation,
-        nextFloorCompensation,
-        floorAdjustedBodyAnchor.current,
-      )
-      unrealToThreeVector(
-        floorAdjustedBodyAnchor.current,
-        floorAdjustedRapierAnchor.current,
-      )
-      body.setTranslation(floorAdjustedRapierAnchor.current, true)
-    }
-    mantlingFloorCompensation.current = nextFloorCompensation
-  }
-
   const mantlingLifecycle = useRef<AlsMantlingLifecycleAdapter>({
     SetNetworkSmoothingMode(mode) {
       networkSmoothingMode.current = mode
     },
     ResetMeshRelativeTransform() {
       const current = character.current
-      mantlingFloorCompensation.current =
-        getCharacterMovementFloorOffset(
-          current.locomotionMode === 'Grounded',
-        )
       const root = characterRoot.current
       if (root) {
-        root.position.y =
-          resolveAlsMeshRootRelativeYWithFloorCompensation(
-            mantlingFloorCompensation.current,
-          )
+        root.position.y = ALS_MESH_RELATIVE_LOCATION_Z
         root.rotation.y = unrealYawDegreesToThreeRadians(
           current.actorYawAngle,
         )
@@ -1472,11 +1426,7 @@ export function useAlsCharacter(
       const body = rigidBody.current
       body?.setGravityScale(bLocked ? 0 : 1, true)
       if (bLocked) {
-        body?.setLinvel({ x: 0, y: 0, z: 0 }, true)
-      } else {
-        preserveFeetWhileSettingFloorCompensation(
-          ALS_GROUNDED_FLOOR_COMPENSATION,
-        )
+        if (body) makeRapierAlsBodyPositionOwned(body)
       }
     },
     SetBase(TargetPrimitive) {
@@ -1520,15 +1470,10 @@ export function useAlsCharacter(
 
     const current = character.current
     threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
-    const floorCompensation = current.locomotionMode === null
-      ? mantlingFloorCompensation.current
-      : getCharacterMovementFloorOffset(
-          current.locomotionMode === 'Grounded',
-        )
-    resolveAlsActorLocationWithFloorCompensation(
+    resolveAlsActorLocation(
       rapierBodyAnchor.current,
       current.stance,
-      floorCompensation,
+      current.locomotionMode,
       actorLocation.current,
     )
     const Character = {
@@ -1769,6 +1714,32 @@ export function useAlsCharacter(
 
     const controls = values.current
     const current = character.current
+    if (current.locomotionMode === 'Grounded') {
+      if (body.bodyType() !== RigidBodyType.KinematicPositionBased) {
+        const translation = body.translation()
+        groundedMoveTarget.current.x = translation.x
+        groundedMoveTarget.current.y =
+          pendingGroundedBodyHeight.current ?? translation.y
+        groundedMoveTarget.current.z = translation.z
+        makeRapierAlsBodyPositionOwned(
+          body,
+          groundedMoveTarget.current,
+        )
+        actualVelocity.current.z = 0
+        pendingGroundedBodyHeight.current = null
+      }
+    } else if (current.locomotionMode === 'InAir') {
+      if (body.bodyType() !== RigidBodyType.Dynamic) {
+        makeRapierAlsBodyDynamic(body)
+        unrealToThreeVector(
+          current.movement.velocity,
+          renderedVelocity.current,
+        )
+        body.setLinvel(renderedVelocity.current, true)
+      }
+    } else {
+      makeRapierAlsBodyPositionOwned(body)
+    }
     poseSample.current.character = current
     poseSample.current.ownerRigidBody = body
     const keys = pressedKeys.current
@@ -1877,31 +1848,31 @@ export function useAlsCharacter(
     // TryConsumePrePenetrationAdjustmentVelocity() observes the intended velocity separately
     // from collision-adjusted GetVelocity(). Snapshot it before refreshLocomotion() replaces the
     // movement component's working velocity with Rapier's actual result.
-    desiredVelocity.current.x = current.movement.velocity.x
-    desiredVelocity.current.y = current.movement.velocity.y
-    desiredVelocity.current.z = current.movement.velocity.z
-    const linearVelocity = body.linvel()
-    threeToUnrealVector(linearVelocity, actualVelocity.current)
+    const intendedVelocity = prePenetrationAdjustmentVelocityValid.current
+      ? prePenetrationAdjustmentVelocity.current
+      : current.movement.velocity
+    desiredVelocity.current.x = intendedVelocity.x
+    desiredVelocity.current.y = intendedVelocity.y
+    desiredVelocity.current.z = intendedVelocity.z
+    prePenetrationAdjustmentVelocityValid.current = false
+    if (body.bodyType() === RigidBodyType.Dynamic) {
+      threeToUnrealVector(body.linvel(), actualVelocity.current)
+    }
     threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
-    const queryFloorCompensation = current.locomotionMode === null
-      ? mantlingFloorCompensation.current
-      : getCharacterMovementFloorOffset(
-          current.locomotionMode === 'Grounded',
-        )
-    resolveAlsActorLocationWithFloorCompensation(
+    resolveAlsActorLocation(
       rapierBodyAnchor.current,
       current.stance,
-      queryFloorCompensation,
+      current.locomotionMode,
       actorLocation.current,
     )
     const queryCapsuleHalfHeight = getAlsCapsuleHalfHeight(current.stance)
-    const queryLocation = resolveAlsActorLocationWithFloorCompensation(
+    const queryLocation = resolveAlsActorLocation(
       rapierBodyAnchor.current,
       current.stance,
-      queryFloorCompensation,
+      current.locomotionMode,
       groundProbeLocation.current,
     )
-    let currentGroundSupport: RapierAlsCapsuleSweepHit | null = null
+    let currentGroundFloor: RapierAlsFindFloorResult | null = null
     if (
       sweepCapsule
       && shouldProbeRapierAlsGround(
@@ -1909,21 +1880,14 @@ export function useAlsCharacter(
         movementModeLocked.current,
       )
     ) {
-      currentGroundSupport = probeRapierAlsGround(sweepCapsule, {
+      currentGroundFloor = selectRapierAlsFloor(sweepCapsule, {
         location: queryLocation,
         capsuleRadius: ALS_CAPSULE_RADIUS,
         capsuleHalfHeight: queryCapsuleHalfHeight,
         walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
       })
-      refreshRapierAlsLocomotionMode(
-        current,
-        currentGroundSupport !== null,
-        actualVelocity.current.z,
-        movementModeLocked.current,
-        locomotionModeChangedLifecycle.current,
-      )
     }
-    groundSupport.current = currentGroundSupport
+    groundSupport.current = currentGroundFloor?.HitResult ?? null
     if (consumeAlsJumpInput(jumpRequested)) {
       const jumpResult = handleAlsJumpInput(
         current,
@@ -1934,6 +1898,9 @@ export function useAlsCharacter(
         setControls({ desiredStance: 'Standing' })
       } else if (jumpResult === 'Jumped') {
         actualVelocity.current.z = ALS_RAPIER_JUMP_SPEED
+        // ACharacter::Jump() writes JumpZVelocity directly to CharacterMovement before
+        // PhysFalling. Seed both bridge copies before the body changes to Dynamic.
+        setMovementVelocity(current.movement, actualVelocity.current)
         onJumped.current?.()
       }
     }
@@ -2032,16 +1999,10 @@ export function useAlsCharacter(
       )
     ) {
       threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
-      const movementFloorCompensation =
-        current.locomotionMode === null
-          ? mantlingFloorCompensation.current
-          : getCharacterMovementFloorOffset(
-              current.locomotionMode === 'Grounded',
-            )
-      resolveAlsActorLocationWithFloorCompensation(
+      resolveAlsActorLocation(
         rapierBodyAnchor.current,
         current.stance,
-        movementFloorCompensation,
+        current.locomotionMode,
         actorLocation.current,
       )
       resolveAlsActorFeetLocation(
@@ -2061,30 +2022,21 @@ export function useAlsCharacter(
       })
     }
 
+    groundedMoveApplied.current = false
     if (current.locomotionMode === null) {
       body.setGravityScale(0, true)
       body.setLinvel({ x: 0, y: 0, z: 0 }, true)
-    } else {
+    } else if (current.locomotionMode === 'InAir') {
       body.setGravityScale(1, true)
+      makeRapierAlsBodyDynamic(body)
       if (
         !animRootMotionApplied
         && !animRootMotionOwned
-        && current.locomotionMode === 'InAir'
       ) {
         stepInAirVelocity(
           current.movement,
           inputDirection.current,
           ALS_PHYSICS_TIMESTEP,
-        )
-      } else if (
-        !animRootMotionApplied
-        && !animRootMotionOwned
-      ) {
-        stepGroundedVelocity(
-          current.movement,
-          inputDirection.current,
-          ALS_PHYSICS_TIMESTEP,
-          current.viewYawAngle,
         )
       }
       unrealToThreeVector(
@@ -2092,6 +2044,61 @@ export function useAlsCharacter(
         renderedVelocity.current,
       )
       body.setLinvel(renderedVelocity.current, true)
+    } else {
+      body.setGravityScale(1, true)
+      if (body.bodyType() !== RigidBodyType.KinematicPositionBased) {
+        makeRapierAlsBodyPositionOwned(body)
+      }
+      if (!animRootMotionApplied && !animRootMotionOwned) {
+        stepGroundedVelocity(
+          current.movement,
+          inputDirection.current,
+          ALS_PHYSICS_TIMESTEP,
+          current.viewYawAngle,
+        )
+      }
+
+      // UAlsCharacterMovementComponent::PhysWalking() applies both ordinary and animation
+      // root-motion velocity through MoveAlongFloor. Grounded collision owns the body position;
+      // Rapier's contact solver never receives an unchecked wall-penetrating velocity.
+      const intended = current.movement.velocity
+      if (!animRootMotionApplied && !animRootMotionOwned) {
+        prePenetrationAdjustmentVelocity.current.x = intended.x
+        prePenetrationAdjustmentVelocity.current.y = intended.y
+        prePenetrationAdjustmentVelocity.current.z = intended.z
+        prePenetrationAdjustmentVelocityValid.current = true
+      }
+      const requestedDelta = {
+        x: intended.x * ALS_PHYSICS_TIMESTEP,
+        y: intended.y * ALS_PHYSICS_TIMESTEP,
+        z: 0,
+      }
+      const adjustedDelta = groundedMoveSweep
+        ? moveGroundedWithSlideAlongSurface({
+            start: actorLocation.current,
+            delta: requestedDelta,
+            capsuleRadius: ALS_CAPSULE_RADIUS,
+            capsuleHalfHeight: getAlsCapsuleHalfHeight(current.stance),
+            sweepCapsule: groundedMoveSweep,
+          }).delta
+        : requestedDelta
+      setMovementVelocity(current.movement, {
+        x: adjustedDelta.x / ALS_PHYSICS_TIMESTEP,
+        y: adjustedDelta.y / ALS_PHYSICS_TIMESTEP,
+        z: 0,
+      })
+
+      const translation = body.translation()
+      groundedMoveStart.current.x = translation.x
+      groundedMoveStart.current.y = translation.y
+      groundedMoveStart.current.z = translation.z
+      groundedMoveTarget.current.x = translation.x + adjustedDelta.x
+      groundedMoveTarget.current.y =
+        pendingGroundedBodyHeight.current ?? translation.y
+      groundedMoveTarget.current.z = translation.z + adjustedDelta.y
+      pendingGroundedBodyHeight.current = null
+      body.setNextKinematicTranslation(groundedMoveTarget.current)
+      groundedMoveApplied.current = true
     }
     threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
 
@@ -2106,16 +2113,10 @@ export function useAlsCharacter(
 
     const state = current.locomotionState
     const frame = animationControls.current
-    const snapshotFloorCompensation =
-      current.locomotionMode === null
-        ? mantlingFloorCompensation.current
-        : getCharacterMovementFloorOffset(
-            current.locomotionMode === 'Grounded',
-          )
-    resolveAlsActorLocationWithFloorCompensation(
+    resolveAlsActorLocation(
       rapierBodyAnchor.current,
       current.stance,
-      snapshotFloorCompensation,
+      current.locomotionMode,
       actorLocation.current,
     )
     const mantlingTarget = activeMantlingTarget.current
@@ -2193,7 +2194,19 @@ export function useAlsCharacter(
         characterRoot.current?.position.y ?? Number.NaN,
       position: bodyTranslation,
       velocity: body.linvel(),
+      physicsBodyType:
+        body.bodyType() === RigidBodyType.Dynamic
+          ? 'Dynamic'
+          : 'KinematicPositionBased',
       verticalVelocity: state.velocity.z,
+      groundFloorDistance: currentGroundFloor
+        ? getRapierAlsFindFloorDistance(currentGroundFloor)
+        : null,
+      groundFloorTrace: currentGroundFloor
+        ? currentGroundFloor.bLineTrace
+          ? 'Line'
+          : 'Sweep'
+        : null,
       rootMotionSourceId:
         current.mantlingState.RootMotionSourceId,
       rootMotionSourceStatus:
@@ -2218,7 +2231,6 @@ export function useAlsCharacter(
         y: actorFeetLocation.current.y,
         z: actorFeetLocation.current.z,
       },
-      floorCompensation: snapshotFloorCompensation,
       movementModeLocked: movementModeLocked.current,
       gravityScale: body.gravityScale(),
       networkSmoothingMode: networkSmoothingMode.current,
@@ -2235,36 +2247,49 @@ export function useAlsCharacter(
     }
 
     const current = character.current
-    threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
-    threeToUnrealVector(body.linvel(), actualVelocity.current)
+    const bodyTranslation = body.translation()
+    threeToUnrealVector(bodyTranslation, rapierBodyAnchor.current)
+    if (groundedMoveApplied.current) {
+      actualVelocity.current.x = (
+        bodyTranslation.x - groundedMoveStart.current.x
+      ) / ALS_PHYSICS_TIMESTEP
+      actualVelocity.current.y = (
+        bodyTranslation.z - groundedMoveStart.current.z
+      ) / ALS_PHYSICS_TIMESTEP
+      // UCharacterMovementComponent::PhysWalking() converts displacement back to Velocity and
+      // immediately calls MaintainHorizontalGroundVelocity().
+      actualVelocity.current.z = 0
+      setMovementVelocity(current.movement, actualVelocity.current)
+      groundedMoveApplied.current = false
+    } else {
+      threeToUnrealVector(body.linvel(), actualVelocity.current)
+    }
     const queryCapsuleHalfHeight = getAlsCapsuleHalfHeight(current.stance)
-    const queryFloorCompensation = current.locomotionMode === null
-      ? mantlingFloorCompensation.current
-      : getCharacterMovementFloorOffset(
-          current.locomotionMode === 'Grounded',
-        )
     const queryLocation =
-      resolveAlsActorLocationWithFloorCompensation(
+      resolveAlsActorLocation(
         rapierBodyAnchor.current,
         current.stance,
-        queryFloorCompensation,
+        current.locomotionMode,
         groundProbeLocation.current,
       )
-    const currentGroundSupport = (
+    const currentGroundFloor = (
       sweepCapsule
       && shouldProbeRapierAlsGround(
         current.locomotionMode,
         movementModeLocked.current,
       )
     )
-      ? probeRapierAlsGround(sweepCapsule, {
+      ? selectRapierAlsFloor(sweepCapsule, {
           location: queryLocation,
           capsuleRadius: ALS_CAPSULE_RADIUS,
           capsuleHalfHeight: queryCapsuleHalfHeight,
           walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
         })
       : null
+    const currentGroundSupport =
+      currentGroundFloor?.HitResult ?? null
     groundSupport.current = currentGroundSupport
+    const previousLocomotionMode = current.locomotionMode
     if (
       sweepCapsule
       && shouldProbeRapierAlsGround(
@@ -2274,11 +2299,40 @@ export function useAlsCharacter(
     ) {
       refreshRapierAlsLocomotionMode(
         current,
-        currentGroundSupport !== null,
+        currentGroundFloor !== null,
         actualVelocity.current.z,
         movementModeLocked.current,
         locomotionModeChangedLifecycle.current,
       )
+    }
+    if (
+      current.locomotionMode === 'Grounded'
+      && currentGroundFloor !== null
+      && shouldAdjustRapierAlsFloorHeight(currentGroundFloor)
+    ) {
+      getRapierAlsAdjustFloorHeightTarget(
+        rapierBodyAnchor.current,
+        currentGroundFloor,
+        floorAdjustedBodyAnchor.current,
+      )
+      // Apply on the next pre-physics boundary. React Three Rapier captures interpolation's
+      // previous pose before that callback, so landing/floor correction stays presentation-smooth.
+      // Both coordinate systems use the same world-up scalar: Unreal Z ↔ Rapier/Three Y.
+      pendingGroundedBodyHeight.current =
+        floorAdjustedBodyAnchor.current.z
+    } else {
+      pendingGroundedBodyHeight.current = null
+    }
+    if (
+      previousLocomotionMode === 'Grounded'
+      && current.locomotionMode === 'InAir'
+    ) {
+      makeRapierAlsBodyDynamic(body)
+      unrealToThreeVector(
+        actualVelocity.current,
+        renderedVelocity.current,
+      )
+      body.setLinvel(renderedVelocity.current, true)
     }
     const mantlingTarget = activeMantlingTarget.current
     poseSample.current.movementBase = (
@@ -2320,16 +2374,10 @@ export function useAlsCharacter(
     // UAlsAnimationInstance::NativeUpdateAnimation runs after CharacterMovement. Publish the
     // post-step tags/location/base, but take Speed/Velocity/VelocityYaw/bMoving together from the
     // Character's retained LocomotionState just as RefreshLocomotionOnGameThread() does.
-    const snapshotFloorCompensation =
-      current.locomotionMode === null
-        ? mantlingFloorCompensation.current
-        : getCharacterMovementFloorOffset(
-            current.locomotionMode === 'Grounded',
-          )
-    resolveAlsActorLocationWithFloorCompensation(
+    resolveAlsActorLocation(
       rapierBodyAnchor.current,
       current.stance,
-      snapshotFloorCompensation,
+      current.locomotionMode,
       actorLocation.current,
     )
     const controls = values.current
@@ -2351,14 +2399,10 @@ export function useAlsCharacter(
     const current = character.current
     const root = characterRoot.current
     if (root) {
-      root.position.y = current.locomotionMode === null
-        ? resolveAlsMeshRootRelativeYWithFloorCompensation(
-            mantlingFloorCompensation.current,
-          )
-        : resolveAlsMeshRootRelativeY(
-            current.stance,
-            current.locomotionMode,
-          )
+      root.position.y = resolveAlsMeshRootRelativeY(
+        current.stance,
+        current.locomotionMode,
+      )
       root.rotation.y = unrealYawDegreesToThreeRadians(
         current.actorYawAngle,
       )
@@ -2371,16 +2415,10 @@ export function useAlsCharacter(
       : 0
     previousAnimationActorYawAngle.current = current.actorYawAngle
 
-    const snapshotFloorCompensation =
-      current.locomotionMode === null
-        ? mantlingFloorCompensation.current
-        : getCharacterMovementFloorOffset(
-            current.locomotionMode === 'Grounded',
-          )
-    resolveAlsActorLocationWithFloorCompensation(
+    resolveAlsActorLocation(
       rapierBodyAnchor.current,
       current.stance,
-      snapshotFloorCompensation,
+      current.locomotionMode,
       actorLocation.current,
     )
     const mantlingTarget = activeMantlingTarget.current

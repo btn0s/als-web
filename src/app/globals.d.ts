@@ -70,7 +70,10 @@ declare global {
       meshBaseOffsetY: number
       position: { x: number; y: number; z: number }
       velocity: { x: number; y: number; z: number }
+      physicsBodyType: 'Dynamic' | 'KinematicPositionBased'
       verticalVelocity: number
+      groundFloorDistance: number | null
+      groundFloorTrace: 'Sweep' | 'Line' | null
       rootMotionSourceId: number
       rootMotionSourceStatus:
         | 'Active'
@@ -82,7 +85,6 @@ declare global {
       movementBaseHandle: number | null
       bodyAnchor: { x: number; y: number; z: number }
       actorFeet: { x: number; y: number; z: number }
-      floorCompensation: number
       movementModeLocked: boolean
       gravityScale: number
       networkSmoothingMode: 'Disabled' | 'Exponential'

@@ -33,7 +33,13 @@ import {
   useAlsCharacter,
 } from '../als/AlsCharacter.hooks'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import {
+  UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+} from '../engine/characterMovementFloor'
 import { createRapierAlsCapsuleSweep } from '../engine/rapierAlsCapsuleSweep'
+import {
+  createRapierAlsGroundedMoveSweep,
+} from '../engine/rapierAlsGroundedMove'
 import {
   createRapierAlsControlRigFootTrace,
 } from '../engine/rapierAlsControlRigFootTrace'
@@ -273,6 +279,15 @@ function LoadedCharacter({
     }),
     [RapierCapsule, RapierRay, rapier.QueryFilterFlags.EXCLUDE_SENSORS, world],
   )
+  const groundedMoveSweep = useMemo(
+    () => createRapierAlsGroundedMoveSweep({
+      world,
+      Capsule: RapierCapsule,
+      resolveExcludeRigidBody: () => rigidBody.current,
+      filterFlags: rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+    }),
+    [RapierCapsule, rapier.QueryFilterFlags.EXCLUDE_SENSORS, world],
+  )
   const controlRigFootTrace = useMemo(
     () => createRapierAlsControlRigFootTrace({
       world,
@@ -391,6 +406,7 @@ function LoadedCharacter({
     {
       RollingMontage: rollingMontage,
     },
+    groundedMoveSweep,
   )
   // The hook owns clip sampling, pose-space composition, and the one skeleton write per frame.
   // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
@@ -428,9 +444,14 @@ function LoadedCharacter({
   return (
     <RigidBody
       ref={rigidBody}
-      type="dynamic"
+      type="kinematicPosition"
       colliders={false}
-      position={[0, ALS_STANDING_CAPSULE_HALF_HEIGHT, 0]}
+      position={[
+        0,
+        ALS_STANDING_CAPSULE_HALF_HEIGHT
+          + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+        0,
+      ]}
       lockRotations
       canSleep={false}
       ccd
