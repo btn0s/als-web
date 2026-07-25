@@ -2296,6 +2296,62 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(window.__weightTable?.StandingPlayRate).toBeCloseTo(375 / 350, 12)
   })
 
+  it('retains separate Movement BlendSpace clocks for their shared Run Forward Pose sample', async () => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance(gltf)
+    const lowStrideControls = {
+      ...controls,
+      speed: 0.5,
+    }
+
+    // The extracted AB_Als_Standing graph has six distinct FAnimNode_BlendSpacePlayer
+    // instances in Movement. Forward and Backward both sample A_Als_Run_Forward_Pose, but UE
+    // retains FBlendSampleData time per owning node, not per UAnimSequence asset.
+    refreshFrames(instance, 30, {
+      ...lowStrideControls,
+      direction: 0,
+    })
+    const backwardControls = {
+      ...lowStrideControls,
+      direction: 180,
+    }
+    for (let frame = 0; frame < 120; frame++) {
+      instance.refresh(1 / 60, backwardControls)
+      if (
+        window.__weightTable?.['MovementPlayer.Forward.weight'] === 0
+      ) {
+        break
+      }
+    }
+
+    const forwardClockBefore = window.__weightTable?.[
+      'MovementPlayer.Forward.Sample.A_Als_Run_Forward_Pose.time'
+    ]
+    const backwardClockBefore = window.__weightTable?.[
+      'MovementPlayer.Backward.Sample.A_Als_Run_Forward_Pose.time'
+    ]
+    expect(window.__weightTable?.['MovementPlayer.Forward.weight']).toBe(0)
+    expect(window.__weightTable?.['MovementPlayer.Backward.weight'])
+      .toBeGreaterThan(0)
+    expect(forwardClockBefore).toEqual(expect.any(Number))
+    expect(backwardClockBefore).toEqual(expect.any(Number))
+
+    refreshFrames(instance, 7, backwardControls)
+    const forwardClockAfter = window.__weightTable?.[
+      'MovementPlayer.Forward.Sample.A_Als_Run_Forward_Pose.time'
+    ]
+    const backwardClockAfter = window.__weightTable?.[
+      'MovementPlayer.Backward.Sample.A_Als_Run_Forward_Pose.time'
+    ]
+
+    // An inactive player retains its FBlendSampleData clock while the active owner advances.
+    // A single source-clip clock cannot satisfy both assertions.
+    expect(forwardClockAfter).toBeCloseTo(forwardClockBefore!, 12)
+    expect(
+      Math.abs(backwardClockAfter! - backwardClockBefore!),
+    ).toBeGreaterThan(1e-4)
+  })
+
   it('uses authored zero-stride pose samples instead of blending low speed with Idle', async () => {
     const gltf = await loadAlsGltf()
     const instance = createAlsAnimationInstance(gltf)
@@ -2703,7 +2759,8 @@ describe('AlsAnimationInstance playback regression', () => {
       speed: 0,
     }
     instance.refresh(0, idle)
-    expect(window.__weightTable?.['clipPhase.runFwd']).toBeCloseTo(0.2, 6)
+    expect(window.__weightTable?.['MovementPlayer.Forward.phase'])
+      .toBeCloseTo(0.2, 6)
     expect(window.__weightTable?.['clipTime.sprint'])
       .toBeCloseTo(0.166667, 12)
     expect(window.__weightTable?.['clipPhase.sprint'])

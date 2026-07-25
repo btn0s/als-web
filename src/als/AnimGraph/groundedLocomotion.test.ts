@@ -432,6 +432,19 @@ describe('VERIFIED ALS content-oracle graph', () => {
     }
   })
 
+  it('preserves shared pose samples as distinct player-owned sample identities', () => {
+    const forward =
+      blendSpaces.blendSpaces.BS_Als_WalkRun_Forward.samples
+    const backward =
+      blendSpaces.blendSpaces.BS_Als_WalkRun_Backward.samples
+
+    expect(forward[1].animation.name).toBe('A_Als_Walk_Forward_Pose')
+    expect(backward[1].animation.name).toBe('A_Als_Walk_Forward_Pose')
+    expect(forward[3].animation.name).toBe('A_Als_Run_Forward_Pose')
+    expect(backward[3].animation.name).toBe('A_Als_Run_Forward_Pose')
+    expect(graph.evaluators.Forward).not.toBe(graph.evaluators.Backward)
+  })
+
   it.each([
     [
       'Forward',
@@ -852,6 +865,41 @@ describe('VERIFIED ALS content-oracle graph', () => {
     expect(
       transitionGraph.evaluators.Forward.axisFilters[0].currentTime,
     ).toBe(0.2)
+  })
+
+  it('includes the state-local Sprint blend when scoring player relevance', () => {
+    const relevanceGraph = createGroundedLocomotionGraph(
+      blendSpaces.blendSpaces,
+    )
+    updateGroundedLocomotionGraphFromStateWeights(
+      relevanceGraph,
+      {
+        Forward: 1,
+        Backward: 0,
+        LeftForward: 0,
+        LeftBackward: 0,
+        RightForward: 0,
+        RightBackward: 0,
+      },
+      FORWARD_VELOCITY_BLEND,
+      {
+        strideBlendAmount: 1,
+        walkRunBlendAmount: 1,
+        playRate: 1,
+      },
+      0.1,
+      1,
+      { Forward: 0.25 },
+    )
+
+    expect([...relevanceGraph.playerWeights]).toEqual([
+      0.25,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ])
   })
 
   it('uses the complete state, parent, and MultiWay weight for relevance', () => {

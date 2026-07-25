@@ -102,6 +102,11 @@ import {
   advanceSyncGroup,
   createSyncGroup,
 } from '../engine/syncGroups'
+import { BlendSpacePlayer } from '../engine/blendSpacePlayer'
+import type {
+  BlendSpacePlayerResult,
+  BlendSpacePlayerSample,
+} from '../engine/blendSpacePlayer'
 import type {
   SyncMarker,
   SyncGroupMember,
@@ -1428,6 +1433,25 @@ export function createAlsAnimationInstance(gltf: {
   const groundedLocomotionGraph = createGroundedLocomotionGraph(
     AUTHORED_BLEND_SPACES,
   )
+  const groundedLocomotionPlayers = Object.fromEntries(
+    ALS_HIPS_DIRECTIONS.map((direction) => [
+      direction,
+      new BlendSpacePlayer({
+        id: `MovementPlayer.${direction}`,
+        startPosition: ALS_GROUNDED_DIRECTION_PLAYER.startPosition,
+      }),
+    ]),
+  ) as Record<AlsHipsDirection, BlendSpacePlayer>
+  const groundedLocomotionPlayerResults = Object.fromEntries(
+    ALS_HIPS_DIRECTIONS.map((direction) => [
+      direction,
+      groundedLocomotionPlayers[direction].update({
+        relevant: false,
+        nodePlayRate: 0,
+        samples: [],
+      }),
+    ]),
+  ) as Record<AlsHipsDirection, BlendSpacePlayerResult>
   const groundedLocomotionClipNames = new Set<string>()
   const groundedLocomotionClips = new Map<string, RuntimeClip>()
   for (const evaluator of Object.values(groundedLocomotionGraph.evaluators)) {
@@ -1645,12 +1669,14 @@ export function createAlsAnimationInstance(gltf: {
       createMutableUePoseNode(rig.boneCount),
     ]),
   ) as Record<AlsHipsDirection, MutableUePoseNode>
-  const standingMovementClipPoses = new Map(
-    [...groundedLocomotionClips.entries()].map(([name]) => [
-      name,
-      createMutableUePoseNode(rig.boneCount),
+  const standingMovementSamplePoses = Object.fromEntries(
+    ALS_HIPS_DIRECTIONS.map((direction) => [
+      direction,
+      groundedLocomotionGraph.evaluators[
+        direction
+      ].blendSpace.samples.map(() => createMutableUePoseNode(rig.boneCount)),
     ]),
-  )
+  ) as Record<AlsHipsDirection, MutableUePoseNode[]>
   const standingMoveForwardBasePose =
     createMutableUePoseNode(rig.boneCount)
   const standingSprintPose =
@@ -2058,21 +2084,31 @@ export function createAlsAnimationInstance(gltf: {
   )
   const locomotionMembersByRole = new Map<ClipRole, SyncGroupMember>()
   const locomotionMembersByClip = new Map<RuntimeClip, SyncGroupMember>()
-  const locomotionMembers: SyncGroupMember[] = []
-  const syncClips = new Set<RuntimeClip>()
-  const locomotionClips = new Set<RuntimeClip>(groundedLocomotionClips.values())
+  const groundedLocomotionPlayerMembers = new Set(
+    ALS_HIPS_DIRECTIONS.map(
+      (direction) => groundedLocomotionPlayers[direction].syncMember,
+    ),
+  )
+  const locomotionMembers: SyncGroupMember[] = [
+    ...groundedLocomotionPlayerMembers,
+  ]
+  // Source clips are still graph-owned clocks, so the generic clip loop must not advance them.
+  // They are not Movement tick records: each owning BlendSpace player contributes one record.
+  const syncClips = new Set<RuntimeClip>(groundedLocomotionClips.values())
+  const locomotionClips = new Set<RuntimeClip>()
   if (sprintAccelerationClip) locomotionClips.add(sprintAccelerationClip)
   for (const role of locomotionRoles) {
     const clip = roles[role]
-    if (clip) locomotionClips.add(clip)
+    if (
+      clip
+      && !groundedLocomotionClipNames.has(clip.sampler.clip.name)
+    ) {
+      locomotionClips.add(clip)
+    }
   }
   for (const clip of locomotionClips) {
     const clipName = clip.sampler.clip.name
-    const startTime = groundedLocomotionClipNames.has(clipName)
-      // FAnimNode_BlendSpacePlayer serializes StartPosition as normalized phase.
-      ? clip.sampler.clip.duration
-        * ALS_GROUNDED_DIRECTION_PLAYER.startPosition
-      : clipName === ALS_STANDING_SPRINT_GRAPH.sprint.clip
+    const startTime = clipName === ALS_STANDING_SPRINT_GRAPH.sprint.clip
         // FAnimNode_SequencePlayer serializes StartPosition in sequence seconds.
         ? ALS_STANDING_SPRINT_GRAPH.sprint.startPosition
         : clipName === ALS_STANDING_SPRINT_GRAPH.sprintAcceleration.clip
@@ -2116,6 +2152,94 @@ export function createAlsAnimationInstance(gltf: {
     syncClips.add(source.clip)
   }
   const locomotionSyncGroup = createSyncGroup('Movement', locomotionMembers)
+  const groundedLocomotionPlayerSources = Object.fromEntries(
+    ALS_HIPS_DIRECTIONS.map((direction) => [
+      direction,
+      groundedLocomotionGraph.evaluators[
+        direction
+      ].blendSpace.samples.map((sample, sampleIndex) => {
+        const clip = groundedLocomotionClips.get(sample.animation.name)
+        return {
+          id: String(sampleIndex),
+          clip,
+          name: sample.animation.name,
+          duration: clip?.sampler.clip.duration ?? 0,
+          combinedRateScale: sample.rateScale,
+          markers: clip
+            ? (
+                gltf.syncMarkers?.[sample.animation.name]
+                ?? clipSyncMarkers(clip.sampler.clip)
+              )
+            : [],
+        }
+      }),
+    ]),
+  )
+  const groundedLocomotionClipDebugWeights = new Map(
+    [...groundedLocomotionClipNames].map((clipName) => [clipName, 0]),
+  )
+  const groundedLocomotionClipDebugTimes = new Map(
+    [...groundedLocomotionClipNames].map((clipName) => [clipName, 0]),
+  )
+
+  function refreshGroundedLocomotionPlayers(
+    nodePlayRate: number,
+  ) {
+    for (
+      let playerIndex = 0;
+      playerIndex < ALS_HIPS_DIRECTIONS.length;
+      playerIndex++
+    ) {
+      const direction = ALS_HIPS_DIRECTIONS[playerIndex]
+      const evaluator = groundedLocomotionGraph.evaluators[direction]
+      const sources = groundedLocomotionPlayerSources[direction]
+      const samples: BlendSpacePlayerSample[] = []
+      if (groundedLocomotionGraph.relevantPlayers[playerIndex] !== 0) {
+        for (let index = 0; index < evaluator.result.count; index++) {
+          const sampleIndex = evaluator.result.sampleIndices[index]
+          const source = sources[sampleIndex]
+          if (!source?.clip) continue
+          samples.push({
+            id: source.id,
+            weight: evaluator.result.weights[index],
+            duration: source.duration,
+            combinedRateScale: source.combinedRateScale,
+            markers: source.markers,
+          })
+        }
+      }
+      const result = groundedLocomotionPlayers[direction].update({
+        relevant: groundedLocomotionGraph.relevantPlayers[playerIndex] !== 0,
+        nodePlayRate,
+        samples,
+      })
+      result.syncMember.weight =
+        groundedLocomotionGraph.playerWeights[playerIndex]
+      groundedLocomotionPlayerResults[direction] = result
+    }
+  }
+
+  function resolveGroundedLocomotionPlayerTimes() {
+    groundedLocomotionClipDebugTimes.forEach(
+      (_, clipName) => groundedLocomotionClipDebugTimes.set(clipName, 0),
+    )
+    const timeScores = new Map<string, number>()
+    for (const direction of ALS_HIPS_DIRECTIONS) {
+      const player = groundedLocomotionPlayers[direction]
+      const result = player.resolveOuterSync()
+      groundedLocomotionPlayerResults[direction] = result
+      const sources = groundedLocomotionPlayerSources[direction]
+      for (const sample of result.samples) {
+        const source = sources[Number(sample.id)]
+        if (!source) continue
+        const score = result.syncMember.weight * sample.weight
+        if (score >= (timeScores.get(source.name) ?? -1)) {
+          timeScores.set(source.name, score)
+          groundedLocomotionClipDebugTimes.set(source.name, sample.time)
+        }
+      }
+    }
+  }
   const mainCurveEntries = [...baseEntries]
   let graphFallbackGaitAmount = 0
   let graphGroundedAmount = 1
@@ -5158,6 +5282,9 @@ export function createAlsAnimationInstance(gltf: {
       member.weight = 0
       member.updatedThisFrame = false
     }
+    groundedLocomotionClipDebugWeights.forEach(
+      (_, clipName) => groundedLocomotionClipDebugWeights.set(clipName, 0),
+    )
 
     // AB_Als_Crouching now contributes one retained graph node. Its sequence players remain in
     // Movement for marker synchronization, but may not also leak into the flattened base.
@@ -5196,7 +5323,11 @@ export function createAlsAnimationInstance(gltf: {
       standingMovement,
       Math.max(0, delta),
       standingMovementSubtreeWeight,
+      {
+        Forward: standingSprint.moveForwardBaseWeight,
+      },
     )
+    refreshGroundedLocomotionPlayers(standingMovement.playRate)
     if (standingGraphRuntime.movementDetails.relevant) {
       for (const hipsDirection of ALS_HIPS_DIRECTIONS) {
         const directionStateWeight =
@@ -5212,25 +5343,16 @@ export function createAlsAnimationInstance(gltf: {
           ? standingSprint.moveForwardBaseWeight
           : 1
         for (const sample of samples) {
-          const clip = groundedLocomotionClips.get(sample.clip)
-          const member = clip
-            ? locomotionMembersByClip.get(clip)
-            : undefined
-          if (!member) continue
-          member.weight +=
+          const finalWeight =
             sample.weight
             * forwardGraphWeight
             * directionStateWeight
             * standingMovementSubtreeWeight
-          if (
-            sample.weight > 0
-            && forwardGraphWeight > 0
-            && directionStateWeight > 0
-            && standingGraphRuntime.movementDetails.relevant
-          ) {
-            member.updatedThisFrame = true
-          }
-          member.playRate = sample.playRate
+          groundedLocomotionClipDebugWeights.set(
+            sample.clip,
+            (groundedLocomotionClipDebugWeights.get(sample.clip) ?? 0)
+              + finalWeight,
+          )
         }
       }
     }
@@ -5440,6 +5562,7 @@ export function createAlsAnimationInstance(gltf: {
     }
 
     for (const member of locomotionSyncGroup.members) {
+      if (groundedLocomotionPlayerMembers.has(member)) continue
       if (
         member.updatedThisFrame !== true
         || (
@@ -5468,6 +5591,7 @@ export function createAlsAnimationInstance(gltf: {
       }
     }
     const syncResult = advanceSyncGroup(locomotionSyncGroup, delta)
+    resolveGroundedLocomotionPlayerTimes()
     // FAnimNotifyQueue receives graph tick-record candidates before Slot source candidates.
     // Only the elected Movement leader may emit these authored bTriggerOnFollower=false events.
     for (const [sequenceName, runtimeTrack] of cameraShakeNotifyTracks) {
@@ -5547,14 +5671,20 @@ export function createAlsAnimationInstance(gltf: {
       && rotateInPlaceClips.Standing.Right
       && standingAccelerationSourceComplete
     ) {
-      for (const [clipName, clip] of groundedLocomotionClips) {
-        sampleSequencePoseNode(
-          rig,
-          clip,
-          locomotionMembersByClip.get(clip)?.time ?? 0,
-          true,
-          standingMovementClipPoses.get(clipName)!,
-        )
+      for (const direction of ALS_HIPS_DIRECTIONS) {
+        const sources = groundedLocomotionPlayerSources[direction]
+        for (const sample of groundedLocomotionPlayerResults[direction].samples) {
+          const sampleIndex = Number(sample.id)
+          const source = sources[sampleIndex]
+          if (!source?.clip) continue
+          sampleSequencePoseNode(
+            rig,
+            source.clip,
+            sample.time,
+            true,
+            standingMovementSamplePoses[direction][sampleIndex],
+          )
+        }
       }
       sampleSequencePoseNode(
         rig,
@@ -5581,7 +5711,8 @@ export function createAlsAnimationInstance(gltf: {
           standingMovement,
         )
         for (const sample of samples) {
-          const pose = standingMovementClipPoses.get(sample.clip)
+          const pose =
+            standingMovementSamplePoses[sample.player][sample.sampleIndex]
           if (!pose || sample.weight <= 0) continue
           standingMovementPoseSources.push(pose)
           standingMovementPoseWeights.push(sample.weight)
@@ -6114,22 +6245,30 @@ export function createAlsAnimationInstance(gltf: {
     for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) {
       const clip = roles[role]
       if (clip) {
+        const clipName = clip.sampler.clip.name
+        const isGroundedLocomotionSource =
+          groundedLocomotionClipNames.has(clipName)
         const roleWeight = role === 'idle'
           ? (
               standingGraphWeight
               * standingGraphRuntime.standing.stateWeights.Idle
               * standingTurnInPlaceWeightData.sourceWeight
             )
+          : isGroundedLocomotionSource
+            ? groundedLocomotionClipDebugWeights.get(clipName) ?? 0
           : (
               locomotionMembersByClip.get(clip)?.weight
               ?? clip.entry.weight
             )
+        const roleTime = isGroundedLocomotionSource
+          ? groundedLocomotionClipDebugTimes.get(clipName) ?? 0
+          : clip.entry.time
         normalDebugWeights[role] =
           Math.abs(roleWeight) <= Number.EPSILON ? 0 : roleWeight
-        normalDebugWeights[`clipTime.${role}`] = clip.entry.time
+        normalDebugWeights[`clipTime.${role}`] = roleTime
         normalDebugWeights[`clipPhase.${role}`] =
           clip.sampler.clip.duration > 0
-            ? clip.entry.time / clip.sampler.clip.duration
+            ? roleTime / clip.sampler.clip.duration
             : 0
       }
     }
@@ -6150,9 +6289,9 @@ export function createAlsAnimationInstance(gltf: {
       crouchingStateRuntime.stateWeights.Idle
       * crouchingGraphWeight
       * crouchingTurnInPlaceWeightData.sourceWeight
-    for (const [clipName, clip] of groundedLocomotionClips) {
+    for (const clipName of groundedLocomotionClips.keys()) {
       normalDebugWeights[clipName] =
-        locomotionMembersByClip.get(clip)?.weight ?? 0
+        groundedLocomotionClipDebugWeights.get(clipName) ?? 0
     }
     if (sprintAccelerationClip) {
       normalDebugWeights.sprintAcceleration =
@@ -6173,6 +6312,31 @@ export function createAlsAnimationInstance(gltf: {
         standingGraphRuntime.direction.stateWeights[
           hipsDirection as AlsHipsDirection
         ]
+    }
+    for (const direction of ALS_HIPS_DIRECTIONS) {
+      const player = groundedLocomotionPlayers[direction]
+      const member = player.syncMember
+      const result = groundedLocomotionPlayerResults[direction]
+      normalDebugWeights[`MovementPlayer.${direction}.weight`] = member.weight
+      normalDebugWeights[`MovementPlayer.${direction}.phase`] = member.time
+      normalDebugWeights[`MovementPlayer.${direction}.playRate`] =
+        member.playRate
+      normalDebugWeights[
+        `MovementPlayer.${direction}.markerLeaderSampleIndex`
+      ] = result.markerLeaderId === null
+        ? -1
+        : Number(result.markerLeaderId)
+      const sources = groundedLocomotionPlayerSources[direction]
+      for (const sample of player.getRetainedSamples()) {
+        const source = sources[Number(sample.id)]
+        if (!source) continue
+        normalDebugWeights[
+          `MovementPlayer.${direction}.Sample.${source.name}.time`
+        ] = sample.time
+        normalDebugWeights[
+          `MovementPlayer.${direction}.Sample.${source.name}.phase`
+        ] = sample.duration > 0 ? sample.time / sample.duration : 0
+      }
     }
     normalDebugWeights.StrideBlendAmount =
       state.standingMovement.strideBlendAmount

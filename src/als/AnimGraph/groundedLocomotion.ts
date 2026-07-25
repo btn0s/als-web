@@ -1029,6 +1029,8 @@ export function createGroundedLocomotionGraph(
 export interface AlsGroundedLocomotionClipWeight {
   /** Owning FAnimNode_BlendSpacePlayer; source clips never own Movement sync membership. */
   readonly player: AlsHipsDirection
+  /** Authored FBlendSample identity within the owning player. */
+  readonly sampleIndex: number
   readonly clip: string
   readonly objectPath?: string
   readonly weight: number
@@ -1050,9 +1052,11 @@ function readGroundedLocomotionPlayer(
   const result: AlsGroundedLocomotionClipWeight[] = []
 
   for (let index = 0; index < weights.count; index++) {
-    const sample = samples[weights.sampleIndices[index]]
+    const sampleIndex = weights.sampleIndices[index]
+    const sample = samples[sampleIndex]
     result.push({
       player,
+      sampleIndex,
       clip: sample.animation.name,
       objectPath: sample.animation.objectPath,
       weight: weights.weights[index],
@@ -1070,9 +1074,12 @@ function markRelevantGroundedLocomotionPlayers(
   stateWeight: number,
   velocityBlend: AlsGroundedVelocityBlend,
   relevanceWeight: number,
+  stateRelevanceWeight = 1,
 ) {
   const effectiveStateWeight =
-    Math.max(0, stateWeight) * Math.max(0, relevanceWeight)
+    Math.max(0, stateWeight)
+    * Math.max(0, relevanceWeight)
+    * Math.max(0, stateRelevanceWeight)
   if (effectiveStateWeight <= ZERO_ANIMWEIGHT_THRESH) return
 
   const rawAlphas = [
@@ -1149,6 +1156,9 @@ export function updateGroundedLocomotionGraphFromStateWeights(
   >,
   deltaTime: number,
   relevanceWeight: number,
+  stateRelevanceWeights?: Readonly<
+    Partial<Record<AlsHipsDirection, number>>
+  >,
 ) {
   resetGroundedLocomotionPlayerUpdate(graph)
   for (const hipsDirection of ALS_HIPS_DIRECTIONS) {
@@ -1158,6 +1168,7 @@ export function updateGroundedLocomotionGraphFromStateWeights(
       stateWeights[hipsDirection],
       velocityBlend,
       relevanceWeight,
+      stateRelevanceWeights?.[hipsDirection] ?? 1,
     )
   }
   advanceRelevantGroundedLocomotionPlayers(graph, standing, deltaTime)
@@ -1180,6 +1191,9 @@ export function updateGroundedLocomotionGraph(
   >,
   deltaTime: number,
   relevanceWeight: number,
+  stateRelevanceWeights?: Readonly<
+    Partial<Record<AlsHipsDirection, number>>
+  >,
 ) {
   resetGroundedLocomotionPlayerUpdate(graph)
   markRelevantGroundedLocomotionPlayers(
@@ -1188,6 +1202,7 @@ export function updateGroundedLocomotionGraph(
     fromStateWeight,
     velocityBlend,
     relevanceWeight,
+    stateRelevanceWeights?.[fromDirection] ?? 1,
   )
   if (toDirection !== null) {
     markRelevantGroundedLocomotionPlayers(
@@ -1196,6 +1211,7 @@ export function updateGroundedLocomotionGraph(
       toStateWeight,
       velocityBlend,
       relevanceWeight,
+      stateRelevanceWeights?.[toDirection] ?? 1,
     )
   }
 
