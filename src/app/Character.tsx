@@ -444,11 +444,6 @@ function LoadedCharacter({
   }, [gltf.scene])
 
   useLayoutEffect(() => {
-    console.debug('[Character] bbox size', {
-      x: bounds.size.x,
-      y: bounds.size.y,
-      z: bounds.size.z,
-    })
     onSizeChange(bounds.size.clone())
   }, [bounds, onSizeChange])
 
