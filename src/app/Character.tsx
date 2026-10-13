@@ -176,6 +176,11 @@ function RifleOverlayObject({ characterScene }: { characterScene: THREE.Object3D
   return null
 }
 
+function findSkeletonBone(scene: THREE.Object3D, name: string): THREE.Bone | null {
+  const candidate = scene.getObjectByName(name)
+  return candidate instanceof THREE.Bone ? candidate : null
+}
+
 function LoadedCharacter({
   gltf,
   onSizeChange,
@@ -331,9 +336,18 @@ function LoadedCharacter({
     () => ({
       head: gltf.scene.getObjectByName('head') ?? gltf.scene.getObjectByName('Head'),
       pelvis: gltf.scene.getObjectByName('pelvis'),
+      cameraRoot: findSkeletonBone(gltf.scene, 'root'),
+      cameraHead: findSkeletonBone(gltf.scene, 'head'),
     }),
     [gltf.scene],
   )
+  useEffect(() => () => {
+    if (poseSample.current.rootBone === poseBones.cameraRoot) {
+      poseSample.current.rootBone = null
+      poseSample.current.headBone = null
+      poseSample.current.ready = false
+    }
+  }, [poseSample, poseBones])
   const bounds = useMemo(() => {
     gltf.scene.updateWorldMatrix(true, true)
     const box = new THREE.Box3().setFromObject(gltf.scene, true)
@@ -420,6 +434,8 @@ function LoadedCharacter({
     poseBones.head.getWorldPosition(poseSample.current.head)
     poseSample.current.poseHeight = poseSample.current.head.y - poseSample.current.ground.y
     poseSample.current.characterYaw = group.rotation.y
+    poseSample.current.rootBone = poseBones.cameraRoot
+    poseSample.current.headBone = poseBones.cameraHead
     poseSample.current.ready =
       Number.isFinite(poseSample.current.poseHeight) && poseSample.current.poseHeight > 0
   }, ALS_FRAME_PRIORITY.PosePublication)
