@@ -1,10 +1,14 @@
+import type { ConsumerOverlayStates } from '../als/AnimGraph/consumerOverlayStates'
 import type { AlsRagdollingSettings } from '../als/Settings/AlsRagdollingSettings'
 import { clone } from 'three/addons/utils/SkeletonUtils.js'
 import { useAlsRagdoll } from './useAlsRagdoll'
 import { ALS_CHARACTER_COLLISION_GROUPS, type AlsRagdollHandle } from '../engine/rapierAlsRagdoll'
 export type { AlsRagdollHandle, AlsRagdollStartOptions, AlsRagdollImpulse } from '../engine/rapierAlsRagdoll'
+import { AlsCharacterRecorder } from '../als/AlsCharacterRecorder'
+import type { AlsCharacterSnapshot } from '../als/AlsCharacterSnapshot'
+import { isPistolOverlayMode } from '../als/AnimGraph/overlayMode'
 import { useFrame } from '@react-three/fiber'
-import { Html, useGLTF } from '@react-three/drei'
+import { Html } from '@react-three/drei'
 import {
   CapsuleCollider,
   RigidBody,
@@ -66,11 +70,8 @@ import type {
 import type { CharacterPoseSample } from './CharacterPoseSample'
 import type { AlsCharacterInputSource } from '../als/AlsCharacter.hooks'
 import type { AlsGaitSpeedOverrides } from '../als/AlsCharacterMovementComponent'
-import {
-  ALS_RIFLE_OVERLAY_OBJECT_URL,
-  attachRifleOverlayObject,
-  detachOverlayObject,
-} from '../als/AlsCharacter.overlayObjects'
+import { PistolOverlayObject, RifleOverlayObject } from './AlsOverlayObjects'
+export { RifleOverlayObject } from './AlsOverlayObjects'
 import { useAlsCharacterGltf } from './AlsCharacterGltf.hooks'
 import { ALS_MESH_COMPONENT_YAW_RADIANS } from '../engine/unrealCoordinateSpace'
 import {
@@ -100,7 +101,12 @@ export interface CharacterProps {
   instanceId?: string
   initialPosition?: readonly [number, number, number]
   tint?: string
+  overlayStates?: ConsumerOverlayStates
+  renderOverlayObject?: (scene: THREE.Object3D) => React.ReactNode
   ragdollRef?: React.RefObject<AlsRagdollHandle | null>
+  /** Emitted after animation in the performance.now() clock domain. */
+  onSnapshot?: (snapshot: AlsCharacterSnapshot) => void
+  snapshotRateHz?: number
   /** Disable the consumer's ragdoll/get-up input bindings; ALS itself has no death policy. */
   ragdollInputEnabled?: boolean
   ragdollingSettings?: Partial<AlsRagdollingSettings>
@@ -191,23 +197,6 @@ function CharacterLoadState({
   )
 }
 
-function RifleOverlayObject({ characterScene }: { characterScene: THREE.Object3D }) {
-  // useGLTF caches by URL: the first Rifle switch loads, then Default only detaches/hides it.
-  const rifleGltf = useGLTF(ALS_RIFLE_OVERLAY_OBJECT_URL)
-  // The cached scene is shared by every Character; an Object3D has one parent, so each
-  // instance attaches its own clone instead of stealing the rifle from the previous holder.
-  const rifleScene = useMemo(() => clone(rifleGltf.scene), [rifleGltf.scene])
-
-  useLayoutEffect(() => {
-    // Keep the authored MI_Als_Rifle material graph intact; as a bone child it shares the
-    // character's lighting, shadows, and postprocessing path.
-    attachRifleOverlayObject(characterScene, rifleScene)
-    return () => detachOverlayObject(rifleScene)
-  }, [characterScene, rifleScene])
-
-  return null
-}
-
 function findSkeletonBone(scene: THREE.Object3D, name: string): THREE.Bone | null {
   const candidate = scene.getObjectByName(name)
   return candidate instanceof THREE.Bone ? candidate : null
@@ -215,12 +204,16 @@ function findSkeletonBone(scene: THREE.Object3D, name: string): THREE.Bone | nul
 
 function LoadedCharacter({
   gltf: sourceGltf,
+  overlayStates,
+  renderOverlayObject,
   onSizeChange,
   poseSample,
   worldTime,
   onOverlayModeBridgeChange,
   footstepSoundSink,
+  onSnapshot,
   ragdollRef,
+  snapshotRateHz = 20,
   ragdollInputEnabled,
   ragdollingSettings,
   toggleRotationModeKey,
@@ -240,6 +233,8 @@ function LoadedCharacter({
   showDebugControls,
 }: {
   gltf: GLTF
+  overlayStates?: CharacterProps['overlayStates']
+  renderOverlayObject?: CharacterProps['renderOverlayObject']
   ragdollRef?: CharacterProps['ragdollRef']
   ragdollInputEnabled?: boolean
   ragdollingSettings?: Partial<AlsRagdollingSettings>
@@ -249,6 +244,8 @@ function LoadedCharacter({
   onOverlayModeBridgeChange:
     CharacterProps['onOverlayModeBridgeChange']
   footstepSoundSink: CharacterProps['footstepSoundSink']
+  onSnapshot?: CharacterProps['onSnapshot']
+  snapshotRateHz?: number
   toggleRotationModeKey: CharacterProps['toggleRotationModeKey']
   aimPointerButtons: CharacterProps['aimPointerButtons']
   gamepadBindings: CharacterProps['gamepadBindings']
@@ -281,8 +278,8 @@ function LoadedCharacter({
           : tintMaterial(object.material)
       })
     }
-    return { ...sourceGltf, scene }
-  }, [sourceGltf, tint])
+    return { ...sourceGltf, scene, overlayStates }
+  }, [sourceGltf, tint, overlayStates])
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
   const RapierRay = rapier.Ray
@@ -491,6 +488,7 @@ function LoadedCharacter({
     instanceId,
     gamepadRollBehavior,
     showDebugControls,
+    overlayStates?.states,
   )
   useEffect(() => {
     onOverlayModeBridgeChange({
@@ -533,6 +531,19 @@ function LoadedCharacter({
     internalRagdoll.current = ragdoll
     return () => { internalRagdoll.current = null }
   }, [ragdoll])
+
+  const recorder = useMemo(() => new AlsCharacterRecorder(snapshotRateHz), [snapshotRateHz])
+  useFrame(() => {
+    if (!onSnapshot || !rigidBody.current) return
+    const snapshot = recorder.capture(performance.now(), {
+      character: character.character.current,
+      controls: character.animationControls.current,
+      position: rigidBody.current.translation(),
+      mantle: animationInstance.getMantlingSnapshot(),
+      rolling: animationInstance.getRollingSnapshot(),
+    })
+    if (snapshot) onSnapshot(snapshot)
+  }, ALS_FRAME_PRIORITY.Replication)
 
   useFrame(() => {
     const group = characterGroup.current
@@ -607,8 +618,14 @@ function LoadedCharacter({
       >
         <group rotation-y={ALS_MESH_COMPONENT_YAW_RADIANS}>
           <primitive object={gltf.scene} />
+          {renderOverlayObject?.(gltf.scene)}
         </group>
-        {character.overlayMode === 'Rifle' && (
+        {!renderOverlayObject && isPistolOverlayMode(character.overlayMode) && (
+          <Suspense fallback={null}>
+            <PistolOverlayObject characterScene={gltf.scene} />
+          </Suspense>
+        )}
+        {!renderOverlayObject && character.overlayMode === 'Rifle' && (
           <Suspense fallback={null}>
             <RifleOverlayObject characterScene={gltf.scene} />
           </Suspense>
@@ -619,12 +636,16 @@ function LoadedCharacter({
 }
 
 export function Character({
+  overlayStates,
+  renderOverlayObject,
   onSizeChange,
   poseSample,
   worldTime,
   onOverlayModeBridgeChange,
   footstepSoundSink,
+  onSnapshot,
   ragdollRef,
+  snapshotRateHz = 20,
   ragdollInputEnabled,
   ragdollingSettings,
   toggleRotationModeKey,
@@ -652,11 +673,15 @@ export function Character({
   return gltf ? (
     <LoadedCharacter
       gltf={gltf}
+      overlayStates={overlayStates}
+      renderOverlayObject={renderOverlayObject}
       onSizeChange={onSizeChange}
       poseSample={poseSample}
       worldTime={worldTime}
       onOverlayModeBridgeChange={onOverlayModeBridgeChange}
       footstepSoundSink={footstepSoundSink}
+      onSnapshot={onSnapshot}
+      snapshotRateHz={snapshotRateHz}
       ragdollRef={ragdollRef}
       ragdollInputEnabled={ragdollInputEnabled}
       ragdollingSettings={ragdollingSettings}

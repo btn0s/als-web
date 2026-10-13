@@ -172,6 +172,12 @@ second (flagged) — never from another project's implementation:
 - [x] Turn-in-place + rotate-in-place per spec constants, RotationYawSpeed drives yaw
       *(2026-07-23)*; `StopQuick` now invokes the exact authored transition sequence, timing,
       side selection, and velocity-direction play-rate scaling *(2026-07-24)*
+- [x] Pistol overlays: native `AB_Als_PistolTwoHanded` and `AB_Als_PistolOneHanded`,
+      authored state/action graphs, mesh-space standing/crouched aim, region layering,
+      overlay menu, and extracted `SKM_Als_Pistol` prop *(2026-10-12)*. Both missing
+      curve-free aim reference banks now ship; 121 clips total. Node-pose equivalence
+      and live animation-instance switch tests cover both modes; visual feel remains
+      a user playtest.
 - [x] Overlay states: curve-driven per-region layering + spawning overlay objects (Rifle end-to-end; full `AB_Als_Rifle` state/action graph live 2026-07-24) — original plan: SEED
       rule alphas from the overlay assets' authored `Layer*` curves (dumped in M2), don't hand-tune
       from scratch. (Mesh-space arm layering: previously an accepted mixer limitation — the
@@ -184,7 +190,7 @@ second (flagged) — never from another project's implementation:
       composition, and UE-style output inertialization landed *(2026-07-23)*; montage/slot blend
       semantics and authored root-motion handoff remain open
 - [ ] Foot IK with pelvis adaptation (ALS's Control Rig stage: ground trace + spring-damped Z offset + slope alignment — constants in the math spec; the pelvis-combine formula is graph-side and flagged original-design)
-- [x] **Live ALS ragdoll lifecycle and get-up (2026-10-12)**: `Character.ragdollRef`
+- [x] **Live ALS ragdoll lifecycle and get-up (2026-10-12)**: `Character.ragdollRef` and `AlsRemoteActor.ragdollRef`
       exposes `StartRagdolling({ initialImpulse })`, `AddImpulse`, `StopRagdolling` and a mutable
       pelvis position/velocity sample. Impulses, optional application points and torque use
       three.js world SI units at named PA_Als bodies. Native 4.15 Start/Refresh/Stop owns the

@@ -655,6 +655,18 @@ export class AlsFootstepAudioRuntime implements AlsFootstepSoundSink {
     return !this.disposed
   }
 
+  async Preload(signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
+    if (!this.GetOrCreateContext()) throw new Error('Audio context unavailable')
+    const waves = [...new Set(Object.values(ALS_FOOTSTEP_WAVE_ASSETS).flat())]
+    for (const wave of waves) {
+      signal?.throwIfAborted()
+      this.failedWaveAssetNames.delete(wave)
+      if (!await this.LoadBuffer(wave, signal)) throw new Error(`Footstep decode failed: ${wave}`)
+    }
+    signal?.throwIfAborted()
+  }
+
   private GetOrCreateContext(): AudioContext | null {
     if (this.context !== null) return this.context
     if (this.contextCreationAttempted) return null
@@ -670,6 +682,7 @@ export class AlsFootstepAudioRuntime implements AlsFootstepSoundSink {
 
   private LoadBuffer(
     WaveAssetName: string,
+    signal?: AbortSignal,
   ): Promise<AudioBuffer | null> {
     const cachedBuffer = this.buffers.get(WaveAssetName)
     if (cachedBuffer !== undefined) return Promise.resolve(cachedBuffer)
@@ -686,7 +699,7 @@ export class AlsFootstepAudioRuntime implements AlsFootstepSoundSink {
       return Promise.resolve(null)
     }
 
-    const load = this.LoadBufferInternal(WaveAssetName)
+    const load = this.LoadBufferInternal(WaveAssetName, signal)
     this.bufferLoads.set(WaveAssetName, load)
     const completeLoad = () => {
       this.bufferLoads.delete(WaveAssetName)
@@ -698,18 +711,20 @@ export class AlsFootstepAudioRuntime implements AlsFootstepSoundSink {
 
   private async LoadBufferInternal(
     WaveAssetName: string,
+    signal?: AbortSignal,
   ): Promise<AudioBuffer | null> {
     let encodedAudio: ArrayBuffer
     try {
       const response = await this.Fetch!(
         `${this.AssetBaseUrl}${WaveAssetName}.wav`,
-        { signal: this.abortController.signal },
+        { signal: signal ? AbortSignal.any([signal, this.abortController.signal]) : this.abortController.signal },
       )
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)
       }
       encodedAudio = await response.arrayBuffer()
     } catch (Cause) {
+      if (signal?.aborted) throw Cause
       if (!this.disposed) {
         this.failedWaveAssetNames.add(WaveAssetName)
         this.ReportError({
@@ -723,10 +738,12 @@ export class AlsFootstepAudioRuntime implements AlsFootstepSoundSink {
 
     try {
       const buffer = await this.context!.decodeAudioData(encodedAudio)
+      signal?.throwIfAborted()
       if (this.disposed) return null
       this.buffers.set(WaveAssetName, buffer)
       return buffer
     } catch (Cause) {
+      if (signal?.aborted) throw Cause
       if (!this.disposed) {
         this.failedWaveAssetNames.add(WaveAssetName)
         this.ReportError({

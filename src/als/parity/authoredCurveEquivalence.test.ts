@@ -118,7 +118,7 @@ describe('authored animation rich-curve equivalence', () => {
       keyCount,
       cubicKeyCount,
     }).toEqual({
-      animationCount: 119,
+      animationCount: 121,
       curveCount: 361,
       keyCount: 1646,
       cubicKeyCount: 70,

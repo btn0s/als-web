@@ -40,6 +40,7 @@ import { createCharacterPoseSample } from './CharacterPoseSample'
 import { AlsCamera } from './AlsCamera'
 import { AlsMantlingObstacleCourse } from './AlsMantlingObstacleCourse'
 import { Character } from './Character'
+import { AlsGhostDemo } from './AlsGhostDemo'
 import type { AlsOverlayModeBridge } from './Character'
 import { FramePerformanceMonitor } from './FramePerformanceMonitor'
 import { PostProcessing } from './PostProcessing'
@@ -91,6 +92,8 @@ function Scene({
   worldTime,
   footstepAudioRuntime,
 }: SceneProps) {
+  const CharacterComponent = new URLSearchParams(window.location.search).has('ghost')
+    ? AlsGhostDemo : Character
   const [, setCharacterSize] = useState(() => new THREE.Vector3())
   const poseSample = useRef(createCharacterPoseSample())
   const bManuallyStepPhysics =
@@ -110,7 +113,7 @@ function Scene({
           updatePriority={ALS_FRAME_PRIORITY.Physics}
         >
           <TimeDilatedPhysicsStepper worldTime={worldTime} />
-          <Character
+          <CharacterComponent
             onSizeChange={setCharacterSize}
             poseSample={poseSample}
             worldTime={worldTime}

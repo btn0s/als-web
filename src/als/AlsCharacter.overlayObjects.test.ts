@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
   ALS_RIFLE_OVERLAY_OBJECT_BONE,
+  ALS_PISTOL_OVERLAY_OBJECT_BONE,
+  attachPistolOverlayObject,
   attachRifleOverlayObject,
   detachOverlayObject,
 } from './AlsCharacter.overlayObjects'
@@ -34,6 +36,31 @@ describe('AlsCharacter overlay objects', () => {
 
     attachmentBone.position.set(7, 8, 9)
     expect(rifle.getWorldPosition(new THREE.Vector3()).toArray()).toEqual([7, 8, 9])
+  })
+
+  it('snaps independent pistol instances to their own moving right-gun bones', () => {
+    expect(ALS_PISTOL_OVERLAY_OBJECT_BONE).toBe(ALS_RIFLE_OVERLAY_OBJECT_BONE)
+    const scenes = [new THREE.Group(), new THREE.Group()]
+    const props = scenes.map((scene, index) => {
+      const bone = new THREE.Bone()
+      bone.name = ALS_PISTOL_OVERLAY_OBJECT_BONE
+      bone.position.set(index, 2, 3)
+      scene.add(bone)
+      const prop = new THREE.Group()
+      prop.position.set(5, 5, 5)
+      prop.rotation.set(1, 1, 1)
+      prop.scale.setScalar(2)
+      attachPistolOverlayObject(scene, prop)
+      expect(prop.position.toArray()).toEqual([0, 0, 0])
+      expect(prop.quaternion.toArray()).toEqual([0, 0, 0, 1])
+      expect(prop.scale.toArray()).toEqual([1, 1, 1])
+      bone.position.y = 4
+      expect(prop.getWorldPosition(new THREE.Vector3()).toArray()).toEqual([index, 4, 3])
+      return prop
+    })
+    expect(props[0].parent).not.toBe(props[1].parent)
+    detachOverlayObject(props[0])
+    expect(props[1].parent).not.toBeNull()
   })
 
   it('detaches and hides the cached object', () => {

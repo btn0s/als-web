@@ -112,6 +112,14 @@ const RIFLE_GRAPH_EVIDENCE = partial(
     'evaluateAlsRifleGraph(',
   ],
 )
+const PISTOL_TWO_HANDED_GRAPH_EVIDENCE = partial(
+  graphDefinition('AB_Als_PistolTwoHanded', 'evaluateAlsPistolGraph'),
+  ['src/als/AlsAnimationInstance.ts', 'evaluateAlsPistolGraph('],
+)
+const PISTOL_ONE_HANDED_GRAPH_EVIDENCE = partial(
+  ['src/als/AnimGraph/AB_Als_PistolOneHanded.ts', 'export const evaluateAlsPistolOneHandedGraph'],
+  ['src/als/AlsAnimationInstance.ts', 'evaluateAlsPistolOneHandedGraph('],
+)
 const CROUCHING_GRAPH_EVIDENCE = partial(
   graphDefinition('AB_Als_Crouching', 'evaluateAlsCrouchingPoseGraph'),
   [
@@ -174,8 +182,8 @@ export const ALS_PARITY_ASSET_COVERAGE = [
   unportedAsset('AB_Als_HandsTied'),
   unportedAsset('AB_Als_Injured'),
   unportedAsset('AB_Als_Masculine'),
-  unportedAsset('AB_Als_PistolOneHanded'),
-  unportedAsset('AB_Als_PistolTwoHanded'),
+  { asset: 'AB_Als_PistolOneHanded', status: 'live', evidence: PISTOL_ONE_HANDED_GRAPH_EVIDENCE },
+  { asset: 'AB_Als_PistolTwoHanded', status: 'live', evidence: PISTOL_TWO_HANDED_GRAPH_EVIDENCE },
   {
     asset: 'AB_Als_Rifle',
     status: 'live',
@@ -262,13 +270,15 @@ export const ALS_PARITY_MACHINE_COVERAGE = [
     'AB_Als_PistolOneHanded',
     'Pistol States',
     0,
-    'unported',
+    'live',
+    PISTOL_ONE_HANDED_GRAPH_EVIDENCE,
   ),
   machine(
     'AB_Als_PistolTwoHanded',
     'Pistol States',
     0,
-    'unported',
+    'live',
+    PISTOL_TWO_HANDED_GRAPH_EVIDENCE,
   ),
   machine(
     'AB_Als_Rifle',

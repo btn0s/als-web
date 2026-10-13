@@ -47,6 +47,9 @@ dotnet run -- dump \
 dotnet run -- dump \
   "$WORK/stage" "$WORK/als-rifle-dump.json" \
   SK_Als_Rifle SKM_Als_Rifle MI_Als_Rifle
+dotnet run -- dump \
+  "$WORK/stage" "$WORK/als-pistol-dump.json" \
+  SK_Als_Pistol SKM_Als_Pistol MI_Als_Pistol
 dotnet run -- dump-abp "$WORK/stage" "$WORK/abp-graph.json"
 dotnet run -- validate-abp "$WORK/abp-graph.json"
 dotnet run -- dump-blend-spaces "$WORK/stage" "$WORK/blend-spaces.json"
@@ -82,10 +85,14 @@ node validate-glb.mjs \
   "$WORK/skm-als.glb" \
   "$WORK/abp-graph.json" \
   "$WORK/blend-spaces.json"
+node assemble-glb.mjs "$WORK/als-pistol-dump.json" "$WORK/skm-als-pistol.glb"
+node extract-pistol-content.mjs "$WORK" bin/Debug/net10.0/AlsExtract.dll "$WORK/abp-graph.json" pistol-content.json
+node validate-pistol-glb.mjs "$WORK/skm-als-pistol.glb"
 node validate-rifle-glb.mjs "$WORK/skm-als-rifle.glb"
 
 mkdir -p "$REPO_ROOT/public/assets"
 cp "$WORK/skm-als.glb" "$REPO_ROOT/public/assets/skm-als.glb"
+cp "$WORK/skm-als-pistol.glb" "$REPO_ROOT/public/assets/skm-als-pistol.glb"
 cp "$WORK/skm-als-rifle.glb" "$REPO_ROOT/public/assets/skm-als-rifle.glb"
 cp "$WORK/ALS-Refactored-$TAG/LICENSE.md" "$REPO_ROOT/public/assets/LICENSE-ALS-Refactored.md"
 ABP_GRAPH_SIZE="$(wc -c < "$WORK/abp-graph.json" | tr -d '[:space:]')"

@@ -9,6 +9,8 @@ import * as THREE from 'three'
  * Evidence: scripts/extract-als/props.manifest (rifle entry).
  */
 export const ALS_RIFLE_OVERLAY_OBJECT_URL = '/assets/skm-als-rifle.glb'
+export const ALS_PISTOL_OVERLAY_OBJECT_URL = '/assets/skm-als-pistol.glb'
+export const ALS_PISTOL_OVERLAY_OBJECT_BONE = 'VB hand_r_to_ik_hand_gun'
 export const ALS_RIFLE_OVERLAY_OBJECT_BONE = 'VB hand_r_to_ik_hand_gun'
 
 export function attachRifleOverlayObject(
@@ -33,4 +35,9 @@ export function attachRifleOverlayObject(
 export function detachOverlayObject(overlayObject: THREE.Object3D) {
   overlayObject.removeFromParent()
   overlayObject.visible = false
+}
+
+/** B_Als_Character uses the same right-gun SnapToTarget path for both pistol modes. */
+export function attachPistolOverlayObject(characterScene: THREE.Object3D, overlayObject: THREE.Object3D) {
+  return attachRifleOverlayObject(characterScene, overlayObject)
 }

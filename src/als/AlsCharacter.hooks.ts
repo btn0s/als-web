@@ -1,3 +1,4 @@
+import type { ConsumerOverlayState } from './AnimGraph/consumerOverlayStates'
 import { ALS_RAGDOLLING_SETTINGS, type AlsRagdollingSettings } from './Settings/AlsRagdollingSettings'
 import {
   useAfterPhysicsStep,
@@ -614,6 +615,37 @@ export interface AlsCharacterAnimationControls
   walkableFloorAngleCos: number
 }
 
+export function createAlsCharacterAnimationControls(): AlsCharacterAnimationControls {
+  return {
+    gait: 'Walking',
+    moving: false,
+    movingSmooth: false,
+    locomotionMode: 'Grounded',
+    scale: 1,
+    location: { x: 0, y: 0, z: 0 },
+    actorYawAngle: 0,
+    basedMovement: ALS_NO_BASED_MOVEMENT,
+    velocity: { x: 0, y: 0, z: 0 },
+    capsuleRadius: ALS_CAPSULE_RADIUS,
+    capsuleHalfHeight: ALS_STANDING_CAPSULE_HALF_HEIGHT,
+    walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
+    stance: 'Standing',
+    rotationMode: 'ViewDirection',
+    overlayMode: 'Default',
+    speed: 0,
+    direction: 0,
+    relativeAccelerationAmount: { x: 0, y: 0 },
+    rotateInPlace: false,
+    viewYawAngle: 0,
+    viewYawSpeed: 0,
+    viewMode: 'ThirdPerson',
+    viewPitchAngle: 0,
+    inputYawAngle: 0,
+    targetYawAngle: 0,
+    locomotionYawSpeed: 0,
+  }
+}
+
 export interface AlsCharacterAnimationSnapshotInput {
   readonly character: AlsCharacter
   readonly location: Readonly<AlsVector3>
@@ -1207,6 +1239,7 @@ export function useAlsCharacter(
   instanceId = 'Character',
   gamepadRollBehavior: 'tap' | 'doubleTap' = 'tap',
   showDebugControls = true,
+  overlayStates: readonly ConsumerOverlayState[] = [],
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1244,7 +1277,7 @@ export function useAlsCharacter(
       },
       overlayMode: {
         value: 'Default' as AlsOverlayMode,
-        options: ALS_OVERLAY_MODES,
+        options: [...ALS_OVERLAY_MODES, ...overlayStates.map(state => state.mode)],
         label: 'OverlayMode',
       },
       'Debug Overrides': folder({
@@ -1333,34 +1366,7 @@ export function useAlsCharacter(
       poseSample.current.movementBase = null
     }
   }, [poseSample])
-  const animationControls = useRef<AlsCharacterAnimationControls>({
-    gait: 'Walking',
-    moving: false,
-    movingSmooth: false,
-    locomotionMode: 'Grounded',
-    scale: 1,
-    location: { x: 0, y: 0, z: 0 },
-    actorYawAngle: 0,
-    basedMovement: ALS_NO_BASED_MOVEMENT,
-    velocity: { x: 0, y: 0, z: 0 },
-    capsuleRadius: ALS_CAPSULE_RADIUS,
-    capsuleHalfHeight: ALS_STANDING_CAPSULE_HALF_HEIGHT,
-    walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
-    stance: 'Standing',
-    rotationMode: 'ViewDirection',
-    overlayMode: 'Default',
-    speed: 0,
-    direction: 0,
-    relativeAccelerationAmount: { x: 0, y: 0 },
-    rotateInPlace: false,
-    viewYawAngle: 0,
-    viewYawSpeed: 0,
-    viewMode: 'ThirdPerson',
-    viewPitchAngle: 0,
-    inputYawAngle: 0,
-    targetYawAngle: 0,
-    locomotionYawSpeed: 0,
-  })
+  const animationControls = useRef(createAlsCharacterAnimationControls())
   const previousAnimationActorYawAngle = useRef(character.current.actorYawAngle)
   const animationLocomotionYawSpeed = useRef(0)
   const animationCurves = useRef<AlsCharacterAnimationCurves>({
@@ -1396,10 +1402,10 @@ export function useAlsCharacter(
   const SetOverlayMode = useCallback((
     OverlayMode: AlsOverlayMode,
   ) => {
-    if (ALS_OVERLAY_MODES.includes(OverlayMode)) {
+    if (ALS_OVERLAY_MODES.some(mode => mode === OverlayMode) || overlayStates.some(state => state.mode === OverlayMode)) {
       setControls({ overlayMode: OverlayMode })
     }
-  }, [setControls])
+  }, [setControls, overlayStates])
   const [codeOverlayMode, setCodeOverlayMode] = useState<AlsOverlayMode>('Default')
 
   const pressedKeys = useRef(new Set<string>())
@@ -1617,7 +1623,7 @@ export function useAlsCharacter(
     if (!Parameters) return false
 
     const overlayTag = resolveAlsMantlingOverlayTag(
-      values.current.overlayMode,
+      overlayStates.find(state => state.mode === values.current.overlayMode)?.template ?? values.current.overlayMode,
     )
     const settings = selectAlsMantlingSettings(
       Parameters.MantlingType,

@@ -1,3 +1,7 @@
+import { createRigDefinition } from '../engine/rig'
+import { precompileClipSamplers } from '../engine/clipSampler'
+import { ALS_VIRTUAL_BONES } from '../als/Utility/AlsVirtualBones'
+import type { AnimationClip } from 'three'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { applyCharacterMaterialOverrides } from '../als/characterMaterials'
 
@@ -65,10 +69,10 @@ export async function loadAlsCharacterGltf(
 const cachedLoads = new Map<string, Promise<GLTF>>()
 
 /** N actors share one download/parse. Rejections stay cached for the error boundary. */
-export function preloadAlsCharacterGltf(url = ALS_CHARACTER_URL): Promise<GLTF> {
+export function preloadAlsCharacterGltf(url = ALS_CHARACTER_URL, options: AlsCharacterGltfLoadOptions = {}): Promise<GLTF> {
   let pending = cachedLoads.get(url)
   if (!pending) {
-    pending = loadAlsCharacterGltf(url)
+    pending = loadAlsCharacterGltf(url, options).catch(error => { if (options.signal?.aborted) cachedLoads.delete(url); throw error })
     cachedLoads.set(url, pending)
   }
   return pending
@@ -77,4 +81,11 @@ export function preloadAlsCharacterGltf(url = ALS_CHARACTER_URL): Promise<GLTF> 
 /** Clear before resetting a Suspense error boundary to retry; mounted assets remain valid. */
 export function clearAlsCharacterGltf(url = ALS_CHARACTER_URL): void {
   cachedLoads.delete(url)
+}
+
+export async function prewarmAlsCharacter(extraClips: readonly AnimationClip[] = []): Promise<GLTF> {
+  const gltf = await preloadAlsCharacterGltf()
+  const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
+  precompileClipSamplers([...gltf.animations, ...extraClips], rig)
+  return gltf
 }

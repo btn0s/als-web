@@ -1,6 +1,6 @@
 import { use, useCallback, useEffect, useState } from 'react'
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js'
-import { ALS_CHARACTER_URL, loadAlsCharacterGltf, preloadAlsCharacterGltf } from './AlsCharacterGltf'
+import { ALS_CHARACTER_URL, clearAlsCharacterGltf, preloadAlsCharacterGltf } from './AlsCharacterGltf'
 
 export function useAlsCharacterGltf(url = ALS_CHARACTER_URL) {
   const [gltf, setGltf] = useState<GLTF>()
@@ -15,7 +15,7 @@ export function useAlsCharacterGltf(url = ALS_CHARACTER_URL) {
       setStatus('loading')
       setProgress(undefined)
       try {
-        const loadedGltf = await loadAlsCharacterGltf(url, {
+        const loadedGltf = await preloadAlsCharacterGltf(url, {
           signal: controller.signal,
           onProgress: setProgress,
         })
@@ -38,9 +38,10 @@ export function useAlsCharacterGltf(url = ALS_CHARACTER_URL) {
   }, [attempt, url])
 
   const retry = useCallback(() => {
+    clearAlsCharacterGltf(url)
     setGltf(undefined)
     setAttempt((value) => value + 1)
-  }, [])
+  }, [url])
 
   return { gltf, status, progress, retry }
 }

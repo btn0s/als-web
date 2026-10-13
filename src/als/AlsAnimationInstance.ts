@@ -1,5 +1,14 @@
+import { inspectPoseFinite } from '../engine/poseDiagnostics'
+import { createConsumerUpperBodySlot } from './AnimGraph/consumerUpperBodySlot'
+import { createConsumerOverlayStates, type ConsumerOverlayStates } from './AnimGraph/consumerOverlayStates'
 import { ALS_GETTING_UP_MONTAGES, createAlsGettingUpSlotMontageRequest, type AlsGettingUpMontage } from './AnimGraph/gettingUp'
 import { createAlsRagdollPose, type AlsRagdollPose } from '../engine/alsRagdollPose'
+import { PISTOL_OVERLAY_MODES, isPistolOverlayMode } from './AnimGraph/overlayMode'
+import {
+  createAlsPistolRuntime, evaluateAlsPistolGraph, refreshAlsPistolRuntime,
+  resetAlsPistolRuntime, type AlsPistolFullSources,
+} from './AnimGraph/AB_Als_PistolTwoHanded'
+import { createAlsPistolOneHandedRuntime, evaluateAlsPistolOneHandedGraph } from './AnimGraph/AB_Als_PistolOneHanded'
 import { assertAlsAnimationExtras } from './reference/animationExtrasSequences'
 import * as THREE from 'three'
 import type { AlphaBlendOption } from '../engine/alphaBlend'
@@ -57,6 +66,7 @@ import {
 } from '../engine/inertializationOutput'
 import {
   copyPose,
+  type LocalPoseBuffer,
   createPoseBuffer,
   resetPoseToAdditiveIdentity,
 } from '../engine/poseBuffer'
@@ -845,9 +855,20 @@ export interface AlsGetUpMontageBridge {
   takeNotifyEvents(): readonly AlsGetUpMontageNotifyEvent[]
 }
 export interface AlsAnimationInstance {
+  /** Borrowed diagnostic buffers, valid until the next refresh. Do not mutate. */
+  inspectPose(stage: 'overlay' | 'locomotion' | 'final'): {
+    boneNames: readonly string[]
+    pose: LocalPoseBuffer
+    curves: ReadonlyMap<string, number>
+  }
   readonly getUpMontage: AlsGetUpMontageBridge
   readonly ragdolling: AlsRagdollPose
   StopMontages: (blendOutDuration: number) => void
+  /** Read-only action presentation clocks for snapshot recording. */
+  getRollingSnapshot: () => { position: number; playRate: number } | undefined
+  setRollingPosition: (position: number) => void
+  /** Read-only mantle presentation clock for snapshot recording. */
+  getMantlingSnapshot: () => { settings: string; position: number } | undefined
   playClip: (name: string | null) => boolean
   clearSoloClip: () => void
   /**
@@ -1244,8 +1265,11 @@ function compileRollSequenceNotifyTrack(
 export function createAlsAnimationInstance(gltf: {
   animations: THREE.AnimationClip[]
   scene: THREE.Object3D
+  overlayStates?: ConsumerOverlayStates
   /** Optional normalized marker override; regular GLTF loads consume clip.userData.syncMarkers. */
   syncMarkers?: SyncMarkerTable
+  /** Only the locally inspected actor owns the standalone global diagnostics. */
+  publishDiagnostics?: boolean
   /** Backend adapter for UAlsAnimationInstance::RefreshGroundPrediction(). */
   groundPredictionSweep?: AlsGroundPredictionCapsuleSweep
   /** Backend adapter for CR_Als FAlsRigUnit_FootOffsetTrace. */
@@ -1964,6 +1988,8 @@ export function createAlsAnimationInstance(gltf: {
         evaluator.referencePose,
       )
     : undefined
+  const customOverlays = createConsumerOverlayStates(rig, gltf.animations, gltf.overlayStates, quickFeetBlendProfile)
+  const upperBodySlot = createConsumerUpperBodySlot(rig, gltf.overlayStates)
   const rifleRuntime = createAlsRifleRuntime(
     rig,
     quickFeetBlendProfile,
@@ -2046,6 +2072,36 @@ export function createAlsAnimationInstance(gltf: {
           additiveSpace: idleAdditiveMetadata.additiveSpace,
         }
       : undefined
+  const pistolOverlays = Object.fromEntries(PISTOL_OVERLAY_MODES.map((mode) => {
+    const runtime = mode === 'PistolTwoHanded'
+      ? createAlsPistolRuntime(rig, quickFeetBlendProfile)
+      : createAlsPistolOneHandedRuntime(rig, quickFeetBlendProfile)
+    const poses = clipsByName.get(`A_Als_${mode}_Poses`)
+    const aim = clipsByName.get(`A_Als_${mode}_Aim`)
+    const aimCrouch = clipsByName.get(`A_Als_${mode}_Aim_Crouch`)
+    const aimReference = clipsByName.get(`A_Als_${mode}_Poses_NoCurves`)
+    const sources: AlsPistolFullSources | undefined = poses && aim && aimCrouch
+      && aimReference && idleAdditiveClip && standPose
+      ? {
+          poses, aim, aimCrouch, aimReference,
+          idle: { ...idleAdditiveClip, time: 0, loop: true },
+          idleReference: standPose,
+        }
+      : undefined
+    for (const [clip, frame] of [
+      [aim, runtime.graph.aiming.standingAimReferenceFrame],
+      [aimCrouch, runtime.graph.aiming.crouchingAimReferenceFrame],
+    ] as const) {
+      if (!clip) continue
+      const metadata = compileAuthoredAdditive(clip.sampler.clip)
+      if (metadata?.additiveSpace !== 'mesh'
+        || metadata.refPoseSeq !== `A_Als_${mode}_Poses_NoCurves`
+        || metadata.refFrameIndex !== frame) {
+        throw new Error(`${mode} aim metadata differs from ALS`)
+      }
+    }
+    return [mode, { runtime, sources }] as const
+  }))
   const rifleAimMetadata = rifleAimClip
     ? compileAuthoredAdditive(rifleAimClip.sampler.clip)
     : undefined
@@ -2177,6 +2233,7 @@ export function createAlsAnimationInstance(gltf: {
     && defaultOverlayGraphRuntime !== undefined
     && rifleOverlaySources.length === Object.keys(RIFLE_OVERLAY_CLIPS).length
     && rifleSources !== undefined
+    && PISTOL_OVERLAY_MODES.every((mode) => pistolOverlays[mode].sources !== undefined)
     && idleAdditiveEntry !== undefined
     && locomotionPoseGraphSourceComplete
   const locomotionRoles = (Object.keys(CLIP_ROLES) as ClipRole[]).filter(
@@ -2520,6 +2577,28 @@ export function createAlsAnimationInstance(gltf: {
       overlay: overlayInertialization,
     },
     overlayGraph(context) {
+      const custom = customOverlays.get(activeOverlayMode)
+      if (custom && activeRifleGraphInput) {
+        const result = custom.evaluate(activeRifleGraphInput)
+        copyPose(result.pose, context.outputPose)
+        context.outputCurves.clear()
+        for (const [name, value] of result.curves) context.outputCurves.set(name, value)
+        return
+      }
+      if (isPistolOverlayMode(activeOverlayMode) && activeRifleGraphInput) {
+        const { runtime, sources } = pistolOverlays[activeOverlayMode]
+        if (sources) {
+          // Secondary Motion uses the same clock as the authored Idle player.
+          const timedSources = { ...sources, idle: { ...sources.idle, time: idleAdditiveClip?.time ?? 0 } }
+          const result = activeOverlayMode === 'PistolTwoHanded'
+            ? evaluateAlsPistolGraph(runtime, activeRifleGraphInput, timedSources)
+            : evaluateAlsPistolOneHandedGraph(runtime, activeRifleGraphInput, timedSources)
+          copyPose(result.pose, context.outputPose)
+          context.outputCurves.clear()
+          for (const [name, value] of result.curves) context.outputCurves.set(name, value)
+          return
+        }
+      }
       if (
         activeOverlayMode === 'Rifle'
         && rifleSources
@@ -2558,6 +2637,7 @@ export function createAlsAnimationInstance(gltf: {
           overlayPose: context.overlayPose,
           basePose: layeringReference,
           curves: publishedCurves,
+          regionSlots: upperBodySlot.evaluate({ pose: context.overlayPose, curves: overlayInertialization.curves }),
         },
         context.outputPose,
       )
@@ -2586,6 +2666,7 @@ export function createAlsAnimationInstance(gltf: {
         postLocomotionSlotCurveScratch,
         overlayInertialization.curves,
         output,
+        upperBodySlot.curves(overlayInertialization.curves),
       )
     },
   }
@@ -3021,8 +3102,9 @@ export function createAlsAnimationInstance(gltf: {
 
   function processRifleLifecycleEvents(
     controls: AlsAnimationInstanceControls,
+    events = rifleRuntime.lifecycleEvents,
   ) {
-    for (const event of rifleRuntime.lifecycleEvents) {
+    for (const event of events) {
       if (
         event.kind !== 'AnimNotify'
         || (
@@ -4789,6 +4871,7 @@ export function createAlsAnimationInstance(gltf: {
     deltaTime: number,
     captureControlRigComponentPositions = false,
   ) {
+    if (import.meta.env.DEV) inspectPoseFinite("layering", result.pose, rig.boneNames)
     const finalCurves = result.curves.values
     if (controlRigRuntime && feetPoseBridge) {
       evaluateAlsControlRigForwardSolve(controlRigRuntime, {
@@ -4810,6 +4893,7 @@ export function createAlsAnimationInstance(gltf: {
     }
 
     ragdolling.evaluate(result.pose, deltaTime)
+    if (import.meta.env.DEV) inspectPoseFinite("control-rig", result.pose, rig.boneNames)
     applyPose(applicator, result.pose)
     publishedCurves.clear()
     for (const [name, value] of finalCurves) {
@@ -5048,7 +5132,7 @@ export function createAlsAnimationInstance(gltf: {
         debugWeights.inertializationRequestCount =
           inertializationRequestCount()
       }
-      if (gltf.exposeDebugGlobals !== false) window.__weightTable = debugWeights
+      if (gltf.exposeDebugGlobals !== false && gltf.publishDiagnostics !== false) window.__weightTable = debugWeights
       // Controls may change while the normal graph is dormant. The solo transition request owns
       // the eventual handoff, so do not emit a second overlay request on the first resumed frame.
       previousOverlayMode = controls.overlayMode
@@ -5124,7 +5208,7 @@ export function createAlsAnimationInstance(gltf: {
         debugWeights.inertializationRequestCount =
           inertializationRequestCount()
       }
-      if (gltf.exposeDebugGlobals !== false) window.__weightTable = debugWeights
+      if (gltf.exposeDebugGlobals !== false && gltf.publishDiagnostics !== false) window.__weightTable = debugWeights
       nativePostUpdateAnimation()
       return
     }
@@ -5768,6 +5852,10 @@ export function createAlsAnimationInstance(gltf: {
       previousOverlayMode = controls.overlayMode
     } else if (controls.overlayMode !== previousOverlayMode) {
       previousOverlayMode = controls.overlayMode
+      customOverlays.get(controls.overlayMode)?.reset()
+      if (isPistolOverlayMode(controls.overlayMode)) {
+        resetAlsPistolRuntime(pistolOverlays[controls.overlayMode].runtime)
+      }
       if (controls.overlayMode === 'Rifle') {
         resetAlsRifleRuntime(rifleRuntime)
       }
@@ -5816,8 +5904,41 @@ export function createAlsAnimationInstance(gltf: {
         rightAmount: velocityBlend.rightAmount,
       },
     }
+    upperBodySlot.update(delta, !!controls.locomotionAction, controls.overlayMode)
     refreshAlsRifleRuntime(rifleRuntime, activeRifleGraphInput)
     processRifleLifecycleEvents(controls)
+    for (const mode of PISTOL_OVERLAY_MODES) {
+      const { runtime } = pistolOverlays[mode]
+      refreshAlsPistolRuntime(runtime, {
+        ...activeRifleGraphInput,
+        relevant: controls.overlayMode === mode,
+      })
+      // Pistol notifies call PlayTransitionRightAnimation with authored rates,
+      // start time 0.3, and bFromStandingIdleOnly=true (pistol-content.json).
+      for (const event of runtime.lifecycleEvents) {
+        if (controls.stance !== 'Standing' || controls.moving) continue
+        if (!standingTransitionRightClip) continue
+        queueTransitionAnimation(transitionsState, {
+          clip: standingTransitionRightClip.sampler.clip.name,
+          blendInDuration: 0.2,
+          blendOutDuration: 0.2,
+          playRate: event.name === 'RelaxedToReady' ? 1.75 : 1.5,
+          startTime: 0.3,
+        })
+      }
+    }
+    for (const [mode, overlay] of customOverlays) {
+      overlay.update({ ...activeRifleGraphInput, relevant: mode === controls.overlayMode })
+      if (overlay.template === 'Rifle') processRifleLifecycleEvents(controls, overlay.runtime.lifecycleEvents)
+      else for (const event of overlay.runtime.lifecycleEvents) {
+        if (controls.stance !== 'Standing' || controls.moving || !standingTransitionRightClip) continue
+        queueTransitionAnimation(transitionsState, {
+          clip: standingTransitionRightClip.sampler.clip.name,
+          blendInDuration: 0.2, blendOutDuration: 0.2,
+          playRate: event.name === 'RelaxedToReady' ? 1.75 : 1.5, startTime: 0.3,
+        })
+      }
+    }
     const rifleGraphState = rifleRuntime.relaxed.state
 
     for (const source of rifleOverlaySources) {
@@ -6048,6 +6169,9 @@ export function createAlsAnimationInstance(gltf: {
         ? 0
         : overlayLocomotionMembers.get(source)?.time ?? 0
     }
+    const movementPhase = syncResult.leader && syncResult.leader.duration > 0
+      ? syncResult.leader.time / syncResult.leader.duration : 0
+    for (const overlay of customOverlays.values()) overlay.setTime(movementPhase, idleAdditiveClip?.time ?? 0)
     if (rifleSources) {
       rifleSources.runArms.time =
         rifleRunArmsSource?.time ?? 0
@@ -7415,7 +7539,7 @@ export function createAlsAnimationInstance(gltf: {
           finalCurves.get(layer.localSpaceCurve) ?? 0
       }
     }
-    if (gltf.exposeDebugGlobals !== false) window.__weightTable = normalDebugWeights
+    if (gltf.exposeDebugGlobals !== false && gltf.publishDiagnostics !== false) window.__weightTable = normalDebugWeights
     if (
       groundedStanceTransitionSource
       && !groundedStanceTransitionState.active
@@ -7426,12 +7550,18 @@ export function createAlsAnimationInstance(gltf: {
   }
 
   return {
+    inspectPose: (stage) => ({
+      boneNames: rig.boneNames,
+      pose: stage === 'overlay' ? evaluator.overlayPose : stage === 'locomotion' ? evaluator.basePose : evaluator.outputPose,
+      curves: stage === 'overlay' ? overlayInertialization.curves : stage === 'locomotion' ? postLocomotionSlotCurveScratch : publishedCurves,
+    }),
     ragdolling,
     getUpMontage: {
       Montage_Play: playGetUpMontage,
       takeNotifyEvents: () => pendingGetUpNotifyEvents.splice(0),
     },
     StopMontages: (duration) => {
+      upperBodySlot.stop(duration)
       const mantle = getActiveMantlingMontageInstance()
       if (mantle) stopActiveMantlingMontage(mantle.sample.instanceId, duration)
       for (const slotName of [POST_LOCOMOTION_SLOT_NAME, TRANSITION_SLOT_NAME,
@@ -7445,6 +7575,25 @@ export function createAlsAnimationInstance(gltf: {
     setHipsDirection,
     SetGroundedEntryMode,
     jump,
+    getRollingSnapshot: () => {
+      const active = slotMontageClock.activeByGroup.get(LOCOMOTION_SLOT_GROUP_NAME)
+      return active && rollingMontageInstances.has(active.sample.instanceId) ? {
+        position: active.sample.montageTime, playRate: active.request.playRate,
+      } : undefined
+    },
+    setRollingPosition: (position) => {
+      const active = slotMontageClock.activeByGroup.get(LOCOMOTION_SLOT_GROUP_NAME)
+      if (active && rollingMontageInstances.has(active.sample.instanceId)) {
+        setSlotMontagePosition(slotMontageClock, active.sample.instanceId, position)
+      }
+    },
+    getMantlingSnapshot: () => {
+      const instance = getActiveMantlingMontageInstance()
+      return instance ? {
+        settings: instance.settings.Name,
+        position: instance.sample.montageTime,
+      } : undefined
+    },
     getCurveValue: (name) => publishedCurves.get(name) ?? 0,
     dispatchQueuedAnimEvents,
     dispatchQueuedFootstepEffectsEvents,

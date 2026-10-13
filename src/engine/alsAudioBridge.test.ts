@@ -468,3 +468,41 @@ describe('ALS browser footstep audio bridge', () => {
     expect(runtime.PendingRequestCount).toBe(0)
   })
 })
+
+it('decodes every footstep during suspended-context preloading without resuming audio', async () => {
+  const context = new FakeAudioContext()
+  const fetched: string[] = []
+  const runtime = new AlsFootstepAudioRuntime({
+    AudioContextFactory: () => context as unknown as AudioContext,
+    Fetch: createFetch(fetched),
+    AssetBaseUrl: '/footsteps/',
+  })
+  await runtime.Preload()
+  expect(fetched).toHaveLength(8)
+  expect(context.decodedBuffers).toHaveLength(8)
+  expect(context.resumeCount).toBe(0)
+  expect(runtime.IsUnlocked).toBe(false)
+  await runtime.Preload()
+  expect(fetched).toHaveLength(8)
+  await runtime.Dispose()
+})
+
+it('can retry a failed loading-screen footstep fetch', async () => {
+  const context = new FakeAudioContext()
+  const fetched: string[] = []
+  let offline = true
+  const success = createFetch(fetched)
+  const runtime = new AlsFootstepAudioRuntime({
+    AudioContextFactory: () => context as unknown as AudioContext,
+    AssetBaseUrl: '/footsteps/',
+    Fetch: async (input, init) => {
+      if (offline) throw new Error('offline')
+      return success(input, init)
+    },
+  })
+  await expect(runtime.Preload()).rejects.toThrow('Footstep decode failed')
+  offline = false
+  await runtime.Preload()
+  expect(fetched).toHaveLength(8)
+  await runtime.Dispose()
+})

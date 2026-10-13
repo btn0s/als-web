@@ -39,10 +39,24 @@ const PROPERTY_SIZES: Record<TransformProperty, number> = {
   scale: 3,
 }
 
+const bindingCache = new WeakMap<THREE.AnimationClip, Map<string, readonly CompiledTrackBinding[]>>()
+
+export function precompileClipSamplers(clips: readonly THREE.AnimationClip[], rig: RigDefinition): void {
+  for (const clip of clips) compileClipSampler(clip, rig)
+}
+
 export function compileClipSampler(
   clip: THREE.AnimationClip,
   rig: RigDefinition,
 ): CompiledClipSampler {
+  const signature = JSON.stringify(rig.boneNames)
+  let cached = bindingCache.get(clip)
+  const existing = cached?.get(signature)
+  if (existing) return {
+    clip,
+    bindings: existing,
+    virtualBoneScratch: rig.virtualBones.length > 0 ? createVirtualBonePoseScratch(rig.boneCount) : null,
+  }
   const indices = new Map(rig.boneNames.map((name, index) => [name, index]))
   const bindings: CompiledTrackBinding[] = []
 
@@ -66,6 +80,11 @@ export function compileClipSampler(
     })
   }
 
+  if (!cached) {
+    cached = new Map()
+    bindingCache.set(clip, cached)
+  }
+  cached.set(signature, bindings)
   return {
     clip,
     bindings,

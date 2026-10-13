@@ -117,5 +117,7 @@
   "A_Als_Torch_Aim_Crouch",
   "A_Als_Look_Down",
   "A_Als_Look_Forward",
-  "A_Als_Look_Up"
+  "A_Als_Look_Up",
+  "A_Als_PistolTwoHanded_Poses_NoCurves",
+  "A_Als_PistolOneHanded_Poses_NoCurves"
 ]
