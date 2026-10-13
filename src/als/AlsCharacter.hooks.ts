@@ -1206,6 +1206,7 @@ export function useAlsCharacter(
   gaitSpeedOverrides?: AlsGaitSpeedOverrides,
   instanceId = 'Character',
   gamepadRollBehavior: 'tap' | 'doubleTap' = 'tap',
+  showDebugControls = true,
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1282,7 +1283,7 @@ export function useAlsCharacter(
         },
       }, { collapsed: true }),
     }),
-    { order: 1 },
+    { order: 1, render: () => showDebugControls },
   )
 
   const character = useRef(createAlsCharacter({ settings: { Ragdolling: { ...ALS_RAGDOLLING_SETTINGS, ...ragdollingSettings } }, gaitSpeedOverrides }))

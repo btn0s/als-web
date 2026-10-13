@@ -119,6 +119,7 @@ export interface CharacterProps {
   gamepadEnabled?: boolean
   gamepadIndex?: number
   gamepadRollBehavior?: 'tap' | 'doubleTap'
+  showDebugControls?: boolean
 }
 
 function compileAlsMantlingRootMotion(
@@ -233,6 +234,7 @@ function LoadedCharacter({
   initialPosition,
   tint,
   gamepadRollBehavior,
+  showDebugControls,
 }: {
   gltf: GLTF
   ragdollRef?: CharacterProps['ragdollRef']
@@ -249,6 +251,7 @@ function LoadedCharacter({
   gamepadBindings: CharacterProps['gamepadBindings']
   gamepadEnabled: CharacterProps['gamepadEnabled']
   gamepadIndex: CharacterProps['gamepadIndex']
+  showDebugControls: CharacterProps['showDebugControls']
   inputSource: CharacterProps['inputSource']
   inputEnabled: CharacterProps['inputEnabled']
   exposeDebugGlobals: CharacterProps['exposeDebugGlobals']
@@ -484,6 +487,7 @@ function LoadedCharacter({
     gaitSpeedOverrides,
     instanceId,
     gamepadRollBehavior,
+    showDebugControls,
   )
   useEffect(() => {
     onOverlayModeBridgeChange({
@@ -634,6 +638,7 @@ export function Character({
   initialPosition,
   tint,
   gamepadRollBehavior,
+  showDebugControls,
 }: CharacterProps) {
   const { gltf, status, progress, retry } = useAlsCharacterGltf()
 
@@ -666,6 +671,7 @@ export function Character({
       initialPosition={initialPosition}
       tint={tint}
       gamepadRollBehavior={gamepadRollBehavior}
+      showDebugControls={showDebugControls}
     />
   ) : (
     <CharacterLoadState status={status} progress={progress} retry={retry} />
