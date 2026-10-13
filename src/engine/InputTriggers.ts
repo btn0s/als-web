@@ -217,6 +217,7 @@ export class UInputTriggerDoubleTap extends UInputTriggerTap {
     if (this.isActuated(value) && !this.isActuated(this.LastValue)) {
       this.secondTap = this.firstTap && this.sinceTap < this.TapReleaseTimeThreshold
       this.firstTap = false
+      if (!this.secondTap) this.sinceTap = 0
     }
     const state = super.updateStateImplementation(value, deltaTime)
     if (state === 'Triggered') {
@@ -227,7 +228,6 @@ export class UInputTriggerDoubleTap extends UInputTriggerTap {
         return 'Triggered'
       }
       this.firstTap = true
-      this.sinceTap = 0
       return 'None'
     }
     if (this.HeldDuration >= this.TapReleaseTimeThreshold) {
