@@ -1,3 +1,4 @@
+import { inspectPoseFinite } from '../engine/poseDiagnostics'
 import { createConsumerUpperBodySlot } from './AnimGraph/consumerUpperBodySlot'
 import { createConsumerOverlayStates, type ConsumerOverlayStates } from './AnimGraph/consumerOverlayStates'
 import { ALS_GETTING_UP_MONTAGES, createAlsGettingUpSlotMontageRequest, type AlsGettingUpMontage } from './AnimGraph/gettingUp'
@@ -4869,6 +4870,7 @@ export function createAlsAnimationInstance(gltf: {
     deltaTime: number,
     captureControlRigComponentPositions = false,
   ) {
+    if (import.meta.env.DEV) inspectPoseFinite("layering", result.pose, rig.boneNames)
     const finalCurves = result.curves.values
     if (controlRigRuntime && feetPoseBridge) {
       evaluateAlsControlRigForwardSolve(controlRigRuntime, {
@@ -4890,6 +4892,7 @@ export function createAlsAnimationInstance(gltf: {
     }
 
     ragdolling.evaluate(result.pose, deltaTime)
+    if (import.meta.env.DEV) inspectPoseFinite("control-rig", result.pose, rig.boneNames)
     applyPose(applicator, result.pose)
     publishedCurves.clear()
     for (const [name, value] of finalCurves) {
