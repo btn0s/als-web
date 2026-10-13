@@ -1767,7 +1767,7 @@ export function useAlsCharacter(
     const body = rigidBody.current
     if (!body) return
     const ragdollValue =
-      pressedKeys.current.has('KeyX') || sampleGamepad(gamepadInput.current).ragdoll
+      pressedKeys.current.has('KeyX') || sampleGamepad(gamepadInput.current, gamepadBindings, gamepadEnabled, gamepadIndex).ragdoll
     const ragdollTick = ragdollAction.current.update(
       ragdollValue,
       ALS_PHYSICS_TIMESTEP,
