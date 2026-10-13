@@ -1,0 +1,4673 @@
+{
+  "schemaVersion": 1,
+  "assets": {
+    "AB_Als_PistolTwoHanded": {
+      "source": {
+        "asset": "AB_Als_PistolTwoHanded",
+        "engineVersion": "UE5.5",
+        "parser": "UAssetAPI 1.1.0",
+        "binaryEqualityVerified": true
+      },
+      "bindings": [
+        {
+          "node": "AlsAnimGraphNode_GameplayTagsBlend'AB_Als_PistolTwoHanded:Overlay.AlsAnimGraphNode_GameplayTagsBlend_1'",
+          "bindings": {
+            "ActiveTag": [
+              "GetParent",
+              "LocomotionAction"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_MultiWayBlend'AB_Als_PistolTwoHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_13.Ready.AnimGraphNode_MultiWayBlend_0'",
+          "bindings": {
+            "DesiredAlphas_0": [
+              "GetParent",
+              "PoseState",
+              "StandingAmount"
+            ],
+            "DesiredAlphas_1": [
+              "GetParent",
+              "PoseState",
+              "CrouchingAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_TwoWayBlend'AB_Als_PistolTwoHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_13.Ready.AnimGraphNode_TwoWayBlend_1'",
+          "bindings": {
+            "Alpha": [
+              "GetParent",
+              "PoseState",
+              "GaitWalkingAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_MultiWayBlend'AB_Als_PistolTwoHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_2.Relaxed.AnimGraphNode_MultiWayBlend_0'",
+          "bindings": {
+            "DesiredAlphas_0": [
+              "GetParent",
+              "PoseState",
+              "StandingAmount"
+            ],
+            "DesiredAlphas_1": [
+              "GetParent",
+              "PoseState",
+              "CrouchingAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_TwoWayBlend'AB_Als_PistolTwoHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_2.Relaxed.AnimGraphNode_TwoWayBlend_1'",
+          "bindings": {
+            "Alpha": [
+              "GetParent",
+              "PoseState",
+              "GaitWalkingAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_TwoWayBlend'AB_Als_PistolTwoHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_2.Relaxed.AnimGraphNode_TwoWayBlend_4'",
+          "bindings": {
+            "Alpha": [
+              "GetParent",
+              "PoseState",
+              "GaitSprintingAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_MultiWayBlend'AB_Als_PistolTwoHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_9.Aiming.AnimGraphNode_MultiWayBlend_0'",
+          "bindings": {
+            "DesiredAlphas_0": [
+              "GetParent",
+              "PoseState",
+              "StandingAmount"
+            ],
+            "DesiredAlphas_1": [
+              "GetParent",
+              "PoseState",
+              "CrouchingAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_SequenceEvaluator'AB_Als_PistolTwoHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_9.Aiming.AnimGraphNode_SequenceEvaluator_4'",
+          "bindings": {
+            "ExplicitTime": [
+              "GetParent",
+              "ViewState",
+              "PitchAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_SequenceEvaluator'AB_Als_PistolTwoHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_9.Aiming.AnimGraphNode_SequenceEvaluator_5'",
+          "bindings": {
+            "ExplicitTime": [
+              "GetParent",
+              "ViewState",
+              "PitchAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_TwoWayBlend'AB_Als_PistolTwoHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_9.Aiming.AnimGraphNode_TwoWayBlend_1'",
+          "bindings": {
+            "Alpha": [
+              "GetParent",
+              "PoseState",
+              "GaitWalkingAmount"
+            ]
+          }
+        }
+      ],
+      "functions": {
+        "AnimGraph": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_Let",
+              "Value": {
+                "$type": "KismetPropertyPointer",
+                "New": {
+                  "$type": "FFieldPath",
+                  "Path": [
+                    "AnimGraph"
+                  ]
+                }
+              },
+              "Variable": {
+                "$type": "EX_LocalOutVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "AnimGraph"
+                    ]
+                  }
+                }
+              },
+              "Expression": {
+                "$type": "EX_StructConst",
+                "Struct": -135,
+                "StructSize": 24,
+                "Value": [
+                  {
+                    "$type": "EX_IntConst",
+                    "Value": -1
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 40,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 41,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 43,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "AnimNotify_ReadyToRelaxed": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 144,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1325
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "AnimNotify_RelaxedToReady": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 144,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1243
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_PistolTwoHanded_AnimGraphNode_TransitionResult_098C56D74319C3B8E23B4AAECC6E6F38": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 144,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1236
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_PistolTwoHanded_AnimGraphNode_TransitionResult_4CA900534C8BE28977054D8B7F977AE1": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 144,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1229
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_PistolTwoHanded_AnimGraphNode_TransitionResult_5AE8A8EC4D3C39909AE3B6B99E096206": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 144,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1215
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_PistolTwoHanded_AnimGraphNode_TransitionResult_7F383C544F722FEA3DDA9A940DEB8C1E": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 144,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1073
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_PistolTwoHanded_AnimGraphNode_TransitionResult_8735FCF54EC19B58A7E50F91DE812E59": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 144,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1222
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_PistolTwoHanded_AnimGraphNode_TransitionResult_97FDF4004F3C1326BFA631B048DB0559": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 144,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1080
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "ExecuteUbergraph_AB_Als_PistolTwoHanded": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_ComputedJump",
+              "CodeOffsetExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "EntryPoint"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 10,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 30,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 31,
+            "expression": {
+              "$type": "EX_Context",
+              "ObjectExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "Offset": 31,
+              "ContextExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "PlayTransitionRightAnimation",
+                "Parameters": [
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 0.20000000298023224
+                  },
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 0.20000000298023224
+                  },
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 1.5
+                  },
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 0.30000001192092896
+                  },
+                  {
+                    "$type": "EX_True"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 84,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 85,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 90,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_1"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 110,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_NotEqual_GameplayTag_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "NotEqual_GameplayTag",
+                "Parameters": [
+                  {
+                    "$type": "EX_Context",
+                    "ObjectExpression": {
+                      "$type": "EX_LocalVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "CallFunc_GetParent_ReturnValue_1"
+                          ]
+                        }
+                      }
+                    },
+                    "Offset": 9,
+                    "ContextExpression": {
+                      "$type": "EX_InstanceVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "RotationMode"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_StructConst",
+                    "Struct": -136,
+                    "StructSize": 12,
+                    "Value": [
+                      {
+                        "$type": "EX_NameConst",
+                        "Value": "Als.RotationMode.Aiming"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 188,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 189,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_StructMemberContext",
+                "StructMemberExpression": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "bCanEnterTransition"
+                    ]
+                  }
+                },
+                "StructExpression": {
+                  "$type": "EX_InstanceVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "AnimGraphNode_TransitionResult_1"
+                      ]
+                    }
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_NotEqual_GameplayTag_ReturnValue"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 217,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 218,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 223,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_3"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 243,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_EqualEqual_GameplayTag_ReturnValue_1"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "EqualEqual_GameplayTag",
+                "Parameters": [
+                  {
+                    "$type": "EX_Context",
+                    "ObjectExpression": {
+                      "$type": "EX_LocalVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "CallFunc_GetParent_ReturnValue_3"
+                          ]
+                        }
+                      }
+                    },
+                    "Offset": 9,
+                    "ContextExpression": {
+                      "$type": "EX_InstanceVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "RotationMode"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_StructConst",
+                    "Struct": -136,
+                    "StructSize": 12,
+                    "Value": [
+                      {
+                        "$type": "EX_NameConst",
+                        "Value": "Als.RotationMode.Aiming"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 321,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 322,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_StructMemberContext",
+                "StructMemberExpression": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "bCanEnterTransition"
+                    ]
+                  }
+                },
+                "StructExpression": {
+                  "$type": "EX_InstanceVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "AnimGraphNode_TransitionResult_4"
+                      ]
+                    }
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_EqualEqual_GameplayTag_ReturnValue_1"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 350,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 351,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 356,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_4"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 376,
+            "expression": {
+              "$type": "EX_Let",
+              "Value": {
+                "$type": "KismetPropertyPointer",
+                "New": {
+                  "$type": "FFieldPath",
+                  "Path": [
+                    "CallFunc_GetInstanceCurrentStateElapsedTime_ReturnValue"
+                  ]
+                }
+              },
+              "Variable": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetInstanceCurrentStateElapsedTime_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "Expression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetInstanceCurrentStateElapsedTime",
+                "Parameters": [
+                  {
+                    "$type": "EX_IntConst",
+                    "Value": 8
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 409,
+            "expression": {
+              "$type": "EX_Let",
+              "Value": {
+                "$type": "KismetPropertyPointer",
+                "New": {
+                  "$type": "FFieldPath",
+                  "Path": []
+                }
+              },
+              "Variable": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GreaterEqual_DoubleDouble_A_ImplicitCast"
+                    ]
+                  }
+                }
+              },
+              "Expression": {
+                "$type": "EX_PrimitiveCast",
+                "ConversionType": 4,
+                "Target": {
+                  "$type": "EX_LocalVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "CallFunc_GetInstanceCurrentStateElapsedTime_ReturnValue"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 438,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GreaterEqual_DoubleDouble_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "GreaterEqual_DoubleDouble",
+                "Parameters": [
+                  {
+                    "$type": "EX_LocalVariable",
+                    "Variable": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "CallFunc_GreaterEqual_DoubleDouble_A_ImplicitCast"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_DoubleConst",
+                    "Value": 3
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 476,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_BooleanAND_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "BooleanAND",
+                "Parameters": [
+                  {
+                    "$type": "EX_StructMemberContext",
+                    "StructMemberExpression": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "bTransitionsAllowed"
+                        ]
+                      }
+                    },
+                    "StructExpression": {
+                      "$type": "EX_Context",
+                      "ObjectExpression": {
+                        "$type": "EX_LocalVariable",
+                        "Variable": {
+                          "$type": "KismetPropertyPointer",
+                          "New": {
+                            "$type": "FFieldPath",
+                            "Path": [
+                              "CallFunc_GetParent_ReturnValue_4"
+                            ]
+                          }
+                        }
+                      },
+                      "Offset": 9,
+                      "ContextExpression": {
+                        "$type": "EX_InstanceVariable",
+                        "Variable": {
+                          "$type": "KismetPropertyPointer",
+                          "New": {
+                            "$type": "FFieldPath",
+                            "Path": [
+                              "TransitionsState"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_LocalVariable",
+                    "Variable": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "CallFunc_GreaterEqual_DoubleDouble_ReturnValue"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 545,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 546,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_StructMemberContext",
+                "StructMemberExpression": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "bCanEnterTransition"
+                    ]
+                  }
+                },
+                "StructExpression": {
+                  "$type": "EX_InstanceVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "AnimGraphNode_TransitionResult_2"
+                      ]
+                    }
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_BooleanAND_ReturnValue"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 574,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 575,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 580,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_5"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 600,
+            "expression": {
+              "$type": "EX_Let",
+              "Value": {
+                "$type": "KismetPropertyPointer",
+                "New": {
+                  "$type": "FFieldPath",
+                  "Path": [
+                    "CallFunc_GetInstanceCurrentStateElapsedTime_ReturnValue_1"
+                  ]
+                }
+              },
+              "Variable": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetInstanceCurrentStateElapsedTime_ReturnValue_1"
+                    ]
+                  }
+                }
+              },
+              "Expression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetInstanceCurrentStateElapsedTime",
+                "Parameters": [
+                  {
+                    "$type": "EX_IntConst",
+                    "Value": 8
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 633,
+            "expression": {
+              "$type": "EX_Let",
+              "Value": {
+                "$type": "KismetPropertyPointer",
+                "New": {
+                  "$type": "FFieldPath",
+                  "Path": []
+                }
+              },
+              "Variable": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GreaterEqual_DoubleDouble_A_ImplicitCast_1"
+                    ]
+                  }
+                }
+              },
+              "Expression": {
+                "$type": "EX_PrimitiveCast",
+                "ConversionType": 4,
+                "Target": {
+                  "$type": "EX_LocalVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "CallFunc_GetInstanceCurrentStateElapsedTime_ReturnValue_1"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 662,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GreaterEqual_DoubleDouble_ReturnValue_1"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "GreaterEqual_DoubleDouble",
+                "Parameters": [
+                  {
+                    "$type": "EX_LocalVariable",
+                    "Variable": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "CallFunc_GreaterEqual_DoubleDouble_A_ImplicitCast_1"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_DoubleConst",
+                    "Value": 3
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 700,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_BooleanAND_ReturnValue_1"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "BooleanAND",
+                "Parameters": [
+                  {
+                    "$type": "EX_StructMemberContext",
+                    "StructMemberExpression": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "bMoving"
+                        ]
+                      }
+                    },
+                    "StructExpression": {
+                      "$type": "EX_Context",
+                      "ObjectExpression": {
+                        "$type": "EX_LocalVariable",
+                        "Variable": {
+                          "$type": "KismetPropertyPointer",
+                          "New": {
+                            "$type": "FFieldPath",
+                            "Path": [
+                              "CallFunc_GetParent_ReturnValue_5"
+                            ]
+                          }
+                        }
+                      },
+                      "Offset": 9,
+                      "ContextExpression": {
+                        "$type": "EX_InstanceVariable",
+                        "Variable": {
+                          "$type": "KismetPropertyPointer",
+                          "New": {
+                            "$type": "FFieldPath",
+                            "Path": [
+                              "LocomotionState"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_LocalVariable",
+                    "Variable": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "CallFunc_GreaterEqual_DoubleDouble_ReturnValue_1"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 769,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 770,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_StructMemberContext",
+                "StructMemberExpression": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "bCanEnterTransition"
+                    ]
+                  }
+                },
+                "StructExpression": {
+                  "$type": "EX_InstanceVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "AnimGraphNode_TransitionResult_3"
+                      ]
+                    }
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_BooleanAND_ReturnValue_1"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 798,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 799,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 804,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_2"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 824,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_EqualEqual_GameplayTag_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "EqualEqual_GameplayTag",
+                "Parameters": [
+                  {
+                    "$type": "EX_Context",
+                    "ObjectExpression": {
+                      "$type": "EX_LocalVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "CallFunc_GetParent_ReturnValue_2"
+                          ]
+                        }
+                      }
+                    },
+                    "Offset": 9,
+                    "ContextExpression": {
+                      "$type": "EX_InstanceVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "Gait"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_StructConst",
+                    "Struct": -136,
+                    "StructSize": 12,
+                    "Value": [
+                      {
+                        "$type": "EX_NameConst",
+                        "Value": "Als.Gait.Sprinting"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 902,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_6"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 922,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_EqualEqual_GameplayTag_ReturnValue_2"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "EqualEqual_GameplayTag",
+                "Parameters": [
+                  {
+                    "$type": "EX_Context",
+                    "ObjectExpression": {
+                      "$type": "EX_LocalVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "CallFunc_GetParent_ReturnValue_6"
+                          ]
+                        }
+                      }
+                    },
+                    "Offset": 9,
+                    "ContextExpression": {
+                      "$type": "EX_InstanceVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "LocomotionMode"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_StructConst",
+                    "Struct": -136,
+                    "StructSize": 12,
+                    "Value": [
+                      {
+                        "$type": "EX_NameConst",
+                        "Value": "Als.LocomotionMode.InAir"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 1000,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_BooleanOR_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "BooleanOR",
+                "Parameters": [
+                  {
+                    "$type": "EX_LocalVariable",
+                    "Variable": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "CallFunc_EqualEqual_GameplayTag_ReturnValue_2"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_LocalVariable",
+                    "Variable": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "CallFunc_EqualEqual_GameplayTag_ReturnValue"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 1038,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1039,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_StructMemberContext",
+                "StructMemberExpression": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "bCanEnterTransition"
+                    ]
+                  }
+                },
+                "StructExpression": {
+                  "$type": "EX_InstanceVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "AnimGraphNode_TransitionResult_5"
+                      ]
+                    }
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_BooleanOR_ReturnValue"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 1067,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1068,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 1073,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1074,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1075,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 804
+            }
+          },
+          {
+            "offset": 1080,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1081,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1082,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_7"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 1102,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_EqualEqual_GameplayTag_ReturnValue_3"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "EqualEqual_GameplayTag",
+                "Parameters": [
+                  {
+                    "$type": "EX_Context",
+                    "ObjectExpression": {
+                      "$type": "EX_LocalVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "CallFunc_GetParent_ReturnValue_7"
+                          ]
+                        }
+                      }
+                    },
+                    "Offset": 9,
+                    "ContextExpression": {
+                      "$type": "EX_InstanceVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "RotationMode"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_StructConst",
+                    "Struct": -136,
+                    "StructSize": 12,
+                    "Value": [
+                      {
+                        "$type": "EX_NameConst",
+                        "Value": "Als.RotationMode.Aiming"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 1180,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1181,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_StructMemberContext",
+                "StructMemberExpression": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "bCanEnterTransition"
+                    ]
+                  }
+                },
+                "StructExpression": {
+                  "$type": "EX_InstanceVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "AnimGraphNode_TransitionResult"
+                      ]
+                    }
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_EqualEqual_GameplayTag_ReturnValue_3"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 1209,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1210,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 1215,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1216,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1217,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 223
+            }
+          },
+          {
+            "offset": 1222,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1223,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1224,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 90
+            }
+          },
+          {
+            "offset": 1229,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1230,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1231,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 356
+            }
+          },
+          {
+            "offset": 1236,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1237,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1238,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 580
+            }
+          },
+          {
+            "offset": 1243,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1244,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1245,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_8"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 1265,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1266,
+            "expression": {
+              "$type": "EX_Context",
+              "ObjectExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_8"
+                    ]
+                  }
+                }
+              },
+              "Offset": 31,
+              "ContextExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "PlayTransitionRightAnimation",
+                "Parameters": [
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 0.20000000298023224
+                  },
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 0.20000000298023224
+                  },
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 1.75
+                  },
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 0.30000001192092896
+                  },
+                  {
+                    "$type": "EX_True"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 1319,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1320,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 1325,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1326,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1327,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 10
+            }
+          },
+          {
+            "offset": 1332,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 1334,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "Overlay": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_Let",
+              "Value": {
+                "$type": "KismetPropertyPointer",
+                "New": {
+                  "$type": "FFieldPath",
+                  "Path": [
+                    "Overlay"
+                  ]
+                }
+              },
+              "Variable": {
+                "$type": "EX_LocalOutVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "Overlay"
+                    ]
+                  }
+                }
+              },
+              "Expression": {
+                "$type": "EX_StructConst",
+                "Struct": -135,
+                "StructSize": 24,
+                "Value": [
+                  {
+                    "$type": "EX_IntConst",
+                    "Value": -1
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 40,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 41,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 43,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ]
+      }
+    },
+    "AB_Als_PistolOneHanded": {
+      "source": {
+        "asset": "AB_Als_PistolOneHanded",
+        "engineVersion": "UE5.5",
+        "parser": "UAssetAPI 1.1.0",
+        "binaryEqualityVerified": true
+      },
+      "bindings": [
+        {
+          "node": "AlsAnimGraphNode_GameplayTagsBlend'AB_Als_PistolOneHanded:Overlay.AlsAnimGraphNode_GameplayTagsBlend_0'",
+          "bindings": {
+            "ActiveTag": [
+              "GetParent",
+              "LocomotionAction"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_MultiWayBlend'AB_Als_PistolOneHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_13.Ready.AnimGraphNode_MultiWayBlend_0'",
+          "bindings": {
+            "DesiredAlphas_0": [
+              "GetParent",
+              "PoseState",
+              "StandingAmount"
+            ],
+            "DesiredAlphas_1": [
+              "GetParent",
+              "PoseState",
+              "CrouchingAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_TwoWayBlend'AB_Als_PistolOneHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_13.Ready.AnimGraphNode_TwoWayBlend_1'",
+          "bindings": {
+            "Alpha": [
+              "GetParent",
+              "PoseState",
+              "GaitWalkingAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_MultiWayBlend'AB_Als_PistolOneHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_2.Relaxed.AnimGraphNode_MultiWayBlend_0'",
+          "bindings": {
+            "DesiredAlphas_0": [
+              "GetParent",
+              "PoseState",
+              "StandingAmount"
+            ],
+            "DesiredAlphas_1": [
+              "GetParent",
+              "PoseState",
+              "CrouchingAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_TwoWayBlend'AB_Als_PistolOneHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_2.Relaxed.AnimGraphNode_TwoWayBlend_1'",
+          "bindings": {
+            "Alpha": [
+              "GetParent",
+              "PoseState",
+              "GaitWalkingAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_MultiWayBlend'AB_Als_PistolOneHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_9.Aiming.AnimGraphNode_MultiWayBlend_0'",
+          "bindings": {
+            "DesiredAlphas_0": [
+              "GetParent",
+              "PoseState",
+              "StandingAmount"
+            ],
+            "DesiredAlphas_1": [
+              "GetParent",
+              "PoseState",
+              "CrouchingAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_SequenceEvaluator'AB_Als_PistolOneHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_9.Aiming.AnimGraphNode_SequenceEvaluator_4'",
+          "bindings": {
+            "ExplicitTime": [
+              "GetParent",
+              "ViewState",
+              "PitchAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_SequenceEvaluator'AB_Als_PistolOneHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_9.Aiming.AnimGraphNode_SequenceEvaluator_5'",
+          "bindings": {
+            "ExplicitTime": [
+              "GetParent",
+              "ViewState",
+              "PitchAmount"
+            ]
+          }
+        },
+        {
+          "node": "AnimGraphNode_TwoWayBlend'AB_Als_PistolOneHanded:Overlay.AnimGraphNode_StateMachine_0.Pistol States.AnimStateNode_9.Aiming.AnimGraphNode_TwoWayBlend_1'",
+          "bindings": {
+            "Alpha": [
+              "GetParent",
+              "PoseState",
+              "GaitWalkingAmount"
+            ]
+          }
+        }
+      ],
+      "functions": {
+        "AnimGraph": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_Let",
+              "Value": {
+                "$type": "KismetPropertyPointer",
+                "New": {
+                  "$type": "FFieldPath",
+                  "Path": [
+                    "AnimGraph"
+                  ]
+                }
+              },
+              "Variable": {
+                "$type": "EX_LocalOutVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "AnimGraph"
+                    ]
+                  }
+                }
+              },
+              "Expression": {
+                "$type": "EX_StructConst",
+                "Struct": -135,
+                "StructSize": 24,
+                "Value": [
+                  {
+                    "$type": "EX_IntConst",
+                    "Value": -1
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 40,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 41,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 43,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "AnimNotify_ReadyToRelaxed": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 140,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1325
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "AnimNotify_RelaxedToReady": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 140,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1243
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_PistolOneHanded_AnimGraphNode_TransitionResult_5F1ECC6943E593C839792381191AF5AC": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 140,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1229
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_PistolOneHanded_AnimGraphNode_TransitionResult_6E6551D04999612455FB528ADE8F71C7": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 140,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1215
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_PistolOneHanded_AnimGraphNode_TransitionResult_8498C3794AA70B5F548DE8B6180AA934": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 140,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1222
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_PistolOneHanded_AnimGraphNode_TransitionResult_C3AAE2B54225914B132E36B8E09B6653": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 140,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1080
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_PistolOneHanded_AnimGraphNode_TransitionResult_E4018156449171DB303AB38EFFBCAB16": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 140,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1073
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "EvaluateGraphExposedInputs_ExecuteUbergraph_AB_Als_PistolOneHanded_AnimGraphNode_TransitionResult_FD5C9E5441509A3CED71A6A52340CF31": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_LocalFinalFunction",
+              "StackNode": 140,
+              "Parameters": [
+                {
+                  "$type": "EX_IntConst",
+                  "Value": 1236
+                }
+              ]
+            }
+          },
+          {
+            "offset": 18,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 19,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 21,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "ExecuteUbergraph_AB_Als_PistolOneHanded": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_ComputedJump",
+              "CodeOffsetExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "EntryPoint"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 10,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 30,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 31,
+            "expression": {
+              "$type": "EX_Context",
+              "ObjectExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "Offset": 31,
+              "ContextExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "PlayTransitionRightAnimation",
+                "Parameters": [
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 0.20000000298023224
+                  },
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 0.20000000298023224
+                  },
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 1.5
+                  },
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 0.30000001192092896
+                  },
+                  {
+                    "$type": "EX_True"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 84,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 85,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 90,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_1"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 110,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_NotEqual_GameplayTag_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "NotEqual_GameplayTag",
+                "Parameters": [
+                  {
+                    "$type": "EX_Context",
+                    "ObjectExpression": {
+                      "$type": "EX_LocalVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "CallFunc_GetParent_ReturnValue_1"
+                          ]
+                        }
+                      }
+                    },
+                    "Offset": 9,
+                    "ContextExpression": {
+                      "$type": "EX_InstanceVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "RotationMode"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_StructConst",
+                    "Struct": -136,
+                    "StructSize": 12,
+                    "Value": [
+                      {
+                        "$type": "EX_NameConst",
+                        "Value": "Als.RotationMode.Aiming"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 188,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 189,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_StructMemberContext",
+                "StructMemberExpression": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "bCanEnterTransition"
+                    ]
+                  }
+                },
+                "StructExpression": {
+                  "$type": "EX_InstanceVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "AnimGraphNode_TransitionResult_1"
+                      ]
+                    }
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_NotEqual_GameplayTag_ReturnValue"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 217,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 218,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 223,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_2"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 243,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_EqualEqual_GameplayTag_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "EqualEqual_GameplayTag",
+                "Parameters": [
+                  {
+                    "$type": "EX_Context",
+                    "ObjectExpression": {
+                      "$type": "EX_LocalVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "CallFunc_GetParent_ReturnValue_2"
+                          ]
+                        }
+                      }
+                    },
+                    "Offset": 9,
+                    "ContextExpression": {
+                      "$type": "EX_InstanceVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "RotationMode"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_StructConst",
+                    "Struct": -136,
+                    "StructSize": 12,
+                    "Value": [
+                      {
+                        "$type": "EX_NameConst",
+                        "Value": "Als.RotationMode.Aiming"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 321,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 322,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_StructMemberContext",
+                "StructMemberExpression": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "bCanEnterTransition"
+                    ]
+                  }
+                },
+                "StructExpression": {
+                  "$type": "EX_InstanceVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "AnimGraphNode_TransitionResult_4"
+                      ]
+                    }
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_EqualEqual_GameplayTag_ReturnValue"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 350,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 351,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 356,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_4"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 376,
+            "expression": {
+              "$type": "EX_Let",
+              "Value": {
+                "$type": "KismetPropertyPointer",
+                "New": {
+                  "$type": "FFieldPath",
+                  "Path": [
+                    "CallFunc_GetInstanceCurrentStateElapsedTime_ReturnValue"
+                  ]
+                }
+              },
+              "Variable": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetInstanceCurrentStateElapsedTime_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "Expression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetInstanceCurrentStateElapsedTime",
+                "Parameters": [
+                  {
+                    "$type": "EX_IntConst",
+                    "Value": 8
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 409,
+            "expression": {
+              "$type": "EX_Let",
+              "Value": {
+                "$type": "KismetPropertyPointer",
+                "New": {
+                  "$type": "FFieldPath",
+                  "Path": []
+                }
+              },
+              "Variable": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GreaterEqual_DoubleDouble_A_ImplicitCast"
+                    ]
+                  }
+                }
+              },
+              "Expression": {
+                "$type": "EX_PrimitiveCast",
+                "ConversionType": 4,
+                "Target": {
+                  "$type": "EX_LocalVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "CallFunc_GetInstanceCurrentStateElapsedTime_ReturnValue"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 438,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GreaterEqual_DoubleDouble_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "GreaterEqual_DoubleDouble",
+                "Parameters": [
+                  {
+                    "$type": "EX_LocalVariable",
+                    "Variable": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "CallFunc_GreaterEqual_DoubleDouble_A_ImplicitCast"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_DoubleConst",
+                    "Value": 3
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 476,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_BooleanAND_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "BooleanAND",
+                "Parameters": [
+                  {
+                    "$type": "EX_StructMemberContext",
+                    "StructMemberExpression": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "bTransitionsAllowed"
+                        ]
+                      }
+                    },
+                    "StructExpression": {
+                      "$type": "EX_Context",
+                      "ObjectExpression": {
+                        "$type": "EX_LocalVariable",
+                        "Variable": {
+                          "$type": "KismetPropertyPointer",
+                          "New": {
+                            "$type": "FFieldPath",
+                            "Path": [
+                              "CallFunc_GetParent_ReturnValue_4"
+                            ]
+                          }
+                        }
+                      },
+                      "Offset": 9,
+                      "ContextExpression": {
+                        "$type": "EX_InstanceVariable",
+                        "Variable": {
+                          "$type": "KismetPropertyPointer",
+                          "New": {
+                            "$type": "FFieldPath",
+                            "Path": [
+                              "TransitionsState"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_LocalVariable",
+                    "Variable": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "CallFunc_GreaterEqual_DoubleDouble_ReturnValue"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 545,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 546,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_StructMemberContext",
+                "StructMemberExpression": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "bCanEnterTransition"
+                    ]
+                  }
+                },
+                "StructExpression": {
+                  "$type": "EX_InstanceVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "AnimGraphNode_TransitionResult_2"
+                      ]
+                    }
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_BooleanAND_ReturnValue"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 574,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 575,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 580,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_5"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 600,
+            "expression": {
+              "$type": "EX_Let",
+              "Value": {
+                "$type": "KismetPropertyPointer",
+                "New": {
+                  "$type": "FFieldPath",
+                  "Path": [
+                    "CallFunc_GetInstanceCurrentStateElapsedTime_ReturnValue_1"
+                  ]
+                }
+              },
+              "Variable": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetInstanceCurrentStateElapsedTime_ReturnValue_1"
+                    ]
+                  }
+                }
+              },
+              "Expression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetInstanceCurrentStateElapsedTime",
+                "Parameters": [
+                  {
+                    "$type": "EX_IntConst",
+                    "Value": 8
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 633,
+            "expression": {
+              "$type": "EX_Let",
+              "Value": {
+                "$type": "KismetPropertyPointer",
+                "New": {
+                  "$type": "FFieldPath",
+                  "Path": []
+                }
+              },
+              "Variable": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GreaterEqual_DoubleDouble_A_ImplicitCast_1"
+                    ]
+                  }
+                }
+              },
+              "Expression": {
+                "$type": "EX_PrimitiveCast",
+                "ConversionType": 4,
+                "Target": {
+                  "$type": "EX_LocalVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "CallFunc_GetInstanceCurrentStateElapsedTime_ReturnValue_1"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 662,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GreaterEqual_DoubleDouble_ReturnValue_1"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "GreaterEqual_DoubleDouble",
+                "Parameters": [
+                  {
+                    "$type": "EX_LocalVariable",
+                    "Variable": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "CallFunc_GreaterEqual_DoubleDouble_A_ImplicitCast_1"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_DoubleConst",
+                    "Value": 3
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 700,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_BooleanAND_ReturnValue_1"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "BooleanAND",
+                "Parameters": [
+                  {
+                    "$type": "EX_StructMemberContext",
+                    "StructMemberExpression": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "bMoving"
+                        ]
+                      }
+                    },
+                    "StructExpression": {
+                      "$type": "EX_Context",
+                      "ObjectExpression": {
+                        "$type": "EX_LocalVariable",
+                        "Variable": {
+                          "$type": "KismetPropertyPointer",
+                          "New": {
+                            "$type": "FFieldPath",
+                            "Path": [
+                              "CallFunc_GetParent_ReturnValue_5"
+                            ]
+                          }
+                        }
+                      },
+                      "Offset": 9,
+                      "ContextExpression": {
+                        "$type": "EX_InstanceVariable",
+                        "Variable": {
+                          "$type": "KismetPropertyPointer",
+                          "New": {
+                            "$type": "FFieldPath",
+                            "Path": [
+                              "LocomotionState"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_LocalVariable",
+                    "Variable": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "CallFunc_GreaterEqual_DoubleDouble_ReturnValue_1"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 769,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 770,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_StructMemberContext",
+                "StructMemberExpression": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "bCanEnterTransition"
+                    ]
+                  }
+                },
+                "StructExpression": {
+                  "$type": "EX_InstanceVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "AnimGraphNode_TransitionResult_3"
+                      ]
+                    }
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_BooleanAND_ReturnValue_1"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 798,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 799,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 804,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_3"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 824,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_EqualEqual_GameplayTag_ReturnValue_1"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "EqualEqual_GameplayTag",
+                "Parameters": [
+                  {
+                    "$type": "EX_Context",
+                    "ObjectExpression": {
+                      "$type": "EX_LocalVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "CallFunc_GetParent_ReturnValue_3"
+                          ]
+                        }
+                      }
+                    },
+                    "Offset": 9,
+                    "ContextExpression": {
+                      "$type": "EX_InstanceVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "Gait"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_StructConst",
+                    "Struct": -136,
+                    "StructSize": 12,
+                    "Value": [
+                      {
+                        "$type": "EX_NameConst",
+                        "Value": "Als.Gait.Sprinting"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 902,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_6"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 922,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_EqualEqual_GameplayTag_ReturnValue_2"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "EqualEqual_GameplayTag",
+                "Parameters": [
+                  {
+                    "$type": "EX_Context",
+                    "ObjectExpression": {
+                      "$type": "EX_LocalVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "CallFunc_GetParent_ReturnValue_6"
+                          ]
+                        }
+                      }
+                    },
+                    "Offset": 9,
+                    "ContextExpression": {
+                      "$type": "EX_InstanceVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "LocomotionMode"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_StructConst",
+                    "Struct": -136,
+                    "StructSize": 12,
+                    "Value": [
+                      {
+                        "$type": "EX_NameConst",
+                        "Value": "Als.LocomotionMode.InAir"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 1000,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_BooleanOR_ReturnValue"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "BooleanOR",
+                "Parameters": [
+                  {
+                    "$type": "EX_LocalVariable",
+                    "Variable": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "CallFunc_EqualEqual_GameplayTag_ReturnValue_2"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_LocalVariable",
+                    "Variable": {
+                      "$type": "KismetPropertyPointer",
+                      "New": {
+                        "$type": "FFieldPath",
+                        "Path": [
+                          "CallFunc_EqualEqual_GameplayTag_ReturnValue_1"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 1038,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1039,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_StructMemberContext",
+                "StructMemberExpression": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "bCanEnterTransition"
+                    ]
+                  }
+                },
+                "StructExpression": {
+                  "$type": "EX_InstanceVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "AnimGraphNode_TransitionResult_5"
+                      ]
+                    }
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_BooleanOR_ReturnValue"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 1067,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1068,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 1073,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1074,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1075,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 804
+            }
+          },
+          {
+            "offset": 1080,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1081,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1082,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_7"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 1102,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_EqualEqual_GameplayTag_ReturnValue_3"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_CallMath",
+                "StackNode": "EqualEqual_GameplayTag",
+                "Parameters": [
+                  {
+                    "$type": "EX_Context",
+                    "ObjectExpression": {
+                      "$type": "EX_LocalVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "CallFunc_GetParent_ReturnValue_7"
+                          ]
+                        }
+                      }
+                    },
+                    "Offset": 9,
+                    "ContextExpression": {
+                      "$type": "EX_InstanceVariable",
+                      "Variable": {
+                        "$type": "KismetPropertyPointer",
+                        "New": {
+                          "$type": "FFieldPath",
+                          "Path": [
+                            "RotationMode"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$type": "EX_StructConst",
+                    "Struct": -136,
+                    "StructSize": 12,
+                    "Value": [
+                      {
+                        "$type": "EX_NameConst",
+                        "Value": "Als.RotationMode.Aiming"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 1180,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1181,
+            "expression": {
+              "$type": "EX_LetBool",
+              "VariableExpression": {
+                "$type": "EX_StructMemberContext",
+                "StructMemberExpression": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "bCanEnterTransition"
+                    ]
+                  }
+                },
+                "StructExpression": {
+                  "$type": "EX_InstanceVariable",
+                  "Variable": {
+                    "$type": "KismetPropertyPointer",
+                    "New": {
+                      "$type": "FFieldPath",
+                      "Path": [
+                        "AnimGraphNode_TransitionResult"
+                      ]
+                    }
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_EqualEqual_GameplayTag_ReturnValue_3"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "offset": 1209,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1210,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 1215,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1216,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1217,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 223
+            }
+          },
+          {
+            "offset": 1222,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1223,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1224,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 90
+            }
+          },
+          {
+            "offset": 1229,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1230,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1231,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 356
+            }
+          },
+          {
+            "offset": 1236,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1237,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1238,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 580
+            }
+          },
+          {
+            "offset": 1243,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1244,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1245,
+            "expression": {
+              "$type": "EX_LetObj",
+              "VariableExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_8"
+                    ]
+                  }
+                }
+              },
+              "AssignmentExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "GetParent",
+                "Parameters": []
+              }
+            }
+          },
+          {
+            "offset": 1265,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1266,
+            "expression": {
+              "$type": "EX_Context",
+              "ObjectExpression": {
+                "$type": "EX_LocalVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "CallFunc_GetParent_ReturnValue_8"
+                    ]
+                  }
+                }
+              },
+              "Offset": 31,
+              "ContextExpression": {
+                "$type": "EX_FinalFunction",
+                "StackNode": "PlayTransitionRightAnimation",
+                "Parameters": [
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 0.20000000298023224
+                  },
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 0.20000000298023224
+                  },
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 1.75
+                  },
+                  {
+                    "$type": "EX_FloatConst",
+                    "Value": 0.30000001192092896
+                  },
+                  {
+                    "$type": "EX_True"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 1319,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1320,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 1332
+            }
+          },
+          {
+            "offset": 1325,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1326,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 1327,
+            "expression": {
+              "$type": "EX_Jump",
+              "CodeOffset": 10
+            }
+          },
+          {
+            "offset": 1332,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 1334,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ],
+        "Overlay": [
+          {
+            "offset": 0,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 1,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 2,
+            "expression": {
+              "$type": "EX_Tracepoint"
+            }
+          },
+          {
+            "offset": 3,
+            "expression": {
+              "$type": "EX_Let",
+              "Value": {
+                "$type": "KismetPropertyPointer",
+                "New": {
+                  "$type": "FFieldPath",
+                  "Path": [
+                    "Overlay"
+                  ]
+                }
+              },
+              "Variable": {
+                "$type": "EX_LocalOutVariable",
+                "Variable": {
+                  "$type": "KismetPropertyPointer",
+                  "New": {
+                    "$type": "FFieldPath",
+                    "Path": [
+                      "Overlay"
+                    ]
+                  }
+                }
+              },
+              "Expression": {
+                "$type": "EX_StructConst",
+                "Struct": -135,
+                "StructSize": 24,
+                "Value": [
+                  {
+                    "$type": "EX_IntConst",
+                    "Value": -1
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "offset": 40,
+            "expression": {
+              "$type": "EX_WireTracepoint"
+            }
+          },
+          {
+            "offset": 41,
+            "expression": {
+              "$type": "EX_Return",
+              "ReturnExpression": {
+                "$type": "EX_Nothing"
+              }
+            }
+          },
+          {
+            "offset": 43,
+            "expression": {
+              "$type": "EX_EndOfScript"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -119,3 +119,5 @@ A_Als_Torch_Aim_Crouch|Crouched torch aim additive source|M3 Rotation modes and 
 A_Als_Look_Down|Downward view/aim additive source|M3 Rotation modes: aiming pitch
 A_Als_Look_Forward|Forward view/aim additive reference source|M3 Rotation modes: aiming pitch
 A_Als_Look_Up|Upward view/aim additive source|M3 Rotation modes: aiming pitch
+A_Als_PistolTwoHanded_Poses_NoCurves|Authored mesh-space aim reference bank|M3 Pistol overlay aiming
+A_Als_PistolOneHanded_Poses_NoCurves|Authored mesh-space aim reference bank|M3 Pistol overlay aiming

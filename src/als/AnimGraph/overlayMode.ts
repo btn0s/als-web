@@ -4,7 +4,7 @@ import type { AlsLayerRegion } from '../Utility/AlsConstants'
 export { ALS_LAYER_REGIONS }
 export type { AlsLayerRegion }
 
-export const ALS_OVERLAY_MODES = ['Default', 'Rifle'] as const
+export const ALS_OVERLAY_MODES = ['Default', 'Rifle', 'PistolTwoHanded', 'PistolOneHanded'] as const
 export type AlsOverlayMode = (typeof ALS_OVERLAY_MODES)[number]
 
 export const DEFAULT_OVERLAY_CLIP = 'A_Als_Default_Poses'
@@ -30,4 +30,10 @@ export function resolveArmAdditiveSpaceAmounts(localSpaceAmount: number) {
     local,
     mesh: local >= 0.999 ? 0 : 1,
   }
+}
+
+export const PISTOL_OVERLAY_MODES = ['PistolTwoHanded', 'PistolOneHanded'] as const
+export type AlsPistolOverlayMode = (typeof PISTOL_OVERLAY_MODES)[number]
+export function isPistolOverlayMode(mode: AlsOverlayMode): mode is AlsPistolOverlayMode {
+  return mode === 'PistolTwoHanded' || mode === 'PistolOneHanded'
 }
