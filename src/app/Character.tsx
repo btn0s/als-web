@@ -36,6 +36,7 @@ import {
   ALS_STANDING_CAPSULE_HALF_HEIGHT,
   resolveAlsMeshRootRelativeY,
   useAlsCharacter,
+  type AlsGamepadBindings,
 } from '../als/AlsCharacter.hooks'
 import type {
   AlsCharacterBridge,
@@ -103,6 +104,9 @@ export interface CharacterProps {
   toggleRotationModeKey?: string | null
   /** PointerEvent.button values that hold aim (default `[2]`, RMB). */
   aimPointerButtons?: readonly number[]
+  gamepadBindings?: Partial<AlsGamepadBindings>
+  gamepadEnabled?: boolean
+  gamepadIndex?: number
 }
 
 function compileAlsMantlingRootMotion(
@@ -191,6 +195,9 @@ function LoadedCharacter({
   snapshotRateHz = 20,
   toggleRotationModeKey,
   aimPointerButtons,
+  gamepadBindings,
+  gamepadEnabled,
+  gamepadIndex,
 }: {
   gltf: GLTF
   onSizeChange: CharacterProps['onSizeChange']
@@ -204,6 +211,9 @@ function LoadedCharacter({
   ragdollRef?: React.RefObject<AlsRagdollHandle | null>
   toggleRotationModeKey: CharacterProps['toggleRotationModeKey']
   aimPointerButtons: CharacterProps['aimPointerButtons']
+  gamepadBindings: CharacterProps['gamepadBindings']
+  gamepadEnabled: CharacterProps['gamepadEnabled']
+  gamepadIndex: CharacterProps['gamepadIndex']
 }) {
   const gltf = useMemo(() => ({ ...sourceGltf, scene: clone(sourceGltf.scene) }), [sourceGltf])
   const { rapier, world } = useRapier()
@@ -399,6 +409,9 @@ function LoadedCharacter({
     worldTime,
     toggleRotationModeKey,
     aimPointerButtons,
+    gamepadBindings,
+    gamepadEnabled,
+    gamepadIndex,
   )
   useEffect(() => {
     onOverlayModeBridgeChange({
@@ -552,6 +565,9 @@ export function Character({
   snapshotRateHz = 20,
   toggleRotationModeKey,
   aimPointerButtons,
+  gamepadBindings,
+  gamepadEnabled,
+  gamepadIndex,
 }: CharacterProps) {
   const { gltf, status, progress, retry } = useAlsCharacterGltf()
 
@@ -572,6 +588,9 @@ export function Character({
       ragdollRef={ragdollRef}
       toggleRotationModeKey={toggleRotationModeKey}
       aimPointerButtons={aimPointerButtons}
+      gamepadBindings={gamepadBindings}
+      gamepadEnabled={gamepadEnabled}
+      gamepadIndex={gamepadIndex}
     />
   ) : (
     <CharacterLoadState status={status} progress={progress} retry={retry} />

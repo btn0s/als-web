@@ -1,9 +1,11 @@
 /// <reference types="node" />
 
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   resolveCameraRelativeInput,
+  sampleGamepad,
+  ALS_GAMEPAD_BINDINGS,
 } from '../AlsCharacter.hooks'
 import { resolveDesiredGaitSpeed } from '../Settings/AlsMovementSettings'
 import {
@@ -279,24 +281,14 @@ describe('ALS content oracle: implemented character inputs', () => {
       'if (aimPointerButtons.includes(event.button)) aimingWithPointer.current = false',
     )
 
-    expect(controllerSource).toMatch(
-      /out\.sprint = gamepad\.buttons\[1\]\?\.pressed/,
-    )
-    expect(controllerSource).toMatch(
-      /out\.ragdoll = gamepad\.buttons\[2\]\?\.pressed/,
-    )
-    expect(controllerSource).toMatch(
-      /out\.walk = gamepad\.buttons\[5\]\?\.pressed/,
-    )
-    expect(controllerSource).toMatch(
-      /out\.crouch = gamepad\.buttons\[10\]\?\.pressed/,
-    )
-    expect(controllerSource).toMatch(
-      /out\.aim = gamepad\.buttons\[4\]\?\.pressed/,
-    )
-    expect(controllerSource).toMatch(
-      /out\.rotationMode = gamepad\.buttons\[14\]\?\.pressed/,
-    )
+    for (const [action, button] of Object.entries({
+      jump: 0, sprint: 1, ragdoll: 2, walk: 5, crouch: 10, aim: 4, rotationMode: 14,
+    })) {
+      expect(compactControllerSource).toContain(`${action}: ${button},`)
+      expect(compactControllerSource).toContain(`out.${action} = readGamepadButton(gamepad, resolved.${action})`)
+    }
+    expect(compactControllerSource).toContain('if (!enabled) return out')
+    expect(compactControllerSource).toContain('candidate.index === index')
   })
 
   it('implements Hold Sprint, Released Sprint, and Pressed toggles', () => {
@@ -408,5 +400,26 @@ describe('ALS content oracle: implemented character inputs', () => {
     expect(compactControllerSource).toContain(
       'resolveDesiredGaitSpeed( desiredGait as AlsGait, desiredStance as AlsStance, desiredRotationMode as AlsRotationMode, )',
     )
+  })
+})
+
+
+describe('consumer gamepad bindings', () => {
+  it('preserves defaults, remaps buttons, disables actions, and selects a pad', () => {
+    const buttons = Array.from({ length: 16 }, () => ({ pressed: false, touched: false, value: 0 }))
+    buttons[1] = { pressed: true, touched: true, value: 1 }
+    buttons[6] = { pressed: true, touched: true, value: 1 }
+    const pad = { index: 1, connected: true, axes: [1, 0], buttons }
+    vi.stubGlobal('navigator', { getGamepads: () => [null, pad] })
+    try {
+      const out = { right: 0, forward: 0, jump: false, sprint: false, ragdoll: false, walk: false, crouch: false, aim: false, rotationMode: false }
+      expect(ALS_GAMEPAD_BINDINGS).toEqual({ jump: 0, sprint: 1, ragdoll: 2, walk: 5, crouch: 10, aim: 4, rotationMode: 14, shoulderSwap: 11, viewMode: 15 })
+      expect(sampleGamepad(out)).toMatchObject({ sprint: true, crouch: false, aim: false, right: 1 })
+      expect(sampleGamepad(out, { sprint: null, crouch: 1, aim: 6 }, true, 1)).toMatchObject({ sprint: false, crouch: true, aim: true })
+      expect(sampleGamepad(out, {}, false)).toMatchObject({ right: 0, sprint: false, aim: false })
+      expect(sampleGamepad(out, {}, true, 0)).toMatchObject({ right: 0, sprint: false })
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
