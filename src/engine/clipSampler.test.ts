@@ -96,3 +96,29 @@ describe('clip sampler', () => {
     )).toThrow(/bone-count mismatch/)
   })
 })
+
+it('reuses immutable bindings across matching rigs with independent virtual-bone scratch', () => {
+  const root = new THREE.Bone()
+  root.name = 'root'
+  const child = new THREE.Bone()
+  child.name = 'child'
+  root.add(child)
+  const virtualBones = [{ name: 'VB root_to_child', sourceBoneName: 'root', targetBoneName: 'child' }]
+  const rig = createRigDefinition(root, virtualBones)
+  const clip = new THREE.AnimationClip('prewarm', 1, [
+    new THREE.VectorKeyframeTrack('root.position', [0, 1], [0, 0, 0, 1, 0, 0]),
+  ])
+  const first = compileClipSampler(clip, rig)
+  const second = compileClipSampler(clip, createRigDefinition(root, virtualBones))
+  expect(second.bindings).toBe(first.bindings)
+  expect(second.virtualBoneScratch).not.toBeNull()
+  expect(second.virtualBoneScratch).not.toBe(first.virtualBoneScratch)
+  const reordered = new THREE.Bone()
+  reordered.name = 'child'
+  const nested = new THREE.Bone()
+  nested.name = 'root'
+  reordered.add(nested)
+  const third = compileClipSampler(clip, createRigDefinition(reordered))
+  expect(third.bindings).not.toBe(first.bindings)
+  expect(third.bindings[0].boneIndex).toBe(1)
+})
