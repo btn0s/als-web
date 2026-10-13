@@ -732,7 +732,7 @@ type AlsViewGraphPoseNode =
     }
   | {
       readonly kind: 'transition'
-      readonly source: AlsViewGraphPoseNode
+      source: AlsViewGraphPoseNode
       readonly transition: AlsViewGraphTransition
       elapsed: number
     }
@@ -859,13 +859,16 @@ function refreshViewGraphWeights(runtime: AlsViewGraphRuntime) {
 function advanceViewGraphPoseNode(
   node: AlsViewGraphPoseNode,
   deltaTime: number,
-) {
-  if (node.kind === 'state') return
-  advanceViewGraphPoseNode(node.source, deltaTime)
+): AlsViewGraphPoseNode {
+  if (node.kind === 'state') return node
+  node.source = advanceViewGraphPoseNode(node.source, deltaTime)
   node.elapsed = Math.min(
     node.transition.duration,
     node.elapsed + deltaTime,
   )
+  return node.elapsed >= node.transition.duration
+    ? statePoseNode(node.transition.to)
+    : node
 }
 
 /**
@@ -962,13 +965,7 @@ export function updateAlsViewGraphRuntime(
     }
   }
 
-  advanceViewGraphPoseNode(runtime.poseNode, deltaTime)
-  if (
-    runtime.poseNode.kind === 'transition'
-    && runtime.poseNode.elapsed >= runtime.poseNode.transition.duration
-  ) {
-    runtime.poseNode = statePoseNode(runtime.poseNode.transition.to)
-  }
+  runtime.poseNode = advanceViewGraphPoseNode(runtime.poseNode, deltaTime)
   refreshViewGraphWeights(runtime)
   return runtime
 }
@@ -1028,8 +1025,8 @@ export interface AlsViewPoseRuntime {
   readonly statePoses: Readonly<
     Record<AlsViewGraphState, LocalPoseBuffer>
   >
-  readonly transitionOutputPoses: readonly LocalPoseBuffer[]
-  readonly transitionAlphaMasks: readonly Float32Array[]
+  readonly transitionOutputPoses: LocalPoseBuffer[]
+  readonly transitionAlphaMasks: Float32Array[]
   readonly sourcePose: LocalPoseBuffer
   readonly additivePose: LocalPoseBuffer
   readonly viewInputPose: LocalPoseBuffer
@@ -1364,10 +1361,9 @@ function evaluateAlsViewGraphPoseNode(
     return copyPose(runtime.statePoses[node.state], output)
   }
   if (transitionDepth >= runtime.transitionOutputPoses.length) {
-    throw new Error(
-      'AB_Als_View active transition count exceeds '
-      + `${runtime.transitionOutputPoses.length}`,
-    )
+    // MaxTransitionsPerFrame limits new requests, not blends retained across frames.
+    runtime.transitionOutputPoses.push(createPoseBuffer(runtime.rig.boneCount))
+    runtime.transitionAlphaMasks.push(new Float32Array(runtime.rig.boneCount))
   }
 
   const sourceOutput =

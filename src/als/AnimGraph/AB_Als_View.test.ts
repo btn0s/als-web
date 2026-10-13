@@ -730,6 +730,17 @@ describe('AB_Als_View retained state-machine runtime', () => {
     expect(runtime.stateWeights['Look Right Back']).toBe(1)
   })
 
+  it('retires completed source transitions while a newer transition is active', () => {
+    const runtime = createAlsViewGraphRuntime(rig)
+    for (const [yaw, delta] of [[-170, 0], [-170, 0], [170, 0.9], [-170, 0.11]]) {
+      updateAlsViewGraphRuntime(runtime, yaw, delta, true)
+    }
+    expect(runtime.activeTransitionIndices).toEqual([8, 11])
+    updateAlsViewGraphRuntime(runtime, -170, 1, true)
+    expect(runtime.transitionCount).toBe(0)
+    expect(runtime.stateWeights['Look Left Back']).toBe(1)
+  })
+
   it('reinitializes and skips the first transition when Look becomes relevant', () => {
     const runtime = createAlsViewGraphRuntime(rig)
     updateAlsViewGraphRuntime(runtime, 170, 0, true)
@@ -1290,6 +1301,33 @@ function animatedViewInputPose(reference: LocalPoseBuffer) {
 }
 
 describe('AB_Als_View owned pose evaluation', () => {
+  it('evaluates interrupted side switches retained across frames', () => {
+    const { runtime, reference } = createAnimatedViewPoseFixture()
+    const output = createPoseBuffer(viewPoseRig.boneCount)
+    for (const yawAngle of [-170, -170, 170, -170]) {
+      refreshAlsViewPoseRuntime(runtime, viewPoseLookState({ yawAngle }), 1, 1 / 60)
+    }
+    expect(runtime.graph.transitionCount).toBe(4)
+    evaluateAlsViewPoseRuntime(runtime, reference, 1, output)
+    expect(Array.from(output.rotations).every(Number.isFinite)).toBe(true)
+    const expected = copyPose(runtime.statePoses['Look Left Back'], createPoseBuffer(viewPoseRig.boneCount))
+    for (const [index, elapsed] of [[5, 2 / 60], [10, 2 / 60], [8, 1 / 60], [11, 1 / 60]]) {
+      const transition = ALS_VIEW_GRAPH_TRANSITIONS[index]
+      const alpha = sampleAlsViewTransitionBlend(transition, elapsed)
+      blendPoseInPlace(expected, runtime.statePoses[transition.to], 1,
+        new Float32Array([alpha, Math.min(1, alpha * 2), Math.min(1, alpha * 2)]))
+    }
+    expectViewPoseClose(runtime.sourcePose, expected)
+    for (let frame = 0; frame < 600; frame++) {
+      refreshAlsViewPoseRuntime(runtime, viewPoseLookState({ yawAngle: frame % 2 ? -170 : 170 }), 1, 1 / 60)
+      evaluateAlsViewPoseRuntime(runtime, reference, 1, output)
+      expect(runtime.graph.transitionCount).toBeLessThanOrEqual(122)
+      expect(Array.from(output.rotations).every(Number.isFinite)).toBe(true)
+    }
+    refreshAlsViewPoseRuntime(runtime, viewPoseLookState({ yawAngle: -170 }), 1, 1)
+    expect(runtime.graph.transitionCount).toBe(0)
+  })
+
   it('normalizes each BlendSpace state before the transition node', () => {
     const { runtime, samplers, reference } =
       createAnimatedViewPoseFixture()
