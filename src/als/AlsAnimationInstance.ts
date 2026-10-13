@@ -1,3 +1,4 @@
+import { assertAlsAnimationExtras } from './reference/animationExtrasSequences'
 import * as THREE from 'three'
 import type { AlphaBlendOption } from '../engine/alphaBlend'
 import { pickClip } from '../engine/pickClip'
@@ -1237,6 +1238,7 @@ export function createAlsAnimationInstance(gltf: {
   /** Backend adapter for CR_Als FAlsRigUnit_FootOffsetTrace. */
   controlRigFootTrace?: AlsControlRigFootOffsetTrace
 }): AlsAnimationInstance {
+  assertAlsAnimationExtras(gltf.animations)
   const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
   const applicator = createPoseApplicator(gltf.scene, rig)
   const evaluator = createPoseEvaluator(rig, { development: import.meta.env.DEV })

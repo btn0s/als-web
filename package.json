@@ -20,7 +20,10 @@
     "./als/AlsCharacter.hooks": "./src/als/AlsCharacter.hooks.ts",
     "./engine/alsFramePipeline": "./src/engine/alsFramePipeline.ts",
     "./engine/alsAudioBridge": "./src/engine/alsAudioBridge.ts",
-    "./engine/timeDilation": "./src/engine/timeDilation.ts"
+    "./engine/timeDilation": "./src/engine/timeDilation.ts",
+    "./app/AlsCharacterGltf": "./src/app/AlsCharacterGltf.ts",
+    "./app/AlsCharacterGltf.hooks": "./src/app/AlsCharacterGltf.hooks.ts",
+    "./engine/gltfAnimationExtras": "./src/engine/gltfAnimationExtras.ts"
   },
   "packageManager": "pnpm@11.15.1",
   "engines": {
