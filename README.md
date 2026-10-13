@@ -96,3 +96,5 @@ pnpm e2e
 ## Scope and licensing
 
 Gameplay systems beyond ALS locomotion belong in downstream forks. ALS-derived assets under `public/assets/` retain the upstream MIT notice in [`LICENSE-ALS-Refactored.md`](./public/assets/LICENSE-ALS-Refactored.md). A license for this port's original source code must be selected before public distribution.
+
+`Character` and `AlsCamera` accept `gamepadBindings`, a partial map of W3C standard button indices (or `null` to disable an action). Defaults remain jump 0, sprint 1, ragdoll 2, walk 5, crouch 10, aim 4, rotationMode 14, shoulderSwap 11 and viewMode 15. For a shooter, pass `{ jump: 0, sprint: 10, crouch: 1, aim: 6, ragdoll: null, walk: null, rotationMode: null, shoulderSwap: 11, viewMode: null }` to both. `gamepadEnabled={false}` suppresses pad movement, look and actions during menus; `gamepadIndex` selects a connected pad, otherwise the first connected pad is used. Stick deadzones and authored look response are unchanged.
