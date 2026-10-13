@@ -636,3 +636,34 @@ The six pistol pose/aim clips were already shipped. Their two curve-free additiv
 reference banks were absent; clips.manifest now includes both, for 121 clips.
 Standing/crouched reference frames are 6/10 for TwoHanded and 5/9 for OneHanded
 at 30 fps. These reference banks are separate assets, not aliases of Poses.
+
+## PA_Als native runtime export
+
+Sparse uncooked tags do not contain effective body masses or fully resolved profiles.
+`physics-asset-runtime.json` records a headless UE 5.7.4 native export of the original
+ALS 4.15 asset. `native-physics-export/` is a minimal editor target, not the ALS plugin:
+it uses launcher engine headers and exposes body mass-space frames and constraint JSON.
+No ALS plugin compilation or project upgrade is required.
+
+In an isolated Windows scratch directory, copy the contents of `native-physics-export/`.
+Copy `export-physics-runtime.py` and `physics-asset.json` beside `Export.uproject`.
+Create `Plugins/ALS/ALS.uplugin` with `FileVersion: 3`, `Version: 1`,
+`VersionName: "4.15"`, `FriendlyName: "ALS export content"`, `CanContainContent: true`.
+Copy the original `Content/ALS/Character/{PA_Als,SKM_Als,SK_Als}.uasset` files into the
+same relative path under `Plugins/ALS/Content/`; preserve the `/ALS` plugin mount.
+The original material can also be copied; missing render materials do not affect physics.
+Use the installed matching VS toolchain; do not install a toolchain for this export.
+
+```powershell
+$UE = 'C:\Program Files\Epic Games\UE_5.7'
+$Scratch = 'C:\Users\you\scratch\als-export'
+& "$UE\Engine\Build\BatchFiles\Build.bat" AlsExportEditor Win64 Development "-Project=$Scratch\Export.uproject" -WaitMutex -NoHotReloadFromIDE
+& "$UE\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" "$Scratch\Export.uproject" -run=pythonscript "-script=$Scratch\export-physics-runtime.py" -unattended -nullrhi -nosplash -stdout -FullStdOutLogOutput
+```
+
+The commandlet must print `ALS_PHYSICS_RUNTIME_EXPORT_COMPLETE`. Bring back only the JSON
+and log, then remove the scratch directory. The script never saves assets or opens a viewport.
+It exports effective mass, inertia, COM frame, MassScale, physical material density, full
+resolved constraint profiles (including zero/default fields), disabled pairs, engine version
+and input hashes. Independent live getters validate all limits. The baseline is 4.15:
+PA_Als hashes match ue-5.7, while ragdoll source differs, so newer lifecycle policy is not used.

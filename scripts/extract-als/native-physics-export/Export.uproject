@@ -1,0 +1,1 @@
+{"FileVersion": 3, "EngineAssociation": "5.7", "Plugins": [{"Name": "PythonScriptPlugin", "Enabled": true}, {"Name": "EditorScriptingUtilities", "Enabled": true}], "Modules": [{"Name": "AlsExport", "Type": "Editor", "LoadingPhase": "Default"}]}

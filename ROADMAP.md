@@ -190,20 +190,28 @@ second (flagged) — never from another project's implementation:
       composition, and UE-style output inertialization landed *(2026-07-23)*; montage/slot blend
       semantics and authored root-motion handoff remain open
 - [ ] Foot IK with pelvis adaptation (ALS's Control Rig stage: ground trace + spring-damped Z offset + slope alignment — constants in the math spec; the pelvis-combine formula is graph-side and flagged original-design)
-- [x] **Live ragdoll integration (2026-10-12)**: local Character and cosmetic AlsRemoteActor
-      expose `ragdollRef` (`StartRagdolling({ initialImpulse, keepRagdoll })`, `AddImpulse`,
-      `StopRagdolling`, `ResetRagdolling`). Impulses/locations/torque use three.js world SI units.
-      PA_Als shapes, anchors and frame-space angular limits feed Rapier; initial animated pose
-      and velocity are preserved. The existing native Start/Refresh/Stop lifecycle owns capsule
-      following, ground sweep, initial speed limiting and front/back get-up selection. The
-      post-Control-Rig AB_Als_Ragdolling blend, Flail targets, physics pose and final snapshot
-      now feed the single skeleton publication. Death retention disables stopping until reset.
-- [ ] **Ragdoll parity gaps**: extracted effective masses/material defaults are unavailable;
-      `rapierAlsPhysicsAsset` explicitly uses volume × 1000 kg/m³ when mass is absent. Rapier JS
-      cannot set independent generic-joint frames: spherical anchors plus frame-space angular
-      velocity projection approximate Chaos's cone limits/drives. Get-up selection and snapshot
-      restoration are live, but montage playback/root motion/notify integration remains partial;
-      stopping restores movement without claiming GettingUp. No replicated ragdoll simulation.
+- [x] **Live ALS ragdoll lifecycle and get-up (2026-10-12)**: `Character.ragdollRef` and `AlsRemoteActor.ragdollRef`
+      exposes `StartRagdolling({ initialImpulse })`, `AddImpulse`, `StopRagdolling` and a mutable
+      pelvis position/velocity sample. Impulses, optional application points and torque use
+      three.js world SI units at named PA_Als bodies. Native 4.15 Start/Refresh/Stop owns the
+      eight-frame startup limiter, detached mesh, pelvis-following capsule, ground sphere sweep,
+      final rendered-pose snapshot, face-up/down selection and both authored get-up montages.
+      `AlsAnimationInstance_Ragdolling` drives FlailPlayRate; AB_Als_Ragdolling is published after
+      Control Rig and before the physics override. Get-up slots, blend curves and GettingUp
+      notify lifetime are live; the authored clips have root motion disabled.
+      Generic `ragdollInputEnabled` and `ragdollingSettings` let consumers own input/death policy.
+      There is no vendor corpse retention, automatic get-up, or replicated physics policy.
+- [x] **Native PA_Als export**: original 4.15 asset, 21 bodies / 20 constraints / 49 disabled pairs;
+      effective masses, COM, principal inertia frames and full resolved profiles exported by
+      UE 5.7.4. No density fallback. The same binary asset is present at `ue-5.7`, but lifecycle
+      source differs, so ALS policy stays at 4.15. Reproduction is in `scripts/extract-als/PLAYBOOK.md`.
+- [ ] **Physics engine parity remains partial**: `src/engine/chaosJointConstraint.ts` implements
+      authored connector frames, elliptical swing cones, twist/locked rows, acceleration-mode
+      XPBD drives and position projection, using native mass/inertia. Rapier integrates contacts
+      before these rows; Chaos interleaves them and owns island ordering, conditioning and
+      velocity passes. The port does not claim Chaos numerical equivalence or UE 5.5 default
+      equivalence from a UE 5.7 export. See `AlsCharacter_Actions.reference.md` for evidence and
+      the remaining boundaries. Live visual comparison remains the user's playtest gate.
 - [ ] CUT for now: rolling physics blend, debug-camera parity — revisit on demand
 
 **Exit:** parity harness green (measured equivalence) AND side-by-side with ALS Refactored

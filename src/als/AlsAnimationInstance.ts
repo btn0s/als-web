@@ -1,3 +1,4 @@
+import { ALS_GETTING_UP_MONTAGES, createAlsGettingUpSlotMontageRequest, type AlsGettingUpMontage } from './AnimGraph/gettingUp'
 import { createAlsRagdollPose, type AlsRagdollPose } from '../engine/alsRagdollPose'
 import { PISTOL_OVERLAY_MODES, isPistolOverlayMode } from './AnimGraph/overlayMode'
 import {
@@ -841,7 +842,16 @@ export interface AlsMantlingMontageBridge {
   readonly takeNotifyEvents: () => readonly AlsMantlingMontageNotifyEvent[]
 }
 
+export interface AlsGetUpMontageNotifyEvent {
+  readonly notifyEventType: 'Begin' | 'End'
+  readonly LocomotionAction: 'GettingUp'
+}
+export interface AlsGetUpMontageBridge {
+  Montage_Play(Montage: string): number
+  takeNotifyEvents(): readonly AlsGetUpMontageNotifyEvent[]
+}
 export interface AlsAnimationInstance {
+  readonly getUpMontage: AlsGetUpMontageBridge
   readonly ragdolling: AlsRagdollPose
   StopMontages: (blendOutDuration: number) => void
   /** Read-only action presentation clocks for snapshot recording. */
@@ -2742,6 +2752,10 @@ export function createAlsAnimationInstance(gltf: {
     number,
     RuntimeRollingMontageInstance
   >()
+  const getUpMontageInstances = new Map<number, {
+    montage: AlsGettingUpMontage; sample: SlotMontageSample; activeNotifyIndices: Set<number>
+  }>()
+  const pendingGetUpNotifyEvents: AlsGetUpMontageNotifyEvent[] = []
   const pendingMantlingNotifyEvents: AlsMantlingMontageNotifyEvent[] =
     []
   const pendingRollingNotifyEvents: AlsRollingMontageNotifyEvent[] =
@@ -3733,6 +3747,57 @@ export function createAlsAnimationInstance(gltf: {
         }
         mantlingMontageInstances.delete(instanceId)
       }
+    }
+  }
+
+  function playGetUpMontage(name: string) {
+    const montage = Object.values(ALS_GETTING_UP_MONTAGES).find(m => m.Name === name)
+    if (!montage || !clipsByName.has(montage.Sequence)) return 0
+    const sample = playSlotMontage(slotMontageClock,
+      createAlsGettingUpSlotMontageRequest(montage === ALS_GETTING_UP_MONTAGES.Back))
+    if (sample.instanceId < 0 || sample.status === 'completed') return 0
+    for (const instance of mantlingMontageInstances.values()) {
+      if (instance.sample.blendOutReason === 'interrupted') instance.interrupted = true
+    }
+    for (const instance of rollingMontageInstances.values()) {
+      if (instance.sample.blendOutReason === 'interrupted') instance.interrupted = true
+    }
+    getUpMontageInstances.set(sample.instanceId, { montage, sample, activeNotifyIndices: new Set() })
+    return montage.SequenceLength
+  }
+
+  function collectGetUpNotifyEvents() {
+    // The authored Begin marker is -0.0001 s, before Montage_Play's zero start.
+    // UE's active-state update enters that already-overlapping state on the first tick.
+    for (const instance of getUpMontageInstances.values()) {
+      if (instance.sample.blendOutReason === 'interrupted') continue
+      for (const marker of instance.montage.BranchingPointMarkers) {
+        if (marker.NotifyEventType !== 'Begin') continue
+        const end = instance.montage.BranchingPointMarkers.find(m =>
+          m.NotifyIndex === marker.NotifyIndex && m.NotifyEventType === 'End')!
+        const previous = instance.sample.rootMotionPreviousMontageTime
+        if (previous >= marker.TriggerTime && previous < end.TriggerTime
+          && !instance.activeNotifyIndices.has(marker.NotifyIndex)) {
+          instance.activeNotifyIndices.add(marker.NotifyIndex)
+          pendingGetUpNotifyEvents.push({ notifyEventType: 'Begin', LocomotionAction: 'GettingUp' })
+        }
+      }
+    }
+    for (const event of slotMontageNotifyEvents) {
+      const instance = getUpMontageInstances.get(event.instanceId)
+      if (!instance || instance.sample.blendOutReason === 'interrupted') continue
+      const { NotifyIndex, NotifyEventType } = event.marker
+      if (NotifyEventType === 'Begin') instance.activeNotifyIndices.add(NotifyIndex)
+      else instance.activeNotifyIndices.delete(NotifyIndex)
+      pendingGetUpNotifyEvents.push({ notifyEventType: NotifyEventType, LocomotionAction: 'GettingUp' })
+    }
+    // FAnimMontageInstance::Terminate ends every still-active state, including interruption.
+    for (const [id, instance] of getUpMontageInstances) {
+      if (instance.sample.status !== 'completed') continue
+      for (const _index of instance.activeNotifyIndices) {
+        pendingGetUpNotifyEvents.push({ notifyEventType: 'End', LocomotionAction: 'GettingUp' })
+      }
+      getUpMontageInstances.delete(id)
     }
   }
 
@@ -5059,6 +5124,7 @@ export function createAlsAnimationInstance(gltf: {
     refreshExtractedRollingRootMotion()
     collectMantlingNotifyEvents()
     collectRollingNotifyEvents()
+    collectGetUpNotifyEvents()
     refreshSlotMontageBindings()
 
     for (const clip of clips) {
@@ -7441,10 +7507,17 @@ export function createAlsAnimationInstance(gltf: {
 
   return {
     ragdolling,
+    getUpMontage: {
+      Montage_Play: playGetUpMontage,
+      takeNotifyEvents: () => pendingGetUpNotifyEvents.splice(0),
+    },
     StopMontages: (duration) => {
       const mantle = getActiveMantlingMontageInstance()
       if (mantle) stopActiveMantlingMontage(mantle.sample.instanceId, duration)
-      stopSlotAnimation(slotMontageClock, duration, POST_LOCOMOTION_SLOT_NAME)
+      for (const slotName of [POST_LOCOMOTION_SLOT_NAME, TRANSITION_SLOT_NAME,
+        TURN_IN_PLACE_STANDING_SLOT_NAME, TURN_IN_PLACE_CROUCHING_SLOT_NAME]) {
+        stopSlotAnimation(slotMontageClock, duration, slotName)
+      }
       clearSoloClip()
     },
     playClip,

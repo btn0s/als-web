@@ -1,6 +1,7 @@
+import { SkeletalJointConstraint, SkeletalSolverBody } from './chaosJointConstraint'
 import { JointData, RigidBodyDesc, type RigidBody, type World } from '@dimforge/rapier3d-compat'
 import { Quaternion, Vector3 } from 'three'
-import { ALS_PHYSICS_ASSET, angularLimitError, compileBody, compileConstraint } from './rapierAlsPhysicsAsset'
+import { ALS_PHYSICS_ASSET, compileBody, compileConstraint } from './rapierAlsPhysicsAsset'
 import type { PhysicsBoneWorldPose } from './physicsPoseBridge'
 
 export interface AlsRagdollImpulse {
@@ -15,13 +16,10 @@ export interface AlsRagdollImpulse {
 }
 export interface AlsRagdollStartOptions {
   initialImpulse?: AlsRagdollImpulse
-  /** Consumer-owned death: StopRagdolling is ignored until ResetRagdolling/unmount. */
-  keepRagdoll?: boolean
 }
 export interface AlsRagdollHandle {
   StartRagdolling(options?: AlsRagdollStartOptions): boolean
   StopRagdolling(): boolean
-  ResetRagdolling(): void
   AddImpulse(impulse: AlsRagdollImpulse): boolean
   readonly active: boolean
   /** Mutable sample, three.js world metres and metres/second. */
@@ -37,32 +35,39 @@ export function validateRagdollImpulse(input: AlsRagdollImpulse) {
 export class RapierAlsRagdoll {
   readonly bodies = new Map<string, RigidBody>()
   readonly poses = new Map<string, PhysicsBoneWorldPose>()
-  private joints: { constraint: ReturnType<typeof compileConstraint>; a: RigidBody; b: RigidBody }[] = []
+  private joints: SkeletalJointConstraint[] = []
+  private solverBodies = new Map<string, SkeletalSolverBody>()
+  private iterations = 0
   readonly world: World
   constructor(world: World) { this.world = world }
   start(poses: ReadonlyMap<string, PhysicsBoneWorldPose>, velocity: { x: number; y: number; z: number }) {
     if (this.bodies.size) return
     try {
       for (const asset of ALS_PHYSICS_ASSET.bodies) {
-        // PA_Als root is a kinematic query body, not part of the simulated pelvis hierarchy.
-        if (asset.boneName === 'root') continue
         const pose = poses.get(asset.boneName)
         if (!pose) throw new Error(`Missing ragdoll bone ${asset.boneName}`)
         const p = pose.translation
-        const body = this.world.createRigidBody(RigidBodyDesc.dynamic()
+        const compiled = compileBody(asset)
+        const desc = compiled.kinematic ? RigidBodyDesc.kinematicPositionBased() : RigidBodyDesc.dynamic()
+        const body = this.world.createRigidBody(desc
           .setTranslation(p.x, p.y, p.z).setRotation(pose.rotation)
-          .setLinvel(velocity.x, velocity.y, velocity.z).setCcdEnabled(true)
-          .setAdditionalSolverIterations(8))
+          .setLinvel(velocity.x, velocity.y, velocity.z)
+          .setCcdEnabled(compiled.settings.use_ccd)
+          .setLinearDamping(compiled.settings.linear_damping).setAngularDamping(compiled.settings.angular_damping)
+          .setGravityScale(compiled.settings.enable_gravity ? 1 : 0)
+          .setAdditionalMassProperties(compiled.mass, compiled.centerOfMass, compiled.principalInertia, compiled.inertiaFrame))
         this.bodies.set(asset.boneName, body)
-        for (const shape of compileBody(asset).shapes) {
+        for (const shape of compiled.shapes) {
           this.world.createCollider(shape.descriptor.setCollisionGroups(ALS_RAGDOLL_COLLISION_GROUPS), body)
         }
+        body.recomputeMassPropertiesFromColliders()
+        this.solverBodies.set(asset.boneName, new SkeletalSolverBody(body))
+        this.iterations = Math.max(this.iterations, compiled.settings.position_solver_iteration_count)
       }
       for (const asset of ALS_PHYSICS_ASSET.constraints) {
-        const c = compileConstraint(asset), a = this.bodies.get(c.body1), b = this.bodies.get(c.body2)
-        if (!a || !b) continue
-        this.world.createImpulseJoint(JointData.spherical(c.frame1.position, c.frame2.position), a, b, true).setContactsEnabled(false)
-        this.joints.push({ constraint: c, a, b })
+        const c = compileConstraint(asset), child = this.solverBodies.get(c.body1), parent = this.solverBodies.get(c.body2)
+        if (!child || !parent) throw new Error(`Missing PA_Als constraint body ${c.body1}/${c.body2}`)
+        this.joints.push(new SkeletalJointConstraint(c, parent, child))
       }
       // Rapier contact suppression is per connected pair. A free generic joint adds no
       // constraint rows, but honours PA_Als's additional disabled collision pairs.
@@ -82,36 +87,40 @@ export class RapierAlsRagdoll {
     if (input.torqueImpulse) body.applyTorqueImpulse(input.torqueImpulse, true)
     return true
   }
-  step(dt: number, targets?: ReadonlyMap<string, PhysicsBoneWorldPose>, stiffness = 0) {
-    for (const { constraint: c, a, b } of this.joints) {
-      if (a.isSleeping() && b.isSleeping()) continue
-      const qa = new Quaternion().copy(a.rotation()).multiply(c.frame1.rotation)
-      const qb = new Quaternion().copy(b.rotation()).multiply(c.frame2.rotation)
-      const relative = qb.clone().invert().multiply(qa)
-      const error = angularLimitError(relative, c.limits)
-      const targetA = targets?.get(c.body1), targetB = targets?.get(c.body2)
-      if (targetA && targetB && stiffness > 0) {
-        const target = new Quaternion().copy(targetB.rotation).multiply(c.frame2.rotation).invert()
-          .multiply(new Quaternion().copy(targetA.rotation).multiply(c.frame1.rotation))
-        const delta = target.invert().multiply(relative)
-        if (delta.w < 0) delta.set(-delta.x, -delta.y, -delta.z, -delta.w)
-        // Native stiffness is kg cm²/s²; convert to SI. Original damped velocity solver.
-        error.addScaledVector(new Vector3(delta.x, delta.y, delta.z), Math.min(1, stiffness * .0001 * dt))
+  step(_dt: number, targets?: ReadonlyMap<string, PhysicsBoneWorldPose>, stiffness = 0) {
+    for (const [name, solver] of this.solverBodies) {
+      if (solver.body.isKinematic()) {
+        const target = targets?.get(name)
+        if (target) {
+          solver.body.setNextKinematicTranslation(target.translation)
+          solver.body.setNextKinematicRotation(target.rotation)
+        }
       }
-      if (error.lengthSq() < 1e-9) continue
-      const correction = error.multiplyScalar(Math.min(12, .2 / Math.max(dt, .001))).applyQuaternion(qb)
-      correction.clampLength(0, 8)
-      const total = a.mass() + b.mass()
-      a.setAngvel(new Vector3().copy(a.angvel()).addScaledVector(correction, -b.mass() / total), false)
-      b.setAngvel(new Vector3().copy(b.angvel()).addScaledVector(correction, a.mass() / total), false)
+      solver.begin()
+    }
+    for (const joint of this.joints) {
+      const a = targets?.get(joint.c.body1), b = targets?.get(joint.c.body2)
+      // USkeletalMeshComponent::UpdateRBJointMotors: parent connector inverse × child
+      // connector, including all intervening graphics bones resolved by the pose bridge.
+      const target = a && b ? new Quaternion().copy(b.rotation).multiply(joint.c.frame2.rotation).invert()
+        .multiply(new Quaternion().copy(a.rotation).multiply(joint.c.frame1.rotation)) : null
+      joint.begin(target, stiffness)
     }
   }
+  afterPhysics(dt: number) {
+    if (!(dt > 0)) return
+    for (const solver of this.solverBodies.values()) solver.predict()
+    for (let i = 0; i < this.iterations; i++) for (const joint of this.joints) joint.solve(dt)
+    for (const solver of this.solverBodies.values()) solver.publish(dt, true)
+    for (const joint of this.joints) joint.project()
+    for (const solver of this.solverBodies.values()) solver.publish(dt, false)
+  }
   readPoses() {
-    for (const [name, body] of this.bodies) this.poses.set(name, { translation: body.translation(), rotation: body.rotation() })
+    for (const [name, body] of this.bodies) if (body.isDynamic()) this.poses.set(name, { translation: body.translation(), rotation: body.rotation() })
     return this.poses
   }
   dispose() {
     for (const body of this.bodies.values()) if (body.isValid()) this.world.removeRigidBody(body)
-    this.bodies.clear(); this.poses.clear(); this.joints = []
+    this.bodies.clear(); this.poses.clear(); this.joints = []; this.solverBodies.clear(); this.iterations = 0
   }
 }

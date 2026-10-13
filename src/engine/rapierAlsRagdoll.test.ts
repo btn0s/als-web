@@ -6,16 +6,17 @@ import { RapierAlsRagdoll, ALS_CHARACTER_COLLISION_GROUPS, ALS_RAGDOLL_COLLISION
 
 beforeAll(async () => { await RAPIER.init() })
 describe('PA_Als conversion', () => {
-  it('preserves capsule cylinder length, cm translation and volume-based mass fallback', () => {
+  it('preserves shape dimensions and uses native mass, COM and principal inertia', () => {
     const result = compileBody(ALS_PHYSICS_ASSET.bodies[0])
     expect(result.shapes[0].descriptor.translation.x).toBeCloseTo(.005)
     expect(result.shapes[0].descriptor.translation.z).toBeCloseTo(-.005)
-    expect(result.mass).toBeCloseTo(1000 * (Math.PI * .14 ** 2 * .07 + 4 / 3 * Math.PI * .14 ** 3))
-    const body = structuredClone(ALS_PHYSICS_ASSET.bodies[3])
-    body.massAndMaterial.effectiveMassKg.value = 8
-    const authored = compileBody(body)
-    expect(authored.mass).toBe(8)
-    expect(authored.shapes.reduce((n, s) => n + s.descriptor.mass, 0)).toBeCloseTo(8)
+    expect(result.mass).toBeCloseTo(7.926502227783203)
+    expect(result.massSource).toBe('native-runtime')
+    expect(result.centerOfMass.toArray()).toEqual([.005, 0, -.005])
+    expect(result.principalInertia.x).toBeCloseTo(.08491806030273438)
+    expect(result.principalInertia.y).toBeCloseTo(.06638085327148438)
+    expect(result.shapes[0].descriptor.mass).toBe(0)
+    expect(() => compileBody({ ...ALS_PHYSICS_ASSET.bodies[0], boneName: 'missing' })).toThrow('Missing native mass')
   })
   it('converts reflected rotation and constraint frames independently of the animated pose', () => {
     const yaw = ueRotation({ Pitch: 0, Yaw: 90, Roll: 0 })
@@ -26,6 +27,11 @@ describe('PA_Als conversion', () => {
     expect(c.frame2.position.x).toBeCloseTo(.10808878)
     expect(new Vector3(1, 0, 0).applyQuaternion(c.frame2.rotation).x).toBeCloseTo(.99221534)
     expect(c.limits).toEqual([15, 10, 15].map(d => d * Math.PI / 180))
+    expect(c.profile.ConeLimit.bSoftConstraint).toBe(true)
+    expect(c.profile.AngularDrive.TwistDrive.bEnablePositionDrive).toBe(true)
+    const root = compileConstraint(ALS_PHYSICS_ASSET.constraints.find(c => c.body2 === 'root')!)
+    expect(root.profile.LinearLimit.XMotion).toBe('LCM_Free')
+    expect(root.profile.ConeLimit.Swing1Motion).toBe('ACM_Free')
   })
 })
 it('applies impulses to a named body, at a world point, rejects invalid input and disposes all physics', () => {

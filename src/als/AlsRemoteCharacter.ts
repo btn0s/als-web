@@ -1,3 +1,4 @@
+import { ALS_RAGDOLLING_SETTINGS, type AlsRagdollingSettings } from './Settings/AlsRagdollingSettings'
 import { createAlsCharacter, refreshLocomotion } from './AlsCharacter'
 import {
   createAlsCharacterAnimationControls, publishAlsCharacterAnimationSnapshot,
@@ -19,7 +20,12 @@ const action = {
  * RefreshCharacter, rotation policy, movement integration, input bindings, or action authority.
  */
 export class AlsRemoteCharacter {
-  readonly character = createAlsCharacter()
+  readonly character
+  constructor(ragdollingSettings?: Partial<AlsRagdollingSettings>) {
+    this.character = createAlsCharacter({ settings: {
+      Ragdolling: { ...ALS_RAGDOLLING_SETTINGS, ...ragdollingSettings },
+    } })
+  }
   readonly controls = createAlsCharacterAnimationControls()
   private previous: AlsCharacterSnapshot | null = null
   private location = { x: 0, y: 0, z: 0 }
@@ -58,7 +64,7 @@ export class AlsRemoteCharacter {
       ? 'PistolOneHanded' : 'PistolTwoHanded'
     const unsupported: string[] = []
     if (snapshot.action === 'ragdoll' || snapshot.action === 'getUp') {
-      unsupported.push(`${snapshot.action} runtime (not implemented by the local actor)`)
+      unsupported.push(`${snapshot.action} replication (consumer must trigger the cosmetic ragdoll API)`)
     }
     publishAlsCharacterAnimationSnapshot(this.controls, {
       character: c, location: this.location, basedMovement: ALS_NO_BASED_MOVEMENT,
