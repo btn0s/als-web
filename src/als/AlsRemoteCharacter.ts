@@ -3,7 +3,6 @@ import {
   createAlsCharacterAnimationControls, publishAlsCharacterAnimationSnapshot,
   resolveAlsActorLocation,
 } from './AlsCharacter.hooks'
-import { ALS_OVERLAY_MODES } from './AnimGraph/overlayMode'
 import { ALS_NO_BASED_MOVEMENT } from './State/AlsMovementBaseState'
 import { unwindDegrees } from './State/AlsLocomotionState'
 import type { AlsCharacterSnapshot } from './AlsCharacterSnapshot'
@@ -55,18 +54,16 @@ export class AlsRemoteCharacter {
     c.locomotionState.targetYawAngle = snapshot.animation?.targetYaw ?? snapshot.actorYaw
     resolveAlsActorLocation({ x: snapshot.pos[0], y: snapshot.pos[2], z: snapshot.pos[1] },
       c.stance, c.locomotionMode, this.location)
-    // Pistol is supplied by the separate upstream overlay port. Resolve by ALS name so this
-    // adapter composes with that branch without editing any overlay graph or widening its union.
-    const pistol = ALS_OVERLAY_MODES.find((mode) => String(mode) === 'PistolTwoHanded')
+    const pistol = snapshot.animation?.pistolOverlayMode === 'PistolOneHanded'
+      ? 'PistolOneHanded' : 'PistolTwoHanded'
     const unsupported: string[] = []
-    if (snapshot.overlay === 'pistol' && !pistol) unsupported.push('pistol overlay graph')
     if (snapshot.action === 'ragdoll' || snapshot.action === 'getUp') {
       unsupported.push(`${snapshot.action} runtime (not implemented by the local actor)`)
     }
     publishAlsCharacterAnimationSnapshot(this.controls, {
       character: c, location: this.location, basedMovement: ALS_NO_BASED_MOVEMENT,
       acceleration, overlayMode: snapshot.overlay === 'rifle' ? 'Rifle'
-        : snapshot.overlay === 'pistol' ? pistol ?? 'Default' : 'Default',
+        : snapshot.overlay === 'pistol' ? pistol : 'Default',
       movementOverride: false, speedOverride: 0, directionOverride: 0,
       rotateInPlaceOverride: false,
       locomotionYawSpeed: delta > 0 ? unwindDegrees(snapshot.actorYaw - previous!.actorYaw) / delta : 0,

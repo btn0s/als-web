@@ -1,6 +1,7 @@
 import type { AlsCharacter } from './AlsCharacter'
 import type { AlsCharacterAnimationControls } from './AlsCharacter.hooks'
 import type { AlsCharacterSnapshot } from './AlsCharacterSnapshot'
+import { isPistolOverlayMode } from './AnimGraph/overlayMode'
 
 export interface AlsCharacterRecordingSource {
   /** Network input sequence when available; otherwise the recorder emits a sample counter. */
@@ -61,9 +62,10 @@ export class AlsCharacterRecorder {
       locomotionMode: c.locomotionMode === 'InAir' ? 'inAir' : 'grounded',
       action: c.locomotionAction ? actions[c.locomotionAction] : 'none',
       actionSeq: this.actionSeq, overlay: controls.overlayMode === 'Rifle' ? 'rifle'
-        : String(controls.overlayMode).startsWith('Pistol') ? 'pistol' : 'default',
+        : isPistolOverlayMode(controls.overlayMode) ? 'pistol' : 'default',
       aiming: c.desiredAiming, seq: source.seq ?? this.seq++,
       animation: {
+        pistolOverlayMode: isPistolOverlayMode(controls.overlayMode) ? controls.overlayMode : undefined,
         hasInput: c.locomotionState.hasInput,
         inputYaw: c.locomotionState.inputYawAngle,
         targetYaw: c.locomotionState.targetYawAngle,

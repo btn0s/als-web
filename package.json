@@ -24,7 +24,10 @@
     "./app/AlsRemoteActor": "./src/app/AlsRemoteActor.tsx",
     "./als/AlsCharacterSnapshot": "./src/als/AlsCharacterSnapshot.ts",
     "./als/AlsSnapshotBuffer": "./src/als/AlsSnapshotBuffer.ts",
-    "./als/AlsCharacterRecorder": "./src/als/AlsCharacterRecorder.ts"
+    "./als/AlsCharacterRecorder": "./src/als/AlsCharacterRecorder.ts",
+    "./app/AlsCharacterGltf": "./src/app/AlsCharacterGltf.ts",
+    "./app/AlsCharacterGltf.hooks": "./src/app/AlsCharacterGltf.hooks.ts",
+    "./engine/gltfAnimationExtras": "./src/engine/gltfAnimationExtras.ts"
   },
   "packageManager": "pnpm@11.15.1",
   "engines": {

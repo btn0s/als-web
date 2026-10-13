@@ -3,6 +3,8 @@ import { createAlsCharacter, refreshLocomotion } from './AlsCharacter'
 import { createAlsCharacterAnimationControls } from './AlsCharacter.hooks'
 import { AlsCharacterRecorder, type AlsCharacterRecordingSource } from './AlsCharacterRecorder'
 import { AlsRemoteCharacter } from './AlsRemoteCharacter'
+import { AlsSnapshotBuffer } from './AlsSnapshotBuffer'
+import { ALS_OVERLAY_MODES } from './AnimGraph/overlayMode'
 
 function source(): AlsCharacterRecordingSource {
   return { character: createAlsCharacter(), controls: createAlsCharacterAnimationControls(),
@@ -10,6 +12,25 @@ function source(): AlsCharacterRecordingSource {
 }
 
 describe('ALS recording and remote animation boundary', () => {
+  it('replays both pistol modes through the ghost buffer and keeps base-wire pistol compatible', () => {
+    const local = source()
+    const recorder = new AlsCharacterRecorder()
+    const remote = new AlsRemoteCharacter()
+    const buffer = new AlsSnapshotBuffer({ interpolationDelayMs: 0 })
+    for (const [index, mode] of ALS_OVERLAY_MODES.entries()) {
+      local.controls.overlayMode = mode
+      const t = index * 50
+      const snapshot = recorder.capture(t, local)!
+      expect(snapshot.overlay).toBe(mode === 'Default' ? 'default' : mode === 'Rifle' ? 'rifle' : 'pistol')
+      buffer.push(snapshot)
+      expect(remote.apply(buffer.sample(t)!.state).unsupported).toEqual([])
+      expect(remote.controls.overlayMode).toBe(mode)
+    }
+    const legacy = recorder.capture(200, local)!
+    delete legacy.animation
+    remote.apply(legacy)
+    expect(remote.controls.overlayMode).toBe('PistolTwoHanded')
+  })
   it('records at 20Hz without frame-rate drift or catch-up bursts', () => {
     const recorder = new AlsCharacterRecorder()
     const local = source()

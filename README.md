@@ -29,6 +29,58 @@ Click the scene to lock the pointer.
 | `C` | Switch shoulder |
 | Hold `Q` + wheel | Select overlay mode in slow motion; release to apply |
 
+## Loading the character
+
+`skm-als.glb` carries authored curves, notifies, sync markers, interpolation, root motion,
+and additive settings in animation extras. Always use the exported ALS loader; never load
+this asset with plain drei `useGLTF`, whose three-stdlib loader drops those extras.
+The package's current name is `als-ue5-r3f` (adjust imports to your fork's package name).
+
+For a local character, `Character` already uses the progress/retry hook:
+
+```tsx
+import { useAlsCharacterGltf } from 'als-ue5-r3f/app/AlsCharacterGltf.hooks'
+
+const { gltf, status, progress, retry } = useAlsCharacterGltf() // default /assets/skm-als.glb
+```
+
+Outside React, use `loadAlsCharacterGltf(url?, { signal, onProgress })`. Progress is a
+0–1 download fraction when content-length is available. Abort also prevents publication
+if parsing has already started. This direct loader does not cache requests.
+
+Remote characters and NPCs under `<Suspense>` share one download/parse per URL:
+
+```tsx
+import { useMemo } from 'react'
+import { clone } from 'three/addons/utils/SkeletonUtils.js'
+import { useSuspenseAlsCharacterGltf } from 'als-ue5-r3f/app/AlsCharacterGltf.hooks'
+
+function Actor() {
+  const asset = useSuspenseAlsCharacterGltf()
+  const gltf = useMemo(() => ({ ...asset, scene: clone(asset.scene) }), [asset])
+  // Give gltf to this actor's animation instance; each actor owns its skeleton.
+  return <primitive object={gltf.scene} dispose={null} />
+}
+```
+
+`preloadAlsCharacterGltf(url?)` warms that same cache. For a failed cached load, call
+`clearAlsCharacterGltf(url?)` before resetting your error boundary to retry. Both functions
+are exported from `als-ue5-r3f/app/AlsCharacterGltf`. Keep the cached scene immutable;
+clone with `SkeletonUtils.clone` for each actor and share its read-only animation clips.
+
+Existing drei consumers can preserve extras with the exported loader extension:
+
+```tsx
+import { useGLTF } from '@react-three/drei'
+import { extendAlsGltfLoader } from 'als-ue5-r3f/engine/gltfAnimationExtras'
+
+const gltf = useGLTF('/assets/skm-als.glb', true, true, extendAlsGltfLoader)
+```
+
+Configure the extension on the first load (including any `useGLTF.preload`); drei caches by
+URL, so clear a previously plain-loaded entry with `useGLTF.clear(url)` before reloading.
+The lower-level `alsGltfAnimationExtrasPlugin` is also exported for `loader.register(...)`.
+
 ## Verify
 
 ```sh

@@ -1,9 +1,8 @@
-import { clone } from 'three/addons/utils/SkeletonUtils.js'
 import { AlsCharacterRecorder } from '../als/AlsCharacterRecorder'
 import type { AlsCharacterSnapshot } from '../als/AlsCharacterSnapshot'
 import { isPistolOverlayMode } from '../als/AnimGraph/overlayMode'
 import { useFrame } from '@react-three/fiber'
-import { Html, useGLTF } from '@react-three/drei'
+import { Html } from '@react-three/drei'
 import {
   CapsuleCollider,
   RigidBody,
@@ -13,16 +12,14 @@ import {
 } from '@react-three/rapier'
 import {
   Suspense,
-  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
 } from 'react'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
-import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
+import type { GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { useAlsAnimationInstance } from '../als/AlsAnimationInstance.hooks'
 import type {
   AlsMantlingMontageBridge,
@@ -64,14 +61,9 @@ import type {
   CompiledAuthoredRootMotion,
 } from '../engine/rootMotion'
 import type { CharacterPoseSample } from './CharacterPoseSample'
-import {
-  ALS_RIFLE_OVERLAY_OBJECT_URL,
-  ALS_PISTOL_OVERLAY_OBJECT_URL,
-  attachPistolOverlayObject,
-  attachRifleOverlayObject,
-  detachOverlayObject,
-} from '../als/AlsCharacter.overlayObjects'
-import { applyCharacterMaterialOverrides } from '../als/characterMaterials'
+import { PistolOverlayObject, RifleOverlayObject } from './AlsOverlayObjects'
+export { RifleOverlayObject } from './AlsOverlayObjects'
+import { useAlsCharacterGltf } from './AlsCharacterGltf.hooks'
 import { ALS_MESH_COMPONENT_YAW_RADIANS } from '../engine/unrealCoordinateSpace'
 import {
   ALS_MANTLING_SETTINGS,
@@ -80,8 +72,6 @@ import type {
   AlsFootstepSoundSink,
 } from '../als/Notifies/AlsAnimNotify_FootstepEffects'
 
-const CHARACTER_URL = '/assets/skm-als.glb'
-const GLB_MAGIC = [0x67, 0x6c, 0x54, 0x46]
 const ALS_VISIBILITY_MANTLING_RESPONSE_CHANNELS = new Set([
   'WorldStatic',
   'WorldDynamic',
@@ -141,91 +131,6 @@ function compileAlsMantlingRootMotion(
   return rootMotionBySequence
 }
 
-function isGlb(buffer: ArrayBuffer) {
-  if (buffer.byteLength < 12) {
-    return false
-  }
-
-  const header = new Uint8Array(buffer, 0, 4)
-  return GLB_MAGIC.every((byte, index) => header[index] === byte)
-}
-
-function useCharacterGltf() {
-  const [gltf, setGltf] = useState<GLTF>()
-  const [status, setStatus] = useState<'loading' | 'error'>('loading')
-  const [progress, setProgress] = useState<number>()
-  const [attempt, setAttempt] = useState(0)
-
-  useEffect(() => {
-    const controller = new AbortController()
-
-    async function load() {
-      setStatus('loading')
-      setProgress(undefined)
-      try {
-        const response = await fetch(CHARACTER_URL, { signal: controller.signal })
-        const contentType = response.headers.get('content-type') ?? ''
-
-        if (!response.ok || contentType.includes('text/html')) {
-          throw new Error(`Character request failed (${response.status})`)
-        }
-
-        let buffer: ArrayBuffer
-        const totalBytes = Number(response.headers.get('content-length')) || 0
-        if (response.body) {
-          const reader = response.body.getReader()
-          const chunks: Uint8Array[] = []
-          let receivedBytes = 0
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-            chunks.push(value)
-            receivedBytes += value.byteLength
-            if (totalBytes > 0) setProgress(Math.min(1, receivedBytes / totalBytes))
-          }
-          const bytes = new Uint8Array(receivedBytes)
-          let offset = 0
-          for (const chunk of chunks) {
-            bytes.set(chunk, offset)
-            offset += chunk.byteLength
-          }
-          buffer = bytes.buffer
-        } else {
-          buffer = await response.arrayBuffer()
-        }
-        if (!isGlb(buffer)) {
-          throw new Error('Character response was not a GLB')
-        }
-
-        const resourcePath = new URL('.', response.url).href
-        const loadedGltf = await new GLTFLoader().parseAsync(buffer, resourcePath)
-        if (!controller.signal.aborted) {
-          applyCharacterMaterialOverrides(loadedGltf.scene)
-          setGltf(loadedGltf)
-        }
-      } catch (error) {
-        if (
-          !controller.signal.aborted
-          && !(error instanceof DOMException && error.name === 'AbortError')
-        ) {
-          console.debug('[Character] GLB unavailable; showing retry state')
-          setStatus('error')
-        }
-      }
-    }
-
-    void load()
-    return () => controller.abort()
-  }, [attempt])
-
-  const retry = useCallback(() => {
-    setGltf(undefined)
-    setAttempt((value) => value + 1)
-  }, [])
-
-  return { gltf, status, progress, retry }
-}
-
 function CharacterLoadState({
   status,
   progress,
@@ -258,31 +163,6 @@ function CharacterLoadState({
       </div>
     </Html>
   )
-}
-
-export function RifleOverlayObject({ characterScene }: { characterScene: THREE.Object3D }) {
-  // useGLTF caches by URL: the first Rifle switch loads, then Default only detaches/hides it.
-  const rifleGltf = useGLTF(ALS_RIFLE_OVERLAY_OBJECT_URL)
-  const rifleScene = useMemo(() => clone(rifleGltf.scene), [rifleGltf.scene])
-
-  useLayoutEffect(() => {
-    // Keep the authored MI_Als_Rifle material graph intact; as a bone child it shares the
-    // character's lighting, shadows, and postprocessing path.
-    attachRifleOverlayObject(characterScene, rifleScene)
-    return () => detachOverlayObject(rifleScene)
-  }, [characterScene, rifleScene])
-
-  return null
-}
-
-function PistolOverlayObject({ characterScene }: { characterScene: THREE.Object3D }) {
-  const pistolGltf = useGLTF(ALS_PISTOL_OVERLAY_OBJECT_URL)
-  const pistolScene = useMemo(() => clone(pistolGltf.scene), [pistolGltf.scene])
-  useLayoutEffect(() => {
-    attachPistolOverlayObject(characterScene, pistolScene)
-    return () => detachOverlayObject(pistolScene)
-  }, [characterScene, pistolScene])
-  return null
 }
 
 function LoadedCharacter({
@@ -624,7 +504,7 @@ export function Character({
   onSnapshot,
   snapshotRateHz = 20,
 }: CharacterProps) {
-  const { gltf, status, progress, retry } = useCharacterGltf()
+  const { gltf, status, progress, retry } = useAlsCharacterGltf()
 
   useEffect(() => {
     window.__characterStatus = gltf ? 'glb' : 'placeholder'

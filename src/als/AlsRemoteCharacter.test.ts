@@ -11,17 +11,38 @@ import { createAlsCharacter, refreshLocomotion } from './AlsCharacter'
 import { createAlsCharacterAnimationControls } from './AlsCharacter.hooks'
 import { ALS_ROLLING_SETTINGS } from './Settings/AlsRollingSettings'
 import { ALS_MANTLING_SETTINGS } from './Settings/AlsMantlingSettings'
+import { clearAlsCharacterGltf, preloadAlsCharacterGltf } from '../app/AlsCharacterGltf'
+import { attachPistolOverlayObject, detachOverlayObject } from './AlsCharacter.overlayObjects'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  clearAlsCharacterGltf()
+})
 
 it('runs the shipped full graph on an independent remote skeleton and preserves local diagnostics', async () => {
   const bytes = readFileSync(new URL('../../public/assets/skm-als.glb', import.meta.url))
-  const gltf = await new GLTFLoader().parseAsync(bytes.buffer.slice(
-    bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '')
+  const fetch = vi.fn(async () => {
+    const response = new Response(bytes)
+    Object.defineProperty(response, 'url', { value: 'https://example.test/assets/skm-als.glb' })
+    return response
+  })
+  vi.stubGlobal('fetch', fetch)
+  const gltf = await preloadAlsCharacterGltf()
+  expect(await preloadAlsCharacterGltf()).toBe(gltf)
+  expect(fetch).toHaveBeenCalledTimes(1)
   const scene = clone(gltf.scene)
+  const otherScene = clone(gltf.scene)
   const sentinel = { localOnly: 42 }
   vi.stubGlobal('window', { __weightTable: sentinel })
   const animation = createAlsAnimationInstance({ scene, animations: gltf.animations, publishDiagnostics: false, groundPredictionSweep: () => null })
+  expect(() => createAlsAnimationInstance({ scene: otherScene, animations: gltf.animations, publishDiagnostics: false })).not.toThrow()
+  const propBytes = readFileSync(new URL('../../public/assets/skm-als-pistol.glb', import.meta.url))
+  const pistol = (await new GLTFLoader().parseAsync(propBytes.buffer.slice(
+    propBytes.byteOffset, propBytes.byteOffset + propBytes.byteLength), '')).scene
+  const otherPistol = clone(pistol)
+  attachPistolOverlayObject(scene, pistol)
+  attachPistolOverlayObject(otherScene, otherPistol)
+  expect(pistol.parent).not.toBe(otherPistol.parent)
   const remote = new AlsRemoteCharacter()
   const local = { character: createAlsCharacter(), controls: createAlsCharacterAnimationControls(),
     position: { x: 0, y: 0.922, z: 0 } }
@@ -34,18 +55,29 @@ it('runs the shipped full graph on an independent remote skeleton and preserves 
   local.character.gait = 'Running'
   refreshLocomotion(local.character, { x: 3.75, y: 0, z: 0 })
   for (let frame = 0; frame < 30; frame++) {
-    if (frame === 10) local.character.stance = 'Crouching'
+    if (frame === 10) {
+      local.character.stance = 'Crouching'
+      local.controls.overlayMode = 'PistolTwoHanded'
+    }
     if (frame === 20) {
+      local.controls.overlayMode = 'PistolOneHanded'
       local.character.locomotionMode = 'InAir'
       refreshLocomotion(local.character, { x: 3, y: 0, z: 4.2 })
     }
     const result = remote.apply(recorder.capture(frame * 20, local)!)
+    expect(remote.controls.overlayMode).toBe(local.controls.overlayMode)
     if (result.jumped) animation.jump()
     animation.refresh(0.02, remote.controls)
   }
   expect(scene.getObjectByName('hand_r')).not.toBe(gltf.scene.getObjectByName('hand_r'))
   expect(scene.getObjectByName('hand_r')!.quaternion.angleTo(original)).toBeGreaterThan(0.01)
   expect(gltf.scene.getObjectByName('hand_r')!.quaternion.angleTo(original)).toBeLessThan(1e-6)
+  expect(otherScene.getObjectByName('hand_r')!.quaternion.angleTo(original)).toBeLessThan(1e-6)
+  expect(pistol.position.toArray()).toEqual([0, 0, 0])
+  expect(pistol.quaternion.toArray()).toEqual([0, 0, 0, 1])
+  expect(pistol.matrixWorld.elements.every(Number.isFinite)).toBe(true)
+  detachOverlayObject(pistol)
+  expect(otherPistol.parent).not.toBeNull()
   scene.traverse((object) => {
     if (object instanceof Bone) {
       expect([...object.position.toArray(), ...object.quaternion.toArray()].every(Number.isFinite)).toBe(true)

@@ -1,3 +1,5 @@
+import type { AlsPistolOverlayMode } from './AnimGraph/overlayMode'
+
 /** Transport-neutral wire contract. Times are milliseconds in ONE synchronized clock domain.
  * pos is the Rapier body anchor (standing capsule centre), not the mesh root; all linear
  * values use three.js metres, all angles use ALS degrees. Network clock sync belongs to caller.
@@ -22,6 +24,8 @@ export interface AlsCharacterSnapshot {
    * The recorder supplies these; servers may forward them unchanged. No movement authority.
    */
   animation?: {
+    /** Base overlay='pistol' defaults to two-handed when this presentation detail is absent. */
+    pistolOverlayMode?: AlsPistolOverlayMode
     hasInput: boolean
     inputYaw: number
     targetYaw?: number

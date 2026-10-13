@@ -1,10 +1,9 @@
-import { Suspense, useMemo, useRef } from 'react'
-import { useFrame, useLoader } from '@react-three/fiber'
+import { Suspense, useCallback, useMemo, useRef } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { CapsuleCollider, RigidBody, useRapier } from '@react-three/rapier'
 import type { RapierCollider, RapierRigidBody } from '@react-three/rapier'
-import { Group, type Object3D } from 'three'
+import { Group } from 'three'
 import { clone } from 'three/addons/utils/SkeletonUtils.js'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { createAlsAnimationInstance } from '../als/AlsAnimationInstance'
 import type { AlsControlRigFootOffsetTrace } from '../als/AnimGraph/CR_Als'
 import { AlsRemoteCharacter } from '../als/AlsRemoteCharacter'
@@ -23,8 +22,9 @@ import { createRapierAlsCapsuleSweep } from '../engine/rapierAlsCapsuleSweep'
 import { createRapierAlsControlRigFootTrace } from '../engine/rapierAlsControlRigFootTrace'
 import { setRapierAlsStanceCapsules } from '../engine/rapierAlsStanceCapsules'
 import { ALS_MESH_COMPONENT_YAW_RADIANS, unrealYawDegreesToThreeRadians } from '../engine/unrealCoordinateSpace'
-import { applyCharacterMaterialOverrides } from '../als/characterMaterials'
-import { RifleOverlayObject } from './Character'
+import { isPistolOverlayMode } from '../als/AnimGraph/overlayMode'
+import { useSuspenseAlsCharacterGltf } from './AlsCharacterGltf.hooks'
+import { PistolOverlayObject, RifleOverlayObject } from './AlsOverlayObjects'
 
 export interface AlsRemoteActorProps {
   /** Own this in useMemo, push packets as they arrive. Exactly one actor consumes each buffer. */
@@ -52,14 +52,9 @@ const warnUnsupported = (feature: string) => console.warn(`[AlsRemoteActor] Unsu
  */
 export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
   footIk = true, worldTime, onAction, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
-  // three's GLTFLoader, as Character uses: drei's three-stdlib loader drops animation extras
-  // (notifies, curves, sync markers), which the ALS animation instance requires.
-  const gltf = useLoader(GLTFLoader, '/assets/skm-als.glb')
-  const scene = useMemo(() => {
-    const copy = clone(gltf.scene)
-    applyCharacterMaterialOverrides(copy)
-    return copy
-  }, [gltf.scene])
+  const gltf = useSuspenseAlsCharacterGltf()
+  // Cached materials/clips are shared; each remote (including ghosts) owns its skeleton.
+  const scene = useMemo(() => clone(gltf.scene), [gltf.scene])
   const { rapier, world } = useRapier()
   const body = useRef<RapierRigidBody>(null)
   const standing = useRef<RapierCollider>(null)
@@ -67,7 +62,6 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
   // Render separately from Rapier's interpolated object: network interpolation already owns
   // presentation. This avoids smoothing snapshots a second time at fixed physics frequency.
   const root = useRef<Group>(null)
-  const rifleRoot = useRef<Group>(null)
   const driver = useMemo(() => new AlsRemoteCharacter(), [])
   const sweep = useMemo(() => createRapierAlsCapsuleSweep({ world,
     Capsule: rapier.Capsule, Ray: rapier.Ray,
@@ -91,6 +85,12 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
   }), [scene, gltf.animations, sweep, lodTrace])
   const warned = useRef(new Set<string>())
   const active = useRef(false)
+  const isRifleVisible = useCallback(
+    () => active.current && driver.controls.overlayMode === 'Rifle', [driver],
+  )
+  const isPistolVisible = useCallback(
+    () => active.current && isPistolOverlayMode(driver.controls.overlayMode), [driver],
+  )
   const driverSnapshot = useRef<AlsCharacterSnapshot | null>(null)
   const mantleSettings = useRef<(typeof ALS_MANTLING_SETTINGS)[keyof typeof ALS_MANTLING_SETTINGS] | undefined>(undefined)
 
@@ -147,7 +147,6 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
       driver.character.stance, driver.character.locomotionMode), state.pos[2])
     root.current.rotation.y = unrealYawDegreesToThreeRadians(state.actorYaw)
     root.current.updateWorldMatrix(true, true)
-    if (rifleRoot.current) rifleRoot.current.visible = state.overlay === 'rifle'
   }, ALS_FRAME_PRIORITY.Character)
 
   useFrame((_, deltaRealTime) => {
@@ -178,24 +177,13 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
         position={[0, ALS_CROUCHING_CAPSULE_HALF_HEIGHT - ALS_STANDING_CAPSULE_HALF_HEIGHT, 0]} friction={0} />
     </RigidBody>
     <group ref={root} visible={false}>
-      <group rotation-y={ALS_MESH_COMPONENT_YAW_RADIANS}><primitive object={scene} /></group>
-      <group ref={rifleRoot}>
-        <Suspense fallback={null}><RemoteRifle characterScene={scene} visibility={rifleRoot} /></Suspense>
-      </group>
+      <group rotation-y={ALS_MESH_COMPONENT_YAW_RADIANS}><primitive object={scene} dispose={null} /></group>
+      <Suspense fallback={null}>
+        <RifleOverlayObject characterScene={scene} isVisible={isRifleVisible} />
+      </Suspense>
+      <Suspense fallback={null}>
+        <PistolOverlayObject characterScene={scene} isVisible={isPistolVisible} />
+      </Suspense>
     </group>
   </>
-}
-
-// RifleOverlayObject attaches to a bone, so gate that bone child rather than its React parent.
-function RemoteRifle({ characterScene, visibility }: {
-  characterScene: Object3D
-  visibility: React.RefObject<Group | null>
-}) {
-  useFrame(() => {
-    const bone = characterScene.getObjectByName('VB hand_r_to_ik_hand_gun')
-    for (const child of bone?.children ?? []) {
-      if (child.type !== 'Bone') child.visible = visibility.current?.visible ?? false
-    }
-  }, ALS_FRAME_PRIORITY.PosePublication)
-  return <RifleOverlayObject characterScene={characterScene} />
 }
