@@ -194,13 +194,16 @@ function CharacterLoadState({
 function RifleOverlayObject({ characterScene }: { characterScene: THREE.Object3D }) {
   // useGLTF caches by URL: the first Rifle switch loads, then Default only detaches/hides it.
   const rifleGltf = useGLTF(ALS_RIFLE_OVERLAY_OBJECT_URL)
+  // The cached scene is shared by every Character; an Object3D has one parent, so each
+  // instance attaches its own clone instead of stealing the rifle from the previous holder.
+  const rifleScene = useMemo(() => clone(rifleGltf.scene), [rifleGltf.scene])
 
   useLayoutEffect(() => {
     // Keep the authored MI_Als_Rifle material graph intact; as a bone child it shares the
     // character's lighting, shadows, and postprocessing path.
-    attachRifleOverlayObject(characterScene, rifleGltf.scene)
-    return () => detachOverlayObject(rifleGltf.scene)
-  }, [characterScene, rifleGltf.scene])
+    attachRifleOverlayObject(characterScene, rifleScene)
+    return () => detachOverlayObject(rifleScene)
+  }, [characterScene, rifleScene])
 
   return null
 }
