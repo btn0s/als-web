@@ -65,6 +65,7 @@ import {
 } from '../engine/inertializationOutput'
 import {
   copyPose,
+  type LocalPoseBuffer,
   createPoseBuffer,
   resetPoseToAdditiveIdentity,
 } from '../engine/poseBuffer'
@@ -853,6 +854,12 @@ export interface AlsGetUpMontageBridge {
   takeNotifyEvents(): readonly AlsGetUpMontageNotifyEvent[]
 }
 export interface AlsAnimationInstance {
+  /** Borrowed diagnostic buffers, valid until the next refresh. Do not mutate. */
+  inspectPose(stage: 'overlay' | 'locomotion' | 'final'): {
+    boneNames: readonly string[]
+    pose: LocalPoseBuffer
+    curves: ReadonlyMap<string, number>
+  }
   readonly getUpMontage: AlsGetUpMontageBridge
   readonly ragdolling: AlsRagdollPose
   StopMontages: (blendOutDuration: number) => void
@@ -7539,6 +7546,11 @@ export function createAlsAnimationInstance(gltf: {
   }
 
   return {
+    inspectPose: (stage) => ({
+      boneNames: rig.boneNames,
+      pose: stage === 'overlay' ? evaluator.overlayPose : stage === 'locomotion' ? evaluator.basePose : evaluator.outputPose,
+      curves: stage === 'overlay' ? overlayInertialization.curves : stage === 'locomotion' ? postLocomotionSlotCurveScratch : publishedCurves,
+    }),
     ragdolling,
     getUpMontage: {
       Montage_Play: playGetUpMontage,

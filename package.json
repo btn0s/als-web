@@ -28,7 +28,9 @@
     "./app/AlsCharacterGltf": "./src/app/AlsCharacterGltf.ts",
     "./app/AlsCharacterGltf.hooks": "./src/app/AlsCharacterGltf.hooks.ts",
     "./engine/gltfAnimationExtras": "./src/engine/gltfAnimationExtras.ts",
-    "./als/AnimGraph/consumerOverlayStates": "./src/als/AnimGraph/consumerOverlayStates.ts"
+    "./als/AnimGraph/consumerOverlayStates": "./src/als/AnimGraph/consumerOverlayStates.ts",
+    "./als/AlsAnimationInstance": "./src/als/AlsAnimationInstance.ts",
+    "./als/Settings/AlsMantlingSettings": "./src/als/Settings/AlsMantlingSettings.ts"
   },
   "packageManager": "pnpm@11.15.1",
   "engines": {
