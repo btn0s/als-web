@@ -32,9 +32,11 @@ export interface RapierAlsSupportingRigidBody {
   translation(): RapierVector
   rotation(): RapierRotation
   isFixed(): boolean
+  isValid?(): boolean
 }
 
 export interface RapierAlsSupportingCollider {
+  isValid?(): boolean
   readonly handle: number
   translation(): RapierVector
   rotation(): RapierRotation
@@ -726,7 +728,9 @@ export function rapierAlsMovementBaseFromPrimitive(
   collider: RapierAlsSupportingCollider,
   relativeRotation = false,
 ): Readonly<AlsBasedMovement> {
+  if (collider.isValid?.() === false) return ALS_NO_BASED_MOVEMENT
   const body = collider.parent()
+  if (body?.isValid?.() === false) return ALS_NO_BASED_MOVEMENT
   const hasRelativeLocation = body !== null && !body.isFixed()
   return {
     primitive: collider,
@@ -759,11 +763,12 @@ export function rapierAlsMovementBase(
 export function rapierAlsCameraMovementBaseFromPrimitive(
   collider: RapierAlsSupportingCollider,
   relativeRotation = false,
-): AlsCameraMovementBase {
+): AlsCameraMovementBase | null {
   const basedMovement = rapierAlsMovementBaseFromPrimitive(
     collider,
     relativeRotation,
   )
+  if (basedMovement.primitive === null) return null
   return {
     key: basedMovement.primitive as AlsCameraMovementBase['key'],
     boneName: basedMovement.boneName,

@@ -676,6 +676,44 @@ describe('Rapier ALS capsule sweep', () => {
     expect(rapierAlsMovementBase(null).primitive).toBeNull()
   })
 
+  it('clears a cached floor support after Rapier removes its rigid body', () => {
+    const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased())
+    const collider = world.createCollider(RAPIER.ColliderDesc.cuboid(1, 0.1, 1), body)
+    const hit = {
+      validBlockingHit: true,
+      time: 0,
+      impactNormal: { x: 0, y: 0, z: 1 },
+      collider,
+      rigidBody: body,
+    }
+    expect(rapierAlsMovementBase(hit).primitive).toBe(collider)
+    world.removeRigidBody(body)
+    expect(rapierAlsMovementBase(hit).primitive).toBeNull()
+    expect(rapierAlsMovementBaseFromPrimitive(collider).primitive).toBeNull()
+    expect(rapierAlsCameraMovementBase(hit)).toBeNull()
+    expect(rapierAlsCameraMovementBaseFromPrimitive(collider)).toBeNull()
+    world.free()
+  })
+
+  it('does not read a removed parent body even if its collider wrapper remains valid', () => {
+    const collider = {
+      handle: 21,
+      isValid: () => true,
+      parent: () => ({
+        handle: 22,
+        isValid: () => false,
+        isFixed: () => { throw new Error('removed body') },
+        translation: () => ({ x: 0, y: 0, z: 0 }),
+        rotation: () => ({ x: 0, y: 0, z: 0, w: 1 }),
+      }),
+      translation: () => { throw new Error('removed collider transform') },
+      rotation: () => ({ x: 0, y: 0, z: 0, w: 1 }),
+    }
+    expect(rapierAlsMovementBaseFromPrimitive(collider).primitive).toBeNull()
+    expect(rapierAlsCameraMovementBaseFromPrimitive(collider)).toBeNull()
+  })
+
   it('publishes the exact based-movement subset consumed by ALSCamera', () => {
     const dynamicBody = {
       handle: 27,
