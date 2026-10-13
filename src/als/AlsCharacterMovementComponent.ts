@@ -44,6 +44,10 @@ export type AlsCharacterMovementGaitSettings = AlsMovementGaitSettings & {
   readonly allowDirectionDependentMovementSpeed?: boolean
 }
 
+export type AlsGaitSpeedOverrides = Partial<Record<AlsStance, Partial<Pick<AlsMovementGaitSettings,
+  'walkForwardSpeed' | 'walkBackwardSpeed' | 'runForwardSpeed' | 'runBackwardSpeed' | 'sprintSpeed'
+>>>>
+
 export interface AlsDirectionDependentGaitSpeeds {
   readonly walkSpeed: number
   readonly runSpeed: number
@@ -54,6 +58,7 @@ export interface AlsCharacterMovementComponent {
   stance: AlsStance
   maxAllowedGait: AlsGait
   gaitSettings: AlsCharacterMovementGaitSettings
+  gaitSpeedOverrides?: AlsGaitSpeedOverrides
   gaitAmount: number
   maxWalkSpeed: number
   maxAccelerationWalking: number
@@ -77,6 +82,7 @@ export interface CreateAlsCharacterMovementComponentOptions {
   readonly stance?: AlsStance
   readonly maxAllowedGait?: AlsGait
   readonly velocity?: Readonly<AlsVector3>
+  readonly gaitSpeedOverrides?: AlsGaitSpeedOverrides
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
@@ -209,7 +215,8 @@ export function createAlsCharacterMovementComponent(
     rotationMode,
     stance,
     maxAllowedGait: options.maxAllowedGait ?? 'Running',
-    gaitSettings: ALS_MOVEMENT_SETTINGS[rotationMode][stance],
+    gaitSettings: { ...ALS_MOVEMENT_SETTINGS[rotationMode][stance], ...options.gaitSpeedOverrides?.[stance] },
+    gaitSpeedOverrides: options.gaitSpeedOverrides,
     gaitAmount: 0,
     maxWalkSpeed: 0,
     maxAccelerationWalking: 0,
@@ -240,8 +247,10 @@ export function createAlsCharacterMovementComponent(
 export function refreshGaitSettings(
   component: AlsCharacterMovementComponent,
 ): AlsCharacterMovementComponent {
-  component.gaitSettings =
-    ALS_MOVEMENT_SETTINGS[component.rotationMode][component.stance]
+  component.gaitSettings = {
+    ...ALS_MOVEMENT_SETTINGS[component.rotationMode][component.stance],
+    ...component.gaitSpeedOverrides?.[component.stance],
+  }
   return component
 }
 

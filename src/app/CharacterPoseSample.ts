@@ -27,6 +27,8 @@ export interface CharacterPoseSample {
   pelvis: THREE.Vector3
   /** Animated head position in world space. */
   head: THREE.Vector3
+  leftFoot: THREE.Vector3
+  rightFoot: THREE.Vector3
   /**
    * The publishing character's own `root` and `head` bones, the camera pivot sources. A scene can
    * hold several ALS skeletons (remote actors, respawned characters), so consumers must read these
@@ -54,6 +56,8 @@ export function createCharacterPoseSample(): CharacterPoseSample {
     ground: new THREE.Vector3(),
     pelvis: new THREE.Vector3(),
     head: new THREE.Vector3(),
+    leftFoot: new THREE.Vector3(),
+    rightFoot: new THREE.Vector3(),
     rootBone: null,
     headBone: null,
     poseHeight: 0,

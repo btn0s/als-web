@@ -49,6 +49,26 @@ describe('UAlsCharacterMovementComponent grounded policy', () => {
     expect(component.gaitSettings.runForwardSpeed).toBe(2)
   })
 
+  it('keeps per-character gait overrides through stance and rotation changes', () => {
+    const customized = createAlsCharacterMovementComponent({
+      gaitSpeedOverrides: {
+        Standing: { walkForwardSpeed: 2.4, runForwardSpeed: 4 },
+        Crouching: { walkForwardSpeed: 1.32, runForwardSpeed: 2.2 },
+      },
+    })
+    const defaultCharacter = createAlsCharacterMovementComponent()
+    expect(customized.gaitSettings.walkForwardSpeed).toBe(2.4)
+    expect(customized.gaitSettings.runForwardSpeed).toBe(4)
+    expect(defaultCharacter.gaitSettings.runForwardSpeed).toBe(3.75)
+    setMovementRotationMode(customized, 'Aiming')
+    expect(customized.gaitSettings.walkForwardSpeed).toBe(2.4)
+    setMovementStance(customized, 'Crouching')
+    expect(customized.gaitSettings.walkForwardSpeed).toBe(1.32)
+    expect(customized.gaitSettings.runForwardSpeed).toBe(2.2)
+    setMovementStance(customized, 'Standing')
+    expect(customized.gaitSettings.runForwardSpeed).toBe(4)
+  })
+
   it('maps exact authored speed anchors onto the 0..3 GaitAmount domain', () => {
     // AlsCharacterMovementComponent.cpp:981-997.
     expect(calculateGaitAmount(0, 1.75, 3.75, 6.5)).toBe(0)

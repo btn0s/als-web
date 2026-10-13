@@ -1250,6 +1250,7 @@ export function createAlsAnimationInstance(gltf: {
   groundPredictionSweep?: AlsGroundPredictionCapsuleSweep
   /** Backend adapter for CR_Als FAlsRigUnit_FootOffsetTrace. */
   controlRigFootTrace?: AlsControlRigFootOffsetTrace
+  exposeDebugGlobals?: boolean
 }): AlsAnimationInstance {
   assertAlsAnimationExtras(gltf.animations)
   const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
@@ -5047,7 +5048,7 @@ export function createAlsAnimationInstance(gltf: {
         debugWeights.inertializationRequestCount =
           inertializationRequestCount()
       }
-      window.__weightTable = debugWeights
+      if (gltf.exposeDebugGlobals !== false) window.__weightTable = debugWeights
       // Controls may change while the normal graph is dormant. The solo transition request owns
       // the eventual handoff, so do not emit a second overlay request on the first resumed frame.
       previousOverlayMode = controls.overlayMode
@@ -5123,7 +5124,7 @@ export function createAlsAnimationInstance(gltf: {
         debugWeights.inertializationRequestCount =
           inertializationRequestCount()
       }
-      window.__weightTable = debugWeights
+      if (gltf.exposeDebugGlobals !== false) window.__weightTable = debugWeights
       nativePostUpdateAnimation()
       return
     }
@@ -7414,7 +7415,7 @@ export function createAlsAnimationInstance(gltf: {
           finalCurves.get(layer.localSpaceCurve) ?? 0
       }
     }
-    window.__weightTable = normalDebugWeights
+    if (gltf.exposeDebugGlobals !== false) window.__weightTable = normalDebugWeights
     if (
       groundedStanceTransitionSource
       && !groundedStanceTransitionState.active

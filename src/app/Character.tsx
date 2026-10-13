@@ -64,6 +64,8 @@ import type {
   CompiledAuthoredRootMotion,
 } from '../engine/rootMotion'
 import type { CharacterPoseSample } from './CharacterPoseSample'
+import type { AlsCharacterInputSource } from '../als/AlsCharacter.hooks'
+import type { AlsGaitSpeedOverrides } from '../als/AlsCharacterMovementComponent'
 import {
   ALS_RIFLE_OVERLAY_OBJECT_URL,
   attachRifleOverlayObject,
@@ -90,6 +92,14 @@ export type AlsOverlayModeBridge = Pick<
 >
 
 export interface CharacterProps {
+  inputSource?: AlsCharacterInputSource
+  inputEnabled?: boolean
+  exposeDebugGlobals?: boolean
+  allowSprint?: boolean
+  gaitSpeedOverrides?: AlsGaitSpeedOverrides
+  instanceId?: string
+  initialPosition?: readonly [number, number, number]
+  tint?: string
   ragdollRef?: React.RefObject<AlsRagdollHandle | null>
   /** Disable the consumer's ragdoll/get-up input bindings; ALS itself has no death policy. */
   ragdollInputEnabled?: boolean
@@ -213,6 +223,14 @@ function LoadedCharacter({
   gamepadBindings,
   gamepadEnabled,
   gamepadIndex,
+  inputSource,
+  inputEnabled,
+  exposeDebugGlobals,
+  allowSprint,
+  gaitSpeedOverrides,
+  instanceId,
+  initialPosition,
+  tint,
 }: {
   gltf: GLTF
   ragdollRef?: CharacterProps['ragdollRef']
@@ -229,8 +247,33 @@ function LoadedCharacter({
   gamepadBindings: CharacterProps['gamepadBindings']
   gamepadEnabled: CharacterProps['gamepadEnabled']
   gamepadIndex: CharacterProps['gamepadIndex']
+  inputSource: CharacterProps['inputSource']
+  inputEnabled: CharacterProps['inputEnabled']
+  exposeDebugGlobals: CharacterProps['exposeDebugGlobals']
+  allowSprint: CharacterProps['allowSprint']
+  gaitSpeedOverrides: CharacterProps['gaitSpeedOverrides']
+  instanceId: CharacterProps['instanceId']
+  initialPosition: CharacterProps['initialPosition']
+  tint: CharacterProps['tint']
 }) {
-  const gltf = useMemo(() => ({ ...sourceGltf, scene: clone(sourceGltf.scene) }), [sourceGltf])
+  const gltf = useMemo(() => {
+    const scene = clone(sourceGltf.scene)
+    if (tint) {
+      const color = new THREE.Color(tint)
+      scene.traverse((object) => {
+        if (!(object instanceof THREE.Mesh)) return
+        const tintMaterial = (material: THREE.Material) => {
+          const copy = material.clone()
+          if ('color' in copy && copy.color instanceof THREE.Color) copy.color.multiply(color)
+          return copy
+        }
+        object.material = Array.isArray(object.material)
+          ? object.material.map(tintMaterial)
+          : tintMaterial(object.material)
+      })
+    }
+    return { ...sourceGltf, scene }
+  }, [sourceGltf, tint])
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
   const RapierRay = rapier.Ray
@@ -370,6 +413,8 @@ function LoadedCharacter({
     () => ({
       head: gltf.scene.getObjectByName('head') ?? gltf.scene.getObjectByName('Head'),
       pelvis: gltf.scene.getObjectByName('pelvis'),
+      leftFoot: gltf.scene.getObjectByName('foot_l'),
+      rightFoot: gltf.scene.getObjectByName('foot_r'),
       cameraRoot: findSkeletonBone(gltf.scene, 'root'),
       cameraHead: findSkeletonBone(gltf.scene, 'head'),
     }),
@@ -429,6 +474,12 @@ function LoadedCharacter({
     gamepadIndex,
     ragdollInputEnabled,
     ragdollingSettings,
+    inputSource,
+    inputEnabled,
+    exposeDebugGlobals,
+    allowSprint,
+    gaitSpeedOverrides,
+    instanceId,
   )
   useEffect(() => {
     onOverlayModeBridgeChange({
@@ -462,6 +513,7 @@ function LoadedCharacter({
       Trace: footstepEffectsTrace,
       SoundSink: footstepSoundSink,
     },
+    exposeDebugGlobals ?? inputEnabled !== false,
   )
 
   const ragdoll = useAlsRagdoll(character.character.current, animationInstance,
@@ -483,6 +535,8 @@ function LoadedCharacter({
     group.getWorldPosition(poseSample.current.ground)
     poseBones.pelvis.getWorldPosition(poseSample.current.pelvis)
     poseBones.head.getWorldPosition(poseSample.current.head)
+    poseBones.leftFoot?.getWorldPosition(poseSample.current.leftFoot)
+    poseBones.rightFoot?.getWorldPosition(poseSample.current.rightFoot)
     poseSample.current.poseHeight = poseSample.current.head.y - poseSample.current.ground.y
     poseSample.current.characterYaw = group.rotation.y
     poseSample.current.rootBone = poseBones.cameraRoot
@@ -497,10 +551,10 @@ function LoadedCharacter({
       type="kinematicPosition"
       colliders={false}
       position={[
-        0,
-        ALS_STANDING_CAPSULE_HALF_HEIGHT
+        initialPosition?.[0] ?? 0,
+        (initialPosition?.[1] ?? 0) + ALS_STANDING_CAPSULE_HALF_HEIGHT
           + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
-        0,
+        initialPosition?.[2] ?? 0,
       ]}
       lockRotations
       canSleep={false}
@@ -567,12 +621,20 @@ export function Character({
   gamepadBindings,
   gamepadEnabled,
   gamepadIndex,
+  inputSource,
+  inputEnabled,
+  exposeDebugGlobals,
+  allowSprint,
+  gaitSpeedOverrides,
+  instanceId,
+  initialPosition,
+  tint,
 }: CharacterProps) {
   const { gltf, status, progress, retry } = useAlsCharacterGltf()
 
   useEffect(() => {
-    window.__characterStatus = gltf ? 'glb' : 'placeholder'
-  }, [gltf])
+    if (exposeDebugGlobals ?? inputEnabled !== false) window.__characterStatus = gltf ? 'glb' : 'placeholder'
+  }, [gltf, exposeDebugGlobals, inputEnabled])
 
   return gltf ? (
     <LoadedCharacter
@@ -590,6 +652,14 @@ export function Character({
       gamepadBindings={gamepadBindings}
       gamepadEnabled={gamepadEnabled}
       gamepadIndex={gamepadIndex}
+      inputSource={inputSource}
+      inputEnabled={inputEnabled}
+      exposeDebugGlobals={exposeDebugGlobals}
+      allowSprint={allowSprint}
+      gaitSpeedOverrides={gaitSpeedOverrides}
+      instanceId={instanceId}
+      initialPosition={initialPosition}
+      tint={tint}
     />
   ) : (
     <CharacterLoadState status={status} progress={progress} retry={retry} />

@@ -11,6 +11,7 @@ import {
 import type {
   AlsCharacterMovementComponent,
   AlsCharacterMovementGaitSettings,
+  AlsGaitSpeedOverrides,
 } from './AlsCharacterMovementComponent'
 import type {
   AlsGait,
@@ -117,6 +118,7 @@ export interface CreateAlsCharacterOptions {
   readonly viewMode?: AlsViewMode
   readonly locomotionMode?: Exclude<AlsLocomotionMode, null>
   readonly velocity?: Readonly<AlsVector3>
+  readonly gaitSpeedOverrides?: AlsGaitSpeedOverrides
   readonly settings?: Partial<AlsCharacterSettings>
 }
 
@@ -152,6 +154,7 @@ export function createAlsCharacter(
     stance: desiredStance,
     maxAllowedGait: 'Running',
     velocity: options.velocity,
+    gaitSpeedOverrides: options.gaitSpeedOverrides,
   })
   const character: AlsCharacter = {
     desiredAiming: options.desiredAiming ?? false,

@@ -277,6 +277,7 @@ export function useAlsAnimationInstance(
     Trace: AlsFootstepEffectsTrace
     SoundSink: AlsFootstepSoundSink
   }>,
+  exposeDebugGlobals = true,
 ) {
   const camera = useThree((state) => state.camera)
   const renderer = useThree((state) => state.gl)
@@ -286,8 +287,9 @@ export function useAlsAnimationInstance(
       ...gltf,
       groundPredictionSweep,
       controlRigFootTrace,
+      exposeDebugGlobals,
     }),
-    [controlRigFootTrace, gltf, groundPredictionSweep],
+    [controlRigFootTrace, gltf, groundPredictionSweep, exposeDebugGlobals],
   )
   const frameCapture = useMemo(
     () => new AnimationFrameCapture(
@@ -375,6 +377,7 @@ export function useAlsAnimationInstance(
   }, [animationInstance, rollingMontage])
 
   useEffect(() => {
+    if (!exposeDebugGlobals) return
     window.__playClip = animationInstance.playClip
     const startFrameCapture = (frameCount?: number) => {
       if (captureControlRigComponentPositions.current) {
@@ -410,7 +413,7 @@ export function useAlsAnimationInstance(
       frameCapture.cancel()
       animationInstance.clearSoloClip()
     }
-  }, [animationInstance, controls, frameCapture])
+  }, [animationInstance, controls, frameCapture, exposeDebugGlobals])
 
   useFrame((_, deltaRealTime) => {
     const deltaTime = worldTime

@@ -8,7 +8,7 @@ import {
 import { RigidBodyType } from '@dimforge/rapier3d-compat'
 import { useFrame } from '@react-three/fiber'
 import { folder, useControls } from 'leva'
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { LEVA_ROOTS } from '../app/levaRoots'
@@ -95,6 +95,7 @@ import type {
   AlsLocomotionMode,
 } from './AlsCharacter'
 import {
+  refreshGaitSettings,
   setMovementVelocity,
   stepGroundedVelocity,
   stepInAirVelocity,
@@ -149,6 +150,7 @@ import type {
 import { exponentialDecay } from './State/AlsGroundedState'
 import { unwindDegrees } from './State/AlsLocomotionState'
 import type { AlsVector3 } from './State/AlsLocomotionState'
+import type { AlsGaitSpeedOverrides } from './AlsCharacterMovementComponent'
 
 // AAlsCharacter::AAlsCharacter(), cpp:36; UAlsCharacterMovementComponent(), cpp:132.
 export const ALS_CAPSULE_RADIUS = 0.3
@@ -509,6 +511,20 @@ interface CharacterControlValues {
   viewYawOverride: boolean
   viewYaw: number
 }
+
+export interface AlsCharacterCodeInput {
+  readonly movementDirection?: Readonly<{ x: number; z: number }>
+  readonly desiredSpeed?: number
+  readonly desiredGait?: AlsGait
+  readonly desiredStance?: AlsStance
+  readonly desiredRotationMode?: AlsRotationMode
+  readonly viewYawAngle?: number
+  readonly viewPitchAngle?: number
+  readonly aiming?: boolean
+  readonly overlayMode?: AlsOverlayMode
+}
+
+export type AlsCharacterInputSource = () => Readonly<AlsCharacterCodeInput>
 
 export interface AlsCharacterMantlingBridge {
   readonly adapter: RapierAlsMantlingAdapter
@@ -1172,6 +1188,12 @@ export function useAlsCharacter(
   gamepadIndex?: number,
   ragdollInputEnabled = true,
   ragdollingSettings?: Partial<AlsRagdollingSettings>,
+  inputSource?: AlsCharacterInputSource,
+  inputEnabled = true,
+  exposeDebugGlobals = inputEnabled,
+  allowSprint = true,
+  gaitSpeedOverrides?: AlsGaitSpeedOverrides,
+  instanceId = 'Character',
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1186,7 +1208,7 @@ export function useAlsCharacter(
     viewYawOverride,
     viewYaw,
   }, setControls] = useControls(
-    LEVA_ROOTS.movement,
+    inputEnabled ? LEVA_ROOTS.movement : `${LEVA_ROOTS.movement} ${instanceId}`,
     () => ({
       desiredGait: {
         value: 'Running' as AlsGait,
@@ -1251,7 +1273,7 @@ export function useAlsCharacter(
     { order: 1 },
   )
 
-  const character = useRef(createAlsCharacter({ settings: { Ragdolling: { ...ALS_RAGDOLLING_SETTINGS, ...ragdollingSettings } } }))
+  const character = useRef(createAlsCharacter({ settings: { Ragdolling: { ...ALS_RAGDOLLING_SETTINGS, ...ragdollingSettings } }, gaitSpeedOverrides }))
   const actionBridge = useRef(actions)
   actionBridge.current = actions
   const locomotionModeChangedLifecycle = useRef(
@@ -1365,6 +1387,7 @@ export function useAlsCharacter(
       setControls({ overlayMode: OverlayMode })
     }
   }, [setControls])
+  const [codeOverlayMode, setCodeOverlayMode] = useState<AlsOverlayMode>('Default')
 
   const pressedKeys = useRef(new Set<string>())
   const aimingWithPointer = useRef(false)
@@ -1637,6 +1660,7 @@ export function useAlsCharacter(
   ])
 
   useEffect(() => {
+    if (!inputEnabled) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTextEntryTarget(event.target)) return
       pressedKeys.current.add(event.code)
@@ -1695,15 +1719,16 @@ export function useAlsCharacter(
       window.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('pointerup', onPointerUp)
     }
-  }, [setControls, toggleRotationModeKey, aimPointerButtons])
+  }, [setControls, toggleRotationModeKey, aimPointerButtons, inputEnabled])
 
   useEffect(() => {
+    if (!exposeDebugGlobals) return
     window.__setSpeed = (value: number) => setControls({
       speed: Math.max(0, value),
       movementOverride: true,
     })
     window.__setGait = (value: AlsGait) => {
-      if (ALS_GAITS.includes(value)) setControls({ desiredGait: value })
+      if (ALS_GAITS.includes(value) && (allowSprint || value !== 'Sprinting')) setControls({ desiredGait: value })
     }
     window.__setStance = (value: AlsStance) => {
       if (ALS_STANCES.includes(value)) setControls({ desiredStance: value })
@@ -1740,7 +1765,7 @@ export function useAlsCharacter(
       delete window.__triggerJump
       delete window.__triggerRoll
     }
-  }, [SetOverlayMode, setControls])
+  }, [SetOverlayMode, setControls, exposeDebugGlobals, allowSprint])
 
   useFrame((_, deltaRealTime) => {
     const deltaTime = worldTime
@@ -1766,7 +1791,7 @@ export function useAlsCharacter(
   useBeforePhysicsStep(() => {
     const body = rigidBody.current
     if (!body) return
-    const ragdollValue = ragdollInputEnabled &&
+    const ragdollValue = inputEnabled && ragdollInputEnabled &&
       (pressedKeys.current.has('KeyX') || sampleGamepad(gamepadInput.current).ragdoll)
     const ragdollTick = ragdollAction.current.update(
       ragdollValue,
@@ -1797,6 +1822,17 @@ export function useAlsCharacter(
 
     const controls = values.current
     const current = character.current
+    const codeInput = inputSource?.()
+    if (codeInput) {
+      if (codeInput.desiredGait) controls.desiredGait = codeInput.desiredGait
+      if (codeInput.desiredStance) controls.desiredStance = codeInput.desiredStance
+      if (codeInput.desiredRotationMode) controls.desiredRotationMode = codeInput.desiredRotationMode
+      if (codeInput.overlayMode) {
+        controls.overlayMode = codeInput.overlayMode
+        if (codeInput.overlayMode !== codeOverlayMode) setCodeOverlayMode(codeInput.overlayMode)
+      }
+      controls.desiredAiming = codeInput.aiming ?? false
+    }
     if (current.locomotionMode === 'Grounded') {
       if (body.bodyType() !== RigidBodyType.KinematicPositionBased) {
         const translation = body.translation()
@@ -1826,7 +1862,7 @@ export function useAlsCharacter(
     poseSample.current.character = current
     poseSample.current.ownerRigidBody = body
     const keys = pressedKeys.current
-    const gamepad = sampleGamepad(gamepadInput.current, gamepadBindings, gamepadEnabled, gamepadIndex)
+    const gamepad = sampleGamepad(gamepadInput.current, gamepadBindings, inputEnabled && gamepadEnabled, gamepadIndex)
     const previousGamepad = previousGamepadInput.current
     if (gamepad.jump && !previousGamepad.jump) {
       requestAlsJumpInput(jumpRequested)
@@ -1868,7 +1904,7 @@ export function useAlsCharacter(
     clampMagnitude(axes)
 
     const sprintRollValue =
-      keys.has('ShiftLeft') || gamepad.sprint
+      inputEnabled && allowSprint && (keys.has('ShiftLeft') || gamepad.sprint)
     const sprintTick = sprintAction.current.update(
       sprintRollValue,
       ALS_PHYSICS_TIMESTEP,
@@ -1889,7 +1925,7 @@ export function useAlsCharacter(
       values.current.desiredGait = nextDesiredGait
       setControls({ desiredGait: nextDesiredGait })
     }
-    current.desiredGait = values.current.desiredGait
+    current.desiredGait = allowSprint || controls.desiredGait !== 'Sprinting' ? controls.desiredGait : 'Running'
 
     if (
       rollRequested.current
@@ -1907,15 +1943,37 @@ export function useAlsCharacter(
     current.desiredAiming =
       controls.desiredAiming || aimingWithPointer.current || gamepad.aim
     applyDesiredStance(current)
+    if (codeInput) {
+      const stance = current.desiredStance
+      const speed = codeInput.desiredSpeed
+      const selected = codeInput.desiredGait === 'Running' ? 'run' : 'walk'
+      current.movement.gaitSpeedOverrides = speed === undefined
+        ? gaitSpeedOverrides
+        : {
+            ...gaitSpeedOverrides,
+            [stance]: {
+              ...gaitSpeedOverrides?.[stance],
+              [`${selected}ForwardSpeed`]: Math.max(0, speed),
+              [`${selected}BackwardSpeed`]: Math.max(0, speed),
+            },
+          }
+      refreshGaitSettings(current.movement)
+    }
 
-    if (controls.viewYawOverride) {
+    if (codeInput?.viewYawAngle !== undefined) {
+      current.viewYawAngle = unwindDegrees(codeInput.viewYawAngle)
+    } else if (controls.viewYawOverride) {
       current.viewYawAngle = debugViewYawWorld.current
     }
-    resolveCameraRelativeInput(
-      axes,
-      current.viewYawAngle,
-      inputDirection.current,
-    )
+    if (codeInput?.viewPitchAngle !== undefined) current.viewPitchAngle = codeInput.viewPitchAngle
+    if (codeInput?.movementDirection) {
+      const length = Math.hypot(codeInput.movementDirection.x, codeInput.movementDirection.z)
+      inputDirection.current.x = length > 1 ? codeInput.movementDirection.x / length : codeInput.movementDirection.x
+      inputDirection.current.y = length > 1 ? codeInput.movementDirection.z / length : codeInput.movementDirection.z
+      inputDirection.current.z = 0
+    } else {
+      resolveCameraRelativeInput(axes, current.viewYawAngle, inputDirection.current)
+    }
     // TryConsumePrePenetrationAdjustmentVelocity() observes the intended velocity separately
     // from collision-adjusted GetVelocity(). Snapshot it before refreshLocomotion() replaces the
     // movement component's working velocity with Rapier's actual result.
@@ -2236,7 +2294,7 @@ export function useAlsCharacter(
       rootMotionSources.current,
       current.mantlingState.RootMotionSourceId,
     )
-    window.__alsCharacterState = {
+    if (exposeDebugGlobals) window.__alsCharacterState = {
       actorYawAngle: current.actorYawAngle,
       desiredGait: current.desiredGait,
       desiredStance: current.desiredStance,
@@ -2324,7 +2382,7 @@ export function useAlsCharacter(
     if (current.locomotionAction === 'Ragdolling') return
     const bodyTranslation = body.translation()
     threeToUnrealVector(bodyTranslation, rapierBodyAnchor.current)
-    const debugState = window.__alsCharacterState
+    const debugState = exposeDebugGlobals ? window.__alsCharacterState : undefined
     if (debugState) {
       // The object is first assembled during the matching pre-physics callback. Replace its raw
       // body snapshot here so Diagnostics compares the completed Rapier step with the rendered
@@ -2541,7 +2599,7 @@ export function useAlsCharacter(
     animationControls,
     animationCurves,
     onJumped,
-    overlayMode: overlayMode as AlsOverlayMode,
+    overlayMode: inputSource ? codeOverlayMode : overlayMode as AlsOverlayMode,
     SetOverlayMode,
   }
 }
