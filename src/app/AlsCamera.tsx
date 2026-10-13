@@ -32,6 +32,9 @@ import type {
 } from '../als/AlsCharacter'
 import {
   resolveAlsActorLocationFromPresentationGround,
+  ALS_GAMEPAD_BINDINGS,
+  readGamepadButton,
+  type AlsGamepadBindings,
 } from '../als/AlsCharacter.hooks'
 import type {
   AlsGait,
@@ -239,11 +242,11 @@ function applyRadialDeadZone(axes: { x: number; y: number }) {
   axes.y *= scaledMagnitude / magnitude
 }
 
-function activeGamepad(): Gamepad | null {
+function activeGamepad(index?: number): Gamepad | null {
   const gamepads = navigator.getGamepads?.()
   if (!gamepads) return null
   for (const gamepad of gamepads) {
-    if (gamepad?.connected) return gamepad
+    if (gamepad?.connected && (index === undefined || gamepad.index === index)) return gamepad
   }
   return null
 }
@@ -264,6 +267,9 @@ export function AlsCamera({
   worldTime,
   footstepAudioRuntime,
   toggleViewModeKey = 'Digit2',
+  gamepadBindings = {},
+  gamepadEnabled = true,
+  gamepadIndex,
 }: {
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
@@ -273,6 +279,9 @@ export function AlsCamera({
   >
   /** KeyboardEvent.code toggling first/third person; `null` disables the binding. */
   toggleViewModeKey?: string | null
+  gamepadBindings?: Partial<AlsGamepadBindings>
+  gamepadEnabled?: boolean
+  gamepadIndex?: number
 }) {
   const { camera, gl, size } = useThree()
   const { world } = useRapier()
@@ -485,10 +494,11 @@ export function AlsCamera({
     const character = sample.character
     if (!character) return
 
-    const gamepad = activeGamepad()
+    const gamepad = gamepadEnabled ? activeGamepad(gamepadIndex) : null
+    const bindings = { ...ALS_GAMEPAD_BINDINGS, ...gamepadBindings }
     const switchShoulderPressed =
-      gamepad?.buttons[11]?.pressed ?? false
-    const viewModePressed = gamepad?.buttons[15]?.pressed ?? false
+      readGamepadButton(gamepad, bindings.shoulderSwap)
+    const viewModePressed = readGamepadButton(gamepad, bindings.viewMode)
     if (
       switchShoulderPressed
       && !previousGamepadButtons.current.switchShoulder

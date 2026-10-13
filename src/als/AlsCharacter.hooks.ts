@@ -743,7 +743,40 @@ function applyRadialDeadZone(axes: InputAxes): InputAxes {
   return axes
 }
 
-function sampleGamepad(out: GamepadInput): GamepadInput {
+export interface AlsGamepadBindings {
+  jump: number | null
+  sprint: number | null
+  ragdoll: number | null
+  walk: number | null
+  crouch: number | null
+  aim: number | null
+  rotationMode: number | null
+  shoulderSwap: number | null
+  viewMode: number | null
+}
+
+export const ALS_GAMEPAD_BINDINGS: Readonly<AlsGamepadBindings> = {
+  jump: 0,
+  sprint: 1,
+  ragdoll: 2,
+  walk: 5,
+  crouch: 10,
+  aim: 4,
+  rotationMode: 14,
+  shoulderSwap: 11,
+  viewMode: 15,
+}
+
+export function readGamepadButton(gamepad: Gamepad | null | undefined, binding: number | null): boolean {
+  return binding !== null && (gamepad?.buttons[binding]?.pressed ?? false)
+}
+
+export function sampleGamepad(
+  out: GamepadInput,
+  bindings: Partial<AlsGamepadBindings> = {},
+  enabled = true,
+  index?: number,
+): GamepadInput {
   out.right = 0
   out.forward = 0
   out.jump = false
@@ -752,24 +785,25 @@ function sampleGamepad(out: GamepadInput): GamepadInput {
   out.crouch = false
   out.aim = false
   out.rotationMode = false
+  if (!enabled) return out
   const gamepads = navigator.getGamepads?.()
   if (!gamepads) return out
   const gamepad = Array.from(gamepads).find(
-    (candidate) => candidate?.connected && candidate.axes.length >= 2,
+    (candidate) => candidate?.connected && candidate.axes.length >= 2 && (index === undefined || candidate.index === index),
   )
   if (!gamepad) return out
 
   out.right = gamepad.axes[0] ?? 0
   out.forward = -(gamepad.axes[1] ?? 0)
   applyRadialDeadZone(out)
-  // IMC_Als_Default: FaceButtonBottom/Right, RightShoulder, LeftThumbstick, LeftShoulder, DPadLeft.
-  out.jump = gamepad.buttons[0]?.pressed ?? false
-  out.sprint = gamepad.buttons[1]?.pressed ?? false
-  out.ragdoll = gamepad.buttons[2]?.pressed ?? false
-  out.walk = gamepad.buttons[5]?.pressed ?? false
-  out.crouch = gamepad.buttons[10]?.pressed ?? false
-  out.aim = gamepad.buttons[4]?.pressed ?? false
-  out.rotationMode = gamepad.buttons[14]?.pressed ?? false
+  const resolved = { ...ALS_GAMEPAD_BINDINGS, ...bindings }
+  out.jump = readGamepadButton(gamepad, resolved.jump)
+  out.sprint = readGamepadButton(gamepad, resolved.sprint)
+  out.ragdoll = readGamepadButton(gamepad, resolved.ragdoll)
+  out.walk = readGamepadButton(gamepad, resolved.walk)
+  out.crouch = readGamepadButton(gamepad, resolved.crouch)
+  out.aim = readGamepadButton(gamepad, resolved.aim)
+  out.rotationMode = readGamepadButton(gamepad, resolved.rotationMode)
   return out
 }
 
@@ -1131,6 +1165,9 @@ export function useAlsCharacter(
   toggleRotationModeKey: string | null = 'Digit1',
   /** PointerEvent.button values that hold aim (default RMB). Trackpad layouts can add 0. */
   aimPointerButtons: readonly number[] = ALS_AIM_POINTER_BUTTONS,
+  gamepadBindings: Partial<AlsGamepadBindings> = {},
+  gamepadEnabled = true,
+  gamepadIndex?: number,
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1766,7 +1803,7 @@ export function useAlsCharacter(
     poseSample.current.character = current
     poseSample.current.ownerRigidBody = body
     const keys = pressedKeys.current
-    const gamepad = sampleGamepad(gamepadInput.current)
+    const gamepad = sampleGamepad(gamepadInput.current, gamepadBindings, gamepadEnabled, gamepadIndex)
     const previousGamepad = previousGamepadInput.current
     if (gamepad.jump && !previousGamepad.jump) {
       requestAlsJumpInput(jumpRequested)
