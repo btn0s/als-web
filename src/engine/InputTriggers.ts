@@ -207,6 +207,44 @@ export class UInputTriggerTap extends UInputTriggerTimedBase {
   }
 }
 
+export class UInputTriggerDoubleTap extends UInputTriggerTap {
+  private sinceTap = Infinity
+  private firstTap = false
+  private secondTap = false
+
+  protected override updateStateImplementation(value: FInputActionValue, deltaTime: number): ETriggerState {
+    this.sinceTap = Math.fround(this.sinceTap + Math.fround(deltaTime))
+    if (this.isActuated(value) && !this.isActuated(this.LastValue)) {
+      this.secondTap = this.firstTap && this.sinceTap < this.TapReleaseTimeThreshold
+      this.firstTap = false
+    }
+    const state = super.updateStateImplementation(value, deltaTime)
+    if (state === 'Triggered') {
+      if (this.secondTap) {
+        this.firstTap = false
+        this.secondTap = false
+        this.sinceTap = Infinity
+        return 'Triggered'
+      }
+      this.firstTap = true
+      this.sinceTap = 0
+      return 'None'
+    }
+    if (this.HeldDuration >= this.TapReleaseTimeThreshold) {
+      this.firstTap = false
+      this.secondTap = false
+    }
+    return state
+  }
+
+  protected override resetState() {
+    super.resetState()
+    this.sinceTap = Infinity
+    this.firstTap = false
+    this.secondTap = false
+  }
+}
+
 /**
  * UE `FTriggerStateTracker` for the native trigger kinds currently required by ALS.
  *

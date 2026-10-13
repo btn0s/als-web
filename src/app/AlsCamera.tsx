@@ -262,6 +262,19 @@ function updateSocketLocation(
   threeToUnrealVector(threeLocation, unrealLocation)
 }
 
+export interface AlsGamepadLookInput {
+  readonly gamepad: Gamepad
+  readonly yaw: number
+  readonly pitch: number
+  readonly yawDelta: number
+  readonly pitchDelta: number
+  readonly deltaTime: number
+}
+export interface AlsGamepadLookDelta {
+  yawDelta: number
+  pitchDelta: number
+}
+
 export function AlsCamera({
   poseSample,
   worldTime,
@@ -270,6 +283,7 @@ export function AlsCamera({
   gamepadBindings = {},
   gamepadEnabled = true,
   gamepadIndex,
+  modifyGamepadLook,
 }: {
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
@@ -282,6 +296,7 @@ export function AlsCamera({
   gamepadBindings?: Partial<AlsGamepadBindings>
   gamepadEnabled?: boolean
   gamepadIndex?: number
+  modifyGamepadLook?: (input: AlsGamepadLookInput) => AlsGamepadLookDelta
 }) {
   const { camera, gl, size } = useThree()
   const { world } = useRapier()
@@ -524,6 +539,14 @@ export function AlsCamera({
     scratch.gamepadLook.x = gamepad?.axes[2] ?? 0
     scratch.gamepadLook.y = -(gamepad?.axes[3] ?? 0)
     applyRadialDeadZone(scratch.gamepadLook)
+    const padYawDelta = scratch.gamepadLook.x * LOOK_RIGHT_RATE * deltaTime
+    const padPitchDelta = scratch.gamepadLook.y * LOOK_UP_RATE * deltaTime
+    const modified = gamepad && modifyGamepadLook ? modifyGamepadLook({
+      gamepad, yaw: rotation.yaw, pitch: rotation.pitch,
+      yawDelta: padYawDelta, pitchDelta: padPitchDelta, deltaTime,
+    }) : null
+    const yawAdjustment = modified && Number.isFinite(modified.yawDelta) ? modified.yawDelta - padYawDelta : 0
+    const pitchAdjustment = modified && Number.isFinite(modified.pitchDelta) ? modified.pitchDelta - padPitchDelta : 0
     scratch.gamepadLookRight = scratch.gamepadLook.x
     scratch.keyboardLookRight =
       (pressedKeys.current.has('ArrowRight') ? 1 : 0)
@@ -536,7 +559,7 @@ export function AlsCamera({
         + pointerDelta.current.y
         + (
           keyboardLookUp + scratch.gamepadLook.y
-        ) * LOOK_UP_RATE * deltaTime,
+        ) * LOOK_UP_RATE * deltaTime + pitchAdjustment,
       VIEW_PITCH_MIN,
       VIEW_PITCH_MAX,
     )
@@ -545,7 +568,7 @@ export function AlsCamera({
         + pointerDelta.current.x
         + (
           scratch.keyboardLookRight + scratch.gamepadLook.x
-        ) * LOOK_RIGHT_RATE * deltaTime,
+        ) * LOOK_RIGHT_RATE * deltaTime + yawAdjustment,
     )
     pointerDelta.current.x = 0
     pointerDelta.current.y = 0
