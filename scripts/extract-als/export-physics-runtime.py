@@ -125,6 +125,6 @@ for constraint in oracle['constraints']:
     report['constraints'].append({'jointName':constraint['jointName'], 'resolvedInstance':resolved, 'liveAssetGetters':getters_data})
 report['validations'] = {'bodyCount':len(report['bodies']), 'constraintCount':len(report['constraints']),
                          'liveLimitsMatchResolvedInstances':True}
-(HERE / 'physics-asset-runtime.json').write_text(json.dumps(report, indent=2) + '\n')
+(HERE / 'physics-asset-runtime.json').write_text(json.dumps(report, indent=2) + '\n', newline='\n')
 unreal.get_editor_subsystem(unreal.EditorActorSubsystem).destroy_actor(actor)
 unreal.log('ALS_PHYSICS_RUNTIME_EXPORT_COMPLETE')
