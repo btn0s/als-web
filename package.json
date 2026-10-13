@@ -28,7 +28,7 @@
     "./app/AlsCharacterGltf": "./src/app/AlsCharacterGltf.ts",
     "./app/AlsCharacterGltf.hooks": "./src/app/AlsCharacterGltf.hooks.ts",
     "./engine/gltfAnimationExtras": "./src/engine/gltfAnimationExtras.ts",
-    "./engine/consumerOverlay": "./src/engine/consumerOverlay.ts"
+    "./als/AnimGraph/consumerOverlayStates": "./src/als/AnimGraph/consumerOverlayStates.ts"
   },
   "packageManager": "pnpm@11.15.1",
   "engines": {

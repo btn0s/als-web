@@ -1079,3 +1079,20 @@ export function stopSlotAnimation(
   }
   return stopped
 }
+
+/** Stops every retained instance in a group, including interruption tails. */
+export function stopSlotMontageGroup(
+  clock: SlotMontageClock,
+  groupName: string,
+  blendOutDuration: number,
+) {
+  if (!Number.isFinite(blendOutDuration) || blendOutDuration < 0) {
+    throw new Error('Montage group blend-out duration must be finite and non-negative')
+  }
+  for (const instance of clock.instancesByGroup.get(groupName) ?? []) {
+    beginBlendOut(clock, instance, blendOutDuration, 'interrupted', 'Linear')
+    if (instance.sample.weight <= 0) complete(instance)
+  }
+  clock.activeByGroup.delete(groupName)
+  cleanupGroup(clock, groupName)
+}

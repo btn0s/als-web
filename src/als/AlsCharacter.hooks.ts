@@ -1,3 +1,4 @@
+import type { ConsumerOverlayState } from './AnimGraph/consumerOverlayStates'
 import { ALS_RAGDOLLING_SETTINGS, type AlsRagdollingSettings } from './Settings/AlsRagdollingSettings'
 import {
   useAfterPhysicsStep,
@@ -1212,6 +1213,7 @@ export function useAlsCharacter(
   ragdollInputEnabled = true,
   ragdollingSettings?: Partial<AlsRagdollingSettings>,
   gamepadRollBehavior: 'tap' | 'doubleTap' = 'tap',
+  overlayStates: readonly ConsumerOverlayState[] = [],
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1249,7 +1251,7 @@ export function useAlsCharacter(
       },
       overlayMode: {
         value: 'Default' as AlsOverlayMode,
-        options: ALS_OVERLAY_MODES,
+        options: [...ALS_OVERLAY_MODES, ...overlayStates.map(state => state.mode)],
         label: 'OverlayMode',
       },
       'Debug Overrides': folder({
@@ -1374,10 +1376,10 @@ export function useAlsCharacter(
   const SetOverlayMode = useCallback((
     OverlayMode: AlsOverlayMode,
   ) => {
-    if (ALS_OVERLAY_MODES.includes(OverlayMode)) {
+    if (ALS_OVERLAY_MODES.some(mode => mode === OverlayMode) || overlayStates.some(state => state.mode === OverlayMode)) {
       setControls({ overlayMode: OverlayMode })
     }
-  }, [setControls])
+  }, [setControls, overlayStates])
 
   const pressedKeys = useRef(new Set<string>())
   const aimingWithPointer = useRef(false)
@@ -1587,7 +1589,7 @@ export function useAlsCharacter(
     if (!Parameters) return false
 
     const overlayTag = resolveAlsMantlingOverlayTag(
-      values.current.overlayMode,
+      overlayStates.find(state => state.mode === values.current.overlayMode)?.template ?? values.current.overlayMode,
     )
     const settings = selectAlsMantlingSettings(
       Parameters.MantlingType,

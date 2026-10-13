@@ -17,11 +17,11 @@ describe('ALS recording and remote animation boundary', () => {
     const recorder = new AlsCharacterRecorder()
     const remote = new AlsRemoteCharacter()
     const buffer = new AlsSnapshotBuffer({ interpolationDelayMs: 0 })
-    for (const [index, mode] of ALS_OVERLAY_MODES.entries()) {
+    for (const [index, mode] of [...ALS_OVERLAY_MODES, 'Infima.Launcher'].entries()) {
       local.controls.overlayMode = mode
       const t = index * 50
       const snapshot = recorder.capture(t, local)!
-      expect(snapshot.overlay).toBe(mode === 'Launcher' ? 'launcher' : mode === 'Default' ? 'default' : mode === 'Rifle' ? 'rifle' : 'pistol')
+      expect(snapshot.overlay).toBe(mode === 'Default' || mode === 'Infima.Launcher' ? 'default' : mode === 'Rifle' ? 'rifle' : 'pistol')
       buffer.push(snapshot)
       expect(remote.apply(buffer.sample(t)!.state).unsupported).toEqual([])
       expect(remote.controls.overlayMode).toBe(mode)

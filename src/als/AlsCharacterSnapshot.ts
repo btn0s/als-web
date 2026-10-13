@@ -24,6 +24,7 @@ export interface AlsCharacterSnapshot {
    * The recorder supplies these; servers may forward them unchanged. No movement authority.
    */
   animation?: {
+    overlayMode?: string
     /** Base overlay='pistol' defaults to two-handed when this presentation detail is absent. */
     pistolOverlayMode?: AlsPistolOverlayMode
     hasInput: boolean

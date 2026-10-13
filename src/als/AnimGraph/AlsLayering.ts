@@ -508,6 +508,7 @@ export function composeAlsLayeringFinalCurves(
   locomotionCurves: ReadonlyMap<string, number>,
   overlayCurves: ReadonlyMap<string, number>,
   output: Map<string, number> = new Map(),
+  curvesSlot?: ReadonlyMap<string, number>,
 ): Map<string, number> {
   if (output === locomotionCurves || output === overlayCurves) {
     throw new Error('ALS Layering curve output must not alias an input')
@@ -517,8 +518,8 @@ export function composeAlsLayeringFinalCurves(
   for (const [curveName, value] of locomotionCurves) {
     output.set(curveName, value)
   }
-  for (const [curveName, value] of overlayCurves) {
-    if (ALS_LAYERING_DISABLED_OVERLAY_SLOT_CURVES.includes(
+  for (const [curveName, value] of curvesSlot ?? overlayCurves) {
+    if (!curvesSlot && ALS_LAYERING_DISABLED_OVERLAY_SLOT_CURVES.includes(
       curveName as (typeof ALS_LAYERING_DISABLED_OVERLAY_SLOT_CURVES)[number],
     )) {
       continue

@@ -1,4 +1,5 @@
-import { createConsumerOverlay, type ConsumerOverlaySource } from '../engine/consumerOverlay'
+import { createConsumerUpperBodySlot } from './AnimGraph/consumerUpperBodySlot'
+import { createConsumerOverlayStates, type ConsumerOverlayStates } from './AnimGraph/consumerOverlayStates'
 import { ALS_GETTING_UP_MONTAGES, createAlsGettingUpSlotMontageRequest, type AlsGettingUpMontage } from './AnimGraph/gettingUp'
 import { createAlsRagdollPose, type AlsRagdollPose } from '../engine/alsRagdollPose'
 import { PISTOL_OVERLAY_MODES, isPistolOverlayMode } from './AnimGraph/overlayMode'
@@ -1256,7 +1257,7 @@ function compileRollSequenceNotifyTrack(
 export function createAlsAnimationInstance(gltf: {
   animations: THREE.AnimationClip[]
   scene: THREE.Object3D
-  consumerOverlay?: ConsumerOverlaySource
+  overlayStates?: ConsumerOverlayStates
   /** Optional normalized marker override; regular GLTF loads consume clip.userData.syncMarkers. */
   syncMarkers?: SyncMarkerTable
   /** Only the locally inspected actor owns the standalone global diagnostics. */
@@ -1268,7 +1269,6 @@ export function createAlsAnimationInstance(gltf: {
 }): AlsAnimationInstance {
   assertAlsAnimationExtras(gltf.animations)
   const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
-  const consumerOverlay = createConsumerOverlay(rig, gltf.consumerOverlay)
   const applicator = createPoseApplicator(gltf.scene, rig)
   const ragdolling = createAlsRagdollPose(gltf.scene, gltf.animations)
   const evaluator = createPoseEvaluator(rig, { development: import.meta.env.DEV })
@@ -1979,6 +1979,8 @@ export function createAlsAnimationInstance(gltf: {
         evaluator.referencePose,
       )
     : undefined
+  const customOverlays = createConsumerOverlayStates(rig, gltf.animations, gltf.overlayStates, quickFeetBlendProfile)
+  const upperBodySlot = createConsumerUpperBodySlot(rig, gltf.overlayStates)
   const rifleRuntime = createAlsRifleRuntime(
     rig,
     quickFeetBlendProfile,
@@ -2566,6 +2568,14 @@ export function createAlsAnimationInstance(gltf: {
       overlay: overlayInertialization,
     },
     overlayGraph(context) {
+      const custom = customOverlays.get(activeOverlayMode)
+      if (custom && activeRifleGraphInput) {
+        const result = custom.evaluate(activeRifleGraphInput)
+        copyPose(result.pose, context.outputPose)
+        context.outputCurves.clear()
+        for (const [name, value] of result.curves) context.outputCurves.set(name, value)
+        return
+      }
       if (isPistolOverlayMode(activeOverlayMode) && activeRifleGraphInput) {
         const { runtime, sources } = pistolOverlays[activeOverlayMode]
         if (sources) {
@@ -2575,14 +2585,13 @@ export function createAlsAnimationInstance(gltf: {
             ? evaluateAlsPistolGraph(runtime, activeRifleGraphInput, timedSources)
             : evaluateAlsPistolOneHandedGraph(runtime, activeRifleGraphInput, timedSources)
           copyPose(result.pose, context.outputPose)
-          consumerOverlay?.(context.outputPose)
           context.outputCurves.clear()
           for (const [name, value] of result.curves) context.outputCurves.set(name, value)
           return
         }
       }
       if (
-        (activeOverlayMode === 'Rifle' || activeOverlayMode === 'Launcher')
+        activeOverlayMode === 'Rifle'
         && rifleSources
         && activeRifleGraphInput
       ) {
@@ -2592,7 +2601,6 @@ export function createAlsAnimationInstance(gltf: {
           rifleSources,
         )
         copyPose(result.pose, context.outputPose)
-        consumerOverlay?.(context.outputPose)
         context.outputCurves.clear()
         for (const [name, value] of result.curves) {
           context.outputCurves.set(name, value)
@@ -2620,6 +2628,7 @@ export function createAlsAnimationInstance(gltf: {
           overlayPose: context.overlayPose,
           basePose: layeringReference,
           curves: publishedCurves,
+          regionSlots: upperBodySlot.evaluate({ pose: context.overlayPose, curves: overlayInertialization.curves }),
         },
         context.outputPose,
       )
@@ -2648,6 +2657,7 @@ export function createAlsAnimationInstance(gltf: {
         postLocomotionSlotCurveScratch,
         overlayInertialization.curves,
         output,
+        upperBodySlot.curves(overlayInertialization.curves),
       )
     },
   }
@@ -3083,8 +3093,9 @@ export function createAlsAnimationInstance(gltf: {
 
   function processRifleLifecycleEvents(
     controls: AlsAnimationInstanceControls,
+    events = rifleRuntime.lifecycleEvents,
   ) {
-    for (const event of rifleRuntime.lifecycleEvents) {
+    for (const event of events) {
       if (
         event.kind !== 'AnimNotify'
         || (
@@ -5816,7 +5827,7 @@ export function createAlsAnimationInstance(gltf: {
       : 0
 
     const defaultActive = controls.overlayMode === 'Default'
-    const rifleActive = controls.overlayMode === 'Rifle' || controls.overlayMode === 'Launcher'
+    const rifleActive = controls.overlayMode === 'Rifle'
     activeOverlayMode = controls.overlayMode
     if (idleAdditiveEntry && idleAdditiveClip) {
       idleAdditiveEntry.time = idleAdditiveClip.time
@@ -5830,10 +5841,11 @@ export function createAlsAnimationInstance(gltf: {
       previousOverlayMode = controls.overlayMode
     } else if (controls.overlayMode !== previousOverlayMode) {
       previousOverlayMode = controls.overlayMode
+      customOverlays.get(controls.overlayMode)?.reset()
       if (isPistolOverlayMode(controls.overlayMode)) {
         resetAlsPistolRuntime(pistolOverlays[controls.overlayMode].runtime)
       }
-      if (controls.overlayMode === 'Rifle' || controls.overlayMode === 'Launcher') {
+      if (controls.overlayMode === 'Rifle') {
         resetAlsRifleRuntime(rifleRuntime)
       }
       // AB_Als_Default and AB_Als_Rifle both author 0.2s GraphBlendOptions for the Overlay linked
@@ -5881,6 +5893,7 @@ export function createAlsAnimationInstance(gltf: {
         rightAmount: velocityBlend.rightAmount,
       },
     }
+    upperBodySlot.update(delta, !!controls.locomotionAction, controls.overlayMode)
     refreshAlsRifleRuntime(rifleRuntime, activeRifleGraphInput)
     processRifleLifecycleEvents(controls)
     for (const mode of PISTOL_OVERLAY_MODES) {
@@ -5900,6 +5913,18 @@ export function createAlsAnimationInstance(gltf: {
           blendOutDuration: 0.2,
           playRate: event.name === 'RelaxedToReady' ? 1.75 : 1.5,
           startTime: 0.3,
+        })
+      }
+    }
+    for (const [mode, overlay] of customOverlays) {
+      overlay.update({ ...activeRifleGraphInput, relevant: mode === controls.overlayMode })
+      if (overlay.template === 'Rifle') processRifleLifecycleEvents(controls, overlay.runtime.lifecycleEvents)
+      else for (const event of overlay.runtime.lifecycleEvents) {
+        if (controls.stance !== 'Standing' || controls.moving || !standingTransitionRightClip) continue
+        queueTransitionAnimation(transitionsState, {
+          clip: standingTransitionRightClip.sampler.clip.name,
+          blendInDuration: 0.2, blendOutDuration: 0.2,
+          playRate: event.name === 'RelaxedToReady' ? 1.75 : 1.5, startTime: 0.3,
         })
       }
     }
@@ -6133,6 +6158,9 @@ export function createAlsAnimationInstance(gltf: {
         ? 0
         : overlayLocomotionMembers.get(source)?.time ?? 0
     }
+    const movementPhase = syncResult.leader && syncResult.leader.duration > 0
+      ? syncResult.leader.time / syncResult.leader.duration : 0
+    for (const overlay of customOverlays.values()) overlay.setTime(movementPhase, idleAdditiveClip?.time ?? 0)
     if (rifleSources) {
       rifleSources.runArms.time =
         rifleRunArmsSource?.time ?? 0
@@ -7517,6 +7545,7 @@ export function createAlsAnimationInstance(gltf: {
       takeNotifyEvents: () => pendingGetUpNotifyEvents.splice(0),
     },
     StopMontages: (duration) => {
+      upperBodySlot.stop(duration)
       const mantle = getActiveMantlingMontageInstance()
       if (mantle) stopActiveMantlingMontage(mantle.sample.instanceId, duration)
       for (const slotName of [POST_LOCOMOTION_SLOT_NAME, TRANSITION_SLOT_NAME,

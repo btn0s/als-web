@@ -1,4 +1,4 @@
-import type { ConsumerOverlaySource } from '../engine/consumerOverlay'
+import type { ConsumerOverlayStates } from '../als/AnimGraph/consumerOverlayStates'
 import type { AlsRagdollingSettings } from '../als/Settings/AlsRagdollingSettings'
 import { clone } from 'three/addons/utils/SkeletonUtils.js'
 import { useAlsRagdoll } from './useAlsRagdoll'
@@ -91,7 +91,7 @@ export type AlsOverlayModeBridge = Pick<
 >
 
 export interface CharacterProps {
-  consumerOverlay?: ConsumerOverlaySource
+  overlayStates?: ConsumerOverlayStates
   renderOverlayObject?: (scene: THREE.Object3D) => React.ReactNode
   ragdollRef?: React.RefObject<AlsRagdollHandle | null>
   /** Emitted after animation in the performance.now() clock domain. */
@@ -193,7 +193,7 @@ function findSkeletonBone(scene: THREE.Object3D, name: string): THREE.Bone | nul
 
 function LoadedCharacter({
   gltf: sourceGltf,
-  consumerOverlay,
+  overlayStates,
   renderOverlayObject,
   onSizeChange,
   poseSample,
@@ -213,7 +213,7 @@ function LoadedCharacter({
   gamepadRollBehavior,
 }: {
   gltf: GLTF
-  consumerOverlay?: CharacterProps['consumerOverlay']
+  overlayStates?: CharacterProps['overlayStates']
   renderOverlayObject?: CharacterProps['renderOverlayObject']
   ragdollRef?: CharacterProps['ragdollRef']
   ragdollInputEnabled?: boolean
@@ -233,7 +233,7 @@ function LoadedCharacter({
   gamepadIndex: CharacterProps['gamepadIndex']
   gamepadRollBehavior: CharacterProps['gamepadRollBehavior']
 }) {
-  const gltf = useMemo(() => ({ ...sourceGltf, scene: clone(sourceGltf.scene), consumerOverlay }), [sourceGltf, consumerOverlay])
+  const gltf = useMemo(() => ({ ...sourceGltf, scene: clone(sourceGltf.scene), overlayStates }), [sourceGltf, overlayStates])
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
   const RapierRay = rapier.Ray
@@ -433,6 +433,7 @@ function LoadedCharacter({
     ragdollInputEnabled,
     ragdollingSettings,
     gamepadRollBehavior,
+    overlayStates?.states,
   )
   useEffect(() => {
     onOverlayModeBridgeChange({
@@ -577,7 +578,7 @@ function LoadedCharacter({
 }
 
 export function Character({
-  consumerOverlay,
+  overlayStates,
   renderOverlayObject,
   onSizeChange,
   poseSample,
@@ -605,7 +606,7 @@ export function Character({
   return gltf ? (
     <LoadedCharacter
       gltf={gltf}
-      consumerOverlay={consumerOverlay}
+      overlayStates={overlayStates}
       renderOverlayObject={renderOverlayObject}
       onSizeChange={onSizeChange}
       poseSample={poseSample}

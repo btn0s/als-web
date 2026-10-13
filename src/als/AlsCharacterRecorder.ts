@@ -65,6 +65,7 @@ export class AlsCharacterRecorder {
         : isPistolOverlayMode(controls.overlayMode) ? 'pistol' : 'default',
       aiming: c.desiredAiming, seq: source.seq ?? this.seq++,
       animation: {
+        overlayMode: controls.overlayMode,
         pistolOverlayMode: isPistolOverlayMode(controls.overlayMode) ? controls.overlayMode : undefined,
         hasInput: c.locomotionState.hasInput,
         inputYaw: c.locomotionState.inputYawAngle,
