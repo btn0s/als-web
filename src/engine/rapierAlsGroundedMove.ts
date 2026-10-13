@@ -62,6 +62,7 @@ export interface RapierAlsGroundedMoveOptions {
   readonly excludeRigidBody?: unknown
   readonly resolveExcludeRigidBody?: () => unknown
   readonly filterFlags?: number
+  readonly resolveFilterGroups?: () => number | undefined
 }
 
 /**
@@ -109,7 +110,7 @@ export function createRapierAlsGroundedMoveSweep(
       1,
       true,
       options.filterFlags,
-      undefined,
+      options.resolveFilterGroups?.(),
       undefined,
       options.resolveExcludeRigidBody?.() ?? options.excludeRigidBody,
     )

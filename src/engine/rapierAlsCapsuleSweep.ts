@@ -119,6 +119,7 @@ export interface RapierAlsCapsuleSweepOptions {
   readonly resolveExcludeRigidBody?: () => unknown
   /** Query filtering remains an engine-adapter concern, normally `EXCLUDE_SENSORS`. */
   readonly filterFlags?: number
+  readonly resolveFilterGroups?: () => number | undefined
 }
 
 export interface RapierAlsCapsuleSweepHit
@@ -213,7 +214,7 @@ export function createRapierAlsCapsuleSweep(
       1,
       true,
       options.filterFlags,
-      undefined,
+      options.resolveFilterGroups?.(),
       undefined,
       options.resolveExcludeRigidBody?.() ?? options.excludeRigidBody,
     )
@@ -278,7 +279,7 @@ export function createRapierAlsCapsuleSweep(
       1,
       true,
       options.filterFlags,
-      undefined,
+      options.resolveFilterGroups?.(),
       undefined,
       options.resolveExcludeRigidBody?.() ?? options.excludeRigidBody,
     )

@@ -311,6 +311,10 @@ function LoadedCharacter({
       Ray: RapierRay,
       resolveExcludeRigidBody: () => rigidBody.current,
       filterFlags: rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+      resolveFilterGroups: () => {
+        const body = rigidBody.current
+        return body && body.numColliders() > 0 ? body.collider(0).collisionGroups() : undefined
+      },
     }),
     [RapierCapsule, RapierRay, rapier.QueryFilterFlags.EXCLUDE_SENSORS, world],
   )
@@ -320,6 +324,10 @@ function LoadedCharacter({
       Capsule: RapierCapsule,
       resolveExcludeRigidBody: () => rigidBody.current,
       filterFlags: rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+      resolveFilterGroups: () => {
+        const body = rigidBody.current
+        return body && body.numColliders() > 0 ? body.collider(0).collisionGroups() : undefined
+      },
     }),
     [RapierCapsule, rapier.QueryFilterFlags.EXCLUDE_SENSORS, world],
   )

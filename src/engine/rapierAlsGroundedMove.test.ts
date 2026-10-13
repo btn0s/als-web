@@ -37,6 +37,28 @@ beforeAll(async () => {
 })
 
 describe('Rapier ALS grounded movement query', () => {
+  it('ignores a physically overlapping body excluded by the owner collision response', () => {
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
+    const corpse = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 1, 0))
+    const corpseCollider = world.createCollider(RAPIER.ColliderDesc.cuboid(0.5, 0.3, 0.5)
+      .setCollisionGroups((0x0004 << 16) | 0xfffd), corpse)
+    const floorBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.1, 0))
+    const floor = world.createCollider(RAPIER.ColliderDesc.cuboid(10, 0.1, 10), floorBody)
+    world.step()
+    let groups: number | undefined
+    const sweep = createRapierAlsGroundedMoveSweep({
+      world,
+      Capsule: RAPIER.Capsule,
+      resolveFilterGroups: () => groups,
+    })
+    const horizontal = { start: { x: 0, y: 0, z: 1 }, delta: { x: 0.1, y: 0, z: 0 }, capsuleRadius: 0.3, capsuleHalfHeight: 0.9 }
+    expect(sweep(horizontal)).toMatchObject({ collider: { handle: corpseCollider.handle } })
+    groups = (0x0002 << 16) | 0xfffb
+    expect(sweep(horizontal)).not.toEqual(expect.objectContaining({ collider: corpseCollider }))
+    expect(sweep({ ...horizontal, start: { x: 0, y: 0, z: 3 }, delta: { x: 0, y: 0, z: -4 } })).toMatchObject({ collider: { handle: floor.handle } })
+    world.free()
+  })
+
   it('converts Z-up full capsule casts and excludes the owner body', () => {
     const excludedBody = {}
     const collider = {
