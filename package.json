@@ -13,6 +13,7 @@
   "type": "module",
   "exports": {
     "./app/Character": "./src/app/Character.tsx",
+    "./app/AlsPlayer": "./src/app/AlsPlayer.ts",
     "./app/AlsCamera": "./src/app/AlsCamera.tsx",
     "./app/CharacterPoseSample": "./src/app/CharacterPoseSample.ts",
     "./als/ALSExtras/Core/B_Als_PlayerController": "./src/als/ALSExtras/Core/B_Als_PlayerController.tsx",
