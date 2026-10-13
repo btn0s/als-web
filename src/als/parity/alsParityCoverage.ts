@@ -159,12 +159,13 @@ export const ALS_PARITY_ASSET_COVERAGE = [
   },
   {
     asset: 'AB_Als_Ragdolling',
-    status: 'implemented-not-live',
+    status: 'partial-live',
     evidence: {
       definition: graphDefinition(
         'AB_Als_Ragdolling',
         'createAlsRagdollingGraphState',
       ),
+      productionCall: ['src/engine/alsRagdollPose.ts', 'refreshAlsRagdollingGraph('],
     },
   },
   {

@@ -184,14 +184,27 @@ second (flagged) — never from another project's implementation:
       pose-buffer runtime above makes it implementable; do it if parity footage demands it)
 - [x] In-air: exact Jump / Fall / Land / Land Movement graph, authored Light/Heavy
       landing blends, Rapier-backed ground prediction, and character-owned landing
-      `AM_Als_Roll` at the authored 700 cm/s threshold. High-speed landing ragdoll remains
-      under the explicit CUT below *(2026-07-24)*
+      `AM_Als_Roll` at the authored 700 cm/s threshold. High-speed landing ragdoll now enters the live skeletal-physics bridge below *(2026-07-24)*
 - [ ] Mantle/vault through the arbiter (one clock: warp + montage share normalized progress)
 - [ ] **Engine features**: sync groups on authored Left/Right markers, final named-curve
       composition, and UE-style output inertialization landed *(2026-07-23)*; montage/slot blend
       semantics and authored root-motion handoff remain open
 - [ ] Foot IK with pelvis adaptation (ALS's Control Rig stage: ground trace + spring-damped Z offset + slope alignment — constants in the math spec; the pelvis-combine formula is graph-side and flagged original-design)
-- [ ] CUT for now: ragdoll, rolling physics blend, debug-camera parity — revisit on demand
+- [x] **Live ragdoll integration (2026-10-12)**: local Character and cosmetic AlsRemoteActor
+      expose `ragdollRef` (`StartRagdolling({ initialImpulse, keepRagdoll })`, `AddImpulse`,
+      `StopRagdolling`, `ResetRagdolling`). Impulses/locations/torque use three.js world SI units.
+      PA_Als shapes, anchors and frame-space angular limits feed Rapier; initial animated pose
+      and velocity are preserved. The existing native Start/Refresh/Stop lifecycle owns capsule
+      following, ground sweep, initial speed limiting and front/back get-up selection. The
+      post-Control-Rig AB_Als_Ragdolling blend, Flail targets, physics pose and final snapshot
+      now feed the single skeleton publication. Death retention disables stopping until reset.
+- [ ] **Ragdoll parity gaps**: extracted effective masses/material defaults are unavailable;
+      `rapierAlsPhysicsAsset` explicitly uses volume × 1000 kg/m³ when mass is absent. Rapier JS
+      cannot set independent generic-joint frames: spherical anchors plus frame-space angular
+      velocity projection approximate Chaos's cone limits/drives. Get-up selection and snapshot
+      restoration are live, but montage playback/root motion/notify integration remains partial;
+      stopping restores movement without claiming GettingUp. No replicated ragdoll simulation.
+- [ ] CUT for now: rolling physics blend, debug-camera parity — revisit on demand
 
 **Exit:** parity harness green (measured equivalence) AND side-by-side with ALS Refactored
 in-editor footage the web version reads as the same system. Template README records what's
