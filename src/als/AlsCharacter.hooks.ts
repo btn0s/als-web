@@ -1108,10 +1108,14 @@ export function prepareRapierAlsAnimRootMotionVelocity(
   return true
 }
 
+/** Default hold-to-aim pointer buttons: RMB, as in ALS's IA_Aim mapping. */
+export const ALS_AIM_POINTER_BUTTONS: readonly number[] = [2]
+
 /**
  * React/Rapier boundary for the framework-free AAlsCharacter and movement-component analogs.
  * Physics vectors are converted once here; all policy and state remain in ALS coordinates.
  */
+
 export function useAlsCharacter(
   rigidBody: MutableRefObject<RapierRigidBody | null>,
   standingCapsule: MutableRefObject<RapierCollider | null>,
@@ -1125,6 +1129,8 @@ export function useAlsCharacter(
   worldTime?: Readonly<WorldTimeState>,
   /** KeyboardEvent.code toggling VelocityDirection/ViewDirection; `null` disables the binding. */
   toggleRotationModeKey: string | null = 'Digit1',
+  /** PointerEvent.button values that hold aim (default RMB). Trackpad layouts can add 0. */
+  aimPointerButtons: readonly number[] = ALS_AIM_POINTER_BUTTONS,
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1630,10 +1636,10 @@ export function useAlsCharacter(
       setControls({ desiredGait: 'Running' })
     }
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button === 2) aimingWithPointer.current = true
+      if (aimPointerButtons.includes(event.button)) aimingWithPointer.current = true
     }
     const onPointerUp = (event: PointerEvent) => {
-      if (event.button === 2) aimingWithPointer.current = false
+      if (aimPointerButtons.includes(event.button)) aimingWithPointer.current = false
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -1648,7 +1654,7 @@ export function useAlsCharacter(
       window.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('pointerup', onPointerUp)
     }
-  }, [setControls, toggleRotationModeKey])
+  }, [setControls, toggleRotationModeKey, aimPointerButtons])
 
   useEffect(() => {
     window.__setSpeed = (value: number) => setControls({
