@@ -19,6 +19,7 @@
     "./als/ALSExtras/Core/B_Als_PlayerController": "./src/als/ALSExtras/Core/B_Als_PlayerController.tsx",
     "./als/ALSExtras/UI/W_Als_OverlayModeMenu": "./src/als/ALSExtras/UI/W_Als_OverlayModeMenu.tsx",
     "./als/AlsCharacter.hooks": "./src/als/AlsCharacter.hooks.ts",
+    "./als/AlsCharacter.overlayObjects": "./src/als/AlsCharacter.overlayObjects.ts",
     "./engine/alsFramePipeline": "./src/engine/alsFramePipeline.ts",
     "./engine/alsAudioBridge": "./src/engine/alsAudioBridge.ts",
     "./engine/timeDilation": "./src/engine/timeDilation.ts",
