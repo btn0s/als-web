@@ -1,3 +1,4 @@
+import { createConsumerOverlay, type ConsumerOverlaySource } from '../engine/consumerOverlay'
 import { ALS_GETTING_UP_MONTAGES, createAlsGettingUpSlotMontageRequest, type AlsGettingUpMontage } from './AnimGraph/gettingUp'
 import { createAlsRagdollPose, type AlsRagdollPose } from '../engine/alsRagdollPose'
 import { PISTOL_OVERLAY_MODES, isPistolOverlayMode } from './AnimGraph/overlayMode'
@@ -1255,6 +1256,7 @@ function compileRollSequenceNotifyTrack(
 export function createAlsAnimationInstance(gltf: {
   animations: THREE.AnimationClip[]
   scene: THREE.Object3D
+  consumerOverlay?: ConsumerOverlaySource
   /** Optional normalized marker override; regular GLTF loads consume clip.userData.syncMarkers. */
   syncMarkers?: SyncMarkerTable
   /** Only the locally inspected actor owns the standalone global diagnostics. */
@@ -1266,6 +1268,7 @@ export function createAlsAnimationInstance(gltf: {
 }): AlsAnimationInstance {
   assertAlsAnimationExtras(gltf.animations)
   const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
+  const consumerOverlay = createConsumerOverlay(rig, gltf.consumerOverlay)
   const applicator = createPoseApplicator(gltf.scene, rig)
   const ragdolling = createAlsRagdollPose(gltf.scene, gltf.animations)
   const evaluator = createPoseEvaluator(rig, { development: import.meta.env.DEV })
@@ -2572,6 +2575,7 @@ export function createAlsAnimationInstance(gltf: {
             ? evaluateAlsPistolGraph(runtime, activeRifleGraphInput, timedSources)
             : evaluateAlsPistolOneHandedGraph(runtime, activeRifleGraphInput, timedSources)
           copyPose(result.pose, context.outputPose)
+          consumerOverlay?.(context.outputPose)
           context.outputCurves.clear()
           for (const [name, value] of result.curves) context.outputCurves.set(name, value)
           return
@@ -2588,6 +2592,7 @@ export function createAlsAnimationInstance(gltf: {
           rifleSources,
         )
         copyPose(result.pose, context.outputPose)
+        consumerOverlay?.(context.outputPose)
         context.outputCurves.clear()
         for (const [name, value] of result.curves) {
           context.outputCurves.set(name, value)

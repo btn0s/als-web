@@ -1,3 +1,4 @@
+import type { ConsumerOverlaySource } from '../engine/consumerOverlay'
 import type { AlsRagdollingSettings } from '../als/Settings/AlsRagdollingSettings'
 import { clone } from 'three/addons/utils/SkeletonUtils.js'
 import { useAlsRagdoll } from './useAlsRagdoll'
@@ -90,6 +91,8 @@ export type AlsOverlayModeBridge = Pick<
 >
 
 export interface CharacterProps {
+  consumerOverlay?: ConsumerOverlaySource
+  renderOverlayObject?: (scene: THREE.Object3D) => React.ReactNode
   ragdollRef?: React.RefObject<AlsRagdollHandle | null>
   /** Emitted after animation in the performance.now() clock domain. */
   onSnapshot?: (snapshot: AlsCharacterSnapshot) => void
@@ -190,6 +193,8 @@ function findSkeletonBone(scene: THREE.Object3D, name: string): THREE.Bone | nul
 
 function LoadedCharacter({
   gltf: sourceGltf,
+  consumerOverlay,
+  renderOverlayObject,
   onSizeChange,
   poseSample,
   worldTime,
@@ -208,6 +213,8 @@ function LoadedCharacter({
   gamepadRollBehavior,
 }: {
   gltf: GLTF
+  consumerOverlay?: CharacterProps['consumerOverlay']
+  renderOverlayObject?: CharacterProps['renderOverlayObject']
   ragdollRef?: CharacterProps['ragdollRef']
   ragdollInputEnabled?: boolean
   ragdollingSettings?: Partial<AlsRagdollingSettings>
@@ -226,7 +233,7 @@ function LoadedCharacter({
   gamepadIndex: CharacterProps['gamepadIndex']
   gamepadRollBehavior: CharacterProps['gamepadRollBehavior']
 }) {
-  const gltf = useMemo(() => ({ ...sourceGltf, scene: clone(sourceGltf.scene) }), [sourceGltf])
+  const gltf = useMemo(() => ({ ...sourceGltf, scene: clone(sourceGltf.scene), consumerOverlay }), [sourceGltf, consumerOverlay])
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
   const RapierRay = rapier.Ray
@@ -552,13 +559,14 @@ function LoadedCharacter({
       >
         <group rotation-y={ALS_MESH_COMPONENT_YAW_RADIANS}>
           <primitive object={gltf.scene} />
+          {renderOverlayObject?.(gltf.scene)}
         </group>
-        {isPistolOverlayMode(character.overlayMode) && (
+        {!renderOverlayObject && isPistolOverlayMode(character.overlayMode) && (
           <Suspense fallback={null}>
             <PistolOverlayObject characterScene={gltf.scene} />
           </Suspense>
         )}
-        {character.overlayMode === 'Rifle' && (
+        {!renderOverlayObject && character.overlayMode === 'Rifle' && (
           <Suspense fallback={null}>
             <RifleOverlayObject characterScene={gltf.scene} />
           </Suspense>
@@ -569,6 +577,8 @@ function LoadedCharacter({
 }
 
 export function Character({
+  consumerOverlay,
+  renderOverlayObject,
   onSizeChange,
   poseSample,
   worldTime,
@@ -595,6 +605,8 @@ export function Character({
   return gltf ? (
     <LoadedCharacter
       gltf={gltf}
+      consumerOverlay={consumerOverlay}
+      renderOverlayObject={renderOverlayObject}
       onSizeChange={onSizeChange}
       poseSample={poseSample}
       worldTime={worldTime}
