@@ -139,6 +139,16 @@ describe('ALS character glTF animation extras', () => {
     expectExtras((await preloadAlsCharacterGltf()).animations)
   })
 
+  it('keeps the shared preload alive when the first caller aborts', async () => {
+    const fetch = mockFetch()
+    const first = new AbortController()
+    const pending = preloadAlsCharacterGltf(undefined, { signal: first.signal })
+    first.abort()
+    expect(preloadAlsCharacterGltf()).toBe(pending)
+    expectExtras((await pending).animations)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('rejects aborted loads before fetching and before publishing a parsed asset', async () => {
     const fetch = mockFetch()
     const controller = new AbortController()

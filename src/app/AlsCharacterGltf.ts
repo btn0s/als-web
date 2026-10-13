@@ -72,7 +72,7 @@ const cachedLoads = new Map<string, Promise<GLTF>>()
 export function preloadAlsCharacterGltf(url = ALS_CHARACTER_URL, options: AlsCharacterGltfLoadOptions = {}): Promise<GLTF> {
   let pending = cachedLoads.get(url)
   if (!pending) {
-    pending = loadAlsCharacterGltf(url, { onProgress: options.onProgress }).catch(error => { cachedLoads.delete(url); throw error })
+    pending = loadAlsCharacterGltf(url, { onProgress: options.onProgress })
     cachedLoads.set(url, pending)
   }
   return pending
