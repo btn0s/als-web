@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import type { Object3D } from 'three'
@@ -35,15 +35,17 @@ function OverlayObject({ characterScene, isVisible, url, onMount, family, attach
   // Props have no ALS animation extras. Keep their authored materials and clone per actor.
   const gltf = useGLTF(url)
   const scene = useMemo(() => clone(gltf.scene), [gltf.scene])
+  const mountHandler = useRef(onMount)
+  mountHandler.current = onMount
   useLayoutEffect(() => {
     const bone = attach(characterScene, scene)
     scene.visible = isVisible?.() ?? true
-    onMount?.(family, scene, bone)
+    mountHandler.current?.(family, scene, bone)
     return () => {
-      onMount?.(family, null, null)
+      mountHandler.current?.(family, null, null)
       detachOverlayObject(scene)
     }
-  }, [attach, characterScene, scene, isVisible, onMount, family])
+  }, [attach, characterScene, scene, isVisible, family])
   useFrame(() => {
     // The prop is a bone child, outside its React parent's visibility hierarchy. Change only
     // this prop: rifle and pistol share the same virtual bone and must not toggle each other.
