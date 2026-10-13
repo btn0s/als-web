@@ -45,7 +45,7 @@ import type {
   AlsStance,
 } from '../als/Settings/AlsMovementSettings'
 import { unwindDegrees } from '../als/State/AlsLocomotionState'
-import { createRapierAlsCameraTrace } from '../engine/rapierAlsCameraTrace'
+import { createRapierAlsCameraTrace, type RapierAlsCameraTraceOptions } from '../engine/rapierAlsCameraTrace'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 import { getWorldDeltaTime } from '../engine/timeDilation'
 import type { WorldTimeState } from '../engine/timeDilation'
@@ -274,6 +274,7 @@ export function AlsCamera({
   gamepadEnabled = true,
   gamepadIndex,
   modifyGamepadLook,
+  queryFilterForChannel,
 }: {
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
@@ -287,6 +288,7 @@ export function AlsCamera({
   gamepadEnabled?: boolean
   gamepadIndex?: number
   modifyGamepadLook?: (input: AlsGamepadLookInput) => AlsGamepadLookDelta
+  queryFilterForChannel?: RapierAlsCameraTraceOptions['queryFilterForChannel']
 }) {
   const { camera, gl, size } = useThree()
   const { world } = useRapier()
@@ -344,9 +346,9 @@ export function AlsCamera({
     () => createRapierAlsCameraTrace({
       world,
       getOwnerRigidBody: () => poseSample.current.ownerRigidBody,
-      queryFilterForChannel: () => ({}),
+      queryFilterForChannel: (channel) => queryFilterForChannel?.(channel) ?? {},
     }),
-    [poseSample, world],
+    [poseSample, world, queryFilterForChannel],
   )
   const animationInput = useMemo<MutableCameraAnimationInput>(() => ({
     ViewMode: VIEW_MODE_TAGS.ThirdPerson,

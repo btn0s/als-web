@@ -130,6 +130,21 @@ describe('createRapierAlsCameraTrace', () => {
     expect(trace(request())?.traceResult.x).toBeCloseTo(-2.65, 4)
   })
 
+  it('ignores a pawn attached at the trace origin while retaining a blocking world wall', () => {
+    const world = createWorld()
+    const carriedPawn = createFixedCuboid(world, { x: 0, y: 0, z: 1 }, { x: 0.35, y: 0.35, z: 0.9 }).collider
+    carriedPawn.setCollisionGroups((0x10 << 16) | 0xffff)
+    createFixedCuboid(world, { x: -3, y: 0, z: 1 }, { x: 0.1, y: 1, z: 1 })
+    world.step()
+    const blocked = createRapierAlsCameraTrace({ world, queryFilterForChannel: () => ({}) })(request())
+    const trace = createRapierAlsCameraTrace({
+      world,
+      queryFilterForChannel: () => ({ predicate: collider => (collider.collisionGroups() >>> 16) !== 0x10 }),
+    })
+    expect(blocked?.traceResult.x).not.toBeCloseTo(-2.65, 4)
+    expect(trace(request())?.traceResult.x).toBeCloseTo(-2.65, 4)
+  })
+
   it('ignores sensors and respects the visibility blocking predicate', () => {
     const world = createWorld()
     const sensor = createFixedCuboid(
