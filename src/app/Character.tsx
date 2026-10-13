@@ -96,6 +96,8 @@ export interface CharacterProps {
   footstepSoundSink: AlsFootstepSoundSink
   /** KeyboardEvent.code toggling rotation mode (default `Digit1`); `null` disables it. */
   toggleRotationModeKey?: string | null
+  /** PointerEvent.button values that hold aim (default `[2]`, RMB). */
+  aimPointerButtons?: readonly number[]
 }
 
 function compileAlsMantlingRootMotion(
@@ -182,6 +184,7 @@ function LoadedCharacter({
   onSnapshot,
   snapshotRateHz = 20,
   toggleRotationModeKey,
+  aimPointerButtons,
 }: {
   gltf: GLTF
   onSizeChange: CharacterProps['onSizeChange']
@@ -193,6 +196,7 @@ function LoadedCharacter({
   onSnapshot?: CharacterProps['onSnapshot']
   snapshotRateHz?: number
   toggleRotationModeKey: CharacterProps['toggleRotationModeKey']
+  aimPointerButtons: CharacterProps['aimPointerButtons']
 }) {
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
@@ -383,6 +387,7 @@ function LoadedCharacter({
     groundedMoveSweep,
     worldTime,
     toggleRotationModeKey,
+    aimPointerButtons,
   )
   useEffect(() => {
     onOverlayModeBridgeChange({
@@ -525,6 +530,7 @@ export function Character({
   onSnapshot,
   snapshotRateHz = 20,
   toggleRotationModeKey,
+  aimPointerButtons,
 }: CharacterProps) {
   const { gltf, status, progress, retry } = useAlsCharacterGltf()
 
@@ -543,6 +549,7 @@ export function Character({
       onSnapshot={onSnapshot}
       snapshotRateHz={snapshotRateHz}
       toggleRotationModeKey={toggleRotationModeKey}
+      aimPointerButtons={aimPointerButtons}
     />
   ) : (
     <CharacterLoadState status={status} progress={progress} retry={retry} />

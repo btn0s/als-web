@@ -267,10 +267,16 @@ describe('ALS content oracle: implemented character inputs', () => {
     expect(compactControllerSource).toContain("toggleRotationModeKey: string | null = 'Digit1'")
     expect(compactControllerSource).toContain('event.code === toggleRotationModeKey')
     expect(compactControllerSource).toContain(
-      'if (event.button === 2) aimingWithPointer.current = true',
+      'export const ALS_AIM_POINTER_BUTTONS: readonly number[] = [2]',
     )
     expect(compactControllerSource).toContain(
-      'if (event.button === 2) aimingWithPointer.current = false',
+      'aimPointerButtons: readonly number[] = ALS_AIM_POINTER_BUTTONS',
+    )
+    expect(compactControllerSource).toContain(
+      'if (aimPointerButtons.includes(event.button)) aimingWithPointer.current = true',
+    )
+    expect(compactControllerSource).toContain(
+      'if (aimPointerButtons.includes(event.button)) aimingWithPointer.current = false',
     )
 
     expect(controllerSource).toMatch(
