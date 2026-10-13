@@ -192,11 +192,6 @@ function isTextEntryTarget(target: EventTarget | null) {
     || target instanceof HTMLSelectElement
 }
 
-function findBone(scene: THREE.Object3D, name: string): THREE.Bone | null {
-  const candidate = scene.getObjectByName(name)
-  return candidate instanceof THREE.Bone ? candidate : null
-}
-
 function toggleViewMode(character: AlsCharacter | null) {
   if (!character) return
   setViewMode(
@@ -276,7 +271,7 @@ export function AlsCamera({
     'SetListenerTransform'
   >
 }) {
-  const { camera, gl, scene, size } = useThree()
+  const { camera, gl, size } = useThree()
   const { world } = useRapier()
   const cameraAnimationState = useRef(
     createAlsCameraAnimationInstance(),
@@ -299,8 +294,6 @@ export function AlsCamera({
     [],
   )
   const activated = useRef(false)
-  const rootBone = useRef<THREE.Bone | null>(null)
-  const headBone = useRef<THREE.Bone | null>(null)
   const pointerDelta = useRef({ x: 0, y: 0 })
   const pressedKeys = useRef(new Set<string>())
   const previousGamepadButtons = useRef({
@@ -557,10 +550,10 @@ export function AlsCamera({
     const character = sample.character
     if (!sample.ready || !character) return
 
-    rootBone.current ??= findBone(scene, 'root')
-    headBone.current ??= findBone(scene, 'head')
-    const root = rootBone.current
-    const head = headBone.current
+    // The publishing character's own bones: re-read every frame so a remounted (respawned)
+    // character re-binds, and other ALS skeletons in the scene are never picked up by name.
+    const root = sample.rootBone
+    const head = sample.headBone
     if (!root || !head) return
 
     const deltaTime = refreshCameraDeltaTime(
