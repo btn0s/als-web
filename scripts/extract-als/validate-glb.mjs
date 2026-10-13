@@ -163,6 +163,8 @@ const expectedStepInterpolationClips = new Set([
   'A_Als_PistolTwoHanded_Poses',
   'A_Als_Rifle_Poses',
   'A_Als_Rifle_Poses_NoCurves',
+  'A_Als_PistolTwoHanded_Poses_NoCurves',
+  'A_Als_PistolOneHanded_Poses_NoCurves',
   'A_Als_Torch_Poses',
 ]);
 const expectedActionRootTranslationEnds = new Map([
@@ -299,8 +301,8 @@ for (const materialName of actualSkinJointHistograms.keys()) {
 }
 
 if (anims.length < 1) errs.push('no animations');
-if (manifest.length !== 119)
-  errs.push(`ALS 4.15 content manifest has ${manifest.length} clips, expected 119`);
+if (manifest.length !== 121)
+  errs.push(`ALS 4.15 content manifest has ${manifest.length} clips, expected 121`);
 if (manifestSet.size !== manifest.length) errs.push('duplicate clip names in clips.manifest');
 for (const clip of manifest)
   if (!animNameSet.has(clip)) errs.push(`missing curated clip: ${clip}`);

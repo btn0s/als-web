@@ -1,3 +1,5 @@
+import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js'
+import { isPistolOverlayMode } from '../als/AnimGraph/overlayMode'
 import { useFrame } from '@react-three/fiber'
 import { Html, useGLTF } from '@react-three/drei'
 import {
@@ -62,6 +64,8 @@ import type {
 import type { CharacterPoseSample } from './CharacterPoseSample'
 import {
   ALS_RIFLE_OVERLAY_OBJECT_URL,
+  ALS_PISTOL_OVERLAY_OBJECT_URL,
+  attachPistolOverlayObject,
   attachRifleOverlayObject,
   detachOverlayObject,
 } from '../als/AlsCharacter.overlayObjects'
@@ -262,6 +266,16 @@ function RifleOverlayObject({ characterScene }: { characterScene: THREE.Object3D
     return () => detachOverlayObject(rifleGltf.scene)
   }, [characterScene, rifleGltf.scene])
 
+  return null
+}
+
+function PistolOverlayObject({ characterScene }: { characterScene: THREE.Object3D }) {
+  const pistolGltf = useGLTF(ALS_PISTOL_OVERLAY_OBJECT_URL)
+  const pistolScene = useMemo(() => cloneSkeleton(pistolGltf.scene), [pistolGltf.scene])
+  useLayoutEffect(() => {
+    attachPistolOverlayObject(characterScene, pistolScene)
+    return () => detachOverlayObject(pistolScene)
+  }, [characterScene, pistolScene])
   return null
 }
 
@@ -563,6 +577,11 @@ function LoadedCharacter({
         <group rotation-y={ALS_MESH_COMPONENT_YAW_RADIANS}>
           <primitive object={gltf.scene} />
         </group>
+        {isPistolOverlayMode(character.overlayMode) && (
+          <Suspense fallback={null}>
+            <PistolOverlayObject characterScene={gltf.scene} />
+          </Suspense>
+        )}
         {character.overlayMode === 'Rifle' && (
           <Suspense fallback={null}>
             <RifleOverlayObject characterScene={gltf.scene} />

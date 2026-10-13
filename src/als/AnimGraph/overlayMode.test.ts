@@ -9,7 +9,7 @@ import {
 
 describe('ALS OverlayMode layering', () => {
   it('preserves the ALS overlay-mode selector and authored Rifle clip manifest', () => {
-    expect(ALS_OVERLAY_MODES).toEqual(['Default', 'Rifle'])
+    expect(ALS_OVERLAY_MODES).toEqual(['Default', 'Rifle', 'PistolTwoHanded', 'PistolOneHanded'])
     expect(DEFAULT_OVERLAY_CLIP).toBe('A_Als_Default_Poses')
     expect(RIFLE_OVERLAY_CLIPS).toEqual({
       poses: 'A_Als_Rifle_Poses',

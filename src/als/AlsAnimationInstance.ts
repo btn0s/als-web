@@ -1,3 +1,9 @@
+import { PISTOL_OVERLAY_MODES, isPistolOverlayMode } from './AnimGraph/overlayMode'
+import {
+  createAlsPistolRuntime, evaluateAlsPistolGraph, refreshAlsPistolRuntime,
+  resetAlsPistolRuntime, type AlsPistolFullSources,
+} from './AnimGraph/AB_Als_PistolTwoHanded'
+import { createAlsPistolOneHandedRuntime, evaluateAlsPistolOneHandedGraph } from './AnimGraph/AB_Als_PistolOneHanded'
 import * as THREE from 'three'
 import type { AlphaBlendOption } from '../engine/alphaBlend'
 import { pickClip } from '../engine/pickClip'
@@ -2029,6 +2035,36 @@ export function createAlsAnimationInstance(gltf: {
           additiveSpace: idleAdditiveMetadata.additiveSpace,
         }
       : undefined
+  const pistolOverlays = Object.fromEntries(PISTOL_OVERLAY_MODES.map((mode) => {
+    const runtime = mode === 'PistolTwoHanded'
+      ? createAlsPistolRuntime(rig, quickFeetBlendProfile)
+      : createAlsPistolOneHandedRuntime(rig, quickFeetBlendProfile)
+    const poses = clipsByName.get(`A_Als_${mode}_Poses`)
+    const aim = clipsByName.get(`A_Als_${mode}_Aim`)
+    const aimCrouch = clipsByName.get(`A_Als_${mode}_Aim_Crouch`)
+    const aimReference = clipsByName.get(`A_Als_${mode}_Poses_NoCurves`)
+    const sources: AlsPistolFullSources | undefined = poses && aim && aimCrouch
+      && aimReference && idleAdditiveClip && standPose
+      ? {
+          poses, aim, aimCrouch, aimReference,
+          idle: { ...idleAdditiveClip, time: 0, loop: true },
+          idleReference: standPose,
+        }
+      : undefined
+    for (const [clip, frame] of [
+      [aim, runtime.graph.aiming.standingAimReferenceFrame],
+      [aimCrouch, runtime.graph.aiming.crouchingAimReferenceFrame],
+    ] as const) {
+      if (!clip) continue
+      const metadata = compileAuthoredAdditive(clip.sampler.clip)
+      if (metadata?.additiveSpace !== 'mesh'
+        || metadata.refPoseSeq !== `A_Als_${mode}_Poses_NoCurves`
+        || metadata.refFrameIndex !== frame) {
+        throw new Error(`${mode} aim metadata differs from ALS`)
+      }
+    }
+    return [mode, { runtime, sources }] as const
+  }))
   const rifleAimMetadata = rifleAimClip
     ? compileAuthoredAdditive(rifleAimClip.sampler.clip)
     : undefined
@@ -2160,6 +2196,7 @@ export function createAlsAnimationInstance(gltf: {
     && defaultOverlayGraphRuntime !== undefined
     && rifleOverlaySources.length === Object.keys(RIFLE_OVERLAY_CLIPS).length
     && rifleSources !== undefined
+    && PISTOL_OVERLAY_MODES.every((mode) => pistolOverlays[mode].sources !== undefined)
     && idleAdditiveEntry !== undefined
     && locomotionPoseGraphSourceComplete
   const locomotionRoles = (Object.keys(CLIP_ROLES) as ClipRole[]).filter(
@@ -2503,6 +2540,20 @@ export function createAlsAnimationInstance(gltf: {
       overlay: overlayInertialization,
     },
     overlayGraph(context) {
+      if (isPistolOverlayMode(activeOverlayMode) && activeRifleGraphInput) {
+        const { runtime, sources } = pistolOverlays[activeOverlayMode]
+        if (sources) {
+          // Secondary Motion uses the same clock as the authored Idle player.
+          const timedSources = { ...sources, idle: { ...sources.idle, time: idleAdditiveClip?.time ?? 0 } }
+          const result = activeOverlayMode === 'PistolTwoHanded'
+            ? evaluateAlsPistolGraph(runtime, activeRifleGraphInput, timedSources)
+            : evaluateAlsPistolOneHandedGraph(runtime, activeRifleGraphInput, timedSources)
+          copyPose(result.pose, context.outputPose)
+          context.outputCurves.clear()
+          for (const [name, value] of result.curves) context.outputCurves.set(name, value)
+          return
+        }
+      }
       if (
         activeOverlayMode === 'Rifle'
         && rifleSources
@@ -5694,6 +5745,9 @@ export function createAlsAnimationInstance(gltf: {
       previousOverlayMode = controls.overlayMode
     } else if (controls.overlayMode !== previousOverlayMode) {
       previousOverlayMode = controls.overlayMode
+      if (isPistolOverlayMode(controls.overlayMode)) {
+        resetAlsPistolRuntime(pistolOverlays[controls.overlayMode].runtime)
+      }
       if (controls.overlayMode === 'Rifle') {
         resetAlsRifleRuntime(rifleRuntime)
       }
@@ -5744,6 +5798,26 @@ export function createAlsAnimationInstance(gltf: {
     }
     refreshAlsRifleRuntime(rifleRuntime, activeRifleGraphInput)
     processRifleLifecycleEvents(controls)
+    for (const mode of PISTOL_OVERLAY_MODES) {
+      const { runtime } = pistolOverlays[mode]
+      refreshAlsPistolRuntime(runtime, {
+        ...activeRifleGraphInput,
+        relevant: controls.overlayMode === mode,
+      })
+      // Pistol notifies call PlayTransitionRightAnimation with authored rates,
+      // start time 0.3, and bFromStandingIdleOnly=true (pistol-content.json).
+      for (const event of runtime.lifecycleEvents) {
+        if (controls.stance !== 'Standing' || controls.moving) continue
+        if (!standingTransitionRightClip) continue
+        queueTransitionAnimation(transitionsState, {
+          clip: standingTransitionRightClip.sampler.clip.name,
+          blendInDuration: 0.2,
+          blendOutDuration: 0.2,
+          playRate: event.name === 'RelaxedToReady' ? 1.75 : 1.5,
+          startTime: 0.3,
+        })
+      }
+    }
     const rifleGraphState = rifleRuntime.relaxed.state
 
     for (const source of rifleOverlaySources) {

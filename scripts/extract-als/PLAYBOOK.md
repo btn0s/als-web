@@ -113,7 +113,12 @@ extracting asset class X from uncooked ALS-Refactored (.uasset only, no .uexp/.u
 │   Bottom line: keep the semantic probe; neither slot count nor index/weight width is inferred
 │   from stride alone. If a new mesh reports no unique match, inspect the diagnostic candidate
 │   list and source bytes before widening the allowed slot/UV ranges.
-│   Not yet probed: SK_Als_Bow / SK_Als_Pistol and their SKM_* meshes — apply the identical
+│   VERIFIED (2026-10-12): SK_Als_Pistol/SKM_Als_Pistol/MI_Als_Pistol use this same dump
+   and assembler unchanged: 6 bones, 9278 vertices, 4008 triangles, 1 rigid section.
+   Positive global-joint histogram: root 4687, trigger 92, hammer 702, slide 3618,
+   magazine 179, muzzle 0. Section-local joint indices must resolve through BoneMap.
+   validate-pistol-glb.mjs pins the result; no proxy or static-mesh parser is needed.
+   Not yet probed: SK_Als_Bow and its SKM_* mesh — apply the identical
 │   `dump` invocation; the shim needs zero changes since it already generalizes. HYPOTHESIS:
 │   they'll parse the same way, possibly with yet another influence-slot count — that's fine,
 │   the probe handles it.
@@ -613,3 +618,21 @@ dotnet run -- validate-input-mappings input-mappings.json
   serialized properties on its `CollisionCylinder` or `CharMoveComp` template exports, so
   Blueprint content does not override the C++ values. In web meters these are radius 0.30,
   standing half-height 0.90, and crouched half-height 0.56.
+
+## Pistol overlay bindings and reference poses
+
+VERIFIED (2026-10-12): `extract-pistol-content.mjs` invokes `inspect` and
+`inspect-kismet` for both pistol ABPs. It freezes editor PropertyBindings plus
+binary-equality-verified compiled functions in `pistol-content.json`. Baked nodes
+and transition topology remain in `abp-graph.json`. Ready and Aiming standing
+base-pose blends bind to GaitWalkingAmount; only aim sweep ExplicitTime binds to
+PitchAmount. Two-handed Relaxed nests Sprinting inside Walking; one-handed has
+only Walking. Both Ready exit predicates compare elapsed time to 3 seconds.
+Their transition notifies call PlayTransitionRightAnimation with blend times
+0.2/0.2, start time 0.3, standing-idle-only true, and play rate 1.75 for
+RelaxedToReady / 1.5 for ReadyToRelaxed.
+
+The six pistol pose/aim clips were already shipped. Their two curve-free additive
+reference banks were absent; clips.manifest now includes both, for 121 clips.
+Standing/crouched reference frames are 6/10 for TwoHanded and 5/9 for OneHanded
+at 30 fps. These reference banks are separate assets, not aliases of Poses.
