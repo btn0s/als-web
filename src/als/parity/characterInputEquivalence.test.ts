@@ -282,7 +282,7 @@ describe('ALS content oracle: implemented character inputs', () => {
     )
 
     for (const [action, button] of Object.entries({
-      jump: 0, sprint: 1, ragdoll: 2, walk: 5, crouch: 10, aim: 4, rotationMode: 14,
+      jump: 0, sprint: 1, roll: 1, ragdoll: 2, walk: 5, crouch: 10, aim: 4, rotationMode: 14,
     })) {
       expect(compactControllerSource).toContain(`${action}: ${button},`)
       expect(compactControllerSource).toContain(`out.${action} = readGamepadButton(gamepad, resolved.${action})`)
@@ -412,8 +412,8 @@ describe('consumer gamepad bindings', () => {
     const pad = { index: 1, connected: true, axes: [1, 0], buttons }
     vi.stubGlobal('navigator', { getGamepads: () => [null, pad] })
     try {
-      const out = { right: 0, forward: 0, jump: false, sprint: false, ragdoll: false, walk: false, crouch: false, aim: false, rotationMode: false }
-      expect(ALS_GAMEPAD_BINDINGS).toEqual({ jump: 0, sprint: 1, ragdoll: 2, walk: 5, crouch: 10, aim: 4, rotationMode: 14, shoulderSwap: 11, viewMode: 15 })
+      const out = { right: 0, forward: 0, jump: false, sprint: false, roll: false, ragdoll: false, walk: false, crouch: false, aim: false, rotationMode: false }
+      expect(ALS_GAMEPAD_BINDINGS).toEqual({ jump: 0, sprint: 1, roll: 1, ragdoll: 2, walk: 5, crouch: 10, aim: 4, rotationMode: 14, shoulderSwap: 11, viewMode: 15 })
       expect(sampleGamepad(out)).toMatchObject({ sprint: true, crouch: false, aim: false, right: 1 })
       expect(sampleGamepad(out, { sprint: null, crouch: 1, aim: 6 }, true, 1)).toMatchObject({ sprint: false, crouch: true, aim: true })
       expect(sampleGamepad(out, {}, false)).toMatchObject({ right: 0, sprint: false, aim: false })

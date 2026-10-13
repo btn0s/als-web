@@ -45,6 +45,7 @@ import {
   UInputTriggerPressed,
   UInputTriggerReleased,
   UInputTriggerTap,
+  UInputTriggerDoubleTap,
 } from '../engine/InputTriggers'
 import { ALS_NO_BASED_MOVEMENT } from './State/AlsMovementBaseState'
 import type { AlsBasedMovement } from './State/AlsMovementBaseState'
@@ -489,6 +490,7 @@ interface InputAxes {
 interface GamepadInput extends InputAxes {
   jump: boolean
   sprint: boolean
+  roll: boolean
   ragdoll: boolean
   walk: boolean
   crouch: boolean
@@ -747,6 +749,7 @@ function applyRadialDeadZone(axes: InputAxes): InputAxes {
 export interface AlsGamepadBindings {
   jump: number | null
   sprint: number | null
+  roll: number | null
   ragdoll: number | null
   walk: number | null
   crouch: number | null
@@ -759,6 +762,7 @@ export interface AlsGamepadBindings {
 export const ALS_GAMEPAD_BINDINGS: Readonly<AlsGamepadBindings> = {
   jump: 0,
   sprint: 1,
+  roll: 1,
   ragdoll: 2,
   walk: 5,
   crouch: 10,
@@ -782,6 +786,8 @@ export function sampleGamepad(
   out.forward = 0
   out.jump = false
   out.sprint = false
+  out.roll = false
+  out.ragdoll = false
   out.walk = false
   out.crouch = false
   out.aim = false
@@ -798,8 +804,10 @@ export function sampleGamepad(
   out.forward = -(gamepad.axes[1] ?? 0)
   applyRadialDeadZone(out)
   const resolved = { ...ALS_GAMEPAD_BINDINGS, ...bindings }
+  if (bindings.roll === undefined) resolved.roll = resolved.sprint
   out.jump = readGamepadButton(gamepad, resolved.jump)
   out.sprint = readGamepadButton(gamepad, resolved.sprint)
+  out.roll = readGamepadButton(gamepad, resolved.roll)
   out.ragdoll = readGamepadButton(gamepad, resolved.ragdoll)
   out.walk = readGamepadButton(gamepad, resolved.walk)
   out.crouch = readGamepadButton(gamepad, resolved.crouch)
@@ -1172,6 +1180,7 @@ export function useAlsCharacter(
   gamepadIndex?: number,
   ragdollInputEnabled = true,
   ragdollingSettings?: Partial<AlsRagdollingSettings>,
+  gamepadRollBehavior: 'tap' | 'doubleTap' = 'tap',
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1373,6 +1382,7 @@ export function useAlsCharacter(
     forward: 0,
     jump: false,
     sprint: false,
+    roll: false,
     ragdoll: false,
     walk: false,
     crouch: false,
@@ -1395,6 +1405,10 @@ export function useAlsCharacter(
   const rollAction = useRef(new FInputActionInstance([
     new UInputTriggerTap({ TapReleaseTimeThreshold: 0.3 }),
   ]))
+  const gamepadDoubleTapAction = useRef(new FInputActionInstance([
+    new UInputTriggerDoubleTap({ TapReleaseTimeThreshold: 0.3 }),
+  ]))
+  const gamepadRollContext = useRef({ index: gamepadIndex, enabled: gamepadEnabled })
   const ragdollAction = useRef(new FInputActionInstance([
     new UInputTriggerPressed(),
   ]))
@@ -1672,6 +1686,7 @@ export function useAlsCharacter(
       rollRequested.current = false
       sprintAction.current.reset()
       rollAction.current.reset()
+      gamepadDoubleTapAction.current.reset()
       ragdollAction.current.reset()
       values.current.desiredGait = 'Running'
       setControls({ desiredGait: 'Running' })
@@ -1838,10 +1853,8 @@ export function useAlsCharacter(
       })
     }
     if (gamepad.crouch && !previousGamepad.crouch) {
-      setControls({
-        desiredStance:
-          controls.desiredStance === 'Standing' ? 'Crouching' : 'Standing',
-      })
+      controls.desiredStance = controls.desiredStance === 'Standing' ? 'Crouching' : 'Standing'
+      setControls({ desiredStance: controls.desiredStance })
     }
     if (gamepad.rotationMode && !previousGamepad.rotationMode) {
       setControls({
@@ -1873,8 +1886,16 @@ export function useAlsCharacter(
       sprintRollValue,
       ALS_PHYSICS_TIMESTEP,
     )
+    if (!gamepadEnabled || gamepadRollContext.current.index !== gamepadIndex) {
+      gamepadDoubleTapAction.current.reset()
+    }
+    gamepadRollContext.current = { index: gamepadIndex, enabled: gamepadEnabled }
+    const gamepadRollTick = gamepadDoubleTapAction.current.update(
+      gamepadEnabled && gamepadRollBehavior === 'doubleTap' && gamepad.roll,
+      ALS_PHYSICS_TIMESTEP,
+    )
     const rollTick = rollAction.current.update(
-      sprintRollValue,
+      keys.has('ShiftLeft') || (gamepadRollBehavior === 'tap' && gamepad.roll),
       ALS_PHYSICS_TIMESTEP,
     )
     if (
@@ -1894,6 +1915,7 @@ export function useAlsCharacter(
     if (
       rollRequested.current
       || rollTick.triggerEvents.includes('Triggered')
+      || gamepadRollTick.triggerEvents.includes('Triggered')
     ) {
       rollRequested.current = false
       const Animation =

@@ -108,6 +108,7 @@ export interface CharacterProps {
   gamepadBindings?: Partial<AlsGamepadBindings>
   gamepadEnabled?: boolean
   gamepadIndex?: number
+  gamepadRollBehavior?: 'tap' | 'doubleTap'
 }
 
 function compileAlsMantlingRootMotion(
@@ -213,6 +214,7 @@ function LoadedCharacter({
   gamepadBindings,
   gamepadEnabled,
   gamepadIndex,
+  gamepadRollBehavior,
 }: {
   gltf: GLTF
   ragdollRef?: CharacterProps['ragdollRef']
@@ -229,6 +231,7 @@ function LoadedCharacter({
   gamepadBindings: CharacterProps['gamepadBindings']
   gamepadEnabled: CharacterProps['gamepadEnabled']
   gamepadIndex: CharacterProps['gamepadIndex']
+  gamepadRollBehavior: CharacterProps['gamepadRollBehavior']
 }) {
   const gltf = useMemo(() => ({ ...sourceGltf, scene: clone(sourceGltf.scene) }), [sourceGltf])
   const { rapier, world } = useRapier()
@@ -429,6 +432,7 @@ function LoadedCharacter({
     gamepadIndex,
     ragdollInputEnabled,
     ragdollingSettings,
+    gamepadRollBehavior,
   )
   useEffect(() => {
     onOverlayModeBridgeChange({
@@ -567,6 +571,7 @@ export function Character({
   gamepadBindings,
   gamepadEnabled,
   gamepadIndex,
+  gamepadRollBehavior,
 }: CharacterProps) {
   const { gltf, status, progress, retry } = useAlsCharacterGltf()
 
@@ -590,6 +595,7 @@ export function Character({
       gamepadBindings={gamepadBindings}
       gamepadEnabled={gamepadEnabled}
       gamepadIndex={gamepadIndex}
+      gamepadRollBehavior={gamepadRollBehavior}
     />
   ) : (
     <CharacterLoadState status={status} progress={progress} retry={retry} />
