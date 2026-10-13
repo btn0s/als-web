@@ -264,7 +264,8 @@ describe('ALS content oracle: implemented character inputs', () => {
     expect(compactControllerSource).not.toContain("'ShiftRight'")
     expect(compactControllerSource).not.toContain("'AltRight'")
     expect(compactControllerSource).not.toContain("'ControlRight'")
-    expect(compactControllerSource).toContain("event.code === 'Digit1'")
+    expect(compactControllerSource).toContain("toggleRotationModeKey: string | null = 'Digit1'")
+    expect(compactControllerSource).toContain('event.code === toggleRotationModeKey')
     expect(compactControllerSource).toContain(
       'if (event.button === 2) aimingWithPointer.current = true',
     )

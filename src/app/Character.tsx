@@ -91,6 +91,8 @@ interface CharacterProps {
     bridge: AlsOverlayModeBridge | null,
   ) => void
   footstepSoundSink: AlsFootstepSoundSink
+  /** KeyboardEvent.code toggling rotation mode (default `Digit1`); `null` disables it. */
+  toggleRotationModeKey?: string | null
 }
 
 function compileAlsMantlingRootMotion(
@@ -188,6 +190,7 @@ function LoadedCharacter({
   worldTime,
   onOverlayModeBridgeChange,
   footstepSoundSink,
+  toggleRotationModeKey,
 }: {
   gltf: GLTF
   onSizeChange: CharacterProps['onSizeChange']
@@ -196,6 +199,7 @@ function LoadedCharacter({
   onOverlayModeBridgeChange:
     CharacterProps['onOverlayModeBridgeChange']
   footstepSoundSink: CharacterProps['footstepSoundSink']
+  toggleRotationModeKey: CharacterProps['toggleRotationModeKey']
 }) {
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
@@ -385,6 +389,7 @@ function LoadedCharacter({
     },
     groundedMoveSweep,
     worldTime,
+    toggleRotationModeKey,
   )
   useEffect(() => {
     onOverlayModeBridgeChange({
@@ -506,6 +511,7 @@ export function Character({
   worldTime,
   onOverlayModeBridgeChange,
   footstepSoundSink,
+  toggleRotationModeKey,
 }: CharacterProps) {
   const { gltf, status, progress, retry } = useAlsCharacterGltf()
 
@@ -521,6 +527,7 @@ export function Character({
       worldTime={worldTime}
       onOverlayModeBridgeChange={onOverlayModeBridgeChange}
       footstepSoundSink={footstepSoundSink}
+      toggleRotationModeKey={toggleRotationModeKey}
     />
   ) : (
     <CharacterLoadState status={status} progress={progress} retry={retry} />
