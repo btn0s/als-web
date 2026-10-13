@@ -70,7 +70,8 @@ import type {
 import type { CharacterPoseSample } from './CharacterPoseSample'
 import type { AlsCharacterInputSource } from '../als/AlsCharacter.hooks'
 import type { AlsGaitSpeedOverrides } from '../als/AlsCharacterMovementComponent'
-import { PistolOverlayObject, RifleOverlayObject } from './AlsOverlayObjects'
+import { resolveOverlayObjectUrl } from '../als/AlsCharacter.overlayObjects'
+import { PistolOverlayObject, RifleOverlayObject, type AlsOverlayObjectAssets, type AlsOverlayObjectMountHandler } from './AlsOverlayObjects'
 export { RifleOverlayObject } from './AlsOverlayObjects'
 import { useAlsCharacterGltf } from './AlsCharacterGltf.hooks'
 import { ALS_MESH_COMPONENT_YAW_RADIANS } from '../engine/unrealCoordinateSpace'
@@ -103,6 +104,10 @@ export interface CharacterProps {
   tint?: string
   overlayStates?: ConsumerOverlayStates
   renderOverlayObject?: (scene: THREE.Object3D) => React.ReactNode
+  /** Consumer prop meshes mounted by the native overlay path, one URL per overlay family. */
+  overlayObjectAssets?: AlsOverlayObjectAssets
+  /** Called when the native path mounts a prop on the attachment bone, and again with null on unmount. */
+  onOverlayObjectMount?: AlsOverlayObjectMountHandler
   ragdollRef?: React.RefObject<AlsRagdollHandle | null>
   /** Emitted after animation in the performance.now() clock domain. */
   onSnapshot?: (snapshot: AlsCharacterSnapshot) => void
@@ -206,6 +211,8 @@ function LoadedCharacter({
   gltf: sourceGltf,
   overlayStates,
   renderOverlayObject,
+  overlayObjectAssets,
+  onOverlayObjectMount,
   onSizeChange,
   poseSample,
   worldTime,
@@ -235,6 +242,8 @@ function LoadedCharacter({
   gltf: GLTF
   overlayStates?: CharacterProps['overlayStates']
   renderOverlayObject?: CharacterProps['renderOverlayObject']
+  overlayObjectAssets?: CharacterProps['overlayObjectAssets']
+  onOverlayObjectMount?: CharacterProps['onOverlayObjectMount']
   ragdollRef?: CharacterProps['ragdollRef']
   ragdollInputEnabled?: boolean
   ragdollingSettings?: Partial<AlsRagdollingSettings>
@@ -617,12 +626,12 @@ function LoadedCharacter({
         </group>
         {!renderOverlayObject && isPistolOverlayMode(character.overlayMode) && (
           <Suspense fallback={null}>
-            <PistolOverlayObject characterScene={gltf.scene} />
+            <PistolOverlayObject characterScene={gltf.scene} url={resolveOverlayObjectUrl('pistol', overlayObjectAssets)} onMount={onOverlayObjectMount} />
           </Suspense>
         )}
         {!renderOverlayObject && character.overlayMode === 'Rifle' && (
           <Suspense fallback={null}>
-            <RifleOverlayObject characterScene={gltf.scene} />
+            <RifleOverlayObject characterScene={gltf.scene} url={resolveOverlayObjectUrl('rifle', overlayObjectAssets)} onMount={onOverlayObjectMount} />
           </Suspense>
         )}
       </group>
@@ -633,6 +642,8 @@ function LoadedCharacter({
 export function Character({
   overlayStates,
   renderOverlayObject,
+  overlayObjectAssets,
+  onOverlayObjectMount,
   onSizeChange,
   poseSample,
   worldTime,
@@ -670,6 +681,8 @@ export function Character({
       gltf={gltf}
       overlayStates={overlayStates}
       renderOverlayObject={renderOverlayObject}
+      overlayObjectAssets={overlayObjectAssets}
+      onOverlayObjectMount={onOverlayObjectMount}
       onSizeChange={onSizeChange}
       poseSample={poseSample}
       worldTime={worldTime}

@@ -41,3 +41,10 @@ export function detachOverlayObject(overlayObject: THREE.Object3D) {
 export function attachPistolOverlayObject(characterScene: THREE.Object3D, overlayObject: THREE.Object3D) {
   return attachRifleOverlayObject(characterScene, overlayObject)
 }
+
+export function resolveOverlayObjectUrl(
+  family: 'pistol' | 'rifle',
+  assets: { readonly pistol?: string; readonly rifle?: string } | undefined,
+): string {
+  return assets?.[family] ?? (family === 'rifle' ? ALS_RIFLE_OVERLAY_OBJECT_URL : ALS_PISTOL_OVERLAY_OBJECT_URL)
+}
