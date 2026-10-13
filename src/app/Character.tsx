@@ -1,3 +1,4 @@
+import type { AlsRagdollingSettings } from '../als/Settings/AlsRagdollingSettings'
 import { clone } from 'three/addons/utils/SkeletonUtils.js'
 import { useAlsRagdoll } from './useAlsRagdoll'
 import { ALS_CHARACTER_COLLISION_GROUPS, type AlsRagdollHandle } from '../engine/rapierAlsRagdoll'
@@ -93,6 +94,9 @@ export interface CharacterProps {
   /** Emitted after animation in the performance.now() clock domain. */
   onSnapshot?: (snapshot: AlsCharacterSnapshot) => void
   snapshotRateHz?: number
+  /** Disable the consumer's ragdoll/get-up input bindings; ALS itself has no death policy. */
+  ragdollInputEnabled?: boolean
+  ragdollingSettings?: Partial<AlsRagdollingSettings>
   onSizeChange: (size: THREE.Vector3) => void
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
@@ -193,6 +197,8 @@ function LoadedCharacter({
   onSnapshot,
   ragdollRef,
   snapshotRateHz = 20,
+  ragdollInputEnabled,
+  ragdollingSettings,
   toggleRotationModeKey,
   aimPointerButtons,
   gamepadBindings,
@@ -200,6 +206,9 @@ function LoadedCharacter({
   gamepadIndex,
 }: {
   gltf: GLTF
+  ragdollRef?: CharacterProps['ragdollRef']
+  ragdollInputEnabled?: boolean
+  ragdollingSettings?: Partial<AlsRagdollingSettings>
   onSizeChange: CharacterProps['onSizeChange']
   poseSample: CharacterProps['poseSample']
   worldTime: CharacterProps['worldTime']
@@ -208,7 +217,6 @@ function LoadedCharacter({
   footstepSoundSink: CharacterProps['footstepSoundSink']
   onSnapshot?: CharacterProps['onSnapshot']
   snapshotRateHz?: number
-  ragdollRef?: React.RefObject<AlsRagdollHandle | null>
   toggleRotationModeKey: CharacterProps['toggleRotationModeKey']
   aimPointerButtons: CharacterProps['aimPointerButtons']
   gamepadBindings: CharacterProps['gamepadBindings']
@@ -412,6 +420,8 @@ function LoadedCharacter({
     gamepadBindings,
     gamepadEnabled,
     gamepadIndex,
+    ragdollInputEnabled,
+    ragdollingSettings,
   )
   useEffect(() => {
     onOverlayModeBridgeChange({
@@ -448,7 +458,7 @@ function LoadedCharacter({
   )
 
   const ragdoll = useAlsRagdoll(character.character.current, animationInstance,
-    rigidBody, standingCapsule, crouchingCapsule, ragdollRef)
+    rigidBody, standingCapsule, crouchingCapsule, ragdollRef, worldTime)
   useEffect(() => {
     internalRagdoll.current = ragdoll
     return () => { internalRagdoll.current = null }
@@ -563,6 +573,8 @@ export function Character({
   onSnapshot,
   ragdollRef,
   snapshotRateHz = 20,
+  ragdollInputEnabled,
+  ragdollingSettings,
   toggleRotationModeKey,
   aimPointerButtons,
   gamepadBindings,
@@ -586,6 +598,8 @@ export function Character({
       onSnapshot={onSnapshot}
       snapshotRateHz={snapshotRateHz}
       ragdollRef={ragdollRef}
+      ragdollInputEnabled={ragdollInputEnabled}
+      ragdollingSettings={ragdollingSettings}
       toggleRotationModeKey={toggleRotationModeKey}
       aimPointerButtons={aimPointerButtons}
       gamepadBindings={gamepadBindings}

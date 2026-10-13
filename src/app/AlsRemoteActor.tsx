@@ -1,3 +1,5 @@
+import type { AlsRagdollingSettings } from '../als/Settings/AlsRagdollingSettings'
+import { notifyAlsAnimNotifyStateSetLocomotionActionBegin, notifyAlsAnimNotifyStateSetLocomotionActionEnd } from '../als/Notifies/AlsAnimNotifyState_SetLocomotionAction'
 import { useAlsRagdoll } from './useAlsRagdoll'
 import { ALS_CHARACTER_COLLISION_GROUPS, type AlsRagdollHandle } from '../engine/rapierAlsRagdoll'
 export type { AlsRagdollHandle, AlsRagdollStartOptions, AlsRagdollImpulse } from '../engine/rapierAlsRagdoll'
@@ -31,6 +33,7 @@ import { PistolOverlayObject, RifleOverlayObject } from './AlsOverlayObjects'
 
 export interface AlsRemoteActorProps {
   ragdollRef?: React.RefObject<AlsRagdollHandle | null>
+  ragdollingSettings?: Partial<AlsRagdollingSettings>
   /** Own this in useMemo, push packets as they arrive. Exactly one actor consumes each buffer. */
   snapshots: AlsSnapshotBuffer
   /** Must return milliseconds in the snapshot timestamp domain. Defaults to performance.now(). */
@@ -55,7 +58,7 @@ const warnUnsupported = (feature: string) => console.warn(`[AlsRemoteActor] Unsu
  * and collision current. No measured millisecond budget is claimed by this component.
  */
 export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
-  footIk = true, worldTime, ragdollRef, onAction, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
+  footIk = true, worldTime, ragdollRef, ragdollingSettings, onAction, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
   const gltf = useSuspenseAlsCharacterGltf()
   // Cached materials/clips are shared; each remote (including ghosts) owns its skeleton.
   const scene = useMemo(() => clone(gltf.scene), [gltf.scene])
@@ -66,7 +69,7 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
   // Render separately from Rapier's interpolated object: network interpolation already owns
   // presentation. This avoids smoothing snapshots a second time at fixed physics frequency.
   const root = useRef<Group>(null)
-  const driver = useMemo(() => new AlsRemoteCharacter(), [])
+  const driver = useMemo(() => new AlsRemoteCharacter(ragdollingSettings), [ragdollingSettings])
   const sweep = useMemo(() => createRapierAlsCapsuleSweep({ world,
     Capsule: rapier.Capsule, Ray: rapier.Ray,
     resolveExcludeRigidBody: () => body.current,
@@ -87,9 +90,10 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
     scene, animations: gltf.animations, groundPredictionSweep: sweep,
     controlRigFootTrace: lodTrace, publishDiagnostics: false,
   }), [scene, gltf.animations, sweep, lodTrace])
-  const ragdoll = useAlsRagdoll(driver.character, animation, body, standing, crouching, ragdollRef)
+  const ragdoll = useAlsRagdoll(driver.character, animation, body, standing, crouching, ragdollRef, worldTime)
   const warned = useRef(new Set<string>())
   const active = useRef(false)
+  const cosmeticRagdoll = useRef(false)
   const isRifleVisible = useCallback(
     () => active.current && driver.controls.overlayMode === 'Rifle', [driver],
   )
@@ -102,7 +106,18 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
   useFrame(() => {
     traceEnabled.current = footIk
     if (!body.current || !root.current) return
-    if (ragdoll.active) return
+    if (ragdoll.active) { cosmeticRagdoll.current = true; return }
+    if (cosmeticRagdoll.current && driver.character.locomotionAction === 'GettingUp') {
+      // A consumer-triggered cosmetic get-up owns presentation until its authored notify ends.
+      // No state is sent back to the network actor.
+      const position = body.current.translation()
+      root.current.position.set(position.x, position.y + resolveAlsMeshRootRelativeY(
+        driver.character.stance, driver.character.locomotionMode), position.z)
+      root.current.rotation.y = unrealYawDegreesToThreeRadians(driver.character.actorYawAngle)
+      root.current.updateWorldMatrix(true, true)
+      return
+    }
+    cosmeticRagdoll.current = false
     const frame = snapshots.sample(now())
     if (!frame) {
       active.current = false
@@ -167,7 +182,15 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
     }
     const rolling = driverSnapshot.current?.animation?.rolling
     if (rolling) animation.setRollingPosition(Math.max(0, rolling.position - delta * rolling.playRate))
+    if (ragdoll.active || cosmeticRagdoll.current) {
+      driver.controls.locomotionAction = driver.character.locomotionAction
+      driver.controls.locomotionMode = driver.character.locomotionMode
+    }
     animation.refresh(delta, driver.controls)
+    for (const event of animation.getUpMontage.takeNotifyEvents()) {
+      if (event.notifyEventType === 'Begin') notifyAlsAnimNotifyStateSetLocomotionActionBegin(driver.character, event)
+      else notifyAlsAnimNotifyStateSetLocomotionActionEnd(driver.character, event)
+    }
     // Drain authored events, but never let montage notifies acquire character/movement authority.
     animation.mantlingMontage.takeNotifyEvents()
     animation.rollingMontage.takeNotifyEvents()

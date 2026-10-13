@@ -1,3 +1,4 @@
+import { ALS_RAGDOLLING_SETTINGS, type AlsRagdollingSettings } from './Settings/AlsRagdollingSettings'
 import {
   useAfterPhysicsStep,
   useBeforePhysicsStep,
@@ -1069,6 +1070,7 @@ export function handleAlsJumpInput(
   character: AlsCharacter,
   StartMantlingGrounded: () => boolean = () => false,
 ): AlsJumpInputResult {
+  if (character.movement.inputBlocked) return 'Rejected'
   if (StartMantlingGrounded()) return 'Mantled'
 
   if (character.stance === 'Crouching') {
@@ -1199,6 +1201,8 @@ export function useAlsCharacter(
   gamepadBindings: Partial<AlsGamepadBindings> = {},
   gamepadEnabled = true,
   gamepadIndex?: number,
+  ragdollInputEnabled = true,
+  ragdollingSettings?: Partial<AlsRagdollingSettings>,
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1278,7 +1282,7 @@ export function useAlsCharacter(
     { order: 1 },
   )
 
-  const character = useRef(createAlsCharacter())
+  const character = useRef(createAlsCharacter({ settings: { Ragdolling: { ...ALS_RAGDOLLING_SETTINGS, ...ragdollingSettings } } }))
   const actionBridge = useRef(actions)
   actionBridge.current = actions
   const locomotionModeChangedLifecycle = useRef(
@@ -1766,8 +1770,8 @@ export function useAlsCharacter(
   useBeforePhysicsStep(() => {
     const body = rigidBody.current
     if (!body) return
-    const ragdollValue =
-      pressedKeys.current.has('KeyX') || sampleGamepad(gamepadInput.current, gamepadBindings, gamepadEnabled, gamepadIndex).ragdoll
+    const ragdollValue = ragdollInputEnabled &&
+      (pressedKeys.current.has('KeyX') || sampleGamepad(gamepadInput.current, gamepadBindings, gamepadEnabled, gamepadIndex).ragdoll)
     const ragdollTick = ragdollAction.current.update(
       ragdollValue,
       ALS_PHYSICS_TIMESTEP,
@@ -1778,7 +1782,13 @@ export function useAlsCharacter(
       }
     }
 
-    if (character.current.locomotionAction === 'Ragdolling') return
+    if (character.current.locomotionAction === 'Ragdolling') {
+      const gamepad = sampleGamepad(gamepadInput.current, gamepadBindings, gamepadEnabled, gamepadIndex)
+      if (gamepad.jump && !previousGamepadInput.current.jump) requestAlsJumpInput(jumpRequested)
+      previousGamepadInput.current.jump = gamepad.jump
+      if (consumeAlsJumpInput(jumpRequested) && ragdollInputEnabled) actionBridge.current?.StopRagdolling?.()
+      if (character.current.locomotionAction === 'Ragdolling') return
+    }
     physicsStepIndex.current++
     if (!capsulesInitialized.current) {
       setRapierAlsStanceCapsules(
@@ -2479,6 +2489,8 @@ export function useAlsCharacter(
       : deltaRealTime
     const current = character.current
     const root = characterRoot.current
+    const currentBody = rigidBody.current
+    if (currentBody) threeToUnrealVector(currentBody.translation(), rapierBodyAnchor.current)
     if (root) {
       root.position.y = resolveAlsMeshRootRelativeY(
         current.stance,

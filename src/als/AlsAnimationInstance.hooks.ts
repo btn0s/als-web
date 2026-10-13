@@ -435,6 +435,10 @@ export function useAlsAnimationInstance(
       current,
       animationInstance.rollingMontage,
     )
+    for (const event of animationInstance.getUpMontage.takeNotifyEvents()) {
+      if (event.notifyEventType === 'Begin') notifyAlsAnimNotifyStateSetLocomotionActionBegin(current, event)
+      else notifyAlsAnimNotifyStateSetLocomotionActionEnd(current, event)
+    }
     animationCurves.current.rotationYawOffset =
       animationInstance.getCurveValue(ROTATION_YAW_OFFSET_CURVE_NAME)
     animationCurves.current.rotationYawSpeed =
@@ -462,6 +466,5 @@ export function useAlsAnimationInstance(
       captureMetadata(controls.current),
     )
   }, ALS_FRAME_PRIORITY.Diagnostics)
-
   return animationInstance
 }
