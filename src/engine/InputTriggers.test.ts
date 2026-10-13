@@ -5,6 +5,7 @@ import {
   UInputTriggerPressed,
   UInputTriggerReleased,
   UInputTriggerTap,
+  UInputTriggerDoubleTap,
   getTriggerStateChangeEvents,
   type ETriggerState,
   type FInputActionInstanceTick,
@@ -210,5 +211,67 @@ describe('ALS shared Sprint and Roll input fixtures', () => {
       false,
     )
     expect(rollTicks[1]?.triggerEvent).toBe('Canceled')
+  })
+})
+
+
+describe('consumer double-tap roll', () => {
+  function action() {
+    return new FInputActionInstance([
+      new UInputTriggerDoubleTap({ TapReleaseTimeThreshold: 0.3 }),
+    ])
+  }
+
+  it('rolls once on the second short release and rearms for a new pair', () => {
+    const roll = action()
+    for (let pair = 0; pair < 2; pair++) {
+      expect(roll.update(true, 0.05).triggerEvent).toBe('Started')
+      expect(roll.update(false, 0.05).triggerEvents).not.toContain('Triggered')
+      roll.update(false, 0.05)
+      expect(roll.update(true, 0.05).triggerEvents).not.toContain('Triggered')
+      expect(roll.update(false, 0.05).triggerEvents).toContain('Triggered')
+      roll.update(false, 0.05)
+    }
+  })
+
+  it('rejects nearby releases when the consecutive presses are too far apart', () => {
+    const roll = action()
+    roll.update(true, 0.2)
+    roll.update(true, 0.05)
+    roll.update(false, 0.05)
+    roll.update(false, 0.15)
+    roll.update(true, 0.05)
+    expect(roll.update(false, 0.05).triggerEvents).not.toContain('Triggered')
+    // The rejected second press becomes the first press of the next pair.
+    roll.update(true, 0.05)
+    expect(roll.update(false, 0.05).triggerEvents).toContain('Triggered')
+  })
+
+  it.each([0.299, 0.3, 0.301])('uses a strict press interval at %s seconds', (interval) => {
+    const roll = action()
+    roll.update(true, 0.01)
+    roll.update(false, 0)
+    roll.update(false, interval)
+    roll.update(true, 0)
+    expect(roll.update(false, 0.01).triggerEvents.includes('Triggered')).toBe(interval < 0.3)
+  })
+
+  it.each([1, 2])('rejects a long hold on tap %s', (longTap) => {
+    const roll = action()
+    roll.update(true, longTap === 1 ? 0.3 : 0.05)
+    roll.update(false, 0.01)
+    roll.update(true, longTap === 2 ? 0.3 : 0.05)
+    expect(roll.update(false, 0.01).triggerEvents).not.toContain('Triggered')
+  })
+
+  it('reset cancels a pending pair instead of interpreting disabling input as a release', () => {
+    const roll = action()
+    roll.update(true, 0.05)
+    roll.update(false, 0.05)
+    roll.update(true, 0.05)
+    roll.reset()
+    expect(roll.update(false, 0.05).triggerEvents).not.toContain('Triggered')
+    roll.update(true, 0.05)
+    expect(roll.update(false, 0.05).triggerEvents).not.toContain('Triggered')
   })
 })

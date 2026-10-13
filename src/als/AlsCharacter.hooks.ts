@@ -45,6 +45,7 @@ import {
   UInputTriggerPressed,
   UInputTriggerReleased,
   UInputTriggerTap,
+  UInputTriggerDoubleTap,
 } from '../engine/InputTriggers'
 import { ALS_NO_BASED_MOVEMENT } from './State/AlsMovementBaseState'
 import type { AlsBasedMovement } from './State/AlsMovementBaseState'
@@ -489,8 +490,10 @@ interface InputAxes {
 }
 
 interface GamepadInput extends InputAxes {
+  index?: number
   jump: boolean
   sprint: boolean
+  roll: boolean
   ragdoll: boolean
   walk: boolean
   crouch: boolean
@@ -763,6 +766,7 @@ function applyRadialDeadZone(axes: InputAxes): InputAxes {
 export interface AlsGamepadBindings {
   jump: number | null
   sprint: number | null
+  roll: number | null
   ragdoll: number | null
   walk: number | null
   crouch: number | null
@@ -775,6 +779,7 @@ export interface AlsGamepadBindings {
 export const ALS_GAMEPAD_BINDINGS: Readonly<AlsGamepadBindings> = {
   jump: 0,
   sprint: 1,
+  roll: 1,
   ragdoll: 2,
   walk: 5,
   crouch: 10,
@@ -794,10 +799,13 @@ export function sampleGamepad(
   enabled = true,
   index?: number,
 ): GamepadInput {
+  out.index = undefined
   out.right = 0
   out.forward = 0
   out.jump = false
   out.sprint = false
+  out.roll = false
+  out.ragdoll = false
   out.walk = false
   out.crouch = false
   out.aim = false
@@ -810,12 +818,15 @@ export function sampleGamepad(
   )
   if (!gamepad) return out
 
+  out.index = gamepad.index
   out.right = gamepad.axes[0] ?? 0
   out.forward = -(gamepad.axes[1] ?? 0)
   applyRadialDeadZone(out)
   const resolved = { ...ALS_GAMEPAD_BINDINGS, ...bindings }
+  if (bindings.roll === undefined) resolved.roll = resolved.sprint
   out.jump = readGamepadButton(gamepad, resolved.jump)
   out.sprint = readGamepadButton(gamepad, resolved.sprint)
+  out.roll = readGamepadButton(gamepad, resolved.roll)
   out.ragdoll = readGamepadButton(gamepad, resolved.ragdoll)
   out.walk = readGamepadButton(gamepad, resolved.walk)
   out.crouch = readGamepadButton(gamepad, resolved.crouch)
@@ -1194,6 +1205,7 @@ export function useAlsCharacter(
   allowSprint = true,
   gaitSpeedOverrides?: AlsGaitSpeedOverrides,
   instanceId = 'Character',
+  gamepadRollBehavior: 'tap' | 'doubleTap' = 'tap',
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1396,6 +1408,7 @@ export function useAlsCharacter(
     forward: 0,
     jump: false,
     sprint: false,
+    roll: false,
     ragdoll: false,
     walk: false,
     crouch: false,
@@ -1418,6 +1431,17 @@ export function useAlsCharacter(
   const rollAction = useRef(new FInputActionInstance([
     new UInputTriggerTap({ TapReleaseTimeThreshold: 0.3 }),
   ]))
+  const gamepadDoubleTapAction = useRef(new FInputActionInstance([
+    new UInputTriggerDoubleTap({ TapReleaseTimeThreshold: 0.3 }),
+  ]))
+  const gamepadTapAction = useRef(new FInputActionInstance([
+    new UInputTriggerTap({ TapReleaseTimeThreshold: 0.3 }),
+  ]))
+  const gamepadRollContext = useRef({
+    index: gamepadIndex,
+    binding: gamepadBindings.roll === undefined ? gamepadBindings.sprint : gamepadBindings.roll,
+    behavior: gamepadRollBehavior,
+  })
   const ragdollAction = useRef(new FInputActionInstance([
     new UInputTriggerPressed(),
   ]))
@@ -1696,6 +1720,8 @@ export function useAlsCharacter(
       rollRequested.current = false
       sprintAction.current.reset()
       rollAction.current.reset()
+      gamepadDoubleTapAction.current.reset()
+      gamepadTapAction.current.reset()
       ragdollAction.current.reset()
       values.current.desiredGait = 'Running'
       setControls({ desiredGait: 'Running' })
@@ -1720,6 +1746,19 @@ export function useAlsCharacter(
       window.removeEventListener('pointerup', onPointerUp)
     }
   }, [setControls, toggleRotationModeKey, aimPointerButtons, inputEnabled])
+
+  useEffect(() => {
+    if (inputEnabled) return
+    pressedKeys.current.clear()
+    aimingWithPointer.current = false
+    jumpRequested.current = false
+    rollRequested.current = false
+    sprintAction.current.reset()
+    rollAction.current.reset()
+    gamepadDoubleTapAction.current.reset()
+    gamepadTapAction.current.reset()
+    ragdollAction.current.reset()
+  }, [inputEnabled])
 
   useEffect(() => {
     if (!exposeDebugGlobals) return
@@ -1791,8 +1830,11 @@ export function useAlsCharacter(
   useBeforePhysicsStep(() => {
     const body = rigidBody.current
     if (!body) return
+    // Browser input is independent of the semantic inputSource used by code-driven actors.
+    // All action paths (including ragdoll/get-up) share the same enabled, selected pad sample.
+    const gamepad = sampleGamepad(gamepadInput.current, gamepadBindings, inputEnabled && gamepadEnabled, gamepadIndex)
     const ragdollValue = inputEnabled && ragdollInputEnabled &&
-      (pressedKeys.current.has('KeyX') || sampleGamepad(gamepadInput.current).ragdoll)
+      (pressedKeys.current.has('KeyX') || gamepad.ragdoll)
     const ragdollTick = ragdollAction.current.update(
       ragdollValue,
       ALS_PHYSICS_TIMESTEP,
@@ -1804,7 +1846,6 @@ export function useAlsCharacter(
     }
 
     if (character.current.locomotionAction === 'Ragdolling') {
-      const gamepad = sampleGamepad(gamepadInput.current)
       if (gamepad.jump && !previousGamepadInput.current.jump) requestAlsJumpInput(jumpRequested)
       previousGamepadInput.current.jump = gamepad.jump
       if (consumeAlsJumpInput(jumpRequested) && ragdollInputEnabled) actionBridge.current?.StopRagdolling?.()
@@ -1862,7 +1903,6 @@ export function useAlsCharacter(
     poseSample.current.character = current
     poseSample.current.ownerRigidBody = body
     const keys = pressedKeys.current
-    const gamepad = sampleGamepad(gamepadInput.current, gamepadBindings, inputEnabled && gamepadEnabled, gamepadIndex)
     const previousGamepad = previousGamepadInput.current
     if (gamepad.jump && !previousGamepad.jump) {
       requestAlsJumpInput(jumpRequested)
@@ -1874,10 +1914,8 @@ export function useAlsCharacter(
       })
     }
     if (gamepad.crouch && !previousGamepad.crouch) {
-      setControls({
-        desiredStance:
-          controls.desiredStance === 'Standing' ? 'Crouching' : 'Standing',
-      })
+      controls.desiredStance = controls.desiredStance === 'Standing' ? 'Crouching' : 'Standing'
+      setControls({ desiredStance: controls.desiredStance })
     }
     if (gamepad.rotationMode && !previousGamepad.rotationMode) {
       setControls({
@@ -1909,8 +1947,32 @@ export function useAlsCharacter(
       sprintRollValue,
       ALS_PHYSICS_TIMESTEP,
     )
+    const rollBinding = gamepadBindings.roll === undefined
+      ? gamepadBindings.sprint
+      : gamepadBindings.roll
+    const rollContext = gamepadRollContext.current
+    // Disabling input, switching pads/bindings or changing behavior cancels pending taps;
+    // feeding a synthetic release would otherwise roll while a menu or another actor owns input.
+    if (!inputEnabled || !gamepadEnabled || gamepad.index === undefined
+      || rollContext.index !== gamepad.index
+      || rollContext.binding !== rollBinding
+      || rollContext.behavior !== gamepadRollBehavior) {
+      gamepadDoubleTapAction.current.reset()
+      gamepadTapAction.current.reset()
+    }
+    gamepadRollContext.current = {
+      index: gamepad.index, binding: rollBinding, behavior: gamepadRollBehavior,
+    }
+    const gamepadRollTick = gamepadDoubleTapAction.current.update(
+      gamepadRollBehavior === 'doubleTap' && gamepad.roll,
+      ALS_PHYSICS_TIMESTEP,
+    )
+    const gamepadTapTick = gamepadTapAction.current.update(
+      gamepadRollBehavior === 'tap' && gamepad.roll,
+      ALS_PHYSICS_TIMESTEP,
+    )
     const rollTick = rollAction.current.update(
-      sprintRollValue,
+      inputEnabled && keys.has('ShiftLeft'),
       ALS_PHYSICS_TIMESTEP,
     )
     if (
@@ -1930,6 +1992,8 @@ export function useAlsCharacter(
     if (
       rollRequested.current
       || rollTick.triggerEvents.includes('Triggered')
+      || gamepadRollTick.triggerEvents.includes('Triggered')
+      || gamepadTapTick.triggerEvents.includes('Triggered')
     ) {
       rollRequested.current = false
       const Animation =

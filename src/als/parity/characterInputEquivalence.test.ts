@@ -282,7 +282,7 @@ describe('ALS content oracle: implemented character inputs', () => {
     )
 
     for (const [action, button] of Object.entries({
-      jump: 0, sprint: 1, ragdoll: 2, walk: 5, crouch: 10, aim: 4, rotationMode: 14,
+      jump: 0, sprint: 1, roll: 1, ragdoll: 2, walk: 5, crouch: 10, aim: 4, rotationMode: 14,
     })) {
       expect(compactControllerSource).toContain(`${action}: ${button},`)
       expect(compactControllerSource).toContain(`out.${action} = readGamepadButton(gamepad, resolved.${action})`)
@@ -412,14 +412,38 @@ describe('consumer gamepad bindings', () => {
     const pad = { index: 1, connected: true, axes: [1, 0], buttons }
     vi.stubGlobal('navigator', { getGamepads: () => [null, pad] })
     try {
-      const out = { right: 0, forward: 0, jump: false, sprint: false, ragdoll: false, walk: false, crouch: false, aim: false, rotationMode: false }
-      expect(ALS_GAMEPAD_BINDINGS).toEqual({ jump: 0, sprint: 1, ragdoll: 2, walk: 5, crouch: 10, aim: 4, rotationMode: 14, shoulderSwap: 11, viewMode: 15 })
-      expect(sampleGamepad(out)).toMatchObject({ sprint: true, crouch: false, aim: false, right: 1 })
+      const out = { right: 0, forward: 0, jump: false, sprint: false, roll: false, ragdoll: false, walk: false, crouch: false, aim: false, rotationMode: false }
+      expect(ALS_GAMEPAD_BINDINGS).toEqual({ jump: 0, sprint: 1, roll: 1, ragdoll: 2, walk: 5, crouch: 10, aim: 4, rotationMode: 14, shoulderSwap: 11, viewMode: 15 })
+      expect(sampleGamepad(out)).toMatchObject({ roll: true, sprint: true, crouch: false, aim: false, right: 1 })
       expect(sampleGamepad(out, { sprint: null, crouch: 1, aim: 6 }, true, 1)).toMatchObject({ sprint: false, crouch: true, aim: true })
-      expect(sampleGamepad(out, {}, false)).toMatchObject({ right: 0, sprint: false, aim: false })
-      expect(sampleGamepad(out, {}, true, 0)).toMatchObject({ right: 0, sprint: false })
+      expect(sampleGamepad(out, { sprint: null, roll: 1 }, true, 1)).toMatchObject({ sprint: false, roll: true })
+      expect(sampleGamepad(out, { sprint: 1, roll: null }, true, 1)).toMatchObject({ sprint: true, roll: false })
+      expect(sampleGamepad(out, { sprint: 6 }, true, 1)).toMatchObject({ sprint: true, roll: true })
+      expect(sampleGamepad(out, { ragdoll: 1 }, true, 1)).toMatchObject({ ragdoll: true })
+      expect(sampleGamepad(out, {}, false)).toMatchObject({ index: undefined, right: 0, sprint: false, roll: false, ragdoll: false, aim: false })
+      expect(sampleGamepad(out, {}, true, 0)).toMatchObject({ index: undefined, right: 0, sprint: false, roll: false, ragdoll: false })
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+
+describe('multi-character browser input ownership', () => {
+  it('samples the selected enabled pad once for normal and ragdoll actions', () => {
+    expect(compactControllerSource.match(/sampleGamepad\(gamepadInput.current/g)).toHaveLength(1)
+    expect(compactControllerSource).toContain('sampleGamepad(gamepadInput.current, gamepadBindings, inputEnabled && gamepadEnabled, gamepadIndex)')
+    expect(compactControllerSource).toContain('const codeInput = inputSource?.()')
+  })
+
+  it('keeps keyboard roll independent of sprint permission and cancels stale pad taps', () => {
+    expect(compactControllerSource).toContain("rollAction.current.update( inputEnabled && keys.has('ShiftLeft')")
+    expect(compactControllerSource).toContain('if (!inputEnabled || !gamepadEnabled || gamepad.index === undefined')
+    expect(compactControllerSource).toContain('rollContext.index !== gamepad.index')
+    expect(compactControllerSource).toContain('rollContext.binding !== rollBinding')
+    expect(compactControllerSource).toContain('rollContext.behavior !== gamepadRollBehavior')
+    expect(compactControllerSource).toContain('gamepadDoubleTapAction.current.reset() gamepadTapAction.current.reset()')
+    expect(compactControllerSource).toContain("gamepadRollBehavior === 'tap' && gamepad.roll")
+    expect(compactControllerSource).toContain("gamepadRollBehavior === 'doubleTap' && gamepad.roll")
   })
 })
