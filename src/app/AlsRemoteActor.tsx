@@ -1,3 +1,4 @@
+import type { ConsumerOverlaySource } from '../engine/consumerOverlay'
 import type { AlsRagdollingSettings } from '../als/Settings/AlsRagdollingSettings'
 import { notifyAlsAnimNotifyStateSetLocomotionActionBegin, notifyAlsAnimNotifyStateSetLocomotionActionEnd } from '../als/Notifies/AlsAnimNotifyState_SetLocomotionAction'
 import { useAlsRagdoll } from './useAlsRagdoll'
@@ -32,6 +33,8 @@ import { useSuspenseAlsCharacterGltf } from './AlsCharacterGltf.hooks'
 import { PistolOverlayObject, RifleOverlayObject } from './AlsOverlayObjects'
 
 export interface AlsRemoteActorProps {
+  consumerOverlay?: ConsumerOverlaySource
+  renderOverlayObject?: (scene: import('three').Object3D) => React.ReactNode
   ragdollRef?: React.RefObject<AlsRagdollHandle | null>
   ragdollingSettings?: Partial<AlsRagdollingSettings>
   /** Own this in useMemo, push packets as they arrive. Exactly one actor consumes each buffer. */
@@ -57,7 +60,7 @@ const warnUnsupported = (feature: string) => console.warn(`[AlsRemoteActor] Unsu
  * Further LOD can throttle Animation/cull hidden actors, but must keep snapshot/action clocks
  * and collision current. No measured millisecond budget is claimed by this component.
  */
-export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
+export function AlsRemoteActor({ consumerOverlay, renderOverlayObject, snapshots, now = clock, offset = origin,
   footIk = true, worldTime, ragdollRef, ragdollingSettings, onAction, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
   const gltf = useSuspenseAlsCharacterGltf()
   // Cached materials/clips are shared; each remote (including ghosts) owns its skeleton.
@@ -87,9 +90,9 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
     () => (query) => traceEnabled.current ? trace(query) : null, [trace],
   )
   const animation = useMemo(() => createAlsAnimationInstance({
-    scene, animations: gltf.animations, groundPredictionSweep: sweep,
+    scene, animations: gltf.animations, consumerOverlay, groundPredictionSweep: sweep,
     controlRigFootTrace: lodTrace, publishDiagnostics: false,
-  }), [scene, gltf.animations, sweep, lodTrace])
+  }), [scene, gltf.animations, sweep, lodTrace, consumerOverlay])
   const ragdoll = useAlsRagdoll(driver.character, animation, body, standing, crouching, ragdollRef, worldTime)
   const warned = useRef(new Set<string>())
   const active = useRef(false)
@@ -208,10 +211,10 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
     <group ref={root} visible={false}>
       <group rotation-y={ALS_MESH_COMPONENT_YAW_RADIANS}><primitive object={scene} dispose={null} /></group>
       <Suspense fallback={null}>
-        <RifleOverlayObject characterScene={scene} isVisible={isRifleVisible} />
+        {renderOverlayObject ? renderOverlayObject(scene) : <RifleOverlayObject characterScene={scene} isVisible={isRifleVisible} />}
       </Suspense>
       <Suspense fallback={null}>
-        <PistolOverlayObject characterScene={scene} isVisible={isPistolVisible} />
+        {!renderOverlayObject && <PistolOverlayObject characterScene={scene} isVisible={isPistolVisible} />}
       </Suspense>
     </group>
   </>

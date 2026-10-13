@@ -21,12 +21,13 @@ describe('ALS recording and remote animation boundary', () => {
       local.controls.overlayMode = mode
       const t = index * 50
       const snapshot = recorder.capture(t, local)!
-      expect(snapshot.overlay).toBe(mode === 'Default' ? 'default' : mode === 'Rifle' ? 'rifle' : 'pistol')
+      expect(snapshot.overlay).toBe(mode === 'Launcher' ? 'launcher' : mode === 'Default' ? 'default' : mode === 'Rifle' ? 'rifle' : 'pistol')
       buffer.push(snapshot)
       expect(remote.apply(buffer.sample(t)!.state).unsupported).toEqual([])
       expect(remote.controls.overlayMode).toBe(mode)
     }
-    const legacy = recorder.capture(200, local)!
+    local.controls.overlayMode = 'PistolOneHanded'
+    const legacy = recorder.capture(250, local)!
     delete legacy.animation
     remote.apply(legacy)
     expect(remote.controls.overlayMode).toBe('PistolTwoHanded')

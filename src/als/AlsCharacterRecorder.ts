@@ -61,7 +61,7 @@ export class AlsCharacterRecorder {
       rotationMode: rotations[c.rotationMode],
       locomotionMode: c.locomotionMode === 'InAir' ? 'inAir' : 'grounded',
       action: c.locomotionAction ? actions[c.locomotionAction] : 'none',
-      actionSeq: this.actionSeq, overlay: controls.overlayMode === 'Rifle' ? 'rifle'
+      actionSeq: this.actionSeq, overlay: controls.overlayMode === 'Launcher' ? 'launcher' : controls.overlayMode === 'Rifle' ? 'rifle'
         : isPistolOverlayMode(controls.overlayMode) ? 'pistol' : 'default',
       aiming: c.desiredAiming, seq: source.seq ?? this.seq++,
       animation: {

@@ -4,7 +4,7 @@ import type { AlsLayerRegion } from '../Utility/AlsConstants'
 export { ALS_LAYER_REGIONS }
 export type { AlsLayerRegion }
 
-export const ALS_OVERLAY_MODES = ['Default', 'Rifle', 'PistolTwoHanded', 'PistolOneHanded'] as const
+export const ALS_OVERLAY_MODES = ['Default', 'Rifle', 'PistolTwoHanded', 'PistolOneHanded', 'Launcher'] as const
 export type AlsOverlayMode = (typeof ALS_OVERLAY_MODES)[number]
 
 export const DEFAULT_OVERLAY_CLIP = 'A_Als_Default_Poses'

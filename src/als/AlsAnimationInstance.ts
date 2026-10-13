@@ -2582,7 +2582,7 @@ export function createAlsAnimationInstance(gltf: {
         }
       }
       if (
-        activeOverlayMode === 'Rifle'
+        (activeOverlayMode === 'Rifle' || activeOverlayMode === 'Launcher')
         && rifleSources
         && activeRifleGraphInput
       ) {
@@ -5816,7 +5816,7 @@ export function createAlsAnimationInstance(gltf: {
       : 0
 
     const defaultActive = controls.overlayMode === 'Default'
-    const rifleActive = controls.overlayMode === 'Rifle'
+    const rifleActive = controls.overlayMode === 'Rifle' || controls.overlayMode === 'Launcher'
     activeOverlayMode = controls.overlayMode
     if (idleAdditiveEntry && idleAdditiveClip) {
       idleAdditiveEntry.time = idleAdditiveClip.time
@@ -5833,7 +5833,7 @@ export function createAlsAnimationInstance(gltf: {
       if (isPistolOverlayMode(controls.overlayMode)) {
         resetAlsPistolRuntime(pistolOverlays[controls.overlayMode].runtime)
       }
-      if (controls.overlayMode === 'Rifle') {
+      if (controls.overlayMode === 'Rifle' || controls.overlayMode === 'Launcher') {
         resetAlsRifleRuntime(rifleRuntime)
       }
       // AB_Als_Default and AB_Als_Rifle both author 0.2s GraphBlendOptions for the Overlay linked

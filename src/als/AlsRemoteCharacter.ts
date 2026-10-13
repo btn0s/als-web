@@ -68,7 +68,7 @@ export class AlsRemoteCharacter {
     }
     publishAlsCharacterAnimationSnapshot(this.controls, {
       character: c, location: this.location, basedMovement: ALS_NO_BASED_MOVEMENT,
-      acceleration, overlayMode: snapshot.overlay === 'rifle' ? 'Rifle'
+      acceleration, overlayMode: snapshot.overlay === 'launcher' ? 'Launcher' : snapshot.overlay === 'rifle' ? 'Rifle'
         : snapshot.overlay === 'pistol' ? pistol : 'Default',
       movementOverride: false, speedOverride: 0, directionOverride: 0,
       rotateInPlaceOverride: false,

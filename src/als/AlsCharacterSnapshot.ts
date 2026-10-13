@@ -17,7 +17,7 @@ export interface AlsCharacterSnapshot {
   locomotionMode: 'grounded' | 'inAir'
   action: 'none' | 'roll' | 'mantle' | 'getUp' | 'ragdoll'
   actionSeq: number
-  overlay: 'default' | 'pistol' | 'rifle'
+  overlay: 'default' | 'pistol' | 'rifle' | 'launcher'
   aiming: boolean
   seq: number
   /** Optional presentation data: base wire fields cannot recover input intent or mantle choice.
