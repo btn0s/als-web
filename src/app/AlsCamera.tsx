@@ -263,6 +263,7 @@ export function AlsCamera({
   poseSample,
   worldTime,
   footstepAudioRuntime,
+  toggleViewModeKey = 'Digit2',
 }: {
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
@@ -270,6 +271,8 @@ export function AlsCamera({
     AlsFootstepAudioRuntime,
     'SetListenerTransform'
   >
+  /** KeyboardEvent.code toggling first/third person; `null` disables the binding. */
+  toggleViewModeKey?: string | null
 }) {
   const { camera, gl, size } = useThree()
   const { world } = useRapier()
@@ -405,7 +408,7 @@ export function AlsCamera({
       if (isTextEntryTarget(event.target)) return
       pressedKeys.current.add(event.code)
       if (event.repeat) return
-      if (event.code === 'Digit2') {
+      if (toggleViewModeKey !== null && event.code === toggleViewModeKey) {
         toggleViewMode(poseSample.current.character)
       } else if (event.code === 'KeyC') {
         setRightShoulder(
@@ -437,7 +440,7 @@ export function AlsCamera({
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', clearInput)
     }
-  }, [cameraComponentState, gl.domElement, poseSample])
+  }, [cameraComponentState, gl.domElement, poseSample, toggleViewModeKey])
 
   useEffect(() => {
     const debugWindow = window as CameraDebugWindow

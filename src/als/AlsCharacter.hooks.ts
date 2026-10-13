@@ -1154,6 +1154,8 @@ export function useAlsCharacter(
   actions?: AlsCharacterActionBridge,
   groundedMoveSweep?: CharacterMovementGroundedMoveSweep,
   worldTime?: Readonly<WorldTimeState>,
+  /** KeyboardEvent.code toggling VelocityDirection/ViewDirection; `null` disables the binding. */
+  toggleRotationModeKey: string | null = 'Digit1',
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1607,7 +1609,7 @@ export function useAlsCharacter(
           ? 'Running'
           : 'Walking'
         setControls({ desiredGait: gait })
-      } else if (event.code === 'Digit1') {
+      } else if (toggleRotationModeKey !== null && event.code === toggleRotationModeKey) {
         const rotationMode =
           values.current.desiredRotationMode === 'VelocityDirection'
             ? 'ViewDirection'
@@ -1650,7 +1652,7 @@ export function useAlsCharacter(
       window.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('pointerup', onPointerUp)
     }
-  }, [setControls])
+  }, [setControls, toggleRotationModeKey])
 
   useEffect(() => {
     window.__setSpeed = (value: number) => setControls({

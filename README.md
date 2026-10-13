@@ -81,6 +81,8 @@ Configure the extension on the first load (including any `useGLTF.preload`); dre
 URL, so clear a previously plain-loaded entry with `useGLTF.clear(url)` before reloading.
 The lower-level `alsGltfAnimationExtrasPlugin` is also exported for `loader.register(...)`.
 
+Downstream games can rebind or disable the two debug toggles: pass `toggleRotationModeKey` to `Character` and `toggleViewModeKey` to `AlsCamera` (a `KeyboardEvent.code`, or `null` to disable).
+
 ## Verify
 
 ```sh
