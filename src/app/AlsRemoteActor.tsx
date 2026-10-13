@@ -1,10 +1,10 @@
 import { Suspense, useMemo, useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
-import { useGLTF } from '@react-three/drei'
+import { useFrame, useLoader } from '@react-three/fiber'
 import { CapsuleCollider, RigidBody, useRapier } from '@react-three/rapier'
 import type { RapierCollider, RapierRigidBody } from '@react-three/rapier'
 import { Group, type Object3D } from 'three'
 import { clone } from 'three/addons/utils/SkeletonUtils.js'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { createAlsAnimationInstance } from '../als/AlsAnimationInstance'
 import type { AlsControlRigFootOffsetTrace } from '../als/AnimGraph/CR_Als'
 import { AlsRemoteCharacter } from '../als/AlsRemoteCharacter'
@@ -52,7 +52,9 @@ const warnUnsupported = (feature: string) => console.warn(`[AlsRemoteActor] Unsu
  */
 export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
   footIk = true, worldTime, onAction, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
-  const gltf = useGLTF('/assets/skm-als.glb')
+  // three's GLTFLoader, as Character uses: drei's three-stdlib loader drops animation extras
+  // (notifies, curves, sync markers), which the ALS animation instance requires.
+  const gltf = useLoader(GLTFLoader, '/assets/skm-als.glb')
   const scene = useMemo(() => {
     const copy = clone(gltf.scene)
     applyCharacterMaterialOverrides(copy)
