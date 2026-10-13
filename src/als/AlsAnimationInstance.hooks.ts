@@ -462,4 +462,6 @@ export function useAlsAnimationInstance(
       captureMetadata(controls.current),
     )
   }, ALS_FRAME_PRIORITY.Diagnostics)
+
+  return animationInstance
 }

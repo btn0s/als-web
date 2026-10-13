@@ -834,6 +834,11 @@ export interface AlsMantlingMontageBridge {
 }
 
 export interface AlsAnimationInstance {
+  /** Read-only action presentation clocks for snapshot recording. */
+  getRollingSnapshot: () => { position: number; playRate: number } | undefined
+  setRollingPosition: (position: number) => void
+  /** Read-only mantle presentation clock for snapshot recording. */
+  getMantlingSnapshot: () => { settings: string; position: number } | undefined
   playClip: (name: string | null) => boolean
   clearSoloClip: () => void
   /**
@@ -1232,6 +1237,8 @@ export function createAlsAnimationInstance(gltf: {
   scene: THREE.Object3D
   /** Optional normalized marker override; regular GLTF loads consume clip.userData.syncMarkers. */
   syncMarkers?: SyncMarkerTable
+  /** Only the locally inspected actor owns the standalone global diagnostics. */
+  publishDiagnostics?: boolean
   /** Backend adapter for UAlsAnimationInstance::RefreshGroundPrediction(). */
   groundPredictionSweep?: AlsGroundPredictionCapsuleSweep
   /** Backend adapter for CR_Als FAlsRigUnit_FootOffsetTrace. */
@@ -4975,7 +4982,7 @@ export function createAlsAnimationInstance(gltf: {
         debugWeights.inertializationRequestCount =
           inertializationRequestCount()
       }
-      window.__weightTable = debugWeights
+      if (gltf.publishDiagnostics !== false) window.__weightTable = debugWeights
       // Controls may change while the normal graph is dormant. The solo transition request owns
       // the eventual handoff, so do not emit a second overlay request on the first resumed frame.
       previousOverlayMode = controls.overlayMode
@@ -5050,7 +5057,7 @@ export function createAlsAnimationInstance(gltf: {
         debugWeights.inertializationRequestCount =
           inertializationRequestCount()
       }
-      window.__weightTable = debugWeights
+      if (gltf.publishDiagnostics !== false) window.__weightTable = debugWeights
       nativePostUpdateAnimation()
       return
     }
@@ -7341,7 +7348,7 @@ export function createAlsAnimationInstance(gltf: {
           finalCurves.get(layer.localSpaceCurve) ?? 0
       }
     }
-    window.__weightTable = normalDebugWeights
+    if (gltf.publishDiagnostics !== false) window.__weightTable = normalDebugWeights
     if (
       groundedStanceTransitionSource
       && !groundedStanceTransitionState.active
@@ -7357,6 +7364,25 @@ export function createAlsAnimationInstance(gltf: {
     setHipsDirection,
     SetGroundedEntryMode,
     jump,
+    getRollingSnapshot: () => {
+      const active = slotMontageClock.activeByGroup.get(LOCOMOTION_SLOT_GROUP_NAME)
+      return active && rollingMontageInstances.has(active.sample.instanceId) ? {
+        position: active.sample.montageTime, playRate: active.request.playRate,
+      } : undefined
+    },
+    setRollingPosition: (position) => {
+      const active = slotMontageClock.activeByGroup.get(LOCOMOTION_SLOT_GROUP_NAME)
+      if (active && rollingMontageInstances.has(active.sample.instanceId)) {
+        setSlotMontagePosition(slotMontageClock, active.sample.instanceId, position)
+      }
+    },
+    getMantlingSnapshot: () => {
+      const instance = getActiveMantlingMontageInstance()
+      return instance ? {
+        settings: instance.settings.Name,
+        position: instance.sample.montageTime,
+      } : undefined
+    },
     getCurveValue: (name) => publishedCurves.get(name) ?? 0,
     dispatchQueuedAnimEvents,
     dispatchQueuedFootstepEffectsEvents,

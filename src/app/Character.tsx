@@ -1,3 +1,6 @@
+import { clone } from 'three/addons/utils/SkeletonUtils.js'
+import { AlsCharacterRecorder } from '../als/AlsCharacterRecorder'
+import type { AlsCharacterSnapshot } from '../als/AlsCharacterSnapshot'
 import { useFrame } from '@react-three/fiber'
 import { Html, useGLTF } from '@react-three/drei'
 import {
@@ -87,7 +90,10 @@ export type AlsOverlayModeBridge = Pick<
   'overlayMode' | 'SetOverlayMode'
 >
 
-interface CharacterProps {
+export interface CharacterProps {
+  /** Emitted after animation in the performance.now() clock domain. */
+  onSnapshot?: (snapshot: AlsCharacterSnapshot) => void
+  snapshotRateHz?: number
   onSizeChange: (size: THREE.Vector3) => void
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
@@ -251,16 +257,17 @@ function CharacterLoadState({
   )
 }
 
-function RifleOverlayObject({ characterScene }: { characterScene: THREE.Object3D }) {
+export function RifleOverlayObject({ characterScene }: { characterScene: THREE.Object3D }) {
   // useGLTF caches by URL: the first Rifle switch loads, then Default only detaches/hides it.
   const rifleGltf = useGLTF(ALS_RIFLE_OVERLAY_OBJECT_URL)
+  const rifleScene = useMemo(() => clone(rifleGltf.scene), [rifleGltf.scene])
 
   useLayoutEffect(() => {
     // Keep the authored MI_Als_Rifle material graph intact; as a bone child it shares the
     // character's lighting, shadows, and postprocessing path.
-    attachRifleOverlayObject(characterScene, rifleGltf.scene)
-    return () => detachOverlayObject(rifleGltf.scene)
-  }, [characterScene, rifleGltf.scene])
+    attachRifleOverlayObject(characterScene, rifleScene)
+    return () => detachOverlayObject(rifleScene)
+  }, [characterScene, rifleScene])
 
   return null
 }
@@ -272,6 +279,8 @@ function LoadedCharacter({
   worldTime,
   onOverlayModeBridgeChange,
   footstepSoundSink,
+  onSnapshot,
+  snapshotRateHz = 20,
 }: {
   gltf: GLTF
   onSizeChange: CharacterProps['onSizeChange']
@@ -280,6 +289,8 @@ function LoadedCharacter({
   onOverlayModeBridgeChange:
     CharacterProps['onOverlayModeBridgeChange']
   footstepSoundSink: CharacterProps['footstepSoundSink']
+  onSnapshot?: CharacterProps['onSnapshot']
+  snapshotRateHz?: number
 }) {
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
@@ -477,7 +488,7 @@ function LoadedCharacter({
   )
   // The hook owns clip sampling, pose-space composition, and the one skeleton write per frame.
   // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
-  useAlsAnimationInstance(
+  const animationInstance = useAlsAnimationInstance(
     gltf,
     character.animationControls,
     character.animationCurves,
@@ -494,6 +505,19 @@ function LoadedCharacter({
       SoundSink: footstepSoundSink,
     },
   )
+
+  const recorder = useMemo(() => new AlsCharacterRecorder(snapshotRateHz), [snapshotRateHz])
+  useFrame(() => {
+    if (!onSnapshot || !rigidBody.current) return
+    const snapshot = recorder.capture(performance.now(), {
+      character: character.character.current,
+      controls: character.animationControls.current,
+      position: rigidBody.current.translation(),
+      mantle: animationInstance.getMantlingSnapshot(),
+      rolling: animationInstance.getRollingSnapshot(),
+    })
+    if (snapshot) onSnapshot(snapshot)
+  }, ALS_FRAME_PRIORITY.Replication)
 
   useFrame(() => {
     const group = characterGroup.current
@@ -579,6 +603,8 @@ export function Character({
   worldTime,
   onOverlayModeBridgeChange,
   footstepSoundSink,
+  onSnapshot,
+  snapshotRateHz = 20,
 }: CharacterProps) {
   const { gltf, status, progress, retry } = useCharacterGltf()
 
@@ -594,6 +620,8 @@ export function Character({
       worldTime={worldTime}
       onOverlayModeBridgeChange={onOverlayModeBridgeChange}
       footstepSoundSink={footstepSoundSink}
+      onSnapshot={onSnapshot}
+      snapshotRateHz={snapshotRateHz}
     />
   ) : (
     <CharacterLoadState status={status} progress={progress} retry={retry} />

@@ -594,6 +594,37 @@ export interface AlsCharacterAnimationControls
   walkableFloorAngleCos: number
 }
 
+export function createAlsCharacterAnimationControls(): AlsCharacterAnimationControls {
+  return {
+    gait: 'Walking',
+    moving: false,
+    movingSmooth: false,
+    locomotionMode: 'Grounded',
+    scale: 1,
+    location: { x: 0, y: 0, z: 0 },
+    actorYawAngle: 0,
+    basedMovement: ALS_NO_BASED_MOVEMENT,
+    velocity: { x: 0, y: 0, z: 0 },
+    capsuleRadius: ALS_CAPSULE_RADIUS,
+    capsuleHalfHeight: ALS_STANDING_CAPSULE_HALF_HEIGHT,
+    walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
+    stance: 'Standing',
+    rotationMode: 'ViewDirection',
+    overlayMode: 'Default',
+    speed: 0,
+    direction: 0,
+    relativeAccelerationAmount: { x: 0, y: 0 },
+    rotateInPlace: false,
+    viewYawAngle: 0,
+    viewYawSpeed: 0,
+    viewMode: 'ThirdPerson',
+    viewPitchAngle: 0,
+    inputYawAngle: 0,
+    targetYawAngle: 0,
+    locomotionYawSpeed: 0,
+  }
+}
+
 export interface AlsCharacterAnimationSnapshotInput {
   readonly character: AlsCharacter
   readonly location: Readonly<AlsVector3>
@@ -1249,34 +1280,7 @@ export function useAlsCharacter(
       poseSample.current.movementBase = null
     }
   }, [poseSample])
-  const animationControls = useRef<AlsCharacterAnimationControls>({
-    gait: 'Walking',
-    moving: false,
-    movingSmooth: false,
-    locomotionMode: 'Grounded',
-    scale: 1,
-    location: { x: 0, y: 0, z: 0 },
-    actorYawAngle: 0,
-    basedMovement: ALS_NO_BASED_MOVEMENT,
-    velocity: { x: 0, y: 0, z: 0 },
-    capsuleRadius: ALS_CAPSULE_RADIUS,
-    capsuleHalfHeight: ALS_STANDING_CAPSULE_HALF_HEIGHT,
-    walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
-    stance: 'Standing',
-    rotationMode: 'ViewDirection',
-    overlayMode: 'Default',
-    speed: 0,
-    direction: 0,
-    relativeAccelerationAmount: { x: 0, y: 0 },
-    rotateInPlace: false,
-    viewYawAngle: 0,
-    viewYawSpeed: 0,
-    viewMode: 'ThirdPerson',
-    viewPitchAngle: 0,
-    inputYawAngle: 0,
-    targetYawAngle: 0,
-    locomotionYawSpeed: 0,
-  })
+  const animationControls = useRef(createAlsCharacterAnimationControls())
   const previousAnimationActorYawAngle = useRef(character.current.actorYawAngle)
   const animationLocomotionYawSpeed = useRef(0)
   const animationCurves = useRef<AlsCharacterAnimationCurves>({
