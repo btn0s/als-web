@@ -1,3 +1,6 @@
+import { useAlsRagdoll } from './useAlsRagdoll'
+import { ALS_CHARACTER_COLLISION_GROUPS, type AlsRagdollHandle } from '../engine/rapierAlsRagdoll'
+export type { AlsRagdollHandle, AlsRagdollStartOptions, AlsRagdollImpulse } from '../engine/rapierAlsRagdoll'
 import { Suspense, useCallback, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { CapsuleCollider, RigidBody, useRapier } from '@react-three/rapier'
@@ -27,6 +30,7 @@ import { useSuspenseAlsCharacterGltf } from './AlsCharacterGltf.hooks'
 import { PistolOverlayObject, RifleOverlayObject } from './AlsOverlayObjects'
 
 export interface AlsRemoteActorProps {
+  ragdollRef?: React.RefObject<AlsRagdollHandle | null>
   /** Own this in useMemo, push packets as they arrive. Exactly one actor consumes each buffer. */
   snapshots: AlsSnapshotBuffer
   /** Must return milliseconds in the snapshot timestamp domain. Defaults to performance.now(). */
@@ -51,7 +55,7 @@ const warnUnsupported = (feature: string) => console.warn(`[AlsRemoteActor] Unsu
  * and collision current. No measured millisecond budget is claimed by this component.
  */
 export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
-  footIk = true, worldTime, onAction, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
+  footIk = true, worldTime, ragdollRef, onAction, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
   const gltf = useSuspenseAlsCharacterGltf()
   // Cached materials/clips are shared; each remote (including ghosts) owns its skeleton.
   const scene = useMemo(() => clone(gltf.scene), [gltf.scene])
@@ -83,6 +87,7 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
     scene, animations: gltf.animations, groundPredictionSweep: sweep,
     controlRigFootTrace: lodTrace, publishDiagnostics: false,
   }), [scene, gltf.animations, sweep, lodTrace])
+  const ragdoll = useAlsRagdoll(driver.character, animation, body, standing, crouching, ragdollRef)
   const warned = useRef(new Set<string>())
   const active = useRef(false)
   const isRifleVisible = useCallback(
@@ -97,6 +102,7 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
   useFrame(() => {
     traceEnabled.current = footIk
     if (!body.current || !root.current) return
+    if (ragdoll.active) return
     const frame = snapshots.sample(now())
     if (!frame) {
       active.current = false
@@ -172,8 +178,8 @@ export function AlsRemoteActor({ snapshots, now = clock, offset = origin,
 
   return <>
     <RigidBody ref={body} type="kinematicPosition" colliders={false} lockRotations canSleep={false}>
-      <CapsuleCollider ref={standing} args={[ALS_STANDING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS, ALS_CAPSULE_RADIUS]} friction={0} />
-      <CapsuleCollider ref={crouching} args={[ALS_CROUCHING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS, ALS_CAPSULE_RADIUS]}
+      <CapsuleCollider collisionGroups={ALS_CHARACTER_COLLISION_GROUPS} ref={standing} args={[ALS_STANDING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS, ALS_CAPSULE_RADIUS]} friction={0} />
+      <CapsuleCollider collisionGroups={ALS_CHARACTER_COLLISION_GROUPS} ref={crouching} args={[ALS_CROUCHING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS, ALS_CAPSULE_RADIUS]}
         position={[0, ALS_CROUCHING_CAPSULE_HALF_HEIGHT - ALS_STANDING_CAPSULE_HALF_HEIGHT, 0]} friction={0} />
     </RigidBody>
     <group ref={root} visible={false}>

@@ -341,7 +341,7 @@ Landing Roll is a separate character action, not a `LandRoll` clip or an AnimGra
 `RagdollingOnLandSpeedThreshold = 1000 cm/s`, otherwise starts `AM_Als_Roll` at
 `RollingOnLandSpeedThreshold = 700 cm/s`, with play rate `1.3` and the cached
 velocity/actor yaw. Normal landing recovery and Roll are live in the web port; high-speed
-ragdoll remains explicitly cut in `ROADMAP.md`.
+ragdoll uses the live physics bridge; solver/get-up parity gaps remain in `ROADMAP.md`.
 
 **Web-port mapping:** jump latching/play-rate, vertical velocity, the authored
 Light/Heavy blends, ground prediction, and landing Roll are direct ports. Rapier

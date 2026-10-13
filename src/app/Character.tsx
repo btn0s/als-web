@@ -1,3 +1,7 @@
+import { clone } from 'three/addons/utils/SkeletonUtils.js'
+import { useAlsRagdoll } from './useAlsRagdoll'
+import { ALS_CHARACTER_COLLISION_GROUPS, type AlsRagdollHandle } from '../engine/rapierAlsRagdoll'
+export type { AlsRagdollHandle, AlsRagdollStartOptions, AlsRagdollImpulse } from '../engine/rapierAlsRagdoll'
 import { AlsCharacterRecorder } from '../als/AlsCharacterRecorder'
 import type { AlsCharacterSnapshot } from '../als/AlsCharacterSnapshot'
 import { isPistolOverlayMode } from '../als/AnimGraph/overlayMode'
@@ -84,6 +88,7 @@ export type AlsOverlayModeBridge = Pick<
 >
 
 export interface CharacterProps {
+  ragdollRef?: React.RefObject<AlsRagdollHandle | null>
   /** Emitted after animation in the performance.now() clock domain. */
   onSnapshot?: (snapshot: AlsCharacterSnapshot) => void
   snapshotRateHz?: number
@@ -175,13 +180,14 @@ function findSkeletonBone(scene: THREE.Object3D, name: string): THREE.Bone | nul
 }
 
 function LoadedCharacter({
-  gltf,
+  gltf: sourceGltf,
   onSizeChange,
   poseSample,
   worldTime,
   onOverlayModeBridgeChange,
   footstepSoundSink,
   onSnapshot,
+  ragdollRef,
   snapshotRateHz = 20,
   toggleRotationModeKey,
   aimPointerButtons,
@@ -195,9 +201,11 @@ function LoadedCharacter({
   footstepSoundSink: CharacterProps['footstepSoundSink']
   onSnapshot?: CharacterProps['onSnapshot']
   snapshotRateHz?: number
+  ragdollRef?: React.RefObject<AlsRagdollHandle | null>
   toggleRotationModeKey: CharacterProps['toggleRotationModeKey']
   aimPointerButtons: CharacterProps['aimPointerButtons']
 }) {
+  const gltf = useMemo(() => ({ ...sourceGltf, scene: clone(sourceGltf.scene) }), [sourceGltf])
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
   const RapierRay = rapier.Ray
@@ -368,6 +376,7 @@ function LoadedCharacter({
     onSizeChange(bounds.size.clone())
   }, [bounds, onSizeChange])
 
+  const internalRagdoll = useRef<AlsRagdollHandle | null>(null)
   const character = useAlsCharacter(
     rigidBody,
     standingCapsule,
@@ -383,6 +392,8 @@ function LoadedCharacter({
     },
     {
       RollingMontage: rollingMontage,
+      StartRagdolling: () => { internalRagdoll.current?.StartRagdolling() },
+      StopRagdolling: () => internalRagdoll.current?.StopRagdolling() ?? false,
     },
     groundedMoveSweep,
     worldTime,
@@ -422,6 +433,13 @@ function LoadedCharacter({
       SoundSink: footstepSoundSink,
     },
   )
+
+  const ragdoll = useAlsRagdoll(character.character.current, animationInstance,
+    rigidBody, standingCapsule, crouchingCapsule, ragdollRef)
+  useEffect(() => {
+    internalRagdoll.current = ragdoll
+    return () => { internalRagdoll.current = null }
+  }, [ragdoll])
 
   const recorder = useMemo(() => new AlsCharacterRecorder(snapshotRateHz), [snapshotRateHz])
   useFrame(() => {
@@ -479,6 +497,7 @@ function LoadedCharacter({
           ALS_STANDING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS,
           ALS_CAPSULE_RADIUS,
         ]}
+        collisionGroups={ALS_CHARACTER_COLLISION_GROUPS}
         friction={0}
       />
       <CapsuleCollider
@@ -493,6 +512,7 @@ function LoadedCharacter({
             - ALS_STANDING_CAPSULE_HALF_HEIGHT,
           0,
         ]}
+        collisionGroups={ALS_CHARACTER_COLLISION_GROUPS}
         friction={0}
       />
       <group
@@ -528,6 +548,7 @@ export function Character({
   onOverlayModeBridgeChange,
   footstepSoundSink,
   onSnapshot,
+  ragdollRef,
   snapshotRateHz = 20,
   toggleRotationModeKey,
   aimPointerButtons,
@@ -548,6 +569,7 @@ export function Character({
       footstepSoundSink={footstepSoundSink}
       onSnapshot={onSnapshot}
       snapshotRateHz={snapshotRateHz}
+      ragdollRef={ragdollRef}
       toggleRotationModeKey={toggleRotationModeKey}
       aimPointerButtons={aimPointerButtons}
     />

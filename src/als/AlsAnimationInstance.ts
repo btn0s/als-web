@@ -1,3 +1,4 @@
+import { createAlsRagdollPose, type AlsRagdollPose } from '../engine/alsRagdollPose'
 import { PISTOL_OVERLAY_MODES, isPistolOverlayMode } from './AnimGraph/overlayMode'
 import {
   createAlsPistolRuntime, evaluateAlsPistolGraph, refreshAlsPistolRuntime,
@@ -841,6 +842,8 @@ export interface AlsMantlingMontageBridge {
 }
 
 export interface AlsAnimationInstance {
+  readonly ragdolling: AlsRagdollPose
+  StopMontages: (blendOutDuration: number) => void
   /** Read-only action presentation clocks for snapshot recording. */
   getRollingSnapshot: () => { position: number; playRate: number } | undefined
   setRollingPosition: (position: number) => void
@@ -1254,6 +1257,7 @@ export function createAlsAnimationInstance(gltf: {
   assertAlsAnimationExtras(gltf.animations)
   const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
   const applicator = createPoseApplicator(gltf.scene, rig)
+  const ragdolling = createAlsRagdollPose(gltf.scene, gltf.animations)
   const evaluator = createPoseEvaluator(rig, { development: import.meta.env.DEV })
   const rigBoneNames = new Set(rig.boneNames)
   const controlRigRuntime = hasCompleteAlsControlRig(rigBoneNames)
@@ -4797,6 +4801,7 @@ export function createAlsAnimationInstance(gltf: {
       })
     }
 
+    ragdolling.evaluate(result.pose, deltaTime)
     applyPose(applicator, result.pose)
     publishedCurves.clear()
     for (const [name, value] of finalCurves) {
@@ -7435,6 +7440,13 @@ export function createAlsAnimationInstance(gltf: {
   }
 
   return {
+    ragdolling,
+    StopMontages: (duration) => {
+      const mantle = getActiveMantlingMontageInstance()
+      if (mantle) stopActiveMantlingMontage(mantle.sample.instanceId, duration)
+      stopSlotAnimation(slotMontageClock, duration, POST_LOCOMOTION_SLOT_NAME)
+      clearSoloClip()
+    },
     playClip,
     clearSoloClip,
     setHipsDirection,
