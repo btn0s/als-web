@@ -1,3 +1,8 @@
+import type { AlsRagdollingSettings } from '../als/Settings/AlsRagdollingSettings'
+import { clone } from 'three/addons/utils/SkeletonUtils.js'
+import { useAlsRagdoll } from './useAlsRagdoll'
+import { ALS_CHARACTER_COLLISION_GROUPS, type AlsRagdollHandle } from '../engine/rapierAlsRagdoll'
+export type { AlsRagdollHandle, AlsRagdollStartOptions, AlsRagdollImpulse } from '../engine/rapierAlsRagdoll'
 import { useFrame } from '@react-three/fiber'
 import { Html, useGLTF } from '@react-three/drei'
 import {
@@ -83,7 +88,11 @@ export type AlsOverlayModeBridge = Pick<
   'overlayMode' | 'SetOverlayMode'
 >
 
-interface CharacterProps {
+export interface CharacterProps {
+  ragdollRef?: React.RefObject<AlsRagdollHandle | null>
+  /** Disable the consumer's ragdoll/get-up input bindings; ALS itself has no death policy. */
+  ragdollInputEnabled?: boolean
+  ragdollingSettings?: Partial<AlsRagdollingSettings>
   onSizeChange: (size: THREE.Vector3) => void
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
@@ -186,16 +195,22 @@ function findSkeletonBone(scene: THREE.Object3D, name: string): THREE.Bone | nul
 }
 
 function LoadedCharacter({
-  gltf,
+  gltf: sourceGltf,
   onSizeChange,
   poseSample,
   worldTime,
   onOverlayModeBridgeChange,
   footstepSoundSink,
+  ragdollRef,
+  ragdollInputEnabled,
+  ragdollingSettings,
   toggleRotationModeKey,
   aimPointerButtons,
 }: {
   gltf: GLTF
+  ragdollRef?: CharacterProps['ragdollRef']
+  ragdollInputEnabled?: boolean
+  ragdollingSettings?: Partial<AlsRagdollingSettings>
   onSizeChange: CharacterProps['onSizeChange']
   poseSample: CharacterProps['poseSample']
   worldTime: CharacterProps['worldTime']
@@ -205,6 +220,7 @@ function LoadedCharacter({
   toggleRotationModeKey: CharacterProps['toggleRotationModeKey']
   aimPointerButtons: CharacterProps['aimPointerButtons']
 }) {
+  const gltf = useMemo(() => ({ ...sourceGltf, scene: clone(sourceGltf.scene) }), [sourceGltf])
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
   const RapierRay = rapier.Ray
@@ -375,6 +391,7 @@ function LoadedCharacter({
     onSizeChange(bounds.size.clone())
   }, [bounds, onSizeChange])
 
+  const internalRagdoll = useRef<AlsRagdollHandle | null>(null)
   const character = useAlsCharacter(
     rigidBody,
     standingCapsule,
@@ -390,11 +407,15 @@ function LoadedCharacter({
     },
     {
       RollingMontage: rollingMontage,
+      StartRagdolling: () => { internalRagdoll.current?.StartRagdolling() },
+      StopRagdolling: () => internalRagdoll.current?.StopRagdolling() ?? false,
     },
     groundedMoveSweep,
     worldTime,
     toggleRotationModeKey,
     aimPointerButtons,
+    ragdollInputEnabled,
+    ragdollingSettings,
   )
   useEffect(() => {
     onOverlayModeBridgeChange({
@@ -412,7 +433,7 @@ function LoadedCharacter({
   )
   // The hook owns clip sampling, pose-space composition, and the one skeleton write per frame.
   // Its single-clip path keeps older/incomplete animation GLBs alive without a mixer fallback.
-  useAlsAnimationInstance(
+  const animationInstance = useAlsAnimationInstance(
     gltf,
     character.animationControls,
     character.animationCurves,
@@ -429,6 +450,13 @@ function LoadedCharacter({
       SoundSink: footstepSoundSink,
     },
   )
+
+  const ragdoll = useAlsRagdoll(character.character.current, animationInstance,
+    rigidBody, standingCapsule, crouchingCapsule, ragdollRef, worldTime)
+  useEffect(() => {
+    internalRagdoll.current = ragdoll
+    return () => { internalRagdoll.current = null }
+  }, [ragdoll])
 
   useFrame(() => {
     const group = characterGroup.current
@@ -473,6 +501,7 @@ function LoadedCharacter({
           ALS_STANDING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS,
           ALS_CAPSULE_RADIUS,
         ]}
+        collisionGroups={ALS_CHARACTER_COLLISION_GROUPS}
         friction={0}
       />
       <CapsuleCollider
@@ -487,6 +516,7 @@ function LoadedCharacter({
             - ALS_STANDING_CAPSULE_HALF_HEIGHT,
           0,
         ]}
+        collisionGroups={ALS_CHARACTER_COLLISION_GROUPS}
         friction={0}
       />
       <group
@@ -516,6 +546,9 @@ export function Character({
   worldTime,
   onOverlayModeBridgeChange,
   footstepSoundSink,
+  ragdollRef,
+  ragdollInputEnabled,
+  ragdollingSettings,
   toggleRotationModeKey,
   aimPointerButtons,
 }: CharacterProps) {
@@ -533,6 +566,9 @@ export function Character({
       worldTime={worldTime}
       onOverlayModeBridgeChange={onOverlayModeBridgeChange}
       footstepSoundSink={footstepSoundSink}
+      ragdollRef={ragdollRef}
+      ragdollInputEnabled={ragdollInputEnabled}
+      ragdollingSettings={ragdollingSettings}
       toggleRotationModeKey={toggleRotationModeKey}
       aimPointerButtons={aimPointerButtons}
     />

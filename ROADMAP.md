@@ -178,14 +178,35 @@ second (flagged) — never from another project's implementation:
       pose-buffer runtime above makes it implementable; do it if parity footage demands it)
 - [x] In-air: exact Jump / Fall / Land / Land Movement graph, authored Light/Heavy
       landing blends, Rapier-backed ground prediction, and character-owned landing
-      `AM_Als_Roll` at the authored 700 cm/s threshold. High-speed landing ragdoll remains
-      under the explicit CUT below *(2026-07-24)*
+      `AM_Als_Roll` at the authored 700 cm/s threshold. High-speed landing ragdoll now enters the live skeletal-physics bridge below *(2026-07-24)*
 - [ ] Mantle/vault through the arbiter (one clock: warp + montage share normalized progress)
 - [ ] **Engine features**: sync groups on authored Left/Right markers, final named-curve
       composition, and UE-style output inertialization landed *(2026-07-23)*; montage/slot blend
       semantics and authored root-motion handoff remain open
 - [ ] Foot IK with pelvis adaptation (ALS's Control Rig stage: ground trace + spring-damped Z offset + slope alignment — constants in the math spec; the pelvis-combine formula is graph-side and flagged original-design)
-- [ ] CUT for now: ragdoll, rolling physics blend, debug-camera parity — revisit on demand
+- [x] **Live ALS ragdoll lifecycle and get-up (2026-10-12)**: `Character.ragdollRef`
+      exposes `StartRagdolling({ initialImpulse })`, `AddImpulse`, `StopRagdolling` and a mutable
+      pelvis position/velocity sample. Impulses, optional application points and torque use
+      three.js world SI units at named PA_Als bodies. Native 4.15 Start/Refresh/Stop owns the
+      eight-frame startup limiter, detached mesh, pelvis-following capsule, ground sphere sweep,
+      final rendered-pose snapshot, face-up/down selection and both authored get-up montages.
+      `AlsAnimationInstance_Ragdolling` drives FlailPlayRate; AB_Als_Ragdolling is published after
+      Control Rig and before the physics override. Get-up slots, blend curves and GettingUp
+      notify lifetime are live; the authored clips have root motion disabled.
+      Generic `ragdollInputEnabled` and `ragdollingSettings` let consumers own input/death policy.
+      There is no vendor corpse retention, automatic get-up, or replicated physics policy.
+- [x] **Native PA_Als export**: original 4.15 asset, 21 bodies / 20 constraints / 49 disabled pairs;
+      effective masses, COM, principal inertia frames and full resolved profiles exported by
+      UE 5.7.4. No density fallback. The same binary asset is present at `ue-5.7`, but lifecycle
+      source differs, so ALS policy stays at 4.15. Reproduction is in `scripts/extract-als/PLAYBOOK.md`.
+- [ ] **Physics engine parity remains partial**: `src/engine/chaosJointConstraint.ts` implements
+      authored connector frames, elliptical swing cones, twist/locked rows, acceleration-mode
+      XPBD drives and position projection, using native mass/inertia. Rapier integrates contacts
+      before these rows; Chaos interleaves them and owns island ordering, conditioning and
+      velocity passes. The port does not claim Chaos numerical equivalence or UE 5.5 default
+      equivalence from a UE 5.7 export. See `AlsCharacter_Actions.reference.md` for evidence and
+      the remaining boundaries. Live visual comparison remains the user's playtest gate.
+- [ ] CUT for now: rolling physics blend, debug-camera parity — revisit on demand
 
 **Exit:** parity harness green (measured equivalence) AND side-by-side with ALS Refactored
 in-editor footage the web version reads as the same system. Template README records what's

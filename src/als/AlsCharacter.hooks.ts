@@ -1,3 +1,4 @@
+import { ALS_RAGDOLLING_SETTINGS, type AlsRagdollingSettings } from './Settings/AlsRagdollingSettings'
 import {
   useAfterPhysicsStep,
   useBeforePhysicsStep,
@@ -996,7 +997,7 @@ export type AlsJumpInputResult =
 
 /**
  * AAlsCharacterExample::Input_OnJump() plus AAlsCharacter::Jump().
- * Ragdoll is not live yet; the next exact branch attempts a Grounded mantle before crouch or
+ * Ragdoll input is handled at the action boundary; this branch attempts a Grounded mantle before crouch or
  * CharacterMovement jump policy. The backend applies inherited UE vertical speed only after
  * this policy returns Jumped.
  */
@@ -1004,6 +1005,7 @@ export function handleAlsJumpInput(
   character: AlsCharacter,
   StartMantlingGrounded: () => boolean = () => false,
 ): AlsJumpInputResult {
+  if (character.movement.inputBlocked) return 'Rejected'
   if (StartMantlingGrounded()) return 'Mantled'
 
   if (character.stance === 'Crouching') {
@@ -1131,6 +1133,8 @@ export function useAlsCharacter(
   toggleRotationModeKey: string | null = 'Digit1',
   /** PointerEvent.button values that hold aim (default RMB). Trackpad layouts can add 0. */
   aimPointerButtons: readonly number[] = ALS_AIM_POINTER_BUTTONS,
+  ragdollInputEnabled = true,
+  ragdollingSettings?: Partial<AlsRagdollingSettings>,
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1210,7 +1214,7 @@ export function useAlsCharacter(
     { order: 1 },
   )
 
-  const character = useRef(createAlsCharacter())
+  const character = useRef(createAlsCharacter({ settings: { Ragdolling: { ...ALS_RAGDOLLING_SETTINGS, ...ragdollingSettings } } }))
   const actionBridge = useRef(actions)
   actionBridge.current = actions
   const locomotionModeChangedLifecycle = useRef(
@@ -1725,6 +1729,25 @@ export function useAlsCharacter(
   useBeforePhysicsStep(() => {
     const body = rigidBody.current
     if (!body) return
+    const ragdollValue = ragdollInputEnabled &&
+      (pressedKeys.current.has('KeyX') || sampleGamepad(gamepadInput.current).ragdoll)
+    const ragdollTick = ragdollAction.current.update(
+      ragdollValue,
+      ALS_PHYSICS_TIMESTEP,
+    )
+    if (ragdollTick.triggerEvents.includes('Triggered')) {
+      if (!actionBridge.current?.StopRagdolling?.()) {
+        locomotionModeChangedLifecycle.current.StartRagdolling()
+      }
+    }
+
+    if (character.current.locomotionAction === 'Ragdolling') {
+      const gamepad = sampleGamepad(gamepadInput.current)
+      if (gamepad.jump && !previousGamepadInput.current.jump) requestAlsJumpInput(jumpRequested)
+      previousGamepadInput.current.jump = gamepad.jump
+      if (consumeAlsJumpInput(jumpRequested) && ragdollInputEnabled) actionBridge.current?.StopRagdolling?.()
+      if (character.current.locomotionAction === 'Ragdolling') return
+    }
     physicsStepIndex.current++
     if (!capsulesInitialized.current) {
       setRapierAlsStanceCapsules(
@@ -1830,18 +1853,6 @@ export function useAlsCharacter(
       setControls({ desiredGait: nextDesiredGait })
     }
     current.desiredGait = values.current.desiredGait
-
-    const ragdollValue =
-      keys.has('KeyX') || gamepad.ragdoll
-    const ragdollTick = ragdollAction.current.update(
-      ragdollValue,
-      ALS_PHYSICS_TIMESTEP,
-    )
-    if (ragdollTick.triggerEvents.includes('Triggered')) {
-      if (!actionBridge.current?.StopRagdolling?.()) {
-        locomotionModeChangedLifecycle.current.StartRagdolling()
-      }
-    }
 
     if (
       rollRequested.current
@@ -2273,6 +2284,7 @@ export function useAlsCharacter(
     }
 
     const current = character.current
+    if (current.locomotionAction === 'Ragdolling') return
     const bodyTranslation = body.translation()
     threeToUnrealVector(bodyTranslation, rapierBodyAnchor.current)
     const debugState = window.__alsCharacterState
@@ -2436,6 +2448,8 @@ export function useAlsCharacter(
       : deltaRealTime
     const current = character.current
     const root = characterRoot.current
+    const currentBody = rigidBody.current
+    if (currentBody) threeToUnrealVector(currentBody.translation(), rapierBodyAnchor.current)
     if (root) {
       root.position.y = resolveAlsMeshRootRelativeY(
         current.stance,
