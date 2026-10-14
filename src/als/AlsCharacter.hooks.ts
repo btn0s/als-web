@@ -1,3 +1,4 @@
+import { applyAlsImmediateMovementStop } from '../engine/alsMovementCommands'
 import type { ConsumerOverlayState } from './AnimGraph/consumerOverlayStates'
 import { ALS_RAGDOLLING_SETTINGS, type AlsRagdollingSettings } from './Settings/AlsRagdollingSettings'
 import {
@@ -533,6 +534,7 @@ export function createAlsDesiredStanceSetter(
 }
 
 export interface AlsCharacterCodeInput {
+  readonly stopMovementImmediately?: boolean
   readonly movementDirection?: Readonly<{ x: number; z: number }>
   readonly desiredSpeed?: number
   readonly desiredGait?: AlsGait
@@ -2078,6 +2080,10 @@ export function useAlsCharacter(
     prePenetrationAdjustmentVelocityValid.current = false
     if (body.bodyType() === RigidBodyType.Dynamic) {
       threeToUnrealVector(body.linvel(), actualVelocity.current)
+    }
+    if (applyAlsImmediateMovementStop(codeInput?.stopMovementImmediately, actualVelocity.current, desiredVelocity.current)) {
+      setMovementVelocity(current.movement, actualVelocity.current)
+      if (body.bodyType() === RigidBodyType.Dynamic) body.setLinvel({ x: 0, y: 0, z: 0 }, true)
     }
     threeToUnrealVector(body.translation(), rapierBodyAnchor.current)
     resolveAlsActorLocation(
