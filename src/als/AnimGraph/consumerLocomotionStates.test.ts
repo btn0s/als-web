@@ -26,6 +26,33 @@ function fixture() {
 }
 
 describe('consumer linked locomotion', () => {
+  it('uses immutable prior composed history for every sequence tween before channel blending', () => {
+    const f = fixture()
+    let sample: ConsumerLocomotionSample = { composition: 'sequential-slerp', sources: [{ clip: 'walk', time: 1, weight: 1, loop: true }] }
+    const graph = createConsumerLocomotionStates(f.rig, { clips: [f.walk, f.jog], states: [{ stance: 'Crouching', blendDuration: 0, sample: () => sample }] })
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(f.crouching.pose.positions[f.footOffset]).toBe(2)
+    f.crouching.pose.positions[f.footOffset] = 99
+    sample = { composition: 'sequential-slerp', sources: [
+      { clip: 'walk', time: 0, weight: 1, loop: true, historyAlpha: 0.5 },
+      { clip: 'jog', time: 0.4, weight: 0.5, loop: true, historyAlpha: 0.5 },
+    ] }
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    // Both targets start from history 2: 1 and 3, then channel blend yields 2.
+    expect(f.crouching.pose.positions[f.footOffset]).toBeCloseTo(2)
+    sample = { composition: 'sequential-slerp', sources: [{ clip: 'walk', time: 0, weight: 1, loop: true, historyAlpha: 0.5 }] }
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(f.crouching.pose.positions[f.footOffset]).toBeCloseTo(1)
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(f.crouching.pose.positions[f.footOffset]).toBeCloseTo(0.5)
+  })
+  it('does not borrow downstream pose for an uninitialized history tween', () => {
+    const f = fixture()
+    const graph = createConsumerLocomotionStates(f.rig, { clips: [f.walk], states: [{ stance: 'Crouching', blendDuration: 0,
+      sample: () => ({ composition: 'sequential-slerp', sources: [{ clip: 'walk', time: 0, weight: 1, loop: true, historyAlpha: 0 }] }),
+    }] })
+    expect(() => graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })).toThrow('history tween')
+  })
   it('preserves ordered channel overlays and independent clocks for repeated clips', () => {
     const f = fixture()
     const graph = createConsumerLocomotionStates(f.rig, { clips: [f.walk, f.jog], states: [{

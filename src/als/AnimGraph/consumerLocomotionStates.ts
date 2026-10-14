@@ -19,6 +19,8 @@ export interface ConsumerLocomotionSample {
     readonly time: number
     readonly weight: number
     readonly loop: boolean
+    /** Incremental sequence tween from the previous composed linked pose, before downstream stages. */
+    readonly historyAlpha?: number
   }[]
   readonly curves?: Readonly<Record<string, number>>
   /** Desired named values after overlay/slot curve composition, weighted by this linked stance. */
@@ -76,12 +78,13 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
     effectiveWeight: number
     previous: ConsumerLocomotionSample | null
     pose: MutableUePoseNode
+    history: MutableUePoseNode
     output: MutableUePoseNode
   }>()
   for (const definition of registration?.states ?? []) {
     if (states.has(definition.stance)) throw new Error(`Duplicate locomotion stance: ${definition.stance}`)
     if (!Number.isFinite(definition.blendDuration) || definition.blendDuration < 0) throw new Error('Invalid locomotion blend duration')
-    states.set(definition.stance, { definition, weight: 0, effectiveWeight: 0, previous: null, pose: createMutableUePoseNode(rig.boneCount), output: createMutableUePoseNode(rig.boneCount) })
+    states.set(definition.stance, { definition, weight: 0, effectiveWeight: 0, previous: null, pose: createMutableUePoseNode(rig.boneCount), history: createMutableUePoseNode(rig.boneCount), output: createMutableUePoseNode(rig.boneCount) })
   }
   if (registration?.exclusive && (!states.has('Standing') || !states.has('Crouching'))) throw new Error('Exclusive locomotion requires both stance graphs')
   const rotationA = new Quaternion()
@@ -115,6 +118,7 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
         const step = state.definition.blendDuration > 0 ? deltaTime / state.definition.blendDuration : 1
         state.weight = registration?.exclusive ? 1 : state.weight + Math.max(-step, Math.min(step, target - state.weight))
         if (sample) {
+          if (state.previous) copyPose(state.pose.pose, state.history.pose)
           const nodes: MutableUePoseNode[] = []
           const weights: number[] = []
           const names = new Set<string>()
@@ -125,8 +129,21 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
             if (!sample.composition && names.has(source.clip)) throw new Error(`Duplicate locomotion sample: ${source.clip}`)
             names.add(source.clip)
             if (!Number.isFinite(source.time) || !Number.isFinite(source.weight) || source.weight < 0) throw new Error('Invalid locomotion source sample')
+            if (source.historyAlpha !== undefined && (sample.composition !== 'sequential-slerp' || !state.previous || !Number.isFinite(source.historyAlpha) || source.historyAlpha < 0 || source.historyAlpha > 1)) throw new Error('Invalid locomotion history tween')
             if (source.weight === 0) continue
             sampleSequencePoseNode(rig, clip, source.time, source.loop, clip.node)
+            if (source.historyAlpha !== undefined) {
+              const alpha = source.historyAlpha
+              const previous = state.history.pose
+              const target = clip.node.pose
+              for (let i = 0; i < target.positions.length; i++) {
+                target.positions[i] = previous.positions[i] + (target.positions[i] - previous.positions[i]) * alpha
+                target.scales[i] = previous.scales[i] + (target.scales[i] - previous.scales[i]) * alpha
+              }
+              for (let i = 0; i < target.rotations.length; i += 4) {
+                rotationA.fromArray(previous.rotations, i).slerp(rotationB.fromArray(target.rotations, i), alpha).normalize().toArray(target.rotations, i)
+              }
+            }
             if (sample.composition === 'sequential-slerp') {
               if (nodes.length === 0) {
                 if (source.weight !== 1) throw new Error('Sequential locomotion requires a full-weight base')
