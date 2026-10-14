@@ -1,3 +1,4 @@
+import { createConsumerLocomotionStates, type ConsumerLocomotionStates } from './AnimGraph/consumerLocomotionStates'
 import { inspectPoseFinite } from '../engine/poseDiagnostics'
 import { createConsumerUpperBodySlot } from './AnimGraph/consumerUpperBodySlot'
 import { createConsumerOverlayStates, type ConsumerOverlayStates } from './AnimGraph/consumerOverlayStates'
@@ -1266,6 +1267,7 @@ export function createAlsAnimationInstance(gltf: {
   animations: THREE.AnimationClip[]
   scene: THREE.Object3D
   overlayStates?: ConsumerOverlayStates
+  locomotionStates?: ConsumerLocomotionStates
   /** Optional normalized marker override; regular GLTF loads consume clip.userData.syncMarkers. */
   syncMarkers?: SyncMarkerTable
   /** Only the locally inspected actor owns the standalone global diagnostics. */
@@ -1278,6 +1280,7 @@ export function createAlsAnimationInstance(gltf: {
 }): AlsAnimationInstance {
   assertAlsAnimationExtras(gltf.animations)
   const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
+  const consumerLocomotion = createConsumerLocomotionStates(rig, gltf.locomotionStates)
   const applicator = createPoseApplicator(gltf.scene, rig)
   const ragdolling = createAlsRagdollPose(gltf.scene, gltf.animations)
   const evaluator = createPoseEvaluator(rig, { development: import.meta.env.DEV })
@@ -6572,6 +6575,8 @@ export function createAlsAnimationInstance(gltf: {
       )
       publishAlsCrouchingOutputCurve(crouchingGraphOutput)
     }
+
+    consumerLocomotion.evaluate(controls, Math.max(0, delta), standingGraphOutput, crouchingGraphOutput, { Standing: activeStandingGraphWeight, Crouching: activeCrouchingGraphWeight })
 
     copyPose(standReference, layeringReference)
     blendPoseInPlace(

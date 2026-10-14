@@ -1,3 +1,4 @@
+import type { ConsumerLocomotionStates } from '../als/AnimGraph/consumerLocomotionStates'
 import type { ConsumerOverlayStates } from '../als/AnimGraph/consumerOverlayStates'
 import type { AlsRagdollingSettings } from '../als/Settings/AlsRagdollingSettings'
 import { clone } from 'three/addons/utils/SkeletonUtils.js'
@@ -104,6 +105,7 @@ export interface CharacterProps {
   instanceId?: string
   initialPosition?: readonly [number, number, number]
   tint?: string
+  locomotionStates?: ConsumerLocomotionStates
   overlayStates?: ConsumerOverlayStates
   renderOverlayObject?: (scene: THREE.Object3D) => React.ReactNode
   /** Consumer prop meshes mounted by the native overlay path, one URL per overlay family. */
@@ -211,6 +213,7 @@ function findSkeletonBone(scene: THREE.Object3D, name: string): THREE.Bone | nul
 
 function LoadedCharacter({
   gltf: sourceGltf,
+  locomotionStates,
   overlayStates,
   renderOverlayObject,
   overlayObjectAssets,
@@ -243,6 +246,7 @@ function LoadedCharacter({
   showDebugControls,
 }: {
   gltf: GLTF
+  locomotionStates?: CharacterProps['locomotionStates']
   overlayStates?: CharacterProps['overlayStates']
   renderOverlayObject?: CharacterProps['renderOverlayObject']
   overlayObjectAssets?: CharacterProps['overlayObjectAssets']
@@ -291,8 +295,8 @@ function LoadedCharacter({
           : tintMaterial(object.material)
       })
     }
-    return { ...sourceGltf, scene, overlayStates }
-  }, [sourceGltf, tint, overlayStates])
+    return { ...sourceGltf, scene, overlayStates, locomotionStates }
+  }, [sourceGltf, tint, overlayStates, locomotionStates])
   const { rapier, world } = useRapier()
   const RapierCapsule = rapier.Capsule
   const RapierRay = rapier.Ray
@@ -653,6 +657,7 @@ function LoadedCharacter({
 }
 
 export function Character({
+  locomotionStates,
   overlayStates,
   renderOverlayObject,
   overlayObjectAssets,
@@ -693,6 +698,7 @@ export function Character({
   return gltf ? (
     <LoadedCharacter
       gltf={gltf}
+      locomotionStates={locomotionStates}
       overlayStates={overlayStates}
       renderOverlayObject={renderOverlayObject}
       overlayObjectAssets={overlayObjectAssets}
