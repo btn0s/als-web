@@ -534,6 +534,8 @@ export function createAlsDesiredStanceSetter(
 }
 
 export interface AlsCharacterCodeInput {
+  /** Engine seam for a consumer's grounded actor-rotation policy. Null keeps ALS policy. */
+  readonly groundedRotation?: (character: AlsCharacter, deltaTime: number) => number | null
   readonly stopMovementImmediately?: boolean
   readonly movementDirection?: Readonly<{ x: number; z: number }>
   readonly desiredSpeed?: number
@@ -1848,7 +1850,11 @@ export function useAlsCharacter(
     if (current.locomotionMode === 'InAir') {
       stepInAirCharacterYaw(current, deltaTime)
     } else if (current.locomotionMode === 'Grounded') {
-      stepGroundedCharacterYaw(
+      const consumerYaw = inputSource?.().groundedRotation?.(current, deltaTime)
+      if (consumerYaw !== undefined && consumerYaw !== null && Number.isFinite(consumerYaw)) {
+        current.actorYawAngle = unwindDegrees(consumerYaw)
+        setTargetYawAngle(current, current.actorYawAngle)
+      } else stepGroundedCharacterYaw(
         current,
         deltaTime,
         animationCurves.current.rotationYawOffset,
