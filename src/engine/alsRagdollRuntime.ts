@@ -4,7 +4,7 @@ import type { AlsCharacter } from '../als/AlsCharacter'
 import { refreshRagdolling, startRagdollingImplementation, stopRagdollingImplementation,
   type AlsRagdollingLifecycleAdapter } from '../als/AlsCharacter_Actions'
 import type { AlsAnimationInstance } from '../als/AlsAnimationInstance'
-import { ALS_CHARACTER_COLLISION_GROUPS, RapierAlsRagdoll, validateRagdollImpulse, type AlsRagdollHandle } from './rapierAlsRagdoll'
+import { ALS_CHARACTER_COLLISION_GROUPS, RapierAlsRagdoll, validateRagdollImpulse, validateRagdollSnapshot, type AlsRagdollHandle } from './rapierAlsRagdoll'
 import { threeToUnrealVector as toAls, unrealToThreeVector as toThree } from './unrealCoordinateSpace'
 import type { PhysicsBoneWorldPose } from './physicsPoseBridge'
 
@@ -141,6 +141,23 @@ export function createAlsRagdollRuntime(o: Options) {
       return stopRagdollingImplementation(input) !== null
     },
     AddImpulse: impulse => physics.AddImpulse(impulse),
+    CaptureState: () => ({ active: pose.active, bodies: physics.captureBodies(), target: { ...target }, stiffness, updateJointsFromAnimation,
+      speedLimitFrameTimeRemaining: o.character.ragdollingState.SpeedLimitFrameTimeRemaining }),
+    RestoreState(snapshot) {
+      if (!validateRagdollSnapshot(snapshot) || !o.owner()) return false
+      if (snapshot.active && !pose.active && !handle.StartRagdolling()) return false
+      if (!snapshot.active && pose.active && !handle.StopRagdolling()) return false
+      if (snapshot.active) {
+        physics.restoreBodies(snapshot.bodies)
+        const pelvis = physics.bodies.get('pelvis')!
+        handle.pelvis.position.copy(pelvis.translation()); handle.pelvis.velocity.copy(pelvis.linvel())
+        pose.velocity = handle.pelvis.velocity
+        pose.targets = physics.readPoses()
+      }
+      target = { ...snapshot.target }; stiffness = snapshot.stiffness; updateJointsFromAnimation = snapshot.updateJointsFromAnimation
+      o.character.ragdollingState.SpeedLimitFrameTimeRemaining = snapshot.speedLimitFrameTimeRemaining
+      return true
+    },
   }
   return { handle,
     get selectedGetUpMontage() { return selectedGetUpMontage },

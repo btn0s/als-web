@@ -17,10 +17,44 @@ export interface AlsRagdollImpulse {
 export interface AlsRagdollStartOptions {
   initialImpulse?: AlsRagdollImpulse
 }
+export interface AlsRagdollBodySnapshot {
+  boneName: string
+  translation: { x: number; y: number; z: number }
+  rotation: { x: number; y: number; z: number; w: number }
+  linearVelocity: { x: number; y: number; z: number }
+  angularVelocity: { x: number; y: number; z: number }
+  sleeping: boolean
+}
+export interface AlsRagdollSnapshot {
+  active: boolean
+  bodies: AlsRagdollBodySnapshot[]
+  target: { x: number; y: number; z: number }
+  stiffness: number
+  updateJointsFromAnimation: boolean
+  speedLimitFrameTimeRemaining: number
+}
+export function validateRagdollSnapshot(snapshot: AlsRagdollSnapshot): boolean {
+  if (!snapshot || typeof snapshot.active !== 'boolean' || !Array.isArray(snapshot.bodies)) return false
+  const expected = ALS_PHYSICS_ASSET.bodies.map(body => body.boneName)
+  if (snapshot.bodies.length !== (snapshot.active ? expected.length : 0)) return false
+  const names = new Set<string>()
+  for (const body of snapshot.bodies) {
+    if (!expected.includes(body.boneName) || names.has(body.boneName) || typeof body.sleeping !== 'boolean') return false
+    names.add(body.boneName)
+    for (const value of [body.translation, body.rotation, body.linearVelocity, body.angularVelocity]) {
+      if (!value || ![value.x, value.y, value.z].every(Number.isFinite)) return false
+    }
+    const q = body.rotation
+    if (!Number.isFinite(q.w) || Math.abs(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w - 1) > 0.001) return false
+  }
+  return !!snapshot.target && [snapshot.target.x, snapshot.target.y, snapshot.target.z, snapshot.stiffness, snapshot.speedLimitFrameTimeRemaining].every(Number.isFinite) && typeof snapshot.updateJointsFromAnimation === 'boolean'
+}
 export interface AlsRagdollHandle {
   StartRagdolling(options?: AlsRagdollStartOptions): boolean
   StopRagdolling(): boolean
   AddImpulse(impulse: AlsRagdollImpulse): boolean
+  CaptureState(): AlsRagdollSnapshot
+  RestoreState(snapshot: AlsRagdollSnapshot): boolean
   readonly active: boolean
   /** Mutable sample, three.js world metres and metres/second. */
   readonly pelvis: { position: Vector3; velocity: Vector3 }
@@ -77,6 +111,24 @@ export class RapierAlsRagdoll {
           { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, 0 as import('@dimforge/rapier3d-compat').JointAxesMask), a, b, true).setContactsEnabled(false)
       }
     } catch (error) { this.dispose(); throw error }
+  }
+  captureBodies(): AlsRagdollBodySnapshot[] {
+    return [...this.bodies].map(([boneName, body]) => ({
+      boneName, translation: { ...body.translation() }, rotation: { ...body.rotation() },
+      linearVelocity: { ...body.linvel() }, angularVelocity: { ...body.angvel() }, sleeping: body.isSleeping(),
+    }))
+  }
+  restoreBodies(bodies: readonly AlsRagdollBodySnapshot[]) {
+    for (const saved of bodies) {
+      const body = this.bodies.get(saved.boneName)!
+      body.setTranslation(saved.translation, true); body.setRotation(saved.rotation, true)
+      if (body.isKinematic()) { body.setNextKinematicTranslation(saved.translation); body.setNextKinematicRotation(saved.rotation) }
+      body.setLinvel(saved.linearVelocity, true); body.setAngvel(saved.angularVelocity, true)
+      if (saved.sleeping) body.sleep()
+    }
+    this.poses.clear()
+    for (const solver of this.solverBodies.values()) { solver.begin(); solver.predict() }
+    this.afterPhysics(0)
   }
   AddImpulse(input: AlsRagdollImpulse) {
     if (!validateRagdollImpulse(input)) return false
