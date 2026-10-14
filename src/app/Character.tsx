@@ -96,6 +96,8 @@ export type AlsOverlayModeBridge = Pick<
 export interface CharacterProps {
   inputSource?: AlsCharacterInputSource
   inputEnabled?: boolean
+  /** Consumer admission for AAlsCharacter::IsMantlingAllowedToStart; existing action gating still applies. */
+  isMantlingAllowedToStart?: () => boolean
   exposeDebugGlobals?: boolean
   allowSprint?: boolean
   gaitSpeedOverrides?: AlsGaitSpeedOverrides
@@ -230,6 +232,7 @@ function LoadedCharacter({
   gamepadIndex,
   inputSource,
   inputEnabled,
+  isMantlingAllowedToStart,
   exposeDebugGlobals,
   allowSprint,
   gaitSpeedOverrides,
@@ -263,6 +266,7 @@ function LoadedCharacter({
   showDebugControls: CharacterProps['showDebugControls']
   inputSource: CharacterProps['inputSource']
   inputEnabled: CharacterProps['inputEnabled']
+  isMantlingAllowedToStart: CharacterProps['isMantlingAllowedToStart']
   exposeDebugGlobals: CharacterProps['exposeDebugGlobals']
   allowSprint: CharacterProps['allowSprint']
   gaitSpeedOverrides: CharacterProps['gaitSpeedOverrides']
@@ -501,6 +505,7 @@ function LoadedCharacter({
     gamepadRollBehavior,
     showDebugControls,
     overlayStates?.states,
+    isMantlingAllowedToStart,
   )
   useEffect(() => {
     onOverlayModeBridgeChange({
@@ -669,6 +674,7 @@ export function Character({
   gamepadIndex,
   inputSource,
   inputEnabled,
+  isMantlingAllowedToStart,
   exposeDebugGlobals,
   allowSprint,
   gaitSpeedOverrides,
@@ -708,6 +714,7 @@ export function Character({
       gamepadIndex={gamepadIndex}
       inputSource={inputSource}
       inputEnabled={inputEnabled}
+      isMantlingAllowedToStart={isMantlingAllowedToStart}
       exposeDebugGlobals={exposeDebugGlobals}
       allowSprint={allowSprint}
       gaitSpeedOverrides={gaitSpeedOverrides}

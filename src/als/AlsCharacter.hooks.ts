@@ -1240,6 +1240,7 @@ export function useAlsCharacter(
   gamepadRollBehavior: 'tap' | 'doubleTap' = 'tap',
   showDebugControls = true,
   overlayStates: readonly ConsumerOverlayState[] = [],
+  isMantlingAllowedToStart?: () => boolean,
 ): AlsCharacterBridge {
   const [{
     desiredGait,
@@ -1601,7 +1602,7 @@ export function useAlsCharacter(
       LocalRole: 'Authority' as const,
       bIsLocallyControlled: true,
       bIsMantlingAllowedToStart:
-        current.locomotionAction === null,
+        current.locomotionAction === null && isMantlingAllowedToStart?.() !== false,
       LocomotionMode: current.locomotionMode,
       LocomotionState: {
         bHasVelocity: current.locomotionState.hasVelocity,
