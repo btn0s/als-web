@@ -5014,7 +5014,7 @@ export function createAlsAnimationInstance(gltf: {
       timeSinceTeleported: worldTime - teleportedTime,
       baseChanged: movementBaseState.baseChanged,
       movementBase: movementBaseState,
-      movingSmooth: controls.movingSmooth,
+      movingSmooth: controls.movingSmooth && !consumerLocomotion.allowsMovingFootLock(),
       grounded: locomotionMode === 'Grounded',
       disableFootLock: false,
       footLockAngleLimit: ALS_DEFAULT_FOOT_LOCK_ANGLE_LIMIT,

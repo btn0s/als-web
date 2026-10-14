@@ -124,4 +124,23 @@ describe('consumer linked locomotion', () => {
     expect(evaluate(['Crouching', 'Standing'])).toBeCloseTo(0.2)
   })
 
+  it('permits authored moving locks only at full linked stance weight and releases on retirement', () => {
+    const f = fixture()
+    let active = true
+    const graph = createConsumerLocomotionStates(f.rig, { clips: [f.walk], states: [{
+      stance: 'Crouching', blendDuration: 0.2, allowMovingFootLock: true,
+      sample: () => active ? { sources: [{ clip: 'walk', time: 0, weight: 1, loop: true }] } : null,
+    }] })
+    expect(graph.allowsMovingFootLock()).toBe(false)
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(graph.allowsMovingFootLock()).toBe(false)
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0.1, Crouching: 0.9 })
+    expect(graph.allowsMovingFootLock()).toBe(false)
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(graph.allowsMovingFootLock()).toBe(true)
+    active = false
+    graph.evaluate(f.controls, 0.01, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(graph.allowsMovingFootLock()).toBe(false)
+  })
+
 })
