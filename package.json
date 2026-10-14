@@ -35,7 +35,8 @@
     "./als/Settings/AlsMantlingSettings": "./src/als/Settings/AlsMantlingSettings.ts",
     "./als/AlsCharacter": "./src/als/AlsCharacter.ts",
     "./als/AlsCharacterMovementComponent": "./src/als/AlsCharacterMovementComponent.ts",
-    "./als/AnimGraph/consumerLocomotionStates": "./src/als/AnimGraph/consumerLocomotionStates.ts"
+    "./als/AnimGraph/consumerLocomotionStates": "./src/als/AnimGraph/consumerLocomotionStates.ts",
+    "./engine/clipCycle": "./src/engine/clipCycle.ts"
   },
   "packageManager": "pnpm@11.15.1",
   "engines": {
