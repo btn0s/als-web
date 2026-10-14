@@ -537,6 +537,8 @@ export function createAlsDesiredStanceSetter(
 export interface AlsCharacterCodeInput {
   /** Engine seam for a consumer's grounded actor-rotation policy. Null keeps ALS policy. */
   readonly groundedRotation?: (character: AlsCharacter, deltaTime: number) => number | null
+  /** Consumer opt-in: fresh physics input, rotation, then velocity; ALS defaults remain frame-based. */
+  readonly groundedRotationPhase?: 'Physics'
   /** Overrides ordinary grounded integration before floor sweep, never animation root motion. */
   readonly groundedVelocity?: (
     character: AlsCharacter,
@@ -1858,6 +1860,7 @@ export function useAlsCharacter(
     if (current.locomotionMode === 'InAir') {
       stepInAirCharacterYaw(current, deltaTime)
     } else if (current.locomotionMode === 'Grounded') {
+      if (inputSource?.().groundedRotationPhase === 'Physics') return
       const consumerYaw = inputSource?.().groundedRotation?.(current, deltaTime)
       if (consumerYaw !== undefined && consumerYaw !== null && Number.isFinite(consumerYaw)) {
         current.actorYawAngle = unwindDegrees(consumerYaw)
@@ -2291,6 +2294,13 @@ export function useAlsCharacter(
         makeRapierAlsBodyPositionOwned(body)
       }
       if (!animRootMotionApplied && !animRootMotionOwned) {
+        if (codeInput?.groundedRotationPhase === 'Physics') {
+          const consumerYaw = codeInput.groundedRotation?.(current, ALS_PHYSICS_TIMESTEP)
+          if (consumerYaw !== undefined && consumerYaw !== null && Number.isFinite(consumerYaw)) {
+            current.actorYawAngle = unwindDegrees(consumerYaw)
+            setTargetYawAngle(current, current.actorYawAngle)
+          }
+        }
         stepGroundedVelocity(
           current.movement,
           inputDirection.current,
