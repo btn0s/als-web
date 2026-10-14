@@ -109,6 +109,7 @@ import type {
   AlsRollingMontageBridge,
 } from './AlsAnimationInstance'
 import {
+  isMantlingAllowedToStart as evaluateMantlingAdmission,
   prepareCharacterMantling,
   refreshMantling,
   refreshRollingPhysics,
@@ -1602,7 +1603,7 @@ export function useAlsCharacter(
       LocalRole: 'Authority' as const,
       bIsLocallyControlled: true,
       bIsMantlingAllowedToStart:
-        current.locomotionAction === null && isMantlingAllowedToStart?.() !== false,
+        evaluateMantlingAdmission(current, isMantlingAllowedToStart),
       LocomotionMode: current.locomotionMode,
       LocomotionState: {
         bHasVelocity: current.locomotionState.hasVelocity,

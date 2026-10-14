@@ -19,6 +19,7 @@ import {
   compileAlsMantlingLocomotionActionNotify,
   constraintRagdollSpeed,
   createAlsMantlingNotifyRuntime,
+  isMantlingAllowedToStart,
   isRagdollingAllowedToStart,
   isRagdollingAllowedToStop,
   isRollingAllowedToStart,
@@ -2666,5 +2667,22 @@ describe('AAlsCharacter ragdoll lifecycle', () => {
       ),
       { x: 0, y: 0, z: 0 },
     )).toBe(false)
+  })
+})
+
+describe('consumer mantle admission', () => {
+  it('keeps default admission and samples current external ownership on each request', () => {
+    const character = createAlsCharacter()
+    let externalOwner = false
+    const admission = () => !externalOwner
+    expect(isMantlingAllowedToStart(character)).toBe(true)
+    expect(isMantlingAllowedToStart(character, admission)).toBe(true)
+    externalOwner = true
+    expect(isMantlingAllowedToStart(character, admission)).toBe(false)
+    externalOwner = false
+    expect(isMantlingAllowedToStart(character, admission)).toBe(true)
+    setLocomotionAction(character, 'Rolling')
+    expect(isMantlingAllowedToStart(character, admission)).toBe(false)
+    expect(isMantlingAllowedToStart(character)).toBe(false)
   })
 })

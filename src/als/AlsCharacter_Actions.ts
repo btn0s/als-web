@@ -762,6 +762,14 @@ export function startMantling(
   }
 }
 
+/** AAlsCharacter::IsMantlingAllowedToStart_Implementation, AlsCharacter_Actions.cpp:152. */
+export function isMantlingAllowedToStart(
+  character: Pick<AlsCharacter, 'locomotionAction'>,
+  consumerAdmission?: () => boolean,
+): boolean {
+  return character.locomotionAction === null && consumerAdmission?.() !== false
+}
+
 /** `AAlsCharacter::StartMantlingGrounded()`. */
 export function startMantlingGrounded(
   input: Readonly<StartAlsMantlingForModeInput>,
