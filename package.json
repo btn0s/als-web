@@ -32,7 +32,9 @@
     "./engine/gltfAnimationExtras": "./src/engine/gltfAnimationExtras.ts",
     "./als/AnimGraph/consumerOverlayStates": "./src/als/AnimGraph/consumerOverlayStates.ts",
     "./als/AlsAnimationInstance": "./src/als/AlsAnimationInstance.ts",
-    "./als/Settings/AlsMantlingSettings": "./src/als/Settings/AlsMantlingSettings.ts"
+    "./als/Settings/AlsMantlingSettings": "./src/als/Settings/AlsMantlingSettings.ts",
+    "./als/AlsCharacter": "./src/als/AlsCharacter.ts",
+    "./als/AlsCharacterMovementComponent": "./src/als/AlsCharacterMovementComponent.ts"
   },
   "packageManager": "pnpm@11.15.1",
   "engines": {
