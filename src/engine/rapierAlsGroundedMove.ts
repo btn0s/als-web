@@ -108,7 +108,9 @@ export function createRapierAlsGroundedMoveSweep(
       capsule,
       0,
       1,
-      true,
+      // Permit a separating trajectory to escape an initial overlap. Rapier still reports
+      // inward motion and later obstacles; a blocking initial penetration remains rejected.
+      false,
       options.filterFlags,
       options.resolveFilterGroups?.(),
       undefined,

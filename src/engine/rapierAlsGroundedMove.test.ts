@@ -37,6 +37,40 @@ beforeAll(async () => {
 })
 
 describe('Rapier ALS grounded movement query', () => {
+  it('can retreat after repeated wall contact accumulates a small overlap', () => {
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
+    world.createCollider(RAPIER.ColliderDesc.cuboid(2, 0.7, 2).setTranslation(4, 0.7, 0))
+    world.createCollider(RAPIER.ColliderDesc.cuboid(18, 0.12, 12).setTranslation(0, -0.12, 0))
+    world.step()
+    const sweep = createRapierAlsGroundedMoveSweep({ world, Capsule: RAPIER.Capsule })
+    let start = { x: 1.65, y: 0, z: 0.9 + UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE }
+    const shape = { capsuleRadius: 0.3, capsuleHalfHeight: 0.9, sweepCapsule: sweep }
+    for (let step = 0; step < 20; step++) {
+      const result = moveGroundedWithSlideAlongSurface({ ...shape, start, delta: { x: 0.05, y: 0, z: 0 } })
+      start = { x: Math.fround(start.x + result.delta.x), y: Math.fround(start.y + result.delta.y), z: start.z }
+    }
+    expect(start.x).toBeGreaterThanOrEqual(1.699)
+    expect(start.x).toBeLessThan(1.701)
+    const retreat = moveGroundedWithSlideAlongSurface({ ...shape, start, delta: { x: -0.05, y: 0, z: 0 } })
+    expect(retreat.delta.x).toBeCloseTo(-0.05, 6)
+    world.free()
+  })
+
+  it('permits overlap exit without permitting deeper motion or bypassing a second wall', () => {
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
+    world.createCollider(RAPIER.ColliderDesc.cuboid(2, 0.7, 2).setTranslation(4, 0.7, 0))
+    world.createCollider(RAPIER.ColliderDesc.cuboid(0.1, 1, 2).setTranslation(1, 1, 0))
+    world.step()
+    const sweep = createRapierAlsGroundedMoveSweep({ world, Capsule: RAPIER.Capsule })
+    const input = { start: { x: 1.7003, y: 0, z: 0.9215 }, capsuleRadius: 0.3, capsuleHalfHeight: 0.9, sweepCapsule: sweep }
+    const deeper = moveGroundedWithSlideAlongSurface({ ...input, delta: { x: 0.05, y: 0, z: 0 } })
+    expect(deeper.delta.x).toBe(0)
+    const retreat = moveGroundedWithSlideAlongSurface({ ...input, delta: { x: -1, y: 0, z: 0 } })
+    expect(input.start.x + retreat.delta.x).toBeCloseTo(1.4, 3)
+    expect(retreat.firstHit?.bBlockingHit).toBe(true)
+    world.free()
+  })
+
   it('ignores a physically overlapping body excluded by the owner collision response', () => {
     const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
     const corpse = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 1, 0))
@@ -116,7 +150,7 @@ describe('Rapier ALS grounded movement query', () => {
       shape: expect.any(FakeCapsule),
       targetDistance: 0,
       maxTimeOfImpact: 1,
-      stopAtPenetration: true,
+      stopAtPenetration: false,
       excludedRigidBody: excludedBody,
     })
     expect(hit).toEqual({
