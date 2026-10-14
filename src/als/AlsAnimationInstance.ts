@@ -2633,6 +2633,7 @@ export function createAlsAnimationInstance(gltf: {
     },
     overlayAdditives: idleAdditiveEntry ? [idleAdditiveEntry] : [],
     linkedLayer(context) {
+      gltf.locomotionStates?.onEvaluatePose?.({ stage: 'layering-input', rig, pose: context.locomotionPose, curves: publishedCurves })
       evaluateAlsLayeringPose(
         layeringPoseRuntime,
         {
@@ -2644,6 +2645,7 @@ export function createAlsAnimationInstance(gltf: {
         },
         context.outputPose,
       )
+      gltf.locomotionStates?.onEvaluatePose?.({ stage: 'layering-output', rig, pose: context.outputPose, curves: publishedCurves })
       if (viewPoseRuntime) {
         evaluateAlsViewPoseRuntime(
           viewPoseRuntime,
@@ -2652,6 +2654,7 @@ export function createAlsAnimationInstance(gltf: {
           context.outputPose,
         )
       }
+      gltf.locomotionStates?.onEvaluatePose?.({ stage: 'view-output', rig, pose: context.outputPose, curves: publishedCurves })
     },
     rootMotion,
     resolveBlendedCurves(_samples, output) {
@@ -4876,6 +4879,7 @@ export function createAlsAnimationInstance(gltf: {
   ) {
     if (import.meta.env.DEV) inspectPoseFinite("layering", result.pose, rig.boneNames)
     const finalCurves = result.curves.values
+    gltf.locomotionStates?.onEvaluatePose?.({ stage: 'control-rig-input', rig, pose: result.pose, curves: finalCurves })
     if (controlRigRuntime && feetPoseBridge) {
       evaluateAlsControlRigForwardSolve(controlRigRuntime, {
         isGameWorld: true,
@@ -4895,6 +4899,7 @@ export function createAlsAnimationInstance(gltf: {
       })
     }
 
+    gltf.locomotionStates?.onEvaluatePose?.({ stage: 'control-rig-output', rig, pose: result.pose, curves: finalCurves })
     ragdolling.evaluate(result.pose, deltaTime)
     if (import.meta.env.DEV) inspectPoseFinite("control-rig", result.pose, rig.boneNames)
     applyPose(applicator, result.pose)

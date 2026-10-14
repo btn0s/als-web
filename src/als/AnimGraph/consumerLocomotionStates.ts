@@ -3,6 +3,7 @@ import type { AlsAnimationInstanceControls } from '../AlsAnimationInstance'
 import { compileClipSampler } from '../../engine/clipSampler'
 import { compileClipCurveSamplers } from '../../engine/curves'
 import { copyPose } from '../../engine/poseBuffer'
+import type { LocalPoseBuffer } from '../../engine/poseBuffer'
 import type { RigDefinition } from '../../engine/rig'
 import { compileAuthoredRootMotion } from '../../engine/rootMotion'
 import { createMutableUePoseNode, sampleSequencePoseNode } from '../../engine/uePoseGraph'
@@ -39,6 +40,13 @@ export interface ConsumerLocomotionState {
 export interface ConsumerLocomotionStates {
   readonly clips: readonly AnimationClip[]
   readonly states: readonly ConsumerLocomotionState[]
+  /** Borrowed component-stage inputs/outputs, captured synchronously without changing evaluation. */
+  onEvaluatePose?(snapshot: {
+    readonly stage: 'layering-input' | 'layering-output' | 'view-output' | 'control-rig-input' | 'control-rig-output'
+    readonly rig: RigDefinition
+    readonly pose: LocalPoseBuffer
+    readonly curves: ReadonlyMap<string, number>
+  }): void
 }
 
 export function createConsumerLocomotionStates(rig: RigDefinition, registration?: ConsumerLocomotionStates) {
