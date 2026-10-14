@@ -2299,7 +2299,12 @@ export function useAlsCharacter(
           if (consumerYaw !== undefined && consumerYaw !== null && Number.isFinite(consumerYaw)) {
             current.actorYawAngle = unwindDegrees(consumerYaw)
             setTargetYawAngle(current, current.actorYawAngle)
-          }
+          } else stepGroundedCharacterYaw(
+            current,
+            ALS_PHYSICS_TIMESTEP,
+            animationCurves.current.rotationYawOffset,
+            animationCurves.current.rotationYawSpeed,
+          )
         }
         stepGroundedVelocity(
           current.movement,
