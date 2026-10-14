@@ -4842,9 +4842,12 @@ export function createAlsAnimationInstance(gltf: {
           ? footstepEffectsNotifyTracks.get(sequenceName)
           : undefined
         if (previousTime === undefined || !runtimeTrack) continue
+        // A non-looping member that moved backwards was restarted by its sync group this tick, so
+        // its notify range begins at the clip start rather than wrapping.
+        const restarted = !player.loop && player.time < previousTime
         queueFootstepEffectsNotifiesFromRange(
           runtimeTrack,
-          previousTime,
+          restarted ? 0 : previousTime,
           player.time,
           {
             bAllowLooping: player.loop,
