@@ -1963,6 +1963,7 @@ export function createAlsAnimationInstance(gltf: {
   const standReference = createPoseBuffer(rig.boneCount)
   const crouchReference = createPoseBuffer(rig.boneCount)
   const layeringReference = createPoseBuffer(rig.boneCount)
+  const consumerOverlayPose = createPoseBuffer(rig.boneCount)
   const standPose = clipsByName.get('A_Als_Stand_Pose')
   const crouchPose = clipsByName.get('A_Als_Crouch_Pose')
   if (standPose) sampleClip(standPose.sampler, rig, 0, standReference, false)
@@ -2633,17 +2634,18 @@ export function createAlsAnimationInstance(gltf: {
     },
     overlayAdditives: idleAdditiveEntry ? [idleAdditiveEntry] : [],
     linkedLayer(context) {
+      consumerLocomotion.applyOverlayPose(layeringReference, context.overlayPose, consumerOverlayPose)
       gltf.locomotionStates?.onEvaluatePose?.({ stage: 'layering-reference', rig, pose: layeringReference, curves: publishedCurves })
-      gltf.locomotionStates?.onEvaluatePose?.({ stage: 'overlay-input', rig, pose: context.overlayPose, curves: overlayInertialization.curves })
+      gltf.locomotionStates?.onEvaluatePose?.({ stage: 'overlay-input', rig, pose: consumerOverlayPose, curves: overlayInertialization.curves })
       gltf.locomotionStates?.onEvaluatePose?.({ stage: 'layering-input', rig, pose: context.locomotionPose, curves: publishedCurves })
       evaluateAlsLayeringPose(
         layeringPoseRuntime,
         {
           locomotionPose: context.locomotionPose,
-          overlayPose: context.overlayPose,
+          overlayPose: consumerOverlayPose,
           basePose: layeringReference,
           curves: publishedCurves,
-          regionSlots: upperBodySlot.evaluate({ pose: context.overlayPose, curves: overlayInertialization.curves }),
+          regionSlots: upperBodySlot.evaluate({ pose: consumerOverlayPose, curves: overlayInertialization.curves }),
         },
         context.outputPose,
       )

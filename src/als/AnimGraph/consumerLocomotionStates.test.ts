@@ -168,4 +168,35 @@ describe('consumer linked locomotion', () => {
     expect(ordinary.defaultIdleAdditiveScale()).toBe(1)
   })
 
+  it('owns overlay input through stance weight and interrupted retirement without mutating inputs', () => {
+    const f = fixture()
+    let active = true
+    const graph = createConsumerLocomotionStates(f.rig, { clips: [f.walk], states: [{
+      stance: 'Crouching', blendDuration: 0.2, ownOverlayPose: true,
+      sample: () => active ? { sources: [{ clip: 'walk', time: 0, weight: 1, loop: true }] } : null,
+    }] })
+    const reference = createMutableUePoseNode(f.rig.boneCount).pose
+    const overlay = createMutableUePoseNode(f.rig.boneCount).pose
+    const output = createMutableUePoseNode(f.rig.boneCount).pose
+    overlay.positions[0] = 10
+    const value = () => { graph.applyOverlayPose(reference, overlay, output); return output.positions[0] }
+    expect(value()).toBe(10)
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0.4, Crouching: 0.6 })
+    expect(value()).toBeCloseTo(7)
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(value()).toBe(0)
+    active = false
+    graph.evaluate(f.controls, 0.05, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(value()).toBeCloseTo(2.5)
+    active = true
+    graph.evaluate(f.controls, 0.025, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(value()).toBeCloseTo(1.25)
+    expect(reference.positions[0]).toBe(0)
+    expect(overlay.positions[0]).toBe(10)
+    expect(() => graph.applyOverlayPose(reference, overlay, overlay)).toThrow('alias')
+    const fallback = createConsumerLocomotionStates(f.rig)
+    fallback.applyOverlayPose(reference, overlay, output)
+    expect(output.positions[0]).toBe(10)
+  })
+
 })

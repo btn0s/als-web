@@ -2,6 +2,7 @@ import type { AnimationClip } from 'three'
 import type { AlsAnimationInstanceControls } from '../AlsAnimationInstance'
 import { compileClipSampler } from '../../engine/clipSampler'
 import { compileClipCurveSamplers } from '../../engine/curves'
+import { blendPoseInPlace } from '../../engine/blend'
 import { copyPose } from '../../engine/poseBuffer'
 import type { LocalPoseBuffer } from '../../engine/poseBuffer'
 import type { RigDefinition } from '../../engine/rig'
@@ -32,6 +33,8 @@ export interface ConsumerLocomotionState {
   readonly allowMovingFootLock?: boolean
   /** Own the Default overlay's idle additive at this state's effective pose weight. */
   readonly suppressDefaultIdle?: boolean
+  /** Own the overlay template pose before region action slots, using effective stance weight. */
+  readonly ownOverlayPose?: boolean
   sample(controls: Readonly<AlsAnimationInstanceControls>, deltaTime: number): ConsumerLocomotionSample | null
   onSample?(sample: ConsumerLocomotionSample | null, effectiveWeight: number): void
   /** Transient engine-owned buffers; observers must copy before returning. */
@@ -78,6 +81,12 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
   }
   const layeringCurves = new Map<string, { weight: number; value: number }>()
   return {
+    applyOverlayPose(reference: LocalPoseBuffer, overlay: LocalPoseBuffer, output: LocalPoseBuffer) {
+      if (output === reference || output === overlay) throw new Error('Consumer overlay scratch must not alias its inputs')
+      const owned = [...states.values()].reduce((sum, state) => sum + (state.definition.ownOverlayPose ? state.effectiveWeight : 0), 0)
+      copyPose(overlay, output)
+      blendPoseInPlace(output, reference, Math.max(0, Math.min(1, owned)))
+    },
     defaultIdleAdditiveScale() {
       const owned = [...states.values()].reduce((sum, state) => sum + (state.definition.suppressDefaultIdle ? state.effectiveWeight : 0), 0)
       return 1 - Math.max(0, Math.min(1, owned))
