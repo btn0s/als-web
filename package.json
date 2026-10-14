@@ -36,7 +36,8 @@
     "./als/AlsCharacter": "./src/als/AlsCharacter.ts",
     "./als/AlsCharacterMovementComponent": "./src/als/AlsCharacterMovementComponent.ts",
     "./als/AnimGraph/consumerLocomotionStates": "./src/als/AnimGraph/consumerLocomotionStates.ts",
-    "./engine/clipCycle": "./src/engine/clipCycle.ts"
+    "./engine/clipCycle": "./src/engine/clipCycle.ts",
+    "./als/AnimGraph/ikChain": "./src/als/AnimGraph/ikChain.ts"
   },
   "packageManager": "pnpm@11.15.1",
   "engines": {
