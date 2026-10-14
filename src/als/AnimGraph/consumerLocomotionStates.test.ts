@@ -143,4 +143,29 @@ describe('consumer linked locomotion', () => {
     expect(graph.allowsMovingFootLock()).toBe(false)
   })
 
+  it('owns only opted-in Default idle contribution through stance blending and retirement', () => {
+    const f = fixture()
+    let active = true
+    const graph = createConsumerLocomotionStates(f.rig, { clips: [f.walk], states: [{
+      stance: 'Crouching', blendDuration: 0.2, suppressDefaultIdle: true,
+      sample: () => active ? { sources: [{ clip: 'walk', time: 0, weight: 1, loop: true }] } : null,
+    }] })
+    expect(graph.defaultIdleAdditiveScale()).toBe(1)
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0.4, Crouching: 0.6 })
+    expect(graph.defaultIdleAdditiveScale()).toBeCloseTo(0.7)
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(graph.defaultIdleAdditiveScale()).toBe(0)
+    active = false
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(graph.defaultIdleAdditiveScale()).toBeCloseTo(0.5)
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(graph.defaultIdleAdditiveScale()).toBe(1)
+    const ordinary = createConsumerLocomotionStates(f.rig, { clips: [f.walk], states: [{
+      stance: 'Crouching', blendDuration: 0,
+      sample: () => ({ sources: [{ clip: 'walk', time: 0, weight: 1, loop: true }] }),
+    }] })
+    ordinary.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(ordinary.defaultIdleAdditiveScale()).toBe(1)
+  })
+
 })

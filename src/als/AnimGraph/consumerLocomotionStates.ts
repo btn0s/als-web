@@ -30,6 +30,8 @@ export interface ConsumerLocomotionState {
   readonly blendDuration: number
   /** Opt-in phase-authored locks; native moving unlock remains the default. */
   readonly allowMovingFootLock?: boolean
+  /** Own the Default overlay's idle additive at this state's effective pose weight. */
+  readonly suppressDefaultIdle?: boolean
   sample(controls: Readonly<AlsAnimationInstanceControls>, deltaTime: number): ConsumerLocomotionSample | null
   onSample?(sample: ConsumerLocomotionSample | null, effectiveWeight: number): void
   /** Transient engine-owned buffers; observers must copy before returning. */
@@ -76,6 +78,10 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
   }
   const layeringCurves = new Map<string, { weight: number; value: number }>()
   return {
+    defaultIdleAdditiveScale() {
+      const owned = [...states.values()].reduce((sum, state) => sum + (state.definition.suppressDefaultIdle ? state.effectiveWeight : 0), 0)
+      return 1 - Math.max(0, Math.min(1, owned))
+    },
     allowsMovingFootLock() {
       return [...states.values()].some(state => state.definition.allowMovingFootLock && state.effectiveWeight >= 1 - 1e-5)
     },

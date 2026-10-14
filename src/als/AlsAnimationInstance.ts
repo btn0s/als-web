@@ -6585,6 +6585,9 @@ export function createAlsAnimationInstance(gltf: {
     }
 
     consumerLocomotion.evaluate(controls, Math.max(0, delta), standingGraphOutput, crouchingGraphOutput, { Standing: activeStandingGraphWeight, Crouching: activeCrouchingGraphWeight })
+    if (idleAdditiveEntry && controls.overlayMode === 'Default') {
+      idleAdditiveEntry.weight = IDLE_ADDITIVE_WEIGHT * consumerLocomotion.defaultIdleAdditiveScale()
+    }
 
     copyPose(standReference, layeringReference)
     blendPoseInPlace(
