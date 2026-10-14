@@ -4,6 +4,7 @@ import type {
   AlsCameraMovementBase,
 } from '../als/AlsCamera/AlsCameraComponent'
 import type { AlsCharacter } from '../als/AlsCharacter'
+import type { AlsStance } from '../als/Settings/AlsMovementSettings'
 import {
   AlsCameraShakeRequestQueue,
 } from '../engine/alsCameraBridge'
@@ -11,6 +12,8 @@ import {
 export interface CharacterPoseSample {
   /** Stable pure-character state consumed by the camera animation instance. */
   character: AlsCharacter | null
+  /** Native persistent stance setter, available while the publishing character is mounted. */
+  SetDesiredStance?: ((NewDesiredStance: AlsStance) => void) | null
   /** Physics owner excluded from ALS camera geometry queries. */
   ownerRigidBody: RapierRigidBody | null
   /**
@@ -50,6 +53,7 @@ export interface CharacterPoseSample {
 export function createCharacterPoseSample(): CharacterPoseSample {
   return {
     character: null,
+    SetDesiredStance: null,
     ownerRigidBody: null,
     movementBase: null,
     cameraShakeRequests: new AlsCameraShakeRequestQueue(),

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   createAlsCharacter,
+  applyDesiredStance,
+  setDesiredStance,
   refreshAlsCharacter,
   setLocomotionAction,
   setLocomotionMode,
@@ -18,6 +20,7 @@ import {
   alsActorYawQuaternion,
   applyAlsMantlingRotationDelta,
   consumeAlsJumpInput,
+  createAlsDesiredStanceSetter,
   getAlsCapsuleHalfHeight,
   handleAlsJumpInput,
   prepareRapierAlsAnimRootMotionVelocity,
@@ -833,5 +836,27 @@ describe('AlsCharacter browser bridge math', () => {
       30,
       alsActorYawQuaternion(60),
     )).toBeCloseTo(90, 12)
+  })
+})
+
+
+describe('persistent desired stance control bridge', () => {
+  it('retains a native forced stand after the frame override ends and controls re-render', () => {
+    const character = createAlsCharacter()
+    setDesiredStance(character, 'Crouching')
+    const controls: { current: { desiredStance: 'Standing' | 'Crouching' } } = {
+      current: { desiredStance: 'Crouching' },
+    }
+    let persisted: { desiredStance: 'Standing' | 'Crouching' } = { desiredStance: 'Crouching' }
+    const SetDesiredStance = createAlsDesiredStanceSetter({ current: character }, controls, (next) => {
+      persisted = next
+    })
+    SetDesiredStance('Standing')
+    expect(character.stance).toBe('Standing')
+    controls.current = { ...persisted }
+    character.desiredStance = controls.current.desiredStance
+    applyDesiredStance(character)
+    expect(character.stance).toBe('Standing')
+    expect(persisted.desiredStance).toBe('Standing')
   })
 })

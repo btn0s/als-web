@@ -18,6 +18,7 @@ import {
   refreshLocomotion,
   refreshRotationMode,
   refreshView,
+  setDesiredStance,
   setLocomotionAction,
   setLocomotionMode,
   setAnimRootMotionTranslationScale,
@@ -588,5 +589,31 @@ describe('AAlsCharacter RotationMode policy', () => {
 
     refreshView(character, 45, 1 / 60, -30)
     expect(character.viewPitchAngle).toBe(-30)
+  })
+})
+
+
+describe('native SetDesiredStance', () => {
+  it('applies a persistent requested stance while grounded', () => {
+    const character = createAlsCharacter()
+    setDesiredStance(character, 'Crouching')
+    expect(character.desiredStance).toBe('Crouching')
+    expect(character.stance).toBe('Crouching')
+    setDesiredStance(character, 'Standing')
+    expect(character.desiredStance).toBe('Standing')
+    expect(character.stance).toBe('Standing')
+    applyDesiredStance(character)
+    expect(character.stance).toBe('Standing')
+  })
+
+  it('preserves action-owned crouch until the action releases stance', () => {
+    const character = createAlsCharacter()
+    setDesiredStance(character, 'Crouching')
+    setLocomotionAction(character, 'Rolling')
+    setDesiredStance(character, 'Standing')
+    expect(character.desiredStance).toBe('Standing')
+    expect(character.stance).toBe('Crouching')
+    setLocomotionAction(character, null)
+    expect(character.stance).toBe('Standing')
   })
 })

@@ -484,6 +484,16 @@ export function setStance(
   return character
 }
 
+/** AAlsCharacter::SetDesiredStance(), AlsCharacter.cpp:769-798 (local authority). */
+export function setDesiredStance(
+  character: AlsCharacter,
+  NewDesiredStance: AlsStance,
+): AlsCharacter {
+  if (character.desiredStance === NewDesiredStance) return character
+  character.desiredStance = NewDesiredStance
+  return applyDesiredStance(character)
+}
+
 /** AAlsCharacter::ApplyDesiredStance(), AlsCharacter.cpp:810-833. */
 export function applyDesiredStance(
   character: AlsCharacter,

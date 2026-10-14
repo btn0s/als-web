@@ -512,6 +512,13 @@ function LoadedCharacter({
     isMantlingAllowedToStart,
   )
   useEffect(() => {
+    const setter = character.SetDesiredStance
+    poseSample.current.SetDesiredStance = setter
+    return () => {
+      if (poseSample.current.SetDesiredStance === setter) poseSample.current.SetDesiredStance = null
+    }
+  }, [character.SetDesiredStance, poseSample])
+  useEffect(() => {
     onOverlayModeBridgeChange({
       overlayMode: character.overlayMode,
       SetOverlayMode: character.SetOverlayMode,

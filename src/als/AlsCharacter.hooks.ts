@@ -9,7 +9,7 @@ import {
 import { RigidBodyType } from '@dimforge/rapier3d-compat'
 import { useFrame } from '@react-three/fiber'
 import { folder, useControls } from 'leva'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { LEVA_ROOTS } from '../app/levaRoots'
@@ -89,6 +89,7 @@ import {
   refreshGroundedFacingTarget,
   setLocomotionMode,
   setStance,
+  setDesiredStance,
   setTargetYawAngle,
 } from './AlsCharacter'
 import type {
@@ -517,6 +518,20 @@ interface CharacterControlValues {
   viewYaw: number
 }
 
+/** Persist the native request in both the live frame and React-backed input controls. */
+export function createAlsDesiredStanceSetter(
+  character: MutableRefObject<AlsCharacter>,
+  controls: MutableRefObject<Pick<CharacterControlValues, 'desiredStance'>>,
+  commit: (values: { desiredStance: AlsStance }) => void,
+): (NewDesiredStance: AlsStance) => void {
+  return (NewDesiredStance) => {
+    if (!ALS_STANCES.includes(NewDesiredStance)) return
+    setDesiredStance(character.current, NewDesiredStance)
+    controls.current.desiredStance = NewDesiredStance
+    commit({ desiredStance: NewDesiredStance })
+  }
+}
+
 export interface AlsCharacterCodeInput {
   readonly movementDirection?: Readonly<{ x: number; z: number }>
   readonly desiredSpeed?: number
@@ -593,6 +608,8 @@ export interface AlsCharacterBridge {
   readonly overlayMode: AlsOverlayMode
   /** Exact AAlsCharacter::SetOverlayMode() control seam. */
   readonly SetOverlayMode: (OverlayMode: AlsOverlayMode) => void
+  /** Persistent native stance request, including the keyboard/gamepad control store. */
+  readonly SetDesiredStance: (NewDesiredStance: AlsStance) => void
 }
 
 export interface AlsCharacterAnimationCurves {
@@ -1401,6 +1418,10 @@ export function useAlsCharacter(
     viewYawOverride,
     viewYaw,
   }
+  const SetDesiredStance = useMemo(
+    () => createAlsDesiredStanceSetter(character, values, setControls),
+    [setControls],
+  )
   const SetOverlayMode = useCallback((
     OverlayMode: AlsOverlayMode,
   ) => {
@@ -1778,9 +1799,7 @@ export function useAlsCharacter(
     window.__setGait = (value: AlsGait) => {
       if (ALS_GAITS.includes(value) && (allowSprint || value !== 'Sprinting')) setControls({ desiredGait: value })
     }
-    window.__setStance = (value: AlsStance) => {
-      if (ALS_STANCES.includes(value)) setControls({ desiredStance: value })
-    }
+    window.__setStance = SetDesiredStance
     window.__setRotationMode = (value: AlsRotationMode) => {
       if (ALS_ROTATION_MODES.includes(value)) {
         setControls({ desiredRotationMode: value })
@@ -1813,7 +1832,7 @@ export function useAlsCharacter(
       delete window.__triggerJump
       delete window.__triggerRoll
     }
-  }, [SetOverlayMode, setControls, exposeDebugGlobals, allowSprint])
+  }, [SetDesiredStance, SetOverlayMode, setControls, exposeDebugGlobals, allowSprint])
 
   useFrame((_, deltaRealTime) => {
     const deltaTime = worldTime
@@ -2674,5 +2693,6 @@ export function useAlsCharacter(
     onJumped,
     overlayMode: inputSource ? codeOverlayMode : overlayMode as AlsOverlayMode,
     SetOverlayMode,
+    SetDesiredStance,
   }
 }
