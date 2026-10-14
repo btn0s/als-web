@@ -91,6 +91,8 @@ export interface AlsCharacter {
   stance: AlsStance
   gait: AlsGait
   actorYawAngle: number
+  actorPitchAngle?: number
+  actorRollAngle?: number
   /** ACharacter::AnimRootMotionTranslationScale. */
   animRootMotionTranslationScale: number
   viewYawAngle: number

@@ -1,3 +1,4 @@
+import { applyUnrealActorMeshTransform } from '../engine/unrealActorTransform'
 import { applyAlsImmediateMovementStop } from '../engine/alsMovementCommands'
 import type { ConsumerOverlayState } from './AnimGraph/consumerOverlayStates'
 import { ALS_RAGDOLLING_SETTINGS, type AlsRagdollingSettings } from './Settings/AlsRagdollingSettings'
@@ -2650,12 +2651,12 @@ export function useAlsCharacter(
     const currentBody = rigidBody.current
     if (currentBody) threeToUnrealVector(currentBody.translation(), rapierBodyAnchor.current)
     if (root) {
-      root.position.y = resolveAlsMeshRootRelativeY(
-        current.stance,
-        current.locomotionMode,
-      )
-      root.rotation.y = unrealYawDegreesToThreeRadians(
+      applyUnrealActorMeshTransform(
+        root,
         current.actorYawAngle,
+        current.actorPitchAngle ?? 0,
+        current.actorRollAngle ?? 0,
+        resolveAlsMeshRootRelativeY(current.stance, current.locomotionMode),
       )
     }
 
