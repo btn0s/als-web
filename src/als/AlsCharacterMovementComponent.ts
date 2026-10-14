@@ -77,6 +77,13 @@ export interface AlsCharacterMovementComponent {
   readonly velocity: AlsVector3
 }
 
+/** Consumer-owned grounded integration; vectors use engine axes and metres. Null keeps ALS. */
+export type AlsGroundedVelocityOverride = (
+  component: Readonly<AlsCharacterMovementComponent>,
+  inputVector: Readonly<AlsVector3>,
+  deltaTime: number,
+) => Readonly<AlsVector3> | null
+
 export interface CreateAlsCharacterMovementComponentOptions {
   readonly rotationMode?: AlsRotationMode
   readonly stance?: AlsStance
@@ -594,17 +601,29 @@ export function stepGroundedVelocity(
   inputVector: Readonly<AlsVector3>,
   deltaTime: number,
   viewYawAngle: number,
+  velocityOverride?: AlsGroundedVelocityOverride,
 ): AlsVector3 {
   refreshGroundedMovementSettings(component, viewYawAngle)
 
-  calcPlanarVelocity(
+  const stepTime = Math.max(0, deltaTime)
+  const supplied = velocityOverride?.(
     component,
-    inputVector,
-    Math.max(0, deltaTime),
-    component.groundFriction,
-    component.brakingDecelerationWalking,
-    component.maxAccelerationWalking,
+    component.inputBlocked ? { x: 0, y: 0, z: 0 } : inputVector,
+    stepTime,
   )
+  if (supplied && Number.isFinite(supplied.x) && Number.isFinite(supplied.y)) {
+    component.velocity.x = supplied.x
+    component.velocity.y = supplied.y
+  } else {
+    calcPlanarVelocity(
+      component,
+      inputVector,
+      stepTime,
+      component.groundFriction,
+      component.brakingDecelerationWalking,
+      component.maxAccelerationWalking,
+    )
+  }
   advanceAlsLandingBrakingFriction(component, deltaTime)
   return component.velocity
 }

@@ -537,6 +537,12 @@ export function createAlsDesiredStanceSetter(
 export interface AlsCharacterCodeInput {
   /** Engine seam for a consumer's grounded actor-rotation policy. Null keeps ALS policy. */
   readonly groundedRotation?: (character: AlsCharacter, deltaTime: number) => number | null
+  /** Overrides ordinary grounded integration before floor sweep, never animation root motion. */
+  readonly groundedVelocity?: (
+    character: AlsCharacter,
+    inputVector: Readonly<AlsVector3>,
+    deltaTime: number,
+  ) => Readonly<AlsVector3> | null
   readonly stopMovementImmediately?: boolean
   readonly movementDirection?: Readonly<{ x: number; z: number }>
   readonly desiredSpeed?: number
@@ -2290,6 +2296,10 @@ export function useAlsCharacter(
           inputDirection.current,
           ALS_PHYSICS_TIMESTEP,
           current.viewYawAngle,
+          codeInput?.groundedVelocity
+            ? (_movement, inputVector, deltaTime) =>
+              codeInput.groundedVelocity!(current, inputVector, deltaTime)
+            : undefined,
         )
       }
 

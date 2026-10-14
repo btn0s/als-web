@@ -199,6 +199,35 @@ describe('UAlsCharacterMovementComponent grounded policy', () => {
     expect(component.velocity.x).toBeCloseTo(0.25, 12)
   })
 
+  it('accepts consumer planar velocity after settings refresh while preserving vertical velocity', () => {
+    const component = createAlsCharacterMovementComponent({ velocity: { x: 1, y: 2, z: 3 } })
+    stepGroundedVelocity(component, { x: 1, y: 0, z: 0 }, 1 / 60, 0, (movement, input, dt) => {
+      expect(movement.maxWalkSpeed).toBeGreaterThan(0)
+      expect(input).toEqual({ x: 1, y: 0, z: 0 })
+      expect(dt).toBe(1 / 60)
+      return { x: 0.5, y: -0.25, z: 99 }
+    })
+    expect(component.velocity).toEqual({ x: 0.5, y: -0.25, z: 3 })
+  })
+
+  it('passes blocked input as zero and keeps ALS braking for a declined override', () => {
+    const component = createAlsCharacterMovementComponent({ velocity: { x: 1, y: 0, z: 0 } })
+    component.inputBlocked = true
+    stepGroundedVelocity(component, { x: 1, y: 0, z: 0 }, 0.05, 0, (_movement, input) => {
+      expect(input).toEqual({ x: 0, y: 0, z: 0 })
+      return null
+    })
+    expect(component.velocity.x).toBeCloseTo(0.25, 12)
+  })
+
+  it('rejects non-finite consumer velocity without partially applying it', () => {
+    const component = createAlsCharacterMovementComponent({ velocity: { x: 1, y: 0, z: 0 } })
+    const baseline = createAlsCharacterMovementComponent({ velocity: { x: 1, y: 0, z: 0 } })
+    stepGroundedVelocity(component, { x: 0, y: 0, z: 0 }, 0.05, 0, () => ({ x: 123, y: NaN, z: 0 }))
+    stepGroundedVelocity(baseline, { x: 0, y: 0, z: 0 }, 0.05, 0)
+    expect(component.velocity).toEqual(baseline.velocity)
+  })
+
   it('uses UE MinAnalogWalkSpeed for low-amplitude input', () => {
     const component = createAlsCharacterMovementComponent()
 
