@@ -1397,6 +1397,7 @@ export function useAlsCharacter(
     rotationYawOffset: 0,
     rotationYawSpeed: 0,
   })
+  const [codeOverlayMode, setCodeOverlayMode] = useState<AlsOverlayMode>('Default')
   const values = useRef<CharacterControlValues>({
     desiredGait: 'Running',
     desiredStance: 'Standing',
@@ -1415,7 +1416,8 @@ export function useAlsCharacter(
     desiredStance: desiredStance as AlsStance,
     desiredRotationMode: desiredRotationMode as AlsRotationMode,
     desiredAiming,
-    overlayMode: overlayMode as AlsOverlayMode,
+    // A React render must not temporarily replace a code-owned overlay with Leva's value.
+    overlayMode: inputSource ? codeOverlayMode : overlayMode as AlsOverlayMode,
     movementOverride,
     speed,
     direction,
@@ -1434,7 +1436,6 @@ export function useAlsCharacter(
       setControls({ overlayMode: OverlayMode })
     }
   }, [setControls, overlayStates])
-  const [codeOverlayMode, setCodeOverlayMode] = useState<AlsOverlayMode>('Default')
 
   const pressedKeys = useRef(new Set<string>())
   const aimingWithPointer = useRef(false)
