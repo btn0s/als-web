@@ -64,4 +64,22 @@ describe('consumer linked locomotion', () => {
     const graph = createConsumerLocomotionStates(f.rig, { clips: [f.walk], states: [{ stance: 'Crouching', blendDuration: 0, sample: () => ({ sources: [{ clip: 'walk', time: 0, weight: 0.2, loop: true }] }) }] })
     expect(() => graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })).toThrow('sum to one')
   })
+  it('observes source and blended linked poses separately, then clears the source after retirement', () => {
+    const f = fixture()
+    let active = true
+    const observations: { source: number | null; linked: number; weight: number }[] = []
+    const graph = createConsumerLocomotionStates(f.rig, { clips: [f.walk], states: [{
+      stance: 'Crouching', blendDuration: 0.2,
+      sample: () => active ? { sources: [{ clip: 'walk', time: 1, weight: 1, loop: true }] } : null,
+      onPose: ({ rig, source, linked, effectiveWeight }) => {
+        expect(rig.boneNames).toEqual(f.rig.boneNames)
+        observations.push({ source: source?.pose.positions[f.footOffset] ?? null, linked: linked.pose.positions[f.footOffset], weight: effectiveWeight })
+      },
+    }] })
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    active = false
+    f.crouching.pose.positions[f.footOffset] = 4
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(observations).toEqual([{ source: 2, linked: 1, weight: 0.5 }, { source: null, linked: 4, weight: 0 }])
+  })
 })

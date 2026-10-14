@@ -27,6 +27,13 @@ export interface ConsumerLocomotionState {
   readonly blendDuration: number
   sample(controls: Readonly<AlsAnimationInstanceControls>, deltaTime: number): ConsumerLocomotionSample | null
   onSample?(sample: ConsumerLocomotionSample | null, effectiveWeight: number): void
+  /** Transient engine-owned buffers; observers must copy before returning. */
+  onPose?(snapshot: {
+    readonly rig: RigDefinition
+    readonly source: Readonly<MutableUePoseNode> | null
+    readonly linked: Readonly<MutableUePoseNode>
+    readonly effectiveWeight: number
+  }): void
 }
 
 export interface ConsumerLocomotionStates {
@@ -95,6 +102,7 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
           for (const [name, value] of state.output.curves) original.curves.set(name, value)
         }
         state.definition.onSample?.(state.weight > 0 ? state.previous : null, state.weight * stanceWeights[state.definition.stance])
+        state.definition.onPose?.({ rig, source: state.weight > 0 && state.previous ? state.pose : null, linked: original, effectiveWeight: state.weight * stanceWeights[state.definition.stance] })
       }
     },
   }
