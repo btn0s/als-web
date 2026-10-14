@@ -46,7 +46,7 @@ export interface ConsumerLocomotionStates {
   readonly states: readonly ConsumerLocomotionState[]
   /** Borrowed component-stage inputs/outputs, captured synchronously without changing evaluation. */
   onEvaluatePose?(snapshot: {
-    readonly stage: 'layering-input' | 'layering-output' | 'view-output' | 'control-rig-input' | 'control-rig-output'
+    readonly stage: 'layering-reference' | 'overlay-input' | 'layering-input' | 'layering-output' | 'view-output' | 'control-rig-input' | 'control-rig-output'
     readonly rig: RigDefinition
     readonly pose: LocalPoseBuffer
     readonly curves: ReadonlyMap<string, number>

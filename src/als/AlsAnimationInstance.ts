@@ -2633,6 +2633,8 @@ export function createAlsAnimationInstance(gltf: {
     },
     overlayAdditives: idleAdditiveEntry ? [idleAdditiveEntry] : [],
     linkedLayer(context) {
+      gltf.locomotionStates?.onEvaluatePose?.({ stage: 'layering-reference', rig, pose: layeringReference, curves: publishedCurves })
+      gltf.locomotionStates?.onEvaluatePose?.({ stage: 'overlay-input', rig, pose: context.overlayPose, curves: overlayInertialization.curves })
       gltf.locomotionStates?.onEvaluatePose?.({ stage: 'layering-input', rig, pose: context.locomotionPose, curves: publishedCurves })
       evaluateAlsLayeringPose(
         layeringPoseRuntime,
