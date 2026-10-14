@@ -2674,6 +2674,7 @@ export function createAlsAnimationInstance(gltf: {
         output,
         upperBodySlot.curves(overlayInertialization.curves),
       )
+      consumerLocomotion.applyLayeringCurves(output)
     },
   }
   const fallbackInput: EvaluatePoseInput = {

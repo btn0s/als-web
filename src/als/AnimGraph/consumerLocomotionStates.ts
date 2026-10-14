@@ -18,6 +18,8 @@ export interface ConsumerLocomotionSample {
     readonly loop: boolean
   }[]
   readonly curves?: Readonly<Record<string, number>>
+  /** Desired named values after overlay/slot curve composition, weighted by this linked stance. */
+  readonly layeringCurves?: Readonly<Record<string, number>>
 }
 
 /** A replacement linked stance graph, evaluated before PostLocomotion, Layering and Control Rig.
@@ -69,9 +71,16 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
     if (!Number.isFinite(definition.blendDuration) || definition.blendDuration < 0) throw new Error('Invalid locomotion blend duration')
     states.set(definition.stance, { definition, weight: 0, previous: null, pose: createMutableUePoseNode(rig.boneCount), output: createMutableUePoseNode(rig.boneCount) })
   }
+  const layeringCurves = new Map<string, { weight: number; value: number }>()
   return {
+    applyLayeringCurves(output: Map<string, number>) {
+      for (const [name, blend] of layeringCurves) {
+        output.set(name, (output.get(name) ?? 0) * (1 - blend.weight) + blend.value)
+      }
+    },
     evaluate(controls: Readonly<AlsAnimationInstanceControls>, deltaTime: number, standing: MutableUePoseNode, crouching: MutableUePoseNode, stanceWeights: Readonly<{ Standing: number; Crouching: number }>) {
       if (!Number.isFinite(deltaTime) || deltaTime < 0) throw new Error('Invalid locomotion delta time')
+      layeringCurves.clear()
       for (const state of states.values()) {
         const sample = state.definition.sample(controls, deltaTime)
         const target = sample ? 1 : 0
@@ -100,6 +109,9 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
             if (!Number.isFinite(value)) throw new Error(`Invalid locomotion curve: ${name}`)
             state.pose.curves.set(name, value)
           }
+          for (const [name, value] of Object.entries(sample.layeringCurves ?? {})) {
+            if (!Number.isFinite(value)) throw new Error(`Invalid layering curve: ${name}`)
+          }
           state.previous = sample
         }
         const original = state.definition.stance === 'Standing' ? standing : crouching
@@ -108,6 +120,15 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
           copyPose(state.output.pose, original.pose)
           original.curves.clear()
           for (const [name, value] of state.output.curves) original.curves.set(name, value)
+        }
+        const effectiveWeight = state.weight * stanceWeights[state.definition.stance]
+        if (effectiveWeight > 0) {
+          for (const [name, value] of Object.entries(state.previous?.layeringCurves ?? {})) {
+            const blend = layeringCurves.get(name) ?? { weight: 0, value: 0 }
+            blend.weight += effectiveWeight
+            blend.value += value * effectiveWeight
+            layeringCurves.set(name, blend)
+          }
         }
         state.definition.onSample?.(state.weight > 0 ? state.previous : null, state.weight * stanceWeights[state.definition.stance])
         state.definition.onPose?.({ rig, source: state.weight > 0 && state.previous ? state.pose : null, linked: original, effectiveWeight: state.weight * stanceWeights[state.definition.stance] })

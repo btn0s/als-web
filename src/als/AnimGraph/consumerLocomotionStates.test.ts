@@ -82,4 +82,46 @@ describe('consumer linked locomotion', () => {
     graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
     expect(observations).toEqual([{ source: 2, linked: 1, weight: 0.5 }, { source: null, linked: 4, weight: 0 }])
   })
+  it('owns composed curves only at effective stance weight and releases them with the pose', () => {
+    const f = fixture()
+    let active = true
+    const graph = createConsumerLocomotionStates(f.rig, { clips: [f.walk], states: [{
+      stance: 'Crouching', blendDuration: 0.2,
+      sample: () => active ? { sources: [{ clip: 'walk', time: 1, weight: 1, loop: true }], layeringCurves: { FootLeftIk: 0, LayerLegs: 0 } } : null,
+    }] })
+    const composed = () => new Map([['FootLeftIk', 1], ['LayerLegs', 1], ['Unowned', 7]])
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0.4, Crouching: 0.6 })
+    const partial = composed()
+    graph.applyLayeringCurves(partial)
+    expect(Object.fromEntries(partial)).toEqual({ FootLeftIk: 0.7, LayerLegs: 0.7, Unowned: 7 })
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    const full = composed()
+    graph.applyLayeringCurves(full)
+    expect(full.get('FootLeftIk')).toBe(0)
+    active = false
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    const retiring = composed()
+    graph.applyLayeringCurves(retiring)
+    expect(retiring.get('FootLeftIk')).toBe(0.5)
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    const released = composed()
+    graph.applyLayeringCurves(released)
+    expect(released).toEqual(composed())
+  })
+  it('combines linked stance curve ownership without registration order bias', () => {
+    const f = fixture()
+    const evaluate = (stances: readonly ('Standing' | 'Crouching')[]) => {
+      const graph = createConsumerLocomotionStates(f.rig, { clips: [f.walk], states: stances.map(stance => ({
+        stance, blendDuration: 0,
+        sample: () => ({ sources: [{ clip: 'walk', time: 0, weight: 1, loop: true }], layeringCurves: { FootLeftIk: stance === 'Standing' ? 0.8 : 0 } }),
+      })) })
+      graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0.25, Crouching: 0.75 })
+      const curves = new Map([['FootLeftIk', 1]])
+      graph.applyLayeringCurves(curves)
+      return curves.get('FootLeftIk')
+    }
+    expect(evaluate(['Standing', 'Crouching'])).toBeCloseTo(0.2)
+    expect(evaluate(['Crouching', 'Standing'])).toBeCloseTo(0.2)
+  })
+
 })
