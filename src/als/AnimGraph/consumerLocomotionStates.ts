@@ -47,6 +47,8 @@ export interface ConsumerLocomotionState {
 }
 
 export interface ConsumerLocomotionStates {
+  /** The consumer supplies both complete ground graphs; null retains its last pose, never ALS. */
+  readonly exclusive?: boolean
   readonly clips: readonly AnimationClip[]
   readonly states: readonly ConsumerLocomotionState[]
   /** Borrowed component-stage inputs/outputs, captured synchronously without changing evaluation. */
@@ -79,6 +81,7 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
     if (!Number.isFinite(definition.blendDuration) || definition.blendDuration < 0) throw new Error('Invalid locomotion blend duration')
     states.set(definition.stance, { definition, weight: 0, effectiveWeight: 0, previous: null, pose: createMutableUePoseNode(rig.boneCount), output: createMutableUePoseNode(rig.boneCount) })
   }
+  if (registration?.exclusive && (!states.has('Standing') || !states.has('Crouching'))) throw new Error('Exclusive locomotion requires both stance graphs')
   const layeringCurves = new Map<string, { weight: number; value: number }>()
   return {
     applyOverlayPose(reference: LocalPoseBuffer, overlay: LocalPoseBuffer, output: LocalPoseBuffer) {
@@ -106,7 +109,7 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
         const sample = state.definition.sample(controls, deltaTime)
         const target = sample ? 1 : 0
         const step = state.definition.blendDuration > 0 ? deltaTime / state.definition.blendDuration : 1
-        state.weight += Math.max(-step, Math.min(step, target - state.weight))
+        state.weight = registration?.exclusive ? 1 : state.weight + Math.max(-step, Math.min(step, target - state.weight))
         if (sample) {
           const nodes: MutableUePoseNode[] = []
           const weights: number[] = []
@@ -135,6 +138,7 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
           }
           state.previous = sample
         }
+        if (registration?.exclusive && !state.previous) throw new Error('Exclusive locomotion requires an initial source pose')
         const original = state.definition.stance === 'Standing' ? standing : crouching
         if (state.weight > 0 && state.previous) {
           blendTwoPoseNodesTogether(state.pose, original, state.weight, state.output)

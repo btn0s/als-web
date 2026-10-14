@@ -26,6 +26,26 @@ function fixture() {
 }
 
 describe('consumer linked locomotion', () => {
+  it('keeps exclusive source ownership on first frame and through null action holds', () => {
+    const f = fixture()
+    let active = true
+    const graph = createConsumerLocomotionStates(f.rig, { exclusive: true, clips: [f.walk], states: (['Standing', 'Crouching'] as const).map(stance => ({
+      stance, blendDuration: 0.2,
+      sample: () => active ? { sources: [{ clip: 'walk', time: 1, weight: 1, loop: true }] } : null,
+    })) })
+    f.crouching.pose.positions[f.footOffset] = 99
+    graph.evaluate(f.controls, 0, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(f.crouching.pose.positions[f.footOffset]).toBe(2)
+    active = false
+    f.crouching.pose.positions[f.footOffset] = 99
+    graph.evaluate(f.controls, 1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(f.crouching.pose.positions[f.footOffset]).toBe(2)
+  })
+  it('rejects an exclusive graph without both stance sources', () => {
+    const f = fixture()
+    expect(() => createConsumerLocomotionStates(f.rig, { exclusive: true, clips: [], states: [] })).toThrow('both stance graphs')
+  })
+
   it('samples different-duration clips at supplied phase before blending, with authored curve ownership', () => {
     const f = fixture()
     let reported = 0

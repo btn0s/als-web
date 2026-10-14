@@ -5273,13 +5273,13 @@ export function createAlsAnimationInstance(gltf: {
     const crouching = controls.stance === 'Crouching'
     const targetCrouchingAmount = crouching ? 1 : 0
     const viewMode = controls.viewMode ?? 'ThirdPerson'
-    const turnInPlaceAllowed = isTurnInPlaceAllowed(
+    const turnInPlaceAllowed = !gltf.locomotionStates?.exclusive && isTurnInPlaceAllowed(
       controls.rotationMode,
       viewMode,
     )
-    const rotateInPlaceAllowed =
+    const rotateInPlaceAllowed = !gltf.locomotionStates?.exclusive && (
       isRotateInPlaceAllowed(controls.rotationMode, viewMode)
-      || controls.rotateInPlace
+      || controls.rotateInPlace)
 
     // NativeThreadSafeUpdateAnimation refreshes this state before Grounded States evaluates its
     // priority-zero direct stance route.
@@ -5295,7 +5295,7 @@ export function createAlsAnimationInstance(gltf: {
     })
     // ALS naming parity: this is a pure transition predicate, not a React Hook.
     // oxlint-disable-next-line react-hooks/rules-of-hooks
-    const directStanceTransition = useDirectGroundedStanceTransition({
+    const directStanceTransition = gltf.locomotionStates?.exclusive || useDirectGroundedStanceTransition({
       movingSmooth: controls.movingSmooth,
       rotatingLeft: rotateInPlaceState.rotatingLeft,
       rotatingRight: rotateInPlaceState.rotatingRight,
