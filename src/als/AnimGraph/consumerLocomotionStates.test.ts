@@ -26,6 +26,19 @@ function fixture() {
 }
 
 describe('consumer linked locomotion', () => {
+  it('preserves ordered channel overlays and independent clocks for repeated clips', () => {
+    const f = fixture()
+    const graph = createConsumerLocomotionStates(f.rig, { clips: [f.walk, f.jog], states: [{
+      stance: 'Crouching', blendDuration: 0,
+      sample: () => ({ composition: 'sequential-slerp', sources: [
+        { clip: 'walk', time: 1, weight: 1, loop: true },
+        { clip: 'jog', time: 0.4, weight: 0.5, loop: true },
+        { clip: 'walk', time: 0, weight: 0.25, loop: true },
+      ] }),
+    }] })
+    graph.evaluate(f.controls, 0.1, f.standing, f.crouching, { Standing: 0, Crouching: 1 })
+    expect(f.crouching.pose.positions[f.footOffset]).toBeCloseTo(2.25)
+  })
   it('keeps exclusive source ownership on first frame and through null action holds', () => {
     const f = fixture()
     let active = true

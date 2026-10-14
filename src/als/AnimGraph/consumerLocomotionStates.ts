@@ -1,4 +1,4 @@
-import type { AnimationClip } from 'three'
+import { Quaternion, type AnimationClip } from 'three'
 import type { AlsAnimationInstanceControls } from '../AlsAnimationInstance'
 import { compileClipSampler } from '../../engine/clipSampler'
 import { compileClipCurveSamplers } from '../../engine/curves'
@@ -12,6 +12,8 @@ import { blendPoseNodesTogether, blendTwoPoseNodesTogether } from '../../engine/
 import type { MutableUePoseNode } from '../../engine/uePoseBlend'
 
 export interface ConsumerLocomotionSample {
+  /** Ordered legacy channels: full base, then shortest-path spherical overlays. */
+  readonly composition?: 'sequential-slerp'
   readonly sources: readonly {
     readonly clip: string
     readonly time: number
@@ -82,6 +84,8 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
     states.set(definition.stance, { definition, weight: 0, effectiveWeight: 0, previous: null, pose: createMutableUePoseNode(rig.boneCount), output: createMutableUePoseNode(rig.boneCount) })
   }
   if (registration?.exclusive && (!states.has('Standing') || !states.has('Crouching'))) throw new Error('Exclusive locomotion requires both stance graphs')
+  const rotationA = new Quaternion()
+  const rotationB = new Quaternion()
   const layeringCurves = new Map<string, { weight: number; value: number }>()
   return {
     applyOverlayPose(reference: LocalPoseBuffer, overlay: LocalPoseBuffer, output: LocalPoseBuffer) {
@@ -118,17 +122,39 @@ export function createConsumerLocomotionStates(rig: RigDefinition, registration?
           for (const source of sample.sources) {
             const clip = clips.get(source.clip)
             if (!clip) throw new Error(`Missing consumer locomotion sequence: ${source.clip}`)
-            if (names.has(source.clip)) throw new Error(`Duplicate locomotion sample: ${source.clip}`)
+            if (!sample.composition && names.has(source.clip)) throw new Error(`Duplicate locomotion sample: ${source.clip}`)
             names.add(source.clip)
             if (!Number.isFinite(source.time) || !Number.isFinite(source.weight) || source.weight < 0) throw new Error('Invalid locomotion source sample')
             if (source.weight === 0) continue
             sampleSequencePoseNode(rig, clip, source.time, source.loop, clip.node)
+            if (sample.composition === 'sequential-slerp') {
+              if (nodes.length === 0) {
+                if (source.weight !== 1) throw new Error('Sequential locomotion requires a full-weight base')
+                copyPose(clip.node.pose, state.pose.pose)
+                state.pose.curves.clear()
+                for (const [name, value] of clip.node.curves) state.pose.curves.set(name, value)
+              } else {
+                const alpha = Math.min(1, source.weight)
+                for (let i = 0; i < state.pose.pose.positions.length; i++) {
+                  state.pose.pose.positions[i] += (clip.node.pose.positions[i] - state.pose.pose.positions[i]) * alpha
+                  state.pose.pose.scales[i] += (clip.node.pose.scales[i] - state.pose.pose.scales[i]) * alpha
+                }
+                for (let i = 0; i < state.pose.pose.rotations.length; i += 4) {
+                  rotationA.fromArray(state.pose.pose.rotations, i).slerp(rotationB.fromArray(clip.node.pose.rotations, i), alpha).normalize().toArray(state.pose.pose.rotations, i)
+                }
+                for (const name of new Set([...state.pose.curves.keys(), ...clip.node.curves.keys()])) {
+                  const previous = state.pose.curves.get(name) ?? 0
+                  state.pose.curves.set(name, previous + ((clip.node.curves.get(name) ?? 0) - previous) * alpha)
+                }
+              }
+            }
             nodes.push(clip.node)
             weights.push(source.weight)
             total += source.weight
           }
-          if (Math.abs(total - 1) > 1e-5) throw new Error('Consumer locomotion weights must sum to one')
-          blendPoseNodesTogether(nodes, weights, state.pose)
+          if (!sample.composition && Math.abs(total - 1) > 1e-5) throw new Error('Consumer locomotion weights must sum to one')
+          if (!sample.composition) blendPoseNodesTogether(nodes, weights, state.pose)
+          else if (!nodes.length) throw new Error('Sequential locomotion requires a base')
           for (const [name, value] of Object.entries(sample.curves ?? {})) {
             if (!Number.isFinite(value)) throw new Error(`Invalid locomotion curve: ${name}`)
             state.pose.curves.set(name, value)
