@@ -141,6 +141,7 @@ export function createAlsRagdollRuntime(o: Options) {
       return stopRagdollingImplementation(input) !== null
     },
     AddImpulse: impulse => physics.AddImpulse(impulse),
+    ForEachBody: visitor => physics.bodies.forEach((body, name) => visitor(name, body)),
     CaptureState: () => ({ active: pose.active, bodies: physics.captureBodies(), target: { ...target }, stiffness, updateJointsFromAnimation,
       speedLimitFrameTimeRemaining: o.character.ragdollingState.SpeedLimitFrameTimeRemaining }),
     RestoreState(snapshot) {

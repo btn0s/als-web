@@ -53,6 +53,7 @@ export interface AlsRagdollHandle {
   StartRagdolling(options?: AlsRagdollStartOptions): boolean
   StopRagdolling(): boolean
   AddImpulse(impulse: AlsRagdollImpulse): boolean
+  ForEachBody?(visitor: (boneName: string, body: RigidBody) => void): void
   CaptureState(): AlsRagdollSnapshot
   RestoreState(snapshot: AlsRagdollSnapshot): boolean
   readonly active: boolean
