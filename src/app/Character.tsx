@@ -135,6 +135,7 @@ export interface CharacterProps {
   gamepadIndex?: number
   gamepadRollBehavior?: 'tap' | 'doubleTap'
   showDebugControls?: boolean
+  showLoadState?: boolean
 }
 
 function compileAlsMantlingRootMotion(
@@ -695,6 +696,7 @@ export function Character({
   tint,
   gamepadRollBehavior,
   showDebugControls,
+  showLoadState = true,
 }: CharacterProps) {
   const { gltf, status, progress, retry } = useAlsCharacterGltf()
 
@@ -737,7 +739,7 @@ export function Character({
       gamepadRollBehavior={gamepadRollBehavior}
       showDebugControls={showDebugControls}
     />
-  ) : (
+  ) : showLoadState ? (
     <CharacterLoadState status={status} progress={progress} retry={retry} />
-  )
+  ) : null
 }
