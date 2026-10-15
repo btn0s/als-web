@@ -19,8 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-This project is a port of ALS Refactored (https://github.com/Sixze/ALS-Refactored),
-which is licensed under the MIT License. Portions derived from it, including the
-assets under public/assets/, remain subject to its copyright notice in
-public/assets/LICENSE-ALS-Refactored.md.
