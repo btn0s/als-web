@@ -1,5 +1,6 @@
 {
   "name": "als-ue5-r3f",
+  "license": "MIT",
   "private": true,
   "version": "0.0.0",
   "description": "A standalone web port of ALS Refactored on React Three Fiber.",
