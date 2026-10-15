@@ -275,6 +275,8 @@ export function AlsCamera({
   gamepadIndex,
   modifyGamepadLook,
   queryFilterForChannel,
+  inputEnabled = true,
+  mouseSettings,
 }: {
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
@@ -285,6 +287,13 @@ export function AlsCamera({
   /** KeyboardEvent.code toggling first/third person; `null` disables the binding. */
   toggleViewModeKey?: string | null
   gamepadBindings?: Partial<AlsGamepadBindings>
+  inputEnabled?: boolean
+  mouseSettings?: {
+    sensitivity: number
+    smoothingSeconds: number
+    invertY: boolean
+    rawInput: boolean
+  }
   gamepadEnabled?: boolean
   gamepadIndex?: number
   modifyGamepadLook?: (input: AlsGamepadLookInput) => AlsGamepadLookDelta
@@ -402,12 +411,28 @@ export function AlsCamera({
 
   useEffect(() => {
     const canvas = gl.domElement
-    const onPointerDown = () => {
+    pointerDelta.current.x = 0
+    pointerDelta.current.y = 0
+    pressedKeys.current.clear()
+    if (!inputEnabled) return
+    const onMouseDown = () => {
       if (document.pointerLockElement === canvas) return
-      void canvas.requestPointerLock().catch(() => {
-        // Browsers may reject lock when devtools or another document owns it. A later click can
-        // retry; drag-to-look remains available through the buttons fallback below.
-      })
+      const lock = async () => {
+        try {
+          await canvas.requestPointerLock(
+            mouseSettings?.rawInput ? { unadjustedMovement: true } : undefined,
+          )
+        } catch (error) {
+          if (
+            mouseSettings?.rawInput
+            && error instanceof DOMException
+            && error.name === 'NotSupportedError'
+          ) {
+            await canvas.requestPointerLock()
+          }
+        }
+      }
+      void lock().catch(() => {})
     }
     const onPointerMove = (event: PointerEvent) => {
       const looking =
@@ -415,9 +440,12 @@ export function AlsCamera({
         || (event.buttons & 3) !== 0
       if (!looking) return
       pointerDelta.current.x +=
-        event.movementX * LOOK_RIGHT_MOUSE_SENSITIVITY
+        event.movementX
+        * (mouseSettings?.sensitivity ?? LOOK_RIGHT_MOUSE_SENSITIVITY)
       pointerDelta.current.y -=
-        event.movementY * LOOK_UP_MOUSE_SENSITIVITY
+        event.movementY
+        * (mouseSettings?.sensitivity ?? LOOK_UP_MOUSE_SENSITIVITY)
+        * (mouseSettings?.invertY ? -1 : 1)
     }
     const onContextMenu = (event: Event) => event.preventDefault()
     const onKeyDown = (event: KeyboardEvent) => {
@@ -442,21 +470,24 @@ export function AlsCamera({
       pointerDelta.current.y = 0
     }
 
-    canvas.addEventListener('pointerdown', onPointerDown)
+    canvas.addEventListener('mousedown', onMouseDown)
     canvas.addEventListener('pointermove', onPointerMove)
     canvas.addEventListener('contextmenu', onContextMenu)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     window.addEventListener('blur', clearInput)
     return () => {
-      canvas.removeEventListener('pointerdown', onPointerDown)
+      canvas.removeEventListener('mousedown', onMouseDown)
       canvas.removeEventListener('pointermove', onPointerMove)
       canvas.removeEventListener('contextmenu', onContextMenu)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', clearInput)
     }
-  }, [cameraComponentState, gl.domElement, poseSample, toggleViewModeKey])
+  }, [
+    cameraComponentState, gl.domElement, poseSample, toggleViewModeKey,
+    inputEnabled, mouseSettings,
+  ])
 
   useEffect(() => {
     const debugWindow = window as CameraDebugWindow
@@ -527,7 +558,12 @@ export function AlsCamera({
 
     const rotation = viewRotation.current
     rotation.yaw = character.viewYawAngle
-    scratch.pointerYawInput = pointerDelta.current.x
+    const mouseBlend = mouseSettings?.smoothingSeconds
+      ? 1 - Math.exp(-Math.max(0, deltaTime) / mouseSettings.smoothingSeconds)
+      : 1
+    const mouseX = inputEnabled ? pointerDelta.current.x * mouseBlend : 0
+    const mouseY = inputEnabled ? pointerDelta.current.y * mouseBlend : 0
+    scratch.pointerYawInput = mouseX
     scratch.gamepadLook.x = gamepad?.axes[2] ?? 0
     scratch.gamepadLook.y = -(gamepad?.axes[3] ?? 0)
     applyRadialDeadZone(scratch.gamepadLook)
@@ -548,7 +584,7 @@ export function AlsCamera({
       - (pressedKeys.current.has('ArrowDown') ? 1 : 0)
     rotation.pitch = THREE.MathUtils.clamp(
       rotation.pitch
-        + pointerDelta.current.y
+        + mouseY
         + (
           keyboardLookUp + scratch.gamepadLook.y
         ) * LOOK_UP_RATE * deltaTime + pitchAdjustment,
@@ -557,13 +593,13 @@ export function AlsCamera({
     )
     rotation.yaw = unwindDegrees(
       rotation.yaw
-        + pointerDelta.current.x
+        + mouseX
         + (
           scratch.keyboardLookRight + scratch.gamepadLook.x
         ) * LOOK_RIGHT_RATE * deltaTime + yawAdjustment,
     )
-    pointerDelta.current.x = 0
-    pointerDelta.current.y = 0
+    pointerDelta.current.x -= mouseX
+    pointerDelta.current.y -= mouseY
     refreshView(character, rotation.yaw, deltaTime, rotation.pitch)
     sample.viewYawAngle = unwindDegrees(
       character.viewYawAngle - character.actorYawAngle,
