@@ -265,6 +265,25 @@ function updateSocketLocation(
   threeToUnrealVector(threeLocation, unrealLocation)
 }
 
+export type AlsCameraControlRotationSource = () => Readonly<{ yaw: number; pitch: number }>
+
+export function refreshAlsCameraControlRotationFromSource(
+  sample: CharacterPoseSample,
+  rotation: AlsCameraRotation,
+  deltaTime: number,
+  source: AlsCameraControlRotationSource,
+): boolean {
+  const character = sample.character
+  if (!character) return false
+  const input = source()
+  rotation.yaw = input.yaw
+  rotation.pitch = input.pitch
+  refreshView(character, rotation.yaw, deltaTime, rotation.pitch)
+  sample.viewYawAngle = unwindDegrees(character.viewYawAngle - character.actorYawAngle)
+  sample.viewYawSpeed = character.viewYawSpeed
+  return true
+}
+
 export function AlsCamera({
   poseSample,
   worldTime,
@@ -274,6 +293,7 @@ export function AlsCamera({
   gamepadEnabled = true,
   gamepadIndex,
   modifyGamepadLook,
+  controlRotationSource,
 }: {
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
@@ -287,6 +307,7 @@ export function AlsCamera({
   gamepadEnabled?: boolean
   gamepadIndex?: number
   modifyGamepadLook?: (input: AlsGamepadLookInput) => AlsGamepadLookDelta
+  controlRotationSource?: AlsCameraControlRotationSource
 }) {
   const { camera, gl, size } = useThree()
   const { world } = useRapier()
@@ -400,6 +421,7 @@ export function AlsCamera({
 
   useEffect(() => {
     const canvas = gl.domElement
+    if (controlRotationSource) return
     const onPointerDown = () => {
       if (document.pointerLockElement === canvas) return
       void canvas.requestPointerLock().catch(() => {
@@ -454,7 +476,7 @@ export function AlsCamera({
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', clearInput)
     }
-  }, [cameraComponentState, gl.domElement, poseSample, toggleViewModeKey])
+  }, [cameraComponentState, gl.domElement, poseSample, toggleViewModeKey, controlRotationSource])
 
   useEffect(() => {
     const debugWindow = window as CameraDebugWindow
@@ -498,6 +520,10 @@ export function AlsCamera({
     const sample = poseSample.current
     const character = sample.character
     if (!character) return
+    if (controlRotationSource) {
+      refreshAlsCameraControlRotationFromSource(sample, viewRotation.current, deltaTime, controlRotationSource)
+      return
+    }
 
     const gamepad = gamepadEnabled ? activeGamepad(gamepadIndex) : null
     const bindings = { ...ALS_GAMEPAD_BINDINGS, ...gamepadBindings }

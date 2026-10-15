@@ -11,6 +11,7 @@ import type { RapierCollider, RapierRigidBody } from '@react-three/rapier'
 import { Group } from 'three'
 import { clone } from 'three/addons/utils/SkeletonUtils.js'
 import { createAlsAnimationInstance } from '../als/AlsAnimationInstance'
+import type { AlsAnimationClock } from '../als/AlsAnimationInstance'
 import type { AlsControlRigFootOffsetTrace } from '../als/AnimGraph/CR_Als'
 import { AlsRemoteCharacter } from '../als/AlsRemoteCharacter'
 import type { AlsCharacterSnapshot } from '../als/AlsCharacterSnapshot'
@@ -33,6 +34,7 @@ import { useSuspenseAlsCharacterGltf } from './AlsCharacterGltf.hooks'
 import { PistolOverlayObject, RifleOverlayObject } from './AlsOverlayObjects'
 
 export interface AlsRemoteActorProps {
+  onAnimationClock?: (clock: AlsAnimationClock) => void
   overlayStates?: ConsumerOverlayStates
   renderOverlayObject?: (scene: import('three').Object3D) => React.ReactNode
   ragdollRef?: React.RefObject<AlsRagdollHandle | null>
@@ -61,7 +63,7 @@ const warnUnsupported = (feature: string) => console.warn(`[AlsRemoteActor] Unsu
  * and collision current. No measured millisecond budget is claimed by this component.
  */
 export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, now = clock, offset = origin,
-  footIk = true, worldTime, ragdollRef, ragdollingSettings, onAction, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
+  footIk = true, worldTime, ragdollRef, ragdollingSettings, onAction, onAnimationClock, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
   const gltf = useSuspenseAlsCharacterGltf()
   // Cached materials/clips are shared; each remote (including ghosts) owns its skeleton.
   const scene = useMemo(() => clone(gltf.scene), [gltf.scene])
@@ -190,6 +192,7 @@ export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, 
       driver.controls.locomotionMode = driver.character.locomotionMode
     }
     animation.refresh(delta, driver.controls)
+    onAnimationClock?.(animation.clock)
     for (const event of animation.getUpMontage.takeNotifyEvents()) {
       if (event.notifyEventType === 'Begin') notifyAlsAnimNotifyStateSetLocomotionActionBegin(driver.character, event)
       else notifyAlsAnimNotifyStateSetLocomotionActionEnd(driver.character, event)

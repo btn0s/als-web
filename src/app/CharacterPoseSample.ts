@@ -4,11 +4,13 @@ import type {
   AlsCameraMovementBase,
 } from '../als/AlsCamera/AlsCameraComponent'
 import type { AlsCharacter } from '../als/AlsCharacter'
+import type { AlsAnimationClock } from '../als/AlsAnimationInstance'
 import {
   AlsCameraShakeRequestQueue,
 } from '../engine/alsCameraBridge'
 
 export interface CharacterPoseSample {
+  animationClock: AlsAnimationClock | null
   /** Stable pure-character state consumed by the camera animation instance. */
   character: AlsCharacter | null
   /** Physics owner excluded from ALS camera geometry queries. */
@@ -49,6 +51,7 @@ export interface CharacterPoseSample {
 
 export function createCharacterPoseSample(): CharacterPoseSample {
   return {
+    animationClock: null,
     character: null,
     ownerRigidBody: null,
     movementBase: null,

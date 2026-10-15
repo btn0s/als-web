@@ -547,6 +547,7 @@ function LoadedCharacter({
 
   useFrame(() => {
     const group = characterGroup.current
+    poseSample.current.animationClock = animationInstance.clock
     if (!group || !poseBones.head || !poseBones.pelvis) {
       poseSample.current.ready = false
       return

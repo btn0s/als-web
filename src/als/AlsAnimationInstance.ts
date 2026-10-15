@@ -854,7 +854,13 @@ export interface AlsGetUpMontageBridge {
   Montage_Play(Montage: string): number
   takeNotifyEvents(): readonly AlsGetUpMontageNotifyEvent[]
 }
+export interface AlsAnimationClock {
+  readonly elapsedSeconds: number
+  readonly updates: number
+}
+
 export interface AlsAnimationInstance {
+  readonly clock: AlsAnimationClock
   /** Borrowed diagnostic buffers, valid until the next refresh. Do not mutate. */
   inspectPose(stage: 'overlay' | 'locomotion' | 'final'): {
     boneNames: readonly string[]
@@ -2730,6 +2736,7 @@ export function createAlsAnimationInstance(gltf: {
   const locomotionLocation: Velocity3 = { x: 0, y: 0, z: 0 }
   let pendingUpdate = true
   let worldTime = 0
+  let animationUpdates = 0
   let teleportedTime = Number.NEGATIVE_INFINITY
   let previousFootPlantedAmount = 0
   let previousGroundPredictionBlockAmount = 0
@@ -4929,6 +4936,7 @@ export function createAlsAnimationInstance(gltf: {
       : controls.locomotionMode
     const hasInput = controls.hasInput ?? false
     worldTime += deltaTime
+    animationUpdates++
 
     // NativeUpdateAnimation(): PreviousLocation → MovementBase → View → Locomotion → InAir →
     // Feet → teleport detection. The live bridge has already captured the character-owned View
@@ -7550,6 +7558,10 @@ export function createAlsAnimationInstance(gltf: {
   }
 
   return {
+    clock: {
+      get elapsedSeconds() { return worldTime },
+      get updates() { return animationUpdates },
+    },
     inspectPose: (stage) => ({
       boneNames: rig.boneNames,
       pose: stage === 'overlay' ? evaluator.overlayPose : stage === 'locomotion' ? evaluator.basePose : evaluator.outputPose,
