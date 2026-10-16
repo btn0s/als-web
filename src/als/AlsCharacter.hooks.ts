@@ -188,6 +188,10 @@ function makeRapierAlsBodyPositionOwned(
   body.setLinvel({ x: 0, y: 0, z: 0 }, true)
 }
 
+function isAlsRagdolling(character: AlsCharacter): boolean {
+  return character.locomotionAction === 'Ragdolling'
+}
+
 function makeRapierAlsBodyDynamic(body: RapierRigidBody) {
   if (body.bodyType() !== RigidBodyType.Dynamic) {
     body.setBodyType(RigidBodyType.Dynamic, true)
@@ -2577,8 +2581,9 @@ export function useAlsCharacter(
     }
 
     const current = character.current
-    if (current.locomotionAction === 'Ragdolling') return
-    poseSample.current.physicsStep?.('after', body, ALS_PHYSICS_TIMESTEP)
+    if (isAlsRagdolling(current)) return
+    const observedLanding = poseSample.current.physicsStep?.('after', body, ALS_PHYSICS_TIMESTEP) === true
+    if (isAlsRagdolling(current)) return
     const bodyTranslation = body.translation()
     threeToUnrealVector(bodyTranslation, rapierBodyAnchor.current)
     const debugState = exposeDebugGlobals ? window.__alsCharacterState : undefined
@@ -2631,6 +2636,15 @@ export function useAlsCharacter(
       currentGroundFloor?.HitResult ?? null
     groundSupport.current = currentGroundSupport
     const previousLocomotionMode = current.locomotionMode
+    const supportHit = currentGroundFloor?.HitResult
+    const supportPoint = supportHit?.impactPoint
+    const acceptedLanding = previousLocomotionMode === 'InAir' && actualVelocity.current.z <= 0 && supportHit && supportPoint
+    const consumedLanding = observedLanding || (acceptedLanding && poseSample.current.physicsStep?.('landed', body, ALS_PHYSICS_TIMESTEP, {
+      colliderHandle: supportHit.collider.handle,
+      point: { x: supportPoint.x, y: supportPoint.z, z: supportPoint.y },
+      normal: { x: supportHit.impactNormal.x, y: supportHit.impactNormal.z, z: supportHit.impactNormal.y },
+    }) === true)
+    if (isAlsRagdolling(current)) return
     if (
       sweepCapsule
       && shouldProbeRapierAlsGround(
@@ -2643,8 +2657,9 @@ export function useAlsCharacter(
         currentGroundFloor !== null,
         actualVelocity.current.z,
         movementModeLocked.current,
-        locomotionModeChangedLifecycle.current,
+        consumedLanding ? undefined : locomotionModeChangedLifecycle.current,
       )
+      if (consumedLanding && previousLocomotionMode !== current.locomotionMode) locomotionModeChangedLifecycle.current.OnLocomotionModeChanged(previousLocomotionMode)
     }
     if (
       current.locomotionMode === 'Grounded'
