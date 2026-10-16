@@ -548,6 +548,7 @@ export interface AlsCharacterCodeInput {
     yaw: number
     capsule?: Readonly<{ halfHeight: number; offsetY: number }>
   }>
+  readonly releaseJumped?: boolean
   readonly releaseGrounded?: boolean
   readonly releaseCompleted?: () => void
   readonly releaseVelocity?: Readonly<{ x: number; y: number; z: number }>
@@ -1978,6 +1979,7 @@ export function useAlsCharacter(
       } else makeRapierAlsBodyDynamic(body)
       const velocity = codeInput?.releaseVelocity ?? { x: 0, y: 0, z: 0 }
       body.setLinvel(velocity, true)
+      if (!groundedRelease && codeInput?.releaseJumped) onJumped.current?.()
       codeInput?.releaseCompleted?.()
       threeToUnrealVector(velocity, actualVelocity.current)
       setMovementVelocity(current.movement, actualVelocity.current)

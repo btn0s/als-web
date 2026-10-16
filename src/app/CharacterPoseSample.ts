@@ -14,6 +14,7 @@ export interface CharacterPoseSample {
   character: AlsCharacter | null
   physicsStep?: (phase: 'before' | 'after' | 'landed', body: RapierRigidBody, delta: number, contact?: { colliderHandle: number; point: { x: number; y: number; z: number }; normal: { x: number; y: number; z: number } }) => boolean | void
   /** Native persistent stance setter, available while the publishing character is mounted. */
+  SetCameraRightShoulder?: ((rightShoulder: boolean) => void) | null
   SetDesiredStance?: ((NewDesiredStance: AlsStance) => void) | null
   /** Physics owner excluded from ALS camera geometry queries. */
   ownerRigidBody: RapierRigidBody | null
@@ -54,6 +55,7 @@ export interface CharacterPoseSample {
 export function createCharacterPoseSample(): CharacterPoseSample {
   return {
     character: null,
+    SetCameraRightShoulder: null,
     SetDesiredStance: null,
     ownerRigidBody: null,
     movementBase: null,

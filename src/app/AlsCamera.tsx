@@ -490,6 +490,15 @@ export function AlsCamera({
   ])
 
   useEffect(() => {
+    const setter = (rightShoulder: boolean) => setRightShoulder(cameraComponentState, rightShoulder)
+    poseSample.current.SetCameraRightShoulder = setter
+    return () => {
+      if (poseSample.current.SetCameraRightShoulder === setter)
+        poseSample.current.SetCameraRightShoulder = null
+    }
+  }, [cameraComponentState, poseSample])
+
+  useEffect(() => {
     const debugWindow = window as CameraDebugWindow
     debugWindow.__alsCameraState = debugState
     debugWindow.__setCameraRightShoulder = (rightShoulder) => {
