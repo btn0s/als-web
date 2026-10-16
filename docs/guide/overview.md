@@ -16,6 +16,8 @@ Return `AlsCharacterCodeInput` from `Character.inputSource`; set `inputEnabled={
 
 | Field | Type / default if omitted | Effect |
 | --- | --- | --- |
+| `active` | boolean / true | False cancels pending jump edges and suppresses a new external jump while physics continues. |
+| `jumpSequence` | integer monotonically incremented per press / no external jump | Changed sequence requests one jump at the next physics step. Initial value is baselined on mount; keep it stable across ordinary frames. |
 | `movementDirection` | `{x,z}` world horizontal, magnitude ≤1 / browser keys or zero with `inputEnabled=false` | Desired planar direction; camera-relative conversion is skipped when supplied. |
 | `desiredGait` | `Walking | Running | Sprinting` / current control (`Running` initially) | Selects semantic gait; ALS selects authored speed and constraints. |
 | `desiredStance` | `Standing | Crouching` / current control (`Standing` initially) | Capsule and stance transition. |

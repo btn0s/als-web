@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest'
+import { AnimationClip, Bone, Group, VectorKeyframeTrack } from 'three'
 import { createAlsPlayer } from '../app/AlsPlayer'
 import type { AlsCharacterInputSource } from '../als/AlsCharacter.hooks'
-import type { ConsumerOverlayStates } from '../als/AnimGraph/consumerOverlayStates'
+import { createConsumerOverlayStates, type ConsumerOverlayStates } from '../als/AnimGraph/consumerOverlayStates'
 import { AlsRemoteCharacter } from '../als/AlsRemoteCharacter'
 import { AlsSnapshotBuffer } from '../als/AlsSnapshotBuffer'
 import type { AlsCharacterSnapshot } from '../als/AlsCharacterSnapshot'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import { createRigDefinition } from '../engine/rig'
 
 const createGuideInput = (walking: boolean, crouching: boolean, yaw: number): AlsCharacterInputSource => () => ({
+  active: true,
+  jumpSequence: 1,
   movementDirection: { x: Math.cos(yaw * Math.PI / 180), z: Math.sin(yaw * Math.PI / 180) },
   desiredGait: walking ? 'Walking' : 'Running',
   desiredStance: crouching ? 'Crouching' : 'Standing',
@@ -24,6 +28,7 @@ const carryBox: ConsumerOverlayStates = {
     poses: 'CarryBox_Poses', aim: 'CarryBox_Aim', aimCrouch: 'CarryBox_AimCrouch',
     aimReference: 'CarryBox_AimReference', runArms: 'CarryBox_Run',
     sprintArms: 'CarryBox_Sprint', sprintImpulseArms: 'CarryBox_SprintImpulse',
+    idle: 'CarryBox_Idle', idleReference: 'CarryBox_IdleReference',
   } }],
 }
 
@@ -42,6 +47,7 @@ describe('consumer guide API recipes', () => {
     expect(input.desiredGait).toBe('Walking')
     expect(input.desiredStance).toBe('Crouching')
     expect(input.viewYawAngle).toBe(90)
+    expect(input.jumpSequence).toBe(1)
     expect(input.desiredSpeed).toBeUndefined()
     expect(createAlsPlayer().command.view).toBe('ThirdPerson')
   })
@@ -60,7 +66,16 @@ describe('consumer guide API recipes', () => {
   })
 
   it('registers a distinct overlay and preserves the frame stage sequence', () => {
-    expect(carryBox.states[0]?.mode).toBe('CarryBox')
+    const root = new Bone()
+    root.name = 'root'
+    const scene = new Group()
+    scene.add(root)
+    const sources = carryBox.states[0]!.sources
+    const clips = Object.values(sources).map(name => new AnimationClip(name, 1, [
+      new VectorKeyframeTrack('root.position', [0], [0, 0, 0]),
+    ]))
+    const states = createConsumerOverlayStates(createRigDefinition(scene), [], { ...carryBox, clips })
+    expect(states.has('CarryBox')).toBe(true)
     expect(ALS_FRAME_PRIORITY.Physics).toBeLessThan(ALS_FRAME_PRIORITY.Animation)
     expect(ALS_FRAME_PRIORITY.Animation).toBeLessThan(ALS_FRAME_PRIORITY.Camera)
   })
