@@ -652,6 +652,7 @@ export interface AlsAnimationInstanceControls {
   moving: boolean
   /** FAlsLocomotionAnimationState::bMovingSmooth, distinct from bMoving. */
   movingSmooth: boolean
+  disableFootLock?: boolean
   stance: AlsStance
   rotationMode: AlsRotationMode
   viewMode?: AlsViewMode
@@ -5023,7 +5024,7 @@ export function createAlsAnimationInstance(gltf: {
       movementBase: movementBaseState,
       movingSmooth: controls.movingSmooth && !consumerLocomotion.allowsMovingFootLock(),
       grounded: locomotionMode === 'Grounded',
-      disableFootLock: false,
+      disableFootLock: controls.disableFootLock ?? false,
       footLockAngleLimit: ALS_DEFAULT_FOOT_LOCK_ANGLE_LIMIT,
       footPlantedCurveAmount:
         publishedCurves.get(FOOT_PLANTED_CURVE_NAME) ?? 0,

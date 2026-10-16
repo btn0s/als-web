@@ -546,6 +546,7 @@ export interface AlsCharacterCodeInput {
     position: { x: number; y: number; z: number }
     velocity: { x: number; y: number; z: number }
     yaw: number
+    groundedPose?: boolean
     capsule?: Readonly<{ halfHeight: number; offsetY: number }>
   }>
   readonly releaseJumped?: boolean
@@ -1512,6 +1513,7 @@ export function useAlsCharacter(
   const inputAxes = useRef<InputAxes>({ right: 0, forward: 0 })
   const inputDirection = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const externallyOwned = useRef(false)
+  const externalGroundedPose = useRef(false)
   const consumedGamepadActions = useRef(false)
   const actualVelocity = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const rapierBodyAnchor = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
@@ -1958,6 +1960,16 @@ export function useAlsCharacter(
       current.actorYawAngle = external.yaw
       current.desiredStance = codeInput.desiredStance ?? 'Standing'
       current.stance = current.desiredStance
+      threeToUnrealVector(external.position, rapierBodyAnchor.current)
+      const externalFloor = external.groundedPose && sweepCapsule
+        ? selectRapierAlsFloor(sweepCapsule, {
+            location: resolveAlsActorLocation(rapierBodyAnchor.current, current.stance, 'Grounded', groundProbeLocation.current),
+            capsuleRadius: ALS_CAPSULE_RADIUS,
+            capsuleHalfHeight: getAlsCapsuleHalfHeight(current.stance),
+            walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
+          })
+        : null
+      externalGroundedPose.current = externalFloor !== null
       setLocomotionMode(current, null)
       threeToUnrealVector(external.velocity, actualVelocity.current)
       setMovementVelocity(current.movement, actualVelocity.current)
@@ -1974,6 +1986,7 @@ export function useAlsCharacter(
     }
     if (externallyOwned.current) {
       externallyOwned.current = false
+      externalGroundedPose.current = false
       standingCapsule.current?.setHalfHeight(ALS_STANDING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS)
       standingCapsule.current?.setTranslationWrtParent({ x: 0, y: 0, z: 0 })
       crouchingCapsule.current?.setHalfHeight(ALS_CROUCHING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS)
@@ -2816,6 +2829,8 @@ export function useAlsCharacter(
       rotateInPlaceOverride: controls.rotateInPlace,
       locomotionYawSpeed: animationLocomotionYawSpeed.current,
     })
+    animationControls.current.disableFootLock = externalGroundedPose.current
+    if (externalGroundedPose.current) animationControls.current.locomotionMode = 'Grounded'
   }, ALS_FRAME_PRIORITY.MeshBase)
 
   return {
