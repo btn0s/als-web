@@ -454,7 +454,7 @@ export function AlsCamera({
       if (event.repeat) return
       if (toggleViewModeKey !== null && event.code === toggleViewModeKey) {
         toggleViewMode(poseSample.current.character)
-      } else if (event.code === 'KeyC') {
+      } else if (event.code === 'KeyC' && !poseSample.current.cameraViewLimits) {
         setRightShoulder(
           cameraComponentState,
           !cameraComponentState.rightShoulder,
@@ -547,7 +547,8 @@ export function AlsCamera({
       readGamepadButton(gamepad, bindings.shoulderSwap)
     const viewModePressed = readGamepadButton(gamepad, bindings.viewMode)
     if (
-      switchShoulderPressed
+      !sample.cameraViewLimits
+      && switchShoulderPressed
       && !previousGamepadButtons.current.switchShoulder
     ) {
       setRightShoulder(
@@ -609,6 +610,11 @@ export function AlsCamera({
     )
     pointerDelta.current.x -= mouseX
     pointerDelta.current.y -= mouseY
+    const limits = sample.cameraViewLimits
+    if (limits) {
+      rotation.yaw = unwindDegrees(limits.yawCenter + THREE.MathUtils.clamp(unwindDegrees(rotation.yaw - limits.yawCenter), limits.yawMin, limits.yawMax))
+      rotation.pitch = THREE.MathUtils.clamp(rotation.pitch, limits.pitchMin, limits.pitchMax)
+    }
     refreshView(character, rotation.yaw, deltaTime, rotation.pitch)
     sample.viewYawAngle = unwindDegrees(
       character.viewYawAngle - character.actorYawAngle,

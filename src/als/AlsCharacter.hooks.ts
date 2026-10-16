@@ -1947,6 +1947,14 @@ export function useAlsCharacter(
       externallyOwned.current = true
       makeRapierAlsBodyPositionOwned(body, external.position)
       body.setGravityScale(0, true)
+      current.desiredAiming = codeInput.aiming ?? false
+      controls.desiredAiming = current.desiredAiming
+      if (codeInput.overlayMode) {
+        controls.overlayMode = codeInput.overlayMode
+        if (codeInput.overlayMode !== codeOverlayMode) setCodeOverlayMode(codeInput.overlayMode)
+      }
+      if (codeInput.viewYawAngle !== undefined) current.viewYawAngle = unwindDegrees(codeInput.viewYawAngle)
+      if (codeInput.viewPitchAngle !== undefined) current.viewPitchAngle = codeInput.viewPitchAngle
       current.actorYawAngle = external.yaw
       current.desiredStance = codeInput.desiredStance ?? 'Standing'
       current.stance = current.desiredStance
