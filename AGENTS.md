@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## Using ALS from a game
+
+For a game consuming ALS, start with [docs/guide/overview.md](docs/guide/overview.md), then open the task-specific [recipes](docs/guide/recipes/) and [symptom rules](docs/guide/gotchas.md). The guide defines input, units, stages, camera ownership, replication, overlays and lifecycle. This file's remaining instructions govern development of ALS itself for UE parity.
+
 **The standalone web port of ALS Refactored** (the C++ rework of Advanced Locomotion System) on
 React Three Fiber — UE4-mannequin-skeleton-native (SK_Als), built as a reference repo / template.
 ALS-grade locomotion on the web IS the deliverable; gameplay layers happen in
@@ -43,8 +47,9 @@ before feature work.
   cited) from HYPOTHESIS (how to test it); corrections to working state require reproducing the
   actual defect first. Ordinary code changes are covered by the test gates — this rule is for
   discovery and fixes, not ceremony.
-- **Docs philosophy:** code speaks for itself. ROADMAP.md (plan) + this file (orientation) are
-  the only standing PROSE docs; design rationale lives in code comments at the relevant site.
+- **Docs philosophy:** code speaks for itself. ROADMAP.md (plan), this file (developer
+  orientation), and `docs/guide/` (consumer contract) are the standing prose docs; design
+  rationale lives in code comments at the relevant site.
   One carve-out (user 2026-07-23): EXTRACTED REFERENCE data from ALS source/recon lives in-repo
   next to its subject (`AlsAnimationInstance.reference.md`, `extract-als/PLAYBOOK.md`,
   `clips.manifest`, `props.manifest`) — fresh sessions and sandboxed agents have no session
