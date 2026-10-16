@@ -12,6 +12,7 @@ import {
 export interface CharacterPoseSample {
   /** Stable pure-character state consumed by the camera animation instance. */
   character: AlsCharacter | null
+  physicsStep?: (phase: 'before' | 'after', body: RapierRigidBody, delta: number) => void
   /** Native persistent stance setter, available while the publishing character is mounted. */
   SetDesiredStance?: ((NewDesiredStance: AlsStance) => void) | null
   /** Physics owner excluded from ALS camera geometry queries. */

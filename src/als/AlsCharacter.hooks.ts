@@ -536,6 +536,17 @@ export function createAlsDesiredStanceSetter(
 
 export interface AlsCharacterCodeInput {
   readonly allowRolling?: boolean
+  readonly consumeActions?: boolean
+  readonly allowMantling?: boolean
+  readonly externalMovement?: Readonly<{
+    position: { x: number; y: number; z: number }
+    velocity: { x: number; y: number; z: number }
+    yaw: number
+    capsule?: Readonly<{ halfHeight: number; offsetY: number }>
+  }>
+  readonly releaseGrounded?: boolean
+  readonly releaseCompleted?: () => void
+  readonly releaseVelocity?: Readonly<{ x: number; y: number; z: number }>
   /** Engine seam for a consumer's grounded actor-rotation policy. Null keeps ALS policy. */
   readonly groundedRotation?: (character: AlsCharacter, deltaTime: number) => number | null
   /** Consumer opt-in: fresh physics input, rotation, then velocity; ALS defaults remain frame-based. */
@@ -1495,6 +1506,8 @@ export function useAlsCharacter(
   const onJumped = useRef<(() => void) | null>(null)
   const inputAxes = useRef<InputAxes>({ right: 0, forward: 0 })
   const inputDirection = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const externallyOwned = useRef(false)
+  const consumedGamepadActions = useRef(false)
   const actualVelocity = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const rapierBodyAnchor = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
   const actorLocation = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
@@ -1880,7 +1893,7 @@ export function useAlsCharacter(
     if (!body) return
     // Browser input is independent of the semantic inputSource used by code-driven actors.
     // All action paths (including ragdoll/get-up) share the same enabled, selected pad sample.
-    const gamepad = sampleGamepad(gamepadInput.current, gamepadBindings, inputEnabled && gamepadEnabled, gamepadIndex)
+    const gamepad = sampleGamepad(gamepadInput.current, gamepadBindings, (inputEnabled || externallyOwned.current || consumedGamepadActions.current) && gamepadEnabled, gamepadIndex)
     const ragdollValue = inputEnabled && ragdollInputEnabled &&
       (pressedKeys.current.has('KeyX') || gamepad.ragdoll)
     const ragdollTick = ragdollAction.current.update(
@@ -1912,6 +1925,59 @@ export function useAlsCharacter(
     const controls = values.current
     const current = character.current
     const codeInput = inputSource?.()
+    const external = codeInput?.externalMovement
+    poseSample.current.physicsStep?.('before', body, ALS_PHYSICS_TIMESTEP)
+    if (codeInput?.consumeActions) consumedGamepadActions.current = true
+    if (consumedGamepadActions.current) {
+      consumeAlsJumpInput(jumpRequested)
+      rollRequested.current = false
+      previousGamepadInput.current.jump = gamepad.jump
+      previousGamepadInput.current.crouch = gamepad.crouch
+      gamepad.roll = false
+      gamepadDoubleTapAction.current.reset()
+      gamepadTapAction.current.reset()
+      if (!gamepad.jump && !gamepad.crouch && !external && !codeInput?.consumeActions) consumedGamepadActions.current = false
+    }
+    if (external) {
+      externallyOwned.current = true
+      makeRapierAlsBodyPositionOwned(body, external.position)
+      body.setGravityScale(0, true)
+      current.actorYawAngle = external.yaw
+      current.desiredStance = codeInput.desiredStance ?? 'Standing'
+      current.stance = current.desiredStance
+      setLocomotionMode(current, null)
+      threeToUnrealVector(external.velocity, actualVelocity.current)
+      setMovementVelocity(current.movement, actualVelocity.current)
+      refreshAlsCharacter(current, { x: 0, y: 0, z: 0 }, actualVelocity.current, actualVelocity.current)
+      groundedMoveApplied.current = false
+      pendingGroundedBodyHeight.current = null
+      groundSupport.current = null
+      setRapierAlsStanceCapsules(standingCapsule.current, crouchingCapsule.current, current.stance)
+      const capsule = external.capsule
+      const activeCollider = current.stance === 'Crouching' ? crouchingCapsule.current : standingCapsule.current
+      activeCollider?.setHalfHeight((capsule?.halfHeight ?? getAlsCapsuleHalfHeight(current.stance)) - ALS_CAPSULE_RADIUS)
+      activeCollider?.setTranslationWrtParent({ x: 0, y: capsule?.offsetY ?? (current.stance === 'Crouching' ? -0.34 : 0), z: 0 })
+      return
+    }
+    if (externallyOwned.current) {
+      externallyOwned.current = false
+      standingCapsule.current?.setHalfHeight(ALS_STANDING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS)
+      standingCapsule.current?.setTranslationWrtParent({ x: 0, y: 0, z: 0 })
+      crouchingCapsule.current?.setHalfHeight(ALS_CROUCHING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS)
+      crouchingCapsule.current?.setTranslationWrtParent({ x: 0, y: -0.34, z: 0 })
+      const groundedRelease = codeInput?.releaseGrounded === true
+      setLocomotionMode(current, groundedRelease ? 'Grounded' : 'InAir')
+      if (groundedRelease) {
+        current.desiredStance = codeInput.desiredStance ?? current.desiredStance
+        setStance(current, current.desiredStance)
+        makeRapierAlsBodyPositionOwned(body)
+      } else makeRapierAlsBodyDynamic(body)
+      const velocity = codeInput?.releaseVelocity ?? { x: 0, y: 0, z: 0 }
+      body.setLinvel(velocity, true)
+      codeInput?.releaseCompleted?.()
+      threeToUnrealVector(velocity, actualVelocity.current)
+      setMovementVelocity(current.movement, actualVelocity.current)
+    }
     if (codeInput) {
       if (codeInput.desiredGait) controls.desiredGait = codeInput.desiredGait
       if (codeInput.desiredStance) controls.desiredStance = codeInput.desiredStance
@@ -2136,7 +2202,7 @@ export function useAlsCharacter(
     if (consumeAlsJumpInput(jumpRequested)) {
       const jumpResult = handleAlsJumpInput(
         current,
-        () => tryStartMantling('Grounded'),
+        () => codeInput?.allowMantling !== false && tryStartMantling('Grounded'),
       )
       if (jumpResult === 'Uncrouched') {
         values.current.desiredStance = 'Standing'
@@ -2169,7 +2235,7 @@ export function useAlsCharacter(
       / ALS_PHYSICS_TIMESTEP
     // AAlsCharacter::Tick(): action attempts/refresh happen after both rotation branches and
     // immediately before Super::Tick() enters CharacterMovement's root-source boundary.
-    if (current.locomotionMode === 'InAir') {
+    if (current.locomotionMode === 'InAir' && codeInput?.allowMantling !== false) {
       tryStartMantling('InAir')
     }
     refreshMantling({
@@ -2512,6 +2578,7 @@ export function useAlsCharacter(
 
     const current = character.current
     if (current.locomotionAction === 'Ragdolling') return
+    poseSample.current.physicsStep?.('after', body, ALS_PHYSICS_TIMESTEP)
     const bodyTranslation = body.translation()
     threeToUnrealVector(bodyTranslation, rapierBodyAnchor.current)
     const debugState = exposeDebugGlobals ? window.__alsCharacterState : undefined
