@@ -2604,9 +2604,26 @@ export function useAlsCharacter(
     }
 
     const current = character.current
+    const acquireContactOwnership = () => {
+      const external = inputSource?.()?.externalMovement
+      if (!external) return false
+      externallyOwned.current = true
+      makeRapierAlsBodyPositionOwned(body, external.position)
+      body.setGravityScale(0, true)
+      current.actorYawAngle = external.yaw
+      setLocomotionMode(current, null)
+      threeToUnrealVector(external.position, rapierBodyAnchor.current)
+      threeToUnrealVector(external.velocity, actualVelocity.current)
+      setMovementVelocity(current.movement, actualVelocity.current)
+      pendingGroundedBodyHeight.current = null
+      groundedMoveApplied.current = false
+      groundSupport.current = null
+      poseSample.current.movementBase = null
+      return true
+    }
     if (isAlsRagdolling(current)) return
     const observedLanding = poseSample.current.physicsStep?.('after', body, ALS_PHYSICS_TIMESTEP) === true
-    if (isAlsRagdolling(current)) return
+    if (isAlsRagdolling(current) || (observedLanding && acquireContactOwnership())) return
     const bodyTranslation = body.translation()
     threeToUnrealVector(bodyTranslation, rapierBodyAnchor.current)
     const debugState = exposeDebugGlobals ? window.__alsCharacterState : undefined
@@ -2667,7 +2684,7 @@ export function useAlsCharacter(
       point: { x: supportPoint.x, y: supportPoint.z, z: supportPoint.y },
       normal: { x: supportHit.impactNormal.x, y: supportHit.impactNormal.z, z: supportHit.impactNormal.y },
     }) === true)
-    if (isAlsRagdolling(current)) return
+    if (isAlsRagdolling(current) || (consumedLanding && acquireContactOwnership())) return
     if (
       sweepCapsule
       && shouldProbeRapierAlsGround(
