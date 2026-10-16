@@ -4506,13 +4506,21 @@ export function createAlsAnimationInstance(gltf: {
     }
 
     group.leaderKey = leader.key
-    advanceLocomotionPlayer(leader, delta)
     const leaderDuration = leader.clip?.sampler.clip.duration ?? 0
+    const previousNormalizedTime =
+      leaderDuration > 0 ? leader.time / leaderDuration : 0
+    advanceLocomotionPlayer(leader, delta)
     const normalizedTime =
       leaderDuration > 0 ? leader.time / leaderDuration : 0
     for (const follower of group.members) {
       if (follower === leader || follower.weight <= 0) continue
       const duration = follower.clip?.sampler.clip.duration ?? 0
+      if (locomotionSequencePreviousTimes.has(follower)) {
+        locomotionSequencePreviousTimes.set(
+          follower,
+          previousNormalizedTime * duration,
+        )
+      }
       follower.time = Math.max(0, Math.min(duration, normalizedTime * duration))
     }
   }
