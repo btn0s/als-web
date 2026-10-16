@@ -517,6 +517,8 @@ interface CharacterControlValues {
 }
 
 export interface AlsCharacterCodeInput {
+  readonly active?: boolean
+  readonly jumpSequence?: number
   readonly movementDirection?: Readonly<{ x: number; z: number }>
   readonly desiredSpeed?: number
   readonly desiredGait?: AlsGait
@@ -768,6 +770,18 @@ export function consumeAlsJumpInput(request: AlsJumpRequestRef): boolean {
   const requested = request.current
   request.current = false
   return requested
+}
+
+export function refreshAlsCodeJumpInput(
+  input: Readonly<AlsCharacterCodeInput>,
+  sequence: { current: number },
+  request: AlsJumpRequestRef,
+): void {
+  if (input.jumpSequence !== undefined && input.jumpSequence !== sequence.current) {
+    sequence.current = input.jumpSequence
+    if (input.active !== false) requestAlsJumpInput(request)
+  }
+  if (input.active === false) request.current = false
 }
 
 function clampMagnitude(axes: InputAxes): InputAxes {
@@ -1453,6 +1467,7 @@ export function useAlsCharacter(
     new UInputTriggerPressed(),
   ]))
   const jumpRequested = useRef(false)
+  const externalJumpSequence = useRef(inputSource?.().jumpSequence ?? 0)
   const rollRequested = useRef(false)
   const onJumped = useRef<(() => void) | null>(null)
   const inputAxes = useRef<InputAxes>({ right: 0, forward: 0 })
@@ -1837,6 +1852,8 @@ export function useAlsCharacter(
   useBeforePhysicsStep(() => {
     const body = rigidBody.current
     if (!body) return
+    const codeInput = inputSource?.()
+    if (codeInput) refreshAlsCodeJumpInput(codeInput, externalJumpSequence, jumpRequested)
     // Browser input is independent of the semantic inputSource used by code-driven actors.
     // All action paths (including ragdoll/get-up) share the same enabled, selected pad sample.
     const gamepad = sampleGamepad(gamepadInput.current, gamepadBindings, inputEnabled && gamepadEnabled, gamepadIndex)
@@ -1870,7 +1887,6 @@ export function useAlsCharacter(
 
     const controls = values.current
     const current = character.current
-    const codeInput = inputSource?.()
     if (codeInput) {
       if (codeInput.desiredGait) controls.desiredGait = codeInput.desiredGait
       if (codeInput.desiredStance) controls.desiredStance = codeInput.desiredStance

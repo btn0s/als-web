@@ -23,6 +23,7 @@ import {
   prepareRapierAlsAnimRootMotionVelocity,
   prepareRapierAlsMantlingMovementBoundary,
   refreshRapierAlsLocomotionMode,
+  refreshAlsCodeJumpInput,
   requestAlsJumpInput,
   publishAlsCharacterAnimationSnapshot,
   resolveAlsActorFeetLocation,
@@ -595,6 +596,49 @@ describe('AlsCharacter browser bridge math', () => {
     requestAlsJumpInput(request)
     expect(consumeAlsJumpInput(request)).toBe(true)
     expect(consumeAlsJumpInput(request)).toBe(false)
+  })
+
+  it('consumes external jump sequences once across fixed substeps and enters InAir', () => {
+    const request = { current: false }
+    const sequence = { current: 0 }
+    const input = { active: true, jumpSequence: 1 }
+    const character = createAlsCharacter()
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(true)
+    expect(handleAlsJumpInput(character)).toBe('Jumped')
+    expect(character.locomotionMode).toBe('InAir')
+    for (let step = 0; step < 5; step++) {
+      refreshAlsCodeJumpInput(input, sequence, request)
+      expect(consumeAlsJumpInput(request)).toBe(false)
+    }
+    input.jumpSequence++
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(true)
+  })
+
+  it('cancels inactive external jump edges without replaying them when reactivated', () => {
+    const request = { current: true }
+    const sequence = { current: 0 }
+    const input = { active: false, jumpSequence: 1 }
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(false)
+    input.active = true
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(false)
+    input.jumpSequence++
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(true)
+  })
+
+  it('starts from the mounted external sequence without replaying a pre-respawn press', () => {
+    const input = { active: true, jumpSequence: 7 }
+    const sequence = { current: input.jumpSequence }
+    const request = { current: false }
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(false)
+    input.jumpSequence++
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(true)
   })
 
   it('attempts a grounded mantle before the crouch and Jump branches', () => {
