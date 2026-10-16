@@ -13,7 +13,7 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js'
 import { createAlsAnimationInstance } from '../als/AlsAnimationInstance'
 import type { AlsAnimationClock } from '../als/AlsAnimationInstance'
 import type { AlsControlRigFootOffsetTrace } from '../als/AnimGraph/CR_Als'
-import { AlsRemoteCharacter } from '../als/AlsRemoteCharacter'
+import { AlsRemoteCharacter, type AlsAnimationLod } from '../als/AlsRemoteCharacter'
 import type { AlsCharacterSnapshot } from '../als/AlsCharacterSnapshot'
 import { AlsSnapshotBuffer } from '../als/AlsSnapshotBuffer'
 import {
@@ -45,6 +45,7 @@ export interface AlsRemoteActorProps {
   now?: () => number
   offset?: readonly [number, number, number]
   footIk?: boolean
+  animationLod?: AlsAnimationLod | (() => AlsAnimationLod)
   worldTime?: Readonly<WorldTimeState>
   /** Delivered once for each received actionSeq crossed by playback, including skipped poses. */
   onAction?: (snapshot: AlsCharacterSnapshot) => void
@@ -59,11 +60,11 @@ const warnUnsupported = (feature: string) => console.warn(`[AlsRemoteActor] Unsu
  * + two capsules (one enabled). No controller,
  * local movement/floor/mantle sweeps, camera, audio, debug captures, or root-motion movement.
  * footIk=false removes foot terrain queries for distance LOD; the authored rig still evaluates.
- * Further LOD can throttle Animation/cull hidden actors, but must keep snapshot/action clocks
- * and collision current. No measured millisecond budget is claimed by this component.
+ * Animation LOD holds pose between full-delta graph evaluations while snapshot/action clocks
+ * and collision stay current. No measured millisecond budget is claimed by this component.
  */
 export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, now = clock, offset = origin,
-  footIk = true, worldTime, ragdollRef, ragdollingSettings, onAction, onAnimationClock, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
+  footIk = true, animationLod, worldTime, ragdollRef, ragdollingSettings, onAction, onAnimationClock, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
   const gltf = useSuspenseAlsCharacterGltf()
   // Cached materials/clips are shared; each remote (including ghosts) owns its skeleton.
   const scene = useMemo(() => clone(gltf.scene), [gltf.scene])
@@ -126,6 +127,7 @@ export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, 
     const frame = snapshots.sample(now())
     if (!frame) {
       active.current = false
+      driver.resetAnimationLod()
       standing.current?.setEnabled(false)
       crouching.current?.setEnabled(false)
       root.current.visible = false
@@ -178,20 +180,24 @@ export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, 
   useFrame((_, deltaRealTime) => {
     const delta = worldTime ? getWorldDeltaTime(worldTime, deltaRealTime) : deltaRealTime
     if (!active.current) return
+    const significance = typeof animationLod === 'function' ? animationLod() : animationLod
+    const elapsed = driver.nextAnimationDelta(delta, significance,
+      driverSnapshot.current?.action !== 'none' || ragdoll.active || cosmeticRagdoll.current)
+    if (elapsed === null) return
     // Montage time comes from the same interpolated frame as position, including slow motion.
     const mantle = mantleSettings.current
     // Refresh advances the montage once, so the caller-provided clock is positioned before it.
     const snapshot = driverSnapshot.current?.animation?.mantle?.position
     if (mantle && snapshot !== undefined) {
-      animation.mantlingMontage.montageSetPosition(mantle, Math.max(0, snapshot - delta * mantle.Montage.RateScale))
+      animation.mantlingMontage.montageSetPosition(mantle, Math.max(0, snapshot - elapsed * mantle.Montage.RateScale))
     }
     const rolling = driverSnapshot.current?.animation?.rolling
-    if (rolling) animation.setRollingPosition(Math.max(0, rolling.position - delta * rolling.playRate))
+    if (rolling) animation.setRollingPosition(Math.max(0, rolling.position - elapsed * rolling.playRate))
     if (ragdoll.active || cosmeticRagdoll.current) {
       driver.controls.locomotionAction = driver.character.locomotionAction
       driver.controls.locomotionMode = driver.character.locomotionMode
     }
-    animation.refresh(delta, driver.controls)
+    animation.refresh(elapsed, driver.controls)
     onAnimationClock?.(animation.clock)
     for (const event of animation.getUpMontage.takeNotifyEvents()) {
       if (event.notifyEventType === 'Begin') notifyAlsAnimNotifyStateSetLocomotionActionBegin(driver.character, event)

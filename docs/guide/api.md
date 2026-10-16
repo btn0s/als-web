@@ -16,3 +16,5 @@ Import package subpaths from [`package.json`](../../package.json); deep source i
 | Asset load | `als-ue5-r3f/app/AlsCharacterGltf.hooks` | [hook](../../src/app/AlsCharacterGltf.hooks.ts) |
 
 The pure `AlsRemoteCharacter` driver, coordinate helpers, action internals and graph evaluators are implementation files. The package exports are the consumer boundary. [Executable example and drift test](../../src/guide/consumerRecipes.test.ts).
+
+`AlsRemoteActor animationLod` accepts `{ distance, visible, focused, minInterval, maxInterval }` or a function returning it each frame. Distance is camera-to-actor metres. The built-in schedule evaluates every frame below 12 m, every second frame below 20 m, every third below 34 m, every fourth farther away, and every eighth while hidden. `focused` forces full rate. Skipped time is accumulated for the next graph evaluation; pose holds between evaluations. Snapshot playback and collision remain full rate. Actions, ragdoll, and cosmetic get-up force full rate so montage notifies and root motion stay on their normal path. [Performance recipe](recipes/performance.md).
