@@ -535,6 +535,7 @@ export function createAlsDesiredStanceSetter(
 }
 
 export interface AlsCharacterCodeInput {
+  readonly allowRolling?: boolean
   /** Engine seam for a consumer's grounded actor-rotation policy. Null keeps ALS policy. */
   readonly groundedRotation?: (character: AlsCharacter, deltaTime: number) => number | null
   /** Consumer opt-in: fresh physics input, rotation, then velocity; ALS defaults remain frame-based. */
@@ -2045,7 +2046,7 @@ export function useAlsCharacter(
       rollRequested.current = false
       const Animation =
         actionBridge.current?.RollingMontage.current
-      if (Animation) {
+      if (Animation && codeInput?.allowRolling !== false) {
         startRolling(current, 1.3, Animation)
       }
     }
