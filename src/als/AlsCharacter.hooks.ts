@@ -18,9 +18,11 @@ import {
   rapierAlsCameraMovementBase,
   rapierAlsMovementBaseFromPrimitive,
   rapierAlsMovementBase,
+  findRapierAlsFloor,
   selectRapierAlsFloor,
 } from '../engine/rapierAlsCapsuleSweep'
 import type {
+  AlsGroundProbeInput,
   RapierAlsCapsuleSweep,
   RapierAlsCapsuleSweepHit,
   RapierAlsFindFloorResult,
@@ -32,8 +34,11 @@ import {
   shouldAdjustRapierAlsFloorHeight,
 } from '../engine/rapierAlsCharacterMovement'
 import {
-  moveGroundedWithSlideAlongSurface,
+  moveAlongFloor,
 } from '../engine/characterMovementGroundedMove'
+import {
+  UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
+} from '../engine/characterMovementFloor'
 import type {
   CharacterMovementGroundedMoveSweep,
 } from '../engine/characterMovementGroundedMove'
@@ -152,7 +157,10 @@ import type {
 import { exponentialDecay } from './State/AlsGroundedState'
 import { unwindDegrees } from './State/AlsLocomotionState'
 import type { AlsVector3 } from './State/AlsLocomotionState'
-import type { AlsGaitSpeedOverrides } from './AlsCharacterMovementComponent'
+import type {
+  AlsCharacterMovementComponent,
+  AlsGaitSpeedOverrides,
+} from './AlsCharacterMovementComponent'
 
 // AAlsCharacter::AAlsCharacter(), cpp:36; UAlsCharacterMovementComponent(), cpp:132.
 export const ALS_CAPSULE_RADIUS = 0.3
@@ -519,6 +527,10 @@ interface CharacterControlValues {
 export interface AlsCharacterCodeInput {
   readonly active?: boolean
   readonly jumpSequence?: number
+  /** ORIGINAL, not ALS: seconds after walking off a ledge in which a jump still fires. Default 0. */
+  readonly coyoteSeconds?: number
+  readonly rollSequence?: number
+  readonly ragdollSequence?: number
   readonly movementDirection?: Readonly<{ x: number; z: number }>
   readonly desiredSpeed?: number
   readonly desiredGait?: AlsGait
@@ -782,6 +794,16 @@ export function refreshAlsCodeJumpInput(
     if (input.active !== false) requestAlsJumpInput(request)
   }
   if (input.active === false) request.current = false
+}
+
+export function refreshAlsCodeEdge(
+  value: number | undefined,
+  active: boolean | undefined,
+  sequence: { current: number },
+): boolean {
+  if (value === undefined || value === sequence.current) return false
+  sequence.current = value
+  return active !== false
 }
 
 function clampMagnitude(axes: InputAxes): InputAxes {
@@ -1111,6 +1133,7 @@ export type AlsJumpInputResult =
 export function handleAlsJumpInput(
   character: AlsCharacter,
   StartMantlingGrounded: () => boolean = () => false,
+  bCoyote = false,
 ): AlsJumpInputResult {
   if (character.movement.inputBlocked) return 'Rejected'
   if (StartMantlingGrounded()) return 'Mantled'
@@ -1119,6 +1142,9 @@ export function handleAlsJumpInput(
     character.desiredStance = 'Standing'
     setStance(character, 'Standing')
     return 'Uncrouched'
+  }
+  if (character.stance === 'Standing' && character.locomotionMode === 'InAir' && bCoyote) {
+    return 'Jumped'
   }
   if (
     character.stance !== 'Standing'
@@ -1157,6 +1183,30 @@ export function refreshRapierAlsLocomotionMode(
     setLocomotionMode(character, 'InAir', Lifecycle)
   }
   return character.locomotionMode
+}
+
+/**
+ * PhysWalking's `FindFloor()` searches `MaxStepHeight + MAX_FLOOR_DIST` with its perch test, so
+ * stairs and walkable slopes stay Grounded. InAir keeps the `MAX_FLOOR_DIST` landing check.
+ */
+export function findRapierAlsCharacterFloor(
+  sweepCapsule: RapierAlsCapsuleSweep,
+  locomotionMode: AlsLocomotionMode,
+  input: Readonly<AlsGroundProbeInput>,
+  movement: Readonly<Pick<
+    AlsCharacterMovementComponent,
+    'maxStepHeight' | 'perchRadiusThreshold' | 'perchAdditionalHeight'
+  >>,
+): RapierAlsFindFloorResult | null {
+  return locomotionMode === 'Grounded'
+    ? findRapierAlsFloor(sweepCapsule, {
+        ...input,
+        bMovingOnGround: true,
+        MaxStepHeight: movement.maxStepHeight,
+        PerchRadiusThreshold: movement.perchRadiusThreshold,
+        PerchAdditionalHeight: movement.perchAdditionalHeight,
+      })
+    : selectRapierAlsFloor(sweepCapsule, input)
 }
 
 export function shouldProbeRapierAlsGround(
@@ -1467,7 +1517,10 @@ export function useAlsCharacter(
     new UInputTriggerPressed(),
   ]))
   const jumpRequested = useRef(false)
+  const coyoteRemaining = useRef(0)
   const externalJumpSequence = useRef(inputSource?.().jumpSequence ?? 0)
+  const externalRollSequence = useRef(inputSource?.().rollSequence ?? 0)
+  const externalRagdollSequence = useRef(inputSource?.().ragdollSequence ?? 0)
   const rollRequested = useRef(false)
   const onJumped = useRef<(() => void) | null>(null)
   const inputAxes = useRef<InputAxes>({ right: 0, forward: 0 })
@@ -1854,6 +1907,9 @@ export function useAlsCharacter(
     if (!body) return
     const codeInput = inputSource?.()
     if (codeInput) refreshAlsCodeJumpInput(codeInput, externalJumpSequence, jumpRequested)
+    if (codeInput && refreshAlsCodeEdge(codeInput.rollSequence, codeInput.active, externalRollSequence)) rollRequested.current = true
+    const codeRagdoll = codeInput !== undefined && ragdollInputEnabled
+      && refreshAlsCodeEdge(codeInput.ragdollSequence, codeInput.active, externalRagdollSequence)
     // Browser input is independent of the semantic inputSource used by code-driven actors.
     // All action paths (including ragdoll/get-up) share the same enabled, selected pad sample.
     const gamepad = sampleGamepad(gamepadInput.current, gamepadBindings, inputEnabled && gamepadEnabled, gamepadIndex)
@@ -1863,7 +1919,7 @@ export function useAlsCharacter(
       ragdollValue,
       ALS_PHYSICS_TIMESTEP,
     )
-    if (ragdollTick.triggerEvents.includes('Triggered')) {
+    if (ragdollTick.triggerEvents.includes('Triggered') || codeRagdoll) {
       if (!actionBridge.current?.StopRagdolling?.()) {
         locomotionModeChangedLifecycle.current.StartRagdolling()
       }
@@ -2088,6 +2144,14 @@ export function useAlsCharacter(
       current.locomotionMode,
       groundProbeLocation.current,
     )
+    // The previous step's AdjustFloorHeight() is applied with the next kinematic target, so
+    // CurrentFloor and MoveAlongFloor start from that adjusted height.
+    const pendingFloorHeightOffset =
+      current.locomotionMode === 'Grounded'
+      && pendingGroundedBodyHeight.current !== null
+        ? pendingGroundedBodyHeight.current - rapierBodyAnchor.current.z
+        : 0
+    queryLocation.z += pendingFloorHeightOffset
     let currentGroundFloor: RapierAlsFindFloorResult | null = null
     if (
       sweepCapsule
@@ -2096,23 +2160,33 @@ export function useAlsCharacter(
         movementModeLocked.current,
       )
     ) {
-      currentGroundFloor = selectRapierAlsFloor(sweepCapsule, {
-        location: queryLocation,
-        capsuleRadius: ALS_CAPSULE_RADIUS,
-        capsuleHalfHeight: queryCapsuleHalfHeight,
-        walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
-      })
+      currentGroundFloor = findRapierAlsCharacterFloor(
+        sweepCapsule,
+        current.locomotionMode,
+        {
+          location: queryLocation,
+          capsuleRadius: ALS_CAPSULE_RADIUS,
+          capsuleHalfHeight: queryCapsuleHalfHeight,
+          walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
+        },
+        current.movement,
+      )
     }
     groundSupport.current = currentGroundFloor?.HitResult ?? null
+    coyoteRemaining.current = current.locomotionMode === 'Grounded'
+      ? codeInput?.coyoteSeconds ?? 0
+      : Math.max(0, coyoteRemaining.current - ALS_PHYSICS_TIMESTEP)
     if (consumeAlsJumpInput(jumpRequested)) {
       const jumpResult = handleAlsJumpInput(
         current,
         () => tryStartMantling('Grounded'),
+        coyoteRemaining.current > 0 && current.locomotionAction === null,
       )
       if (jumpResult === 'Uncrouched') {
         values.current.desiredStance = 'Standing'
         setControls({ desiredStance: 'Standing' })
       } else if (jumpResult === 'Jumped') {
+        coyoteRemaining.current = 0
         actualVelocity.current.z = ALS_RAPIER_JUMP_SPEED
         // ACharacter::Jump() writes JumpZVelocity directly to CharacterMovement before
         // PhysFalling. Seed both bridge copies before the body changes to Dynamic.
@@ -2289,15 +2363,45 @@ export function useAlsCharacter(
         y: intended.y * ALS_PHYSICS_TIMESTEP,
         z: 0,
       }
-      const adjustedDelta = groundedMoveSweep
-        ? moveGroundedWithSlideAlongSurface({
-            start: actorLocation.current,
+      const groundedMove = groundedMoveSweep
+        ? moveAlongFloor({
+            start: {
+              x: actorLocation.current.x,
+              y: actorLocation.current.y,
+              z: actorLocation.current.z + pendingFloorHeightOffset,
+            },
             delta: requestedDelta,
             capsuleRadius: ALS_CAPSULE_RADIUS,
             capsuleHalfHeight: getAlsCapsuleHalfHeight(current.stance),
             sweepCapsule: groundedMoveSweep,
-          }).delta
-        : requestedDelta
+            CurrentFloor: currentGroundFloor,
+            MaxStepHeight: current.movement.maxStepHeight,
+            WalkableFloorZ: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
+            findFloor: sweepCapsule
+              ? (location) => findRapierAlsCharacterFloor(
+                  sweepCapsule,
+                  'Grounded',
+                  {
+                    location,
+                    capsuleRadius: ALS_CAPSULE_RADIUS,
+                    capsuleHalfHeight: getAlsCapsuleHalfHeight(current.stance),
+                    walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
+                  },
+                  current.movement,
+                )
+              : undefined,
+          })
+        : null
+      const adjustedDelta = groundedMove?.delta ?? requestedDelta
+      // PhysWalking adopts StepUp's FStepDownResult floor and runs AdjustFloorHeight() in the
+      // same iteration, so a step landing never rests below the floor band for a frame.
+      const stepDownFloor = groundedMove?.StepDownResult.FloorResult
+      const stepDownFloorHeightAdjustment = (
+        stepDownFloor && shouldAdjustRapierAlsFloorHeight(stepDownFloor)
+      )
+        ? UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE
+          - getRapierAlsFindFloorDistance(stepDownFloor)
+        : 0
       setMovementVelocity(current.movement, {
         x: adjustedDelta.x / ALS_PHYSICS_TIMESTEP,
         y: adjustedDelta.y / ALS_PHYSICS_TIMESTEP,
@@ -2310,7 +2414,9 @@ export function useAlsCharacter(
       groundedMoveStart.current.z = translation.z
       groundedMoveTarget.current.x = translation.x + adjustedDelta.x
       groundedMoveTarget.current.y =
-        pendingGroundedBodyHeight.current ?? translation.y
+        (pendingGroundedBodyHeight.current ?? translation.y)
+        + adjustedDelta.z
+        + stepDownFloorHeightAdjustment
       groundedMoveTarget.current.z = translation.z + adjustedDelta.y
       pendingGroundedBodyHeight.current = null
       body.setNextKinematicTranslation(groundedMoveTarget.current)
@@ -2508,12 +2614,17 @@ export function useAlsCharacter(
         movementModeLocked.current,
       )
     )
-      ? selectRapierAlsFloor(sweepCapsule, {
-          location: queryLocation,
-          capsuleRadius: ALS_CAPSULE_RADIUS,
-          capsuleHalfHeight: queryCapsuleHalfHeight,
-          walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
-        })
+      ? findRapierAlsCharacterFloor(
+          sweepCapsule,
+          current.locomotionMode,
+          {
+            location: queryLocation,
+            capsuleRadius: ALS_CAPSULE_RADIUS,
+            capsuleHalfHeight: queryCapsuleHalfHeight,
+            walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
+          },
+          current.movement,
+        )
       : null
     const currentGroundSupport =
       currentGroundFloor?.HitResult ?? null

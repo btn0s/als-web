@@ -4,6 +4,11 @@ import type {
   CharacterMovementGroundedMoveSweepQuery,
   CharacterMovementGroundedMoveVector,
 } from './characterMovementGroundedMove'
+import { findRapierAlsOpposingNormal } from './rapierAlsCapsuleSweep'
+import type {
+  RapierRay,
+  RapierRayConstructor,
+} from './rapierAlsCapsuleSweep'
 
 export interface RapierAlsGroundedMoveVector {
   x: number
@@ -24,6 +29,14 @@ export interface RapierAlsGroundedMoveSupportingCollider {
     shapeRotation: RapierAlsGroundedMoveRotation,
     prediction: number,
   ): { readonly distance: number } | null
+  castRayAndGetNormal?(
+    ray: RapierRay,
+    maxTimeOfImpact: number,
+    solid: boolean,
+  ): {
+    readonly timeOfImpact: number
+    readonly normal: RapierAlsGroundedMoveVector
+  } | null
 }
 
 interface RapierCapsuleConstructor {
@@ -33,6 +46,7 @@ interface RapierCapsuleConstructor {
 interface RapierShapeCastHit {
   readonly time_of_impact: number
   readonly collider: RapierAlsGroundedMoveSupportingCollider
+  readonly witness1?: RapierAlsGroundedMoveVector
   readonly normal1: RapierAlsGroundedMoveVector
 }
 
@@ -59,6 +73,8 @@ export interface RapierAlsGroundedMoveHit extends CharacterMovementGroundedMoveH
 export interface RapierAlsGroundedMoveOptions {
   readonly world: RapierShapeCastWorld
   readonly Capsule: RapierCapsuleConstructor
+  /** Resolves `FHitResult::ImpactNormal` on the hit face; without it the contact normal is used. */
+  readonly Ray?: RapierRayConstructor
   readonly excludeRigidBody?: unknown
   readonly resolveExcludeRigidBody?: () => unknown
   readonly filterFlags?: number
@@ -69,7 +85,8 @@ export interface RapierAlsGroundedMoveOptions {
  *
  * This is an ORIGINAL backend seam: ALS inherits UE's collision queries, while this repository
  * must ask Rapier directly. It preserves the same query contract—Z-up ALS coordinates, one full
- * capsule cast, normalized hit time, outward impact normal, and owner-body exclusion.
+ * capsule cast, normalized hit time, impact point, contact `Normal`, opposing-face
+ * `ImpactNormal`, and owner-body exclusion.
  */
 export function createRapierAlsGroundedMoveSweep(
   options: Readonly<RapierAlsGroundedMoveOptions>,
@@ -77,6 +94,9 @@ export function createRapierAlsGroundedMoveSweep(
   const shapePosition = { x: 0, y: 0, z: 0 }
   const shapeRotation = { x: 0, y: 0, z: 0, w: 1 }
   const shapeVelocity = { x: 0, y: 0, z: 0 }
+  const faceRay = options.Ray
+    ? new options.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 })
+    : null
   let capsule: unknown
   let capsuleRadius = Number.NaN
   let capsuleHalfHeight = Number.NaN
@@ -124,13 +144,35 @@ export function createRapierAlsGroundedMoveSweep(
     const bStartPenetrating = startContact
       ? startContact.distance < 0
       : hit.time_of_impact <= 0
+    const impactNormal = faceRay && hit.witness1 && !bStartPenetrating
+      ? findRapierAlsOpposingNormal(
+          hit.collider,
+          faceRay,
+          hit.witness1,
+          shapeVelocity,
+          hit.normal1,
+        )
+      : hit.normal1
+    const normal = {
+      x: hit.normal1.x,
+      y: hit.normal1.z,
+      z: hit.normal1.y,
+    } satisfies CharacterMovementGroundedMoveVector
     return {
       time: hit.time_of_impact,
       impactNormal: {
-        x: hit.normal1.x,
-        y: hit.normal1.z,
-        z: hit.normal1.y,
+        x: impactNormal.x,
+        y: impactNormal.z,
+        z: impactNormal.y,
       } satisfies CharacterMovementGroundedMoveVector,
+      normal,
+      ...(hit.witness1 && {
+        impactPoint: {
+          x: hit.witness1.x,
+          y: hit.witness1.z,
+          z: hit.witness1.y,
+        } satisfies CharacterMovementGroundedMoveVector,
+      }),
       bBlockingHit: true,
       bStartPenetrating,
       collider: hit.collider,

@@ -829,6 +829,8 @@ export interface AlsCameraAnimationInstanceInput {
   readonly Gait: string | null
   readonly LocomotionAction: string | null
   readonly bRightShoulder: boolean
+  /** Game-owned addition to the look state's CameraOffsetY, in centimetres, applied before the shoulder blend. */
+  readonly ShoulderOffsetY?: number
 }
 
 export interface AlsCameraAnimationInstanceState {
@@ -988,6 +990,9 @@ export function refreshAlsCameraAnimationInstance(
     state.lookSources,
     state.lookStateMachine.weights,
   )
+  if (input.ShoulderOffsetY) {
+    state.lookCurves[CURVE_INDICES.get('CameraOffsetY')!] += input.ShoulderOffsetY
+  }
 
   for (let index = 0; index < SHOULDER_MODIFIERS.length; index++) {
     copyAndModify(

@@ -208,6 +208,7 @@ describe('Rapier ALS capsule sweep', () => {
       validBlockingHit: true,
       time: 0.375,
       impactNormal: { x: 0.1, y: -0.2, z: 0.9 },
+      normal: { x: 0.1, y: -0.2, z: 0.9 },
       impactPoint: { x: 4, y: 6, z: 5 },
       bBlockingHit: true,
       bStartPenetrating: false,

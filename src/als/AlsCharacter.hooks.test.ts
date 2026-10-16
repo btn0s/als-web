@@ -671,6 +671,14 @@ describe('AlsCharacter browser bridge math', () => {
     expect(handleAlsJumpInput(character)).toBe('Rejected')
   })
 
+  it('jumps from InAir only inside an opted-in coyote window', () => {
+    const character = createAlsCharacter()
+    expect(refreshRapierAlsLocomotionMode(character, false, 0)).toBe('InAir')
+    expect(handleAlsJumpInput(character)).toBe('Rejected')
+    expect(handleAlsJumpInput(character, () => false, true)).toBe('Jumped')
+    expect(character.locomotionMode).toBe('InAir')
+  })
+
   it('exposes Rapier Walking/Falling as exact ALS locomotion-mode edges', () => {
     const character = createAlsCharacter()
 

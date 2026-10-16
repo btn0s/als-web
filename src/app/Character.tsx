@@ -309,10 +309,11 @@ function LoadedCharacter({
     () => createRapierAlsGroundedMoveSweep({
       world,
       Capsule: RapierCapsule,
+      Ray: RapierRay,
       resolveExcludeRigidBody: () => rigidBody.current,
       filterFlags: rapier.QueryFilterFlags.EXCLUDE_SENSORS,
     }),
-    [RapierCapsule, rapier.QueryFilterFlags.EXCLUDE_SENSORS, world],
+    [RapierCapsule, RapierRay, rapier.QueryFilterFlags.EXCLUDE_SENSORS, world],
   )
   const controlRigFootTrace = useMemo(
     () => createRapierAlsControlRigFootTrace({

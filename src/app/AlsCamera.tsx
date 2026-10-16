@@ -127,6 +127,7 @@ interface MutableCameraAnimationInput {
   Gait: string | null
   LocomotionAction: string | null
   bRightShoulder: boolean
+  ShoulderOffsetY: number
 }
 
 interface MutableCameraComponentInput {
@@ -294,6 +295,9 @@ export function AlsCamera({
   gamepadIndex,
   modifyGamepadLook,
   controlRotationSource,
+  rightShoulder,
+  shoulderOffset = 0,
+  aspectRatioAxisConstraint = 'MaintainXFOV',
 }: {
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
@@ -308,6 +312,12 @@ export function AlsCamera({
   gamepadIndex?: number
   modifyGamepadLook?: (input: AlsGamepadLookInput) => AlsGamepadLookDelta
   controlRotationSource?: AlsCameraControlRotationSource
+  /** Game-owned shoulder side, read every frame. When set, it overrides KeyC and the gamepad shoulder binding; the swap still blends. */
+  rightShoulder?: boolean | (() => boolean)
+  /** Extra over-the-shoulder offset in metres, added to the authored CameraOffsetY before the shoulder blend and the collision trace. */
+  shoulderOffset?: number
+  /** UE `EAspectRatioAxisConstraint`. `MajorAxisFOV` applies the authored FOV to the longer screen axis, so portrait phones keep a sane vertical view. */
+  aspectRatioAxisConstraint?: 'MaintainXFOV' | 'MajorAxisFOV'
 }) {
   const { camera, gl, size } = useThree()
   const { world } = useRapier()
@@ -377,6 +387,7 @@ export function AlsCamera({
     Gait: GAIT_TAGS.Walking,
     LocomotionAction: null,
     bRightShoulder: true,
+    ShoulderOffsetY: 0,
   }), [])
   const componentInput = useMemo<MutableCameraComponentInput>(() => ({
     deltaTime: 0,
@@ -520,6 +531,10 @@ export function AlsCamera({
     const sample = poseSample.current
     const character = sample.character
     if (!character) return
+    const desiredShoulder = typeof rightShoulder === 'function' ? rightShoulder() : rightShoulder
+    if (desiredShoulder !== undefined && cameraComponentState.rightShoulder !== desiredShoulder) {
+      setRightShoulder(cameraComponentState, desiredShoulder)
+    }
     if (controlRotationSource) {
       refreshAlsCameraControlRotationFromSource(sample, viewRotation.current, deltaTime, controlRotationSource)
       return
@@ -692,6 +707,7 @@ export function AlsCamera({
       character,
       cameraComponentState.rightShoulder,
     )
+    animationInput.ShoulderOffsetY = character.viewMode === 'FirstPerson' ? 0 : shoulderOffset * 100
     refreshAlsCameraAnimationInstance(
       cameraAnimationState,
       animationInput as AlsCameraAnimationInstanceInput,
@@ -762,8 +778,9 @@ export function AlsCamera({
       scratch.projectionAspect = aspectRatio
       scratch.projectionHorizontalFieldOfView =
         renderView.cameraFieldOfView
-      camera.fov =
-        unrealHorizontalFovDegreesToThreeVerticalFovDegrees(
+      camera.fov = aspectRatioAxisConstraint === 'MajorAxisFOV' && aspectRatio < 1
+        ? renderView.cameraFieldOfView
+        : unrealHorizontalFovDegreesToThreeVerticalFovDegrees(
           renderView.cameraFieldOfView,
           aspectRatio,
         )

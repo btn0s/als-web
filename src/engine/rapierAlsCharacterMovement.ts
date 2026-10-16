@@ -29,6 +29,12 @@ export function getRapierAlsFindFloorDistance(
 export function shouldAdjustRapierAlsFloorHeight(
   floor: Readonly<RapierAlsFloorDistanceResult>,
 ): boolean {
+  // A short sweep with a longer line result would scale unwalkable walls.
+  if (
+    floor.bLineTrace
+    && floor.FloorDist < UE_CHARACTER_MOVEMENT_MIN_FLOOR_DISTANCE
+    && floor.LineDist >= UE_CHARACTER_MOVEMENT_MIN_FLOOR_DISTANCE
+  ) return false
   const distance = getRapierAlsFindFloorDistance(floor)
   return distance < UE_CHARACTER_MOVEMENT_MIN_FLOOR_DISTANCE
     || distance > UE_CHARACTER_MOVEMENT_MAX_FLOOR_DISTANCE
