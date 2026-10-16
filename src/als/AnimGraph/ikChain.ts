@@ -18,9 +18,9 @@ import {
  * target world rotations back into local bone rotations.
  */
 export interface TwoBoneIkChain {
-  hip: THREE.Bone | null
-  knee: THREE.Bone | null
-  ankle: THREE.Bone | null
+  hip: THREE.Object3D | null
+  knee: THREE.Object3D | null
+  ankle: THREE.Object3D | null
 }
 
 /**
