@@ -70,4 +70,27 @@ describe('local and interpolated remote animation clocks', () => {
       expect(instance.getRollingSnapshot()!.position).toBeCloseTo(0.25, 12)
     }
   })
+
+  it('keeps the graph clock and footstep cadence when only every eighth update evaluates the pose', () => {
+    vi.stubGlobal('window', {})
+    const make = () => createAlsAnimationInstance({ scene: clone(gltf.scene), animations: gltf.animations, publishDiagnostics: false })
+    const every = make()
+    const eighth = make()
+    const controls = createAlsCharacterAnimationControls()
+    Object.assign(controls, { speed: 3.75, velocity: { x: 3.75, y: 0, z: 0 }, gait: 'Running', moving: true, movingSmooth: true, hasInput: true, overlayMode: 'Rifle' })
+    const steps = { every: [] as number[], eighth: [] as number[] }
+    for (let frame = 0; frame < 360; frame++) {
+      every.refresh(1 / 60, controls)
+      eighth.refresh(1 / 60, controls, false, frame % 8 === 0)
+      every.dispatchQueuedFootstepEffectsEvents(() => steps.every.push(frame))
+      eighth.dispatchQueuedFootstepEffectsEvents(() => steps.eighth.push(frame))
+    }
+    expect(steps.eighth.length).toBe(steps.every.length)
+    expect(steps.every.length).toBeGreaterThan(10)
+    expect(new Set(steps.eighth).size).toBe(steps.eighth.length)
+    const offsets = steps.eighth.map((frame, index) => frame - steps.every[index]!)
+    expect(Math.max(...offsets) - Math.min(...offsets)).toBeLessThanOrEqual(1)
+    expect(Math.max(...offsets.map(Math.abs))).toBeLessThan(8)
+    expect(eighth.clock.elapsedSeconds).toBeCloseTo(every.clock.elapsedSeconds, 12)
+  })
 })

@@ -181,23 +181,22 @@ export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, 
   useFrame((_, deltaRealTime) => {
     const delta = worldTime ? getWorldDeltaTime(worldTime, deltaRealTime) : deltaRealTime
     if (!active.current) return
-    const elapsed = driver.animationRate.next(delta, resolveAlsAnimationLod(animationLod),
+    const evaluate = driver.animationRate.evaluate(resolveAlsAnimationLod(animationLod),
       driverSnapshot.current?.action !== 'none' || ragdoll.active || cosmeticRagdoll.current)
-    if (elapsed === null) return
     // Montage time comes from the same interpolated frame as position, including slow motion.
     const mantle = mantleSettings.current
     // Refresh advances the montage once, so the caller-provided clock is positioned before it.
     const snapshot = driverSnapshot.current?.animation?.mantle?.position
     if (mantle && snapshot !== undefined) {
-      animation.mantlingMontage.montageSetPosition(mantle, Math.max(0, snapshot - elapsed * mantle.Montage.RateScale))
+      animation.mantlingMontage.montageSetPosition(mantle, Math.max(0, snapshot - delta * mantle.Montage.RateScale))
     }
     const rolling = driverSnapshot.current?.animation?.rolling
-    if (rolling) animation.setRollingPosition(Math.max(0, rolling.position - elapsed * rolling.playRate))
+    if (rolling) animation.setRollingPosition(Math.max(0, rolling.position - delta * rolling.playRate))
     if (ragdoll.active || cosmeticRagdoll.current) {
       driver.controls.locomotionAction = driver.character.locomotionAction
       driver.controls.locomotionMode = driver.character.locomotionMode
     }
-    animation.refresh(elapsed, driver.controls)
+    animation.refresh(delta, driver.controls, false, evaluate)
     onAnimationClock?.(animation.clock)
     for (const event of animation.getUpMontage.takeNotifyEvents()) {
       if (event.notifyEventType === 'Begin') notifyAlsAnimNotifyStateSetLocomotionActionBegin(driver.character, event)

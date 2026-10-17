@@ -1,8 +1,10 @@
 /**
- * USkinnedMeshComponent update rate optimization (FAnimUpdateRateParameters): a mesh evaluates
- * its animation graph every `interval` frames from its significance, carrying the skipped time
- * into the next evaluation so notifies and montage clocks cross each frame exactly once. Local
- * and remote characters share this one mechanism; actions pass `critical` to evaluate every frame.
+ * USkinnedMeshComponent update rate optimization (FAnimUpdateRateParameters with UpdateRate 1 and
+ * an EvaluationRate): the graph updates every frame, so clocks, state machines and notifies stay
+ * on the frame they happen, while the pose is evaluated every `interval` frames from the mesh's
+ * significance. The instance carries the skipped time into the next evaluation. Local and remote
+ * characters share this one mechanism; actions pass `critical` to evaluate every frame because
+ * their root motion comes from the evaluated pose.
  */
 export interface AlsAnimationLod {
   distance?: number
@@ -35,24 +37,22 @@ let nextPhase = 0
 
 export class AlsAnimationUpdateRate {
   private frame = 0
-  private pending = 0
   private started = false
-  constructor(readonly phase = nextPhase++) {}
+  readonly phase: number
 
-  next(delta: number, significance?: AlsAnimationLod, critical = false): number | null {
-    this.pending += Math.max(0, delta)
+  constructor(phase = nextPhase++) {
+    this.phase = phase
+  }
+
+  evaluate(significance?: AlsAnimationLod, critical = false): boolean {
     const interval = significance && !critical ? selectAlsAnimationInterval(significance) : 1
     const evaluate = !this.started || interval === 1 || (this.frame + this.phase) % interval === 0
     this.frame++
-    if (!evaluate) return null
-    this.started = true
-    const elapsed = this.pending
-    this.pending = 0
-    return elapsed
+    if (evaluate) this.started = true
+    return evaluate
   }
 
   reset() {
-    this.pending = 0
     this.started = false
   }
 }

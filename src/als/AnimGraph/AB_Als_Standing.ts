@@ -1828,15 +1828,6 @@ function evaluateMovementDetails(
     graph.nodes.movementDetailsStateMachine,
     graph.nodes.movementDetails,
   )
-  for (const request of runtime.inertializationRequests) {
-    if (
-      request.nodeIndex
-      === AB_ALS_STANDING_GRAPH.movementDetailsInertialization.nodeIndex
-    ) {
-      graph.movementDetailsInertialization.pose
-        .requestInertialization(request.duration)
-    }
-  }
   applyRetainedInertialization(
     graph.movementDetailsInertialization,
     graph.nodes.movementDetails,
@@ -2052,6 +2043,33 @@ function evaluateRotateStates(
  * inertializers, the foot overlays, additives, slot, and named curves retain their authored
  * boundaries.
  */
+/**
+ * FAnimNode_Inertialization gathers requests during update and consumes them at its next
+ * evaluation, so a request made on an update whose pose evaluation is skipped still blends.
+ */
+export function requestAlsStandingPoseGraphInertialization(
+  graph: AlsStandingPoseGraphRuntime,
+  runtime: AlsStandingGraphRuntime,
+) {
+  for (const request of runtime.inertializationRequests) {
+    if (
+      request.nodeIndex
+      === AB_ALS_STANDING_GRAPH.movementDetailsInertialization.nodeIndex
+      && runtime.movementDetails.relevant
+    ) {
+      graph.movementDetailsInertialization.pose
+        .requestInertialization(request.duration)
+    }
+    if (
+      request.nodeIndex
+      === AB_ALS_STANDING_GRAPH.standingInertialization.nodeIndex
+    ) {
+      graph.standingInertialization.pose
+        .requestInertialization(request.duration)
+    }
+  }
+}
+
 export function evaluateAlsStandingPoseGraph(
   graph: AlsStandingPoseGraphRuntime,
   runtime: AlsStandingGraphRuntime,
@@ -2100,15 +2118,6 @@ export function evaluateAlsStandingPoseGraph(
     graph.nodes.standingStateMachine,
     graph.nodes.output,
   )
-  for (const request of runtime.inertializationRequests) {
-    if (
-      request.nodeIndex
-      === AB_ALS_STANDING_GRAPH.standingInertialization.nodeIndex
-    ) {
-      graph.standingInertialization.pose
-        .requestInertialization(request.duration)
-    }
-  }
   applyRetainedInertialization(
     graph.standingInertialization,
     graph.nodes.output,
