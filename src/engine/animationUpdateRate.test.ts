@@ -10,23 +10,28 @@ it('selects distance and visibility rates with focus overriding all clamps', () 
   expect(selectAlsAnimationInterval({ visible: false, focused: true, minInterval: 4 })).toBe(1)
 })
 
-it('evaluates every interval from its phase and on focus or action', () => {
-  const rate = new AlsAnimationUpdateRate(0)
-  const distant = { distance: 30 }
-  expect([0, 1, 2, 3, 4, 5, 6].map(() => rate.evaluate(distant))).toEqual([
-    true, false, false, true, false, false, true,
-  ])
-  expect(rate.evaluate(distant)).toBe(false)
-  expect(rate.evaluate({ ...distant, focused: true })).toBe(true)
-  expect(rate.evaluate(distant, true)).toBe(true)
-  expect(rate.evaluate(undefined)).toBe(true)
+const ticks = (rate: AlsAnimationUpdateRate, frames: number, significance: Parameters<AlsAnimationUpdateRate['next']>[1], heard: boolean) =>
+  Array.from({ length: frames }, () => {
+    const tick = rate.next(0.01, significance, false, heard)
+    return tick.update ? `${tick.evaluate ? 'E' : 'U'}${Math.round(tick.delta * 100)}` : '-'
+  })
+
+it('updates a heard character every frame and evaluates it every interval', () => {
+  expect(ticks(new AlsAnimationUpdateRate(0), 7, { distance: 30 }, true)).toEqual(['E1', 'U1', 'U1', 'E1', 'U1', 'U1', 'E1'])
 })
 
-it('evaluates on the first frame and after a reset whatever the phase', () => {
+it('ticks an unheard character only when it evaluates, carrying the skipped time', () => {
+  expect(ticks(new AlsAnimationUpdateRate(0), 7, { distance: 30 }, false)).toEqual(['E1', '-', '-', 'E3', '-', '-', 'E3'])
+})
+
+it('ticks every frame on focus or action and restarts after a reset', () => {
   const rate = new AlsAnimationUpdateRate(3)
   const hidden = { visible: false }
-  expect(rate.evaluate(hidden)).toBe(true)
-  expect(rate.evaluate(hidden)).toBe(false)
+  expect(ticks(rate, 2, hidden, false)).toEqual(['E1', '-'])
+  expect(ticks(rate, 1, { ...hidden, focused: true }, false)).toEqual(['E2'])
+  const action = rate.next(0.01, hidden, true, false)
+  expect([action.update, action.evaluate, action.delta]).toEqual([true, true, 0.01])
+  expect(ticks(rate, 1, hidden, false)).toEqual(['-'])
   rate.reset()
-  expect(rate.evaluate(hidden)).toBe(true)
+  expect(ticks(rate, 1, hidden, false)).toEqual(['E1'])
 })

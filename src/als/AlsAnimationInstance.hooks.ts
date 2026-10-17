@@ -427,11 +427,13 @@ export function useAlsAnimationInstance(
     const frameControls = controls.current
     const current = character.current
     frameControls.hasInput = current.locomotionState.hasInput
+    const tick = updateRate.next(deltaTime, resolveAlsAnimationLod(animationLod), current.locomotionAction !== null, true)
+    if (!tick.update) return
     animationInstance.refresh(
-      deltaTime,
+      tick.delta,
       frameControls,
       captureControlRigComponentPositions.current,
-      updateRate.evaluate(resolveAlsAnimationLod(animationLod), current.locomotionAction !== null),
+      tick.evaluate,
     )
     const montage = animationInstance.mantlingMontage
     refreshAlsAnimationMantlingNotifies(

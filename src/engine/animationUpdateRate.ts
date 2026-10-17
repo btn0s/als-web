@@ -1,10 +1,12 @@
 /**
- * USkinnedMeshComponent update rate optimization (FAnimUpdateRateParameters with UpdateRate 1 and
- * an EvaluationRate): the graph updates every frame, so clocks, state machines and notifies stay
- * on the frame they happen, while the pose is evaluated every `interval` frames from the mesh's
- * significance. The instance carries the skipped time into the next evaluation. Local and remote
- * characters share this one mechanism; actions pass `critical` to evaluate every frame because
- * their root motion comes from the evaluated pose.
+ * USkinnedMeshComponent update rate optimization (FAnimUpdateRateParameters): the pose is
+ * evaluated every `interval` frames from the mesh's significance (EvaluationRate). The graph
+ * update (clocks, state machines, notifies) has two outputs: timed events for their listeners,
+ * and state for the next evaluation. A character whose events are heard updates every frame
+ * (UpdateRate 1), so a footstep lands on the frame its notify is crossed; one whose events
+ * nobody hears updates only when it evaluates, carrying the skipped time, because the next
+ * evaluation is the only reader. Actions pass `critical` to tick every frame because their root
+ * motion comes from the evaluated pose.
  */
 export interface AlsAnimationLod {
   distance?: number
@@ -35,24 +37,41 @@ export function resolveAlsAnimationLod(source: AlsAnimationLodSource | undefined
 
 let nextPhase = 0
 
+export interface AlsAnimationTick {
+  update: boolean
+  evaluate: boolean
+  delta: number
+}
+
 export class AlsAnimationUpdateRate {
   private frame = 0
+  private pending = 0
   private started = false
+  private readonly tick: AlsAnimationTick = { update: false, evaluate: false, delta: 0 }
   readonly phase: number
 
   constructor(phase = nextPhase++) {
     this.phase = phase
   }
 
-  evaluate(significance?: AlsAnimationLod, critical = false): boolean {
+  next(delta: number, significance: AlsAnimationLod | undefined, critical: boolean, heard: boolean): AlsAnimationTick {
     const interval = significance && !critical ? selectAlsAnimationInterval(significance) : 1
     const evaluate = !this.started || interval === 1 || (this.frame + this.phase) % interval === 0
     this.frame++
+    this.pending += Math.max(0, delta)
+    const tick = this.tick
+    tick.evaluate = evaluate
+    tick.update = evaluate || heard
+    tick.delta = 0
+    if (!tick.update) return tick
     if (evaluate) this.started = true
-    return evaluate
+    tick.delta = this.pending
+    this.pending = 0
+    return tick
   }
 
   reset() {
+    this.pending = 0
     this.started = false
   }
 }
