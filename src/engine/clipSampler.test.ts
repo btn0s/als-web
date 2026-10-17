@@ -122,3 +122,32 @@ it('reuses immutable bindings across matching rigs with independent virtual-bone
   expect(third.bindings).not.toBe(first.bindings)
   expect(third.bindings[0].boneIndex).toBe(1)
 })
+
+it('shares key searches across equal timelines and reuses repeated samples exactly', () => {
+  const rig = createTwoBoneRig()
+  const clip = new THREE.AnimationClip('shared', 2, [
+    new THREE.VectorKeyframeTrack('root.position', [0, 1, 2], [0, 0, 0, 2, 0, 0, 6, 0, 0]),
+    new THREE.VectorKeyframeTrack('child.position', new Float32Array([0, 1, 2]), [0, 5, 0, 0, 7, 0, 0, 9, 0]),
+    new THREE.QuaternionKeyframeTrack('child.quaternion', [0, 2], [0, 0, 0, 1, 0, 0, 1, 0]),
+  ])
+  const sampler = compileClipSampler(clip, rig)
+  expect(sampler.timelines).toHaveLength(2)
+
+  const fresh = (time: number, fallback: 'reference' | 'additiveIdentity' = 'reference') => {
+    const pose = createPoseBuffer(rig.boneCount)
+    sampleClip(compileClipSampler(clip, rig), rig, time, pose, false, fallback)
+    return [...pose.data]
+  }
+  const first = fresh(0.5)
+  const second = fresh(1.5)
+  const additive = fresh(0.5, 'additiveIdentity')
+  const pose = createPoseBuffer(rig.boneCount)
+  for (const [time, fallback, expected] of [[0.5, 'reference', first], [1.5, 'reference', second], [0.5, 'additiveIdentity', additive], [0.5, 'reference', first]] as const) {
+    pose.data.fill(Number.NaN)
+    sampleClip(sampler, rig, time, pose, false, fallback)
+    expect([...pose.data]).toEqual(expected)
+  }
+  expect(first[1]).toBeCloseTo(0)
+  expect(first[0]).toBeCloseTo(1)
+  expect(second[4]).toBeCloseTo(8)
+})

@@ -101,9 +101,13 @@ export function createKeyframedScalarCurve(
  * Each key retains all nine FRichCurveKey fields. ALS 4.15 has no weighted animation-curve keys,
  * so any future weighted key fails compilation instead of taking an approximate cubic path.
  */
+const compiledCurveSamplers = new WeakMap<object, ClipCurveSamplers>()
+
 export function compileClipCurveSamplers(clip: ClipWithCurveExtras): ClipCurveSamplers {
   const extras = clip.userData?.alsCurves
   if (!Array.isArray(extras)) return {}
+  const cached = compiledCurveSamplers.get(extras)
+  if (cached) return cached
 
   const samplers: Record<string, ScalarCurveSampler> = {}
   for (const rawCurve of extras as AlsCurveExtras[]) {
@@ -181,6 +185,7 @@ export function compileClipCurveSamplers(clip: ClipWithCurveExtras): ClipCurveSa
       )
     }
   }
+  compiledCurveSamplers.set(extras, samplers)
   return samplers
 }
 
