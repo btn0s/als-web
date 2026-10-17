@@ -285,6 +285,48 @@ export function refreshAlsCameraControlRotationFromSource(
   return true
 }
 
+/** UE's default `GNearClippingPlane` (10 cm) in metres. */
+export const ALS_DEFAULT_NEAR_CLIP_PLANE = 0.1
+
+export type AlsCameraProjectionState = {
+  aspect: number
+  horizontalFieldOfView: number
+  nearClipPlane: number | null
+}
+
+export function createAlsCameraProjectionState(): AlsCameraProjectionState {
+  return { aspect: Number.NaN, horizontalFieldOfView: Number.NaN, nearClipPlane: null }
+}
+
+/**
+ * Applies the ALS view FOV and the near clip plane to the render camera when either changes.
+ * `nearClipPlane: null` leaves the game's own `camera.near` untouched.
+ */
+export function applyAlsCameraProjection(
+  camera: THREE.PerspectiveCamera,
+  state: AlsCameraProjectionState,
+  aspect: number,
+  horizontalFieldOfView: number,
+  aspectRatioAxisConstraint: 'MaintainXFOV' | 'MajorAxisFOV',
+  nearClipPlane: number | null,
+): boolean {
+  if (
+    state.aspect === aspect
+    && state.horizontalFieldOfView === horizontalFieldOfView
+    && state.nearClipPlane === nearClipPlane
+    && (nearClipPlane === null || camera.near === nearClipPlane)
+  ) return false
+  state.aspect = aspect
+  state.horizontalFieldOfView = horizontalFieldOfView
+  state.nearClipPlane = nearClipPlane
+  camera.fov = aspectRatioAxisConstraint === 'MajorAxisFOV' && aspect < 1
+    ? horizontalFieldOfView
+    : unrealHorizontalFovDegreesToThreeVerticalFovDegrees(horizontalFieldOfView, aspect)
+  if (nearClipPlane !== null) camera.near = nearClipPlane
+  camera.updateProjectionMatrix()
+  return true
+}
+
 export function AlsCamera({
   poseSample,
   worldTime,
@@ -298,6 +340,7 @@ export function AlsCamera({
   rightShoulder,
   shoulderOffset = 0,
   aspectRatioAxisConstraint = 'MaintainXFOV',
+  nearClipPlane = ALS_DEFAULT_NEAR_CLIP_PLANE,
 }: {
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
@@ -318,6 +361,8 @@ export function AlsCamera({
   shoulderOffset?: number
   /** UE `EAspectRatioAxisConstraint`. `MajorAxisFOV` applies the authored FOV to the longer screen axis, so portrait phones keep a sane vertical view. */
   aspectRatioAxisConstraint?: 'MaintainXFOV' | 'MajorAxisFOV'
+  /** Near clip plane in metres, defaulting to 10 cm. Pass `null` to keep the near plane the game set on its camera. */
+  nearClipPlane?: number | null
 }) {
   const { camera, gl, size } = useThree()
   const { world } = useRapier()
@@ -363,8 +408,7 @@ export function AlsCamera({
     pointerYawInput: 0,
     keyboardLookRight: 0,
     gamepadLookRight: 0,
-    projectionAspect: Number.NaN,
-    projectionHorizontalFieldOfView: Number.NaN,
+    projection: createAlsCameraProjectionState(),
   }), [])
   const audioListenerTransform = useMemo(() => ({
     Location: new THREE.Vector3(),
@@ -770,23 +814,14 @@ export function AlsCamera({
     )
 
     const aspectRatio = size.width / size.height
-    if (
-      scratch.projectionAspect !== aspectRatio
-      || scratch.projectionHorizontalFieldOfView
-        !== renderView.cameraFieldOfView
-    ) {
-      scratch.projectionAspect = aspectRatio
-      scratch.projectionHorizontalFieldOfView =
-        renderView.cameraFieldOfView
-      camera.fov = aspectRatioAxisConstraint === 'MajorAxisFOV' && aspectRatio < 1
-        ? renderView.cameraFieldOfView
-        : unrealHorizontalFovDegreesToThreeVerticalFovDegrees(
-          renderView.cameraFieldOfView,
-          aspectRatio,
-        )
-      camera.near = 0.1
-      camera.updateProjectionMatrix()
-    }
+    applyAlsCameraProjection(
+      camera as THREE.PerspectiveCamera,
+      scratch.projection,
+      aspectRatio,
+      renderView.cameraFieldOfView,
+      aspectRatioAxisConstraint,
+      nearClipPlane,
+    )
 
     debugState.activated = true
     debugState.pointerLocked =

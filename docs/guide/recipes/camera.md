@@ -11,3 +11,5 @@ When Subject owns look, wire the **same** yaw/pitch into both Character's input 
 ```
 
 `controlRotationSource` returns `{yaw,pitch}` in ALS degrees. Use `subject.setView('first-person' | 'third-person')` for FPP/TPP; `cameraMode='fpp' | 'tpp'` locks it, `switchable` lets V toggle. Standalone shoulder swap uses `AlsCamera`'s gamepad binding or its existing `KeyC` binding; see [camera implementation](../../../src/app/AlsCamera.tsx). [Camera source test](../../../src/app/AlsCamera.input.test.ts).
+
+`AlsCamera` writes the near clip plane whenever it updates the projection. The default is UE's 10 cm. Pass `nearClipPlane={0.15}` to choose another value, or `nearClipPlane={null}` to keep the `camera.near` the game set, for example from its quality tier. There is no need to re-set `near` each frame. [Projection tests](../../../src/app/AlsCamera.projection.test.ts).
