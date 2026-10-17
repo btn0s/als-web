@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { LocalPoseBuffer } from './poseBuffer'
 import {
   copyPose,
+  createPoseBuffer,
   resetPoseToAdditiveIdentity,
   resetPoseToReference,
 } from './poseBuffer'
@@ -20,11 +21,13 @@ export interface CompiledTrackBinding {
   readonly times: ArrayLike<number>
   readonly values: ArrayLike<number>
   readonly interpolation: THREE.InterpolationModes
+  readonly timeline: number
 }
 
 export interface CompiledClipSampler {
   readonly clip: THREE.AnimationClip
   readonly bindings: readonly CompiledTrackBinding[]
+  readonly timelines: readonly ArrayLike<number>[]
   readonly virtualBoneScratch: VirtualBonePoseScratch | null
 }
 
@@ -39,7 +42,32 @@ const PROPERTY_SIZES: Record<TransformProperty, number> = {
   scale: 3,
 }
 
-const bindingCache = new WeakMap<THREE.AnimationClip, Map<string, readonly CompiledTrackBinding[]>>()
+type CompiledBindings = { readonly bindings: readonly CompiledTrackBinding[]; readonly timelines: readonly ArrayLike<number>[] }
+
+const bindingCache = new WeakMap<THREE.AnimationClip, Map<string, CompiledBindings>>()
+
+function sameTimes(a: ArrayLike<number>, b: ArrayLike<number>) {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let index = 0; index < a.length; index++) if (a[index] !== b[index]) return false
+  return true
+}
+
+type SampleCacheEntry = { time: number; fallback: ClipSampleFallback; pose: LocalPoseBuffer }
+
+const SAMPLE_CACHE_SIZE = 4
+const sampleCaches = new WeakMap<RigDefinition, WeakMap<readonly CompiledTrackBinding[], SampleCacheEntry[]>>()
+
+function sampleCacheFor(rig: RigDefinition, bindings: readonly CompiledTrackBinding[]) {
+  let byBindings = sampleCaches.get(rig)
+  if (!byBindings) sampleCaches.set(rig, byBindings = new WeakMap())
+  let entries = byBindings.get(bindings)
+  if (!entries) byBindings.set(bindings, entries = [])
+  return entries
+}
+
+let timelineKeys = new Int32Array(0)
+let timelineAlphas = new Float64Array(0)
 
 export function precompileClipSamplers(clips: readonly THREE.AnimationClip[], rig: RigDefinition): void {
   for (const clip of clips) compileClipSampler(clip, rig)
@@ -54,11 +82,12 @@ export function compileClipSampler(
   const existing = cached?.get(signature)
   if (existing) return {
     clip,
-    bindings: existing,
+    ...existing,
     virtualBoneScratch: rig.virtualBones.length > 0 ? createVirtualBonePoseScratch(rig.boneCount) : null,
   }
   const indices = new Map(rig.boneNames.map((name, index) => [name, index]))
   const bindings: CompiledTrackBinding[] = []
+  const timelines: ArrayLike<number>[] = []
 
   for (const track of clip.tracks) {
     const parsed = THREE.PropertyBinding.parseTrackName(track.name)
@@ -71,12 +100,15 @@ export function compileClipSampler(
       continue
     }
 
+    let timeline = timelines.findIndex(times => sameTimes(times, track.times))
+    if (timeline < 0) timeline = timelines.push(track.times) - 1
     bindings.push({
       boneIndex,
       property,
       times: track.times,
       values: track.values,
       interpolation: track.getInterpolation(),
+      timeline,
     })
   }
 
@@ -84,10 +116,11 @@ export function compileClipSampler(
     cached = new Map()
     bindingCache.set(clip, cached)
   }
-  cached.set(signature, bindings)
+  cached.set(signature, { bindings, timelines })
   return {
     clip,
     bindings,
+    timelines,
     virtualBoneScratch: rig.virtualBones.length > 0
       ? createVirtualBonePoseScratch(rig.boneCount)
       : null,
@@ -153,18 +186,40 @@ export function sampleClip(
   loop = true,
   fallback: ClipSampleFallback = 'reference',
 ): LocalPoseBuffer {
+  const sampleTime = resolveClipTime(time, sampler.clip.duration, loop)
+  const cache = typeof fallback === 'string' && out.boneCount === rig.boneCount
+    ? sampleCacheFor(rig, sampler.bindings)
+    : null
+  if (cache) {
+    for (let index = 0; index < cache.length; index++) {
+      const entry = cache[index]
+      if (entry.time !== sampleTime || entry.fallback !== fallback) continue
+      if (index > 0) {
+        cache.splice(index, 1)
+        cache.unshift(entry)
+      }
+      out.data.set(entry.pose.data)
+      return out
+    }
+  }
+
   if (fallback === 'additiveIdentity') resetPoseToAdditiveIdentity(out)
   else if (fallback === 'reference') resetPoseToReference(out, rig)
   else copyPose(fallback, out)
 
-  const sampleTime = resolveClipTime(time, sampler.clip.duration, loop)
-  for (const binding of sampler.bindings) {
-    const last = binding.times.length - 1
+  const timelines = sampler.timelines
+  if (timelineKeys.length < timelines.length * 2) {
+    timelineKeys = new Int32Array(timelines.length * 2)
+    timelineAlphas = new Float64Array(timelines.length)
+  }
+  for (let timeline = 0; timeline < timelines.length; timeline++) {
+    const times = timelines[timeline]
+    const last = times.length - 1
     let a = 0
     let b = 0
     let rawAlpha = 0
-    if (last > 0 && sampleTime > binding.times[0]) {
-      if (sampleTime >= binding.times[last]) {
+    if (last > 0 && sampleTime > times[0]) {
+      if (sampleTime >= times[last]) {
         a = last
         b = last
       } else {
@@ -172,15 +227,23 @@ export function sampleClip(
         let high = last
         while (high - low > 1) {
           const middle = (low + high) >>> 1
-          if (binding.times[middle] <= sampleTime) low = middle
+          if (times[middle] <= sampleTime) low = middle
           else high = middle
         }
         a = low
         b = high
-        const span = binding.times[high] - binding.times[low]
-        rawAlpha = span > 0 ? (sampleTime - binding.times[low]) / span : 0
+        const span = times[high] - times[low]
+        rawAlpha = span > 0 ? (sampleTime - times[low]) / span : 0
       }
     }
+    timelineKeys[timeline * 2] = a
+    timelineKeys[timeline * 2 + 1] = b
+    timelineAlphas[timeline] = rawAlpha
+  }
+  for (const binding of sampler.bindings) {
+    const a = timelineKeys[binding.timeline * 2]
+    const b = timelineKeys[binding.timeline * 2 + 1]
+    const rawAlpha = timelineAlphas[binding.timeline]
     const alpha = binding.interpolation === THREE.InterpolateDiscrete ? 0 : rawAlpha
     const size = PROPERTY_SIZES[binding.property]
     const sourceA = a * size
@@ -210,6 +273,16 @@ export function sampleClip(
     && sampler.virtualBoneScratch
   ) {
     refreshVirtualBonePose(out, rig, sampler.virtualBoneScratch)
+  }
+
+  if (cache) {
+    const entry = cache.length < SAMPLE_CACHE_SIZE
+      ? { time: sampleTime, fallback, pose: createPoseBuffer(rig.boneCount) }
+      : cache.pop()!
+    entry.time = sampleTime
+    entry.fallback = fallback
+    entry.pose.data.set(out.data)
+    cache.unshift(entry)
   }
 
   return out

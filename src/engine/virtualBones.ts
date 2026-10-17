@@ -171,6 +171,26 @@ function writeComponentTransform(
     * pose.scales[positionOffset + 2]
 }
 
+const virtualBoneChains = new WeakMap<RigDefinition, Int16Array>()
+
+function virtualBoneChain(rig: RigDefinition) {
+  let chain = virtualBoneChains.get(rig)
+  if (chain) return chain
+  const needed = new Uint8Array(rig.physicalBoneCount)
+  for (const virtualBone of rig.virtualBones) {
+    for (const start of [virtualBone.sourceBoneIndex, virtualBone.targetBoneIndex]) {
+      for (let bone = start; bone >= 0 && bone < rig.physicalBoneCount && !needed[bone]; bone = rig.parentIndices[bone]) {
+        needed[bone] = 1
+      }
+    }
+  }
+  const bones: number[] = []
+  for (let bone = 0; bone < rig.physicalBoneCount; bone++) if (needed[bone]) bones.push(bone)
+  chain = Int16Array.from(bones)
+  virtualBoneChains.set(rig, chain)
+  return chain
+}
+
 /**
  * Generates Unreal virtual-bone locals for one sampled source pose.
  *
@@ -190,8 +210,9 @@ export function refreshVirtualBonePose(
     throw new Error('Virtual-bone pose input has an incompatible bone count')
   }
 
-  for (let bone = 0; bone < rig.physicalBoneCount; bone++) {
-    writeComponentTransform(pose, rig, scratch, bone)
+  const chain = virtualBoneChain(rig)
+  for (let index = 0; index < chain.length; index++) {
+    writeComponentTransform(pose, rig, scratch, chain[index])
   }
 
   for (const virtualBone of rig.virtualBones) {
