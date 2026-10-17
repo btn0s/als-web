@@ -2,6 +2,7 @@ import RAPIER from '@dimforge/rapier3d-compat'
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
   moveAlongFloor,
+  UE_PENETRATION_PULLBACK_DISTANCE,
 } from './characterMovementGroundedMove'
 import type {
   CharacterMovementCurrentFloor,
@@ -269,7 +270,7 @@ describe('Rapier ALS grounded movement query', () => {
 
     expect(characterBody.bodyType())
       .toBe(RAPIER.RigidBodyType.KinematicPositionBased)
-    expect(maximumX).toBeLessThanOrEqual(1.95002)
+    expect(maximumX).toBeLessThanOrEqual(1.95 + UE_PENETRATION_PULLBACK_DISTANCE)
     expect(maximumRetreat).toBeLessThan(0.000001)
     expect(maximumFloorDistanceError).toBeLessThan(0.00001)
     expect(previousX).toBeGreaterThan(1.94)
@@ -576,6 +577,60 @@ describe('Rapier ALS MoveAlongFloor StepUp and walking FindFloor', () => {
     expect(x).toBeGreaterThan(0.15)
     expect(x).toBeLessThan(0.15 + WALK_SPEED * STEP_TEST_DELTA_TIME + 0.001)
     expect(lowestBaseZ).toBeGreaterThan(0.95)
+    world.free()
+  })
+})
+
+describe('Rapier ALS MoveAlongFloor start penetration', () => {
+  it.each([
+    ['Running', RUN_SPEED],
+    ['Sprinting', SPRINT_SPEED],
+  ])('runs onto a 10 degree slab ramp far from the origin from every sub-step phase while %s', (_gait, speed) => {
+    const stalls: number[] = []
+    const angle = 10 * Math.PI / 180
+    const length = 1.2 / Math.sin(angle)
+    const thick = 0.4
+    const startX = 138.1325
+    for (let phase = 0; phase < 120; phase++) {
+      const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
+      const level = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
+      world.createCollider(RAPIER.ColliderDesc.cuboid(230, 0.5, 230).setTranslation(80, -0.5, 0), level)
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(length / 2, thick / 2, 2)
+          .setTranslation(
+            startX + length / 2 * Math.cos(angle) + thick / 2 * Math.sin(angle),
+            length / 2 * Math.sin(angle) - thick / 2 * Math.cos(angle),
+            0,
+          )
+          .setRotation({ x: 0, y: 0, z: Math.sin(angle / 2), w: Math.cos(angle / 2) }),
+        level,
+      )
+      const harness = createWalkingCharacter(world, startX - 3 + phase * speed * STEP_TEST_DELTA_TIME / 120, 0)
+      let velocity = speed
+      for (let step = 0; step < 240 && harness.body.translation().x < startX + 3; step++) {
+        velocity = Math.min(speed, velocity + 20 * STEP_TEST_DELTA_TIME)
+        const result = harness.step(velocity)
+        velocity = Math.hypot(result.delta.x, result.delta.y) / STEP_TEST_DELTA_TIME
+      }
+      if (harness.body.translation().x < startX + 3) stalls.push(phase)
+      world.free()
+    }
+    expect(stalls).toEqual([])
+  })
+
+  it('stays put when resolving a start penetration would push into other geometry', () => {
+    const { world, addBox } = createStepWorld()
+    addBox(-10, 10, 0)
+    const harness = createWalkingCharacter(world, 0, 0)
+    world.createCollider(RAPIER.ColliderDesc.cuboid(0.5, 2, 3).setTranslation(0.75, 1, 0))
+    world.createCollider(RAPIER.ColliderDesc.cuboid(0.5, 2, 3).setTranslation(-0.75, 1, 0))
+    world.step()
+    const before = harness.body.translation()
+
+    const result = harness.step(RUN_SPEED)
+
+    expect(result.delta.x).toBeCloseTo(0, 9)
+    expect(harness.body.translation().x).toBeCloseTo(before.x, 6)
     world.free()
   })
 })

@@ -35,11 +35,18 @@ export interface CharacterMovementGroundedMoveHit {
   readonly impactPoint?: CharacterMovementGroundedMoveVector
   readonly bBlockingHit: boolean
   readonly bStartPenetrating: boolean
+  /** `FHitResult::PenetrationDepth` along `normal` when `bStartPenetrating`. */
+  readonly penetrationDepth?: number
 }
 
-export type CharacterMovementGroundedMoveSweep = (
+export type CharacterMovementGroundedMoveSweep = ((
   query: Readonly<CharacterMovementGroundedMoveSweepQuery>,
-) => CharacterMovementGroundedMoveHit | null
+) => CharacterMovementGroundedMoveHit | null) & {
+  /** `UPrimitiveComponent::OverlapTest()` for `ResolvePenetration()`'s proposed location. */
+  readonly overlaps?: (
+    query: Readonly<Omit<CharacterMovementGroundedMoveSweepQuery, 'delta'>>,
+  ) => boolean
+}
 
 /** The `FFindFloorResult` fields read by MoveAlongFloor, StepUp and SlideAlongSurface. */
 export interface CharacterMovementCurrentFloor {
@@ -85,6 +92,8 @@ const ZERO_VECTOR: CharacterMovementGroundedMoveVector = { x: 0, y: 0, z: 0 }
 const UE_KINDA_SMALL_NUMBER = 1e-4
 const UE_DELTA = 1e-5
 const UE_KINDA_SMALL_NUMBER_METRES = 1e-6
+/** `MovementComponentCVars::PenetrationPullbackDistance` (0.125 cm). */
+export const UE_PENETRATION_PULLBACK_DISTANCE = 0.00125
 
 function scale(
   value: Readonly<CharacterMovementGroundedMoveVector>,
@@ -182,7 +191,8 @@ export function computeGroundMovementDelta(
 /**
  * `UCharacterMovementComponent::MoveAlongFloor()`.
  *
- * Deliberately scoped: `SafeMoveUpdatedComponent()` penetration resolution, `TwoWallAdjust()`
+ * Deliberately scoped: `ResolvePenetration()` keeps only its adjust-then-retry path (an
+ * adjustment whose retried sweep still starts penetrating is reverted), and `TwoWallAdjust()`
  * and `HandleImpact()` are not ported.
  */
 export function moveAlongFloor<
@@ -214,15 +224,41 @@ export function moveAlongFloor<
     && hit.impactNormal.z >= UE_KINDA_SMALL_NUMBER
     && hit.impactNormal.z >= input.WalkableFloorZ
 
+  const sweep = (delta: Readonly<CharacterMovementGroundedMoveVector>) => input.sweepCapsule({
+    start: { x, y, z },
+    delta,
+    capsuleRadius: input.capsuleRadius,
+    capsuleHalfHeight: input.capsuleHalfHeight,
+  })
+
   // UMovementComponent::SafeMoveUpdatedComponent(): sweep, then stop at the first blocking hit.
+  // A start penetration is pushed out by GetPenetrationAdjustment() and the move is retried once.
   const safeMove = (delta: Readonly<CharacterMovementGroundedMoveVector>) => {
-    const hit = input.sweepCapsule({
-      start: { x, y, z },
-      delta,
-      capsuleRadius: input.capsuleRadius,
-      capsuleHalfHeight: input.capsuleHalfHeight,
-    })
-    if (hit?.bStartPenetrating) return hit
+    let hit = sweep(delta)
+    if (hit?.bStartPenetrating) {
+      const normal = hitNormal(hit)
+      const depth = (hit.penetrationDepth ?? UE_PENETRATION_PULLBACK_DISTANCE)
+        + UE_PENETRATION_PULLBACK_DISTANCE
+      const beforeX = x
+      const beforeY = y
+      const beforeZ = z
+      x += normal.x * depth
+      y += normal.y * depth
+      z += normal.z * depth
+      const encroached = input.sweepCapsule.overlaps?.({
+        start: { x, y, z },
+        capsuleRadius: input.capsuleRadius,
+        capsuleHalfHeight: input.capsuleHalfHeight,
+      })
+      const retried = encroached ? null : sweep(delta)
+      if (encroached || retried?.bStartPenetrating) {
+        x = beforeX
+        y = beforeY
+        z = beforeZ
+        return hit
+      }
+      hit = retried
+    }
     const time = hit?.bBlockingHit ? clamp01(hit.time) : 1
     x += delta.x * time
     y += delta.y * time
