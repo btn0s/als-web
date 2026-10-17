@@ -38,6 +38,7 @@ export interface RapierAlsSupportingRigidBody {
 
 export interface RapierAlsSupportingCollider {
   readonly handle: number
+  isValid?(): boolean
   translation(): RapierVector
   rotation(): RapierRotation
   parent(): RapierAlsSupportingRigidBody | null
@@ -973,6 +974,10 @@ export function rapierAlsMovementBaseFromPrimitive(
   collider: RapierAlsSupportingCollider,
   relativeRotation = false,
 ): Readonly<AlsBasedMovement> {
+  // UCharacterMovementComponent::UpdateBasedMovement() clears a MovementBase that is no longer
+  // IsValid() instead of reading it. A collider the game has removed is that invalid base; reading
+  // it traps inside Rapier's wasm and leaves the world borrowed for good.
+  if (collider.isValid?.() === false) return ALS_NO_BASED_MOVEMENT
   const body = collider.parent()
   const hasRelativeLocation = body !== null && !body.isFixed()
   return {
@@ -1006,11 +1011,12 @@ export function rapierAlsMovementBase(
 export function rapierAlsCameraMovementBaseFromPrimitive(
   collider: RapierAlsSupportingCollider,
   relativeRotation = false,
-): AlsCameraMovementBase {
+): AlsCameraMovementBase | null {
   const basedMovement = rapierAlsMovementBaseFromPrimitive(
     collider,
     relativeRotation,
   )
+  if (basedMovement.primitive === null) return null
   return {
     key: basedMovement.primitive as AlsCameraMovementBase['key'],
     boneName: basedMovement.boneName,
