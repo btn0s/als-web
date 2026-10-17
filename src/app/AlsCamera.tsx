@@ -26,7 +26,7 @@ import {
 import {
   B_Als_CameraShake_Sprint,
 } from '../als/AlsCamera/Notifies/AlsAnimNotify_CameraShake'
-import { ALS_CAMERA_SETTINGS } from '../als/AlsCamera/AlsCameraSettings'
+import { ALS_CAMERA_SETTINGS, type AlsCameraSettings } from '../als/AlsCamera/AlsCameraSettings'
 import { refreshView, setViewMode } from '../als/AlsCharacter'
 import type {
   AlsCharacter,
@@ -142,6 +142,7 @@ interface MutableCameraComponentInput {
   movementBase: AlsCameraMovementBase | null
   meshScale: number
   curves: Record<string, number>
+  settings?: AlsCameraSettings
   trace: AlsCameraTrace
 }
 
@@ -292,10 +293,19 @@ export type AlsCameraProjectionState = {
   aspect: number
   horizontalFieldOfView: number
   nearClipPlane: number | null
+  near: number
+  settings: AlsCameraSettings
 }
 
 export function createAlsCameraProjectionState(): AlsCameraProjectionState {
-  return { aspect: Number.NaN, horizontalFieldOfView: Number.NaN, nearClipPlane: null }
+  return { aspect: Number.NaN, horizontalFieldOfView: Number.NaN, nearClipPlane: null, near: Number.NaN, settings: ALS_CAMERA_SETTINGS }
+}
+
+export function alsCameraTraceSettings(camera: THREE.PerspectiveCamera, settings: AlsCameraSettings = ALS_CAMERA_SETTINGS): AlsCameraSettings {
+  const slope = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
+  const corner = camera.near * Math.hypot(1, slope, slope * camera.aspect)
+  if (corner <= settings.thirdPerson.traceRadius) return settings
+  return { ...settings, thirdPerson: { ...settings.thirdPerson, traceRadius: corner } }
 }
 
 /**
@@ -314,7 +324,7 @@ export function applyAlsCameraProjection(
     state.aspect === aspect
     && state.horizontalFieldOfView === horizontalFieldOfView
     && state.nearClipPlane === nearClipPlane
-    && (nearClipPlane === null || camera.near === nearClipPlane)
+    && camera.near === (nearClipPlane ?? state.near)
   ) return false
   state.aspect = aspect
   state.horizontalFieldOfView = horizontalFieldOfView
@@ -324,6 +334,8 @@ export function applyAlsCameraProjection(
     : unrealHorizontalFovDegreesToThreeVerticalFovDegrees(horizontalFieldOfView, aspect)
   if (nearClipPlane !== null) camera.near = nearClipPlane
   camera.updateProjectionMatrix()
+  state.near = camera.near
+  state.settings = alsCameraTraceSettings(camera)
   return true
 }
 
@@ -745,6 +757,7 @@ export function AlsCamera({
     input.deltaTime = deltaTime
     input.allowLag = true
     input.movementBase = sample.movementBase
+    input.settings = scratch.projection.settings
 
     updateAnimationInput(
       animationInput,
