@@ -31,6 +31,9 @@ export interface CharacterPoseSample {
   head: THREE.Vector3
   leftFoot: THREE.Vector3
   rightFoot: THREE.Vector3
+  footPlant: number
+  leftFootLock: number
+  rightFootLock: number
   /**
    * The publishing character's own `root` and `head` bones, the camera pivot sources. A scene can
    * hold several ALS skeletons (remote actors, respawned characters), so consumers must read these
@@ -61,6 +64,9 @@ export function createCharacterPoseSample(): CharacterPoseSample {
     head: new THREE.Vector3(),
     leftFoot: new THREE.Vector3(),
     rightFoot: new THREE.Vector3(),
+    footPlant: 0,
+    leftFootLock: 0,
+    rightFootLock: 0,
     rootBone: null,
     headBone: null,
     poseHeight: 0,

@@ -1280,6 +1280,7 @@ export function createAlsAnimationInstance(gltf: {
   groundPredictionSweep?: AlsGroundPredictionCapsuleSweep
   /** Backend adapter for CR_Als FAlsRigUnit_FootOffsetTrace. */
   controlRigFootTrace?: AlsControlRigFootOffsetTrace
+  terrainFootLock?: boolean
   exposeDebugGlobals?: boolean
 }): AlsAnimationInstance {
   assertAlsAnimationExtras(gltf.animations)
@@ -4902,6 +4903,14 @@ export function createAlsAnimationInstance(gltf: {
         }),
         deltaTime: Math.max(0, deltaTime),
         trace: gltf.controlRigFootTrace ?? NO_CONTROL_RIG_FOOT_TRACE,
+        terrainFootLock: gltf.terrainFootLock
+          && locomotionMode === 'Grounded'
+          && currentLocomotionAction === null
+          ? {
+              componentToWorld: gltf.scene.matrixWorld,
+              reset: pendingUpdate || worldTime === teleportedTime,
+            }
+          : undefined,
         captureComponentPositionSnapshots:
           captureControlRigComponentPositions,
       })
@@ -7494,6 +7503,10 @@ export function createAlsAnimationInstance(gltf: {
     const controlRigFootRight = controlRigRuntime?.footIk.feet[1]
     normalDebugWeights.ControlRigPelvisOffset =
       controlRigRuntime?.footIk.pelvisOffset ?? 0
+    normalDebugWeights.ControlRigFootLeftTerrainLocked =
+      Number(controlRigFootLeft?.terrainLocked ?? false)
+    normalDebugWeights.ControlRigFootRightTerrainLocked =
+      Number(controlRigFootRight?.terrainLocked ?? false)
     normalDebugWeights.ControlRigFootLeftTraceHit =
       Number(controlRigFootLeft?.traceHit ?? false)
     normalDebugWeights.ControlRigFootRightTraceHit =

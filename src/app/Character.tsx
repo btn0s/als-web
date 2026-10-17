@@ -97,6 +97,7 @@ export interface CharacterProps {
   inputEnabled?: boolean
   exposeDebugGlobals?: boolean
   allowSprint?: boolean
+  terrainFootLock?: boolean
   gaitSpeedOverrides?: AlsGaitSpeedOverrides
   instanceId?: string
   initialPosition?: readonly [number, number, number]
@@ -225,6 +226,7 @@ function LoadedCharacter({
   inputEnabled,
   exposeDebugGlobals,
   allowSprint,
+  terrainFootLock,
   gaitSpeedOverrides,
   instanceId,
   initialPosition,
@@ -256,6 +258,7 @@ function LoadedCharacter({
   inputEnabled: CharacterProps['inputEnabled']
   exposeDebugGlobals: CharacterProps['exposeDebugGlobals']
   allowSprint: CharacterProps['allowSprint']
+  terrainFootLock: CharacterProps['terrainFootLock']
   gaitSpeedOverrides: CharacterProps['gaitSpeedOverrides']
   instanceId: CharacterProps['instanceId']
   initialPosition: CharacterProps['initialPosition']
@@ -524,6 +527,7 @@ function LoadedCharacter({
       SoundSink: footstepSoundSink,
     },
     exposeDebugGlobals ?? inputEnabled !== false,
+    terrainFootLock,
   )
 
   const ragdoll = useAlsRagdoll(character.character.current, animationInstance,
@@ -561,6 +565,10 @@ function LoadedCharacter({
     poseBones.head.getWorldPosition(poseSample.current.head)
     poseBones.leftFoot?.getWorldPosition(poseSample.current.leftFoot)
     poseBones.rightFoot?.getWorldPosition(poseSample.current.rightFoot)
+    const curves = animationInstance.inspectPose('final').curves
+    poseSample.current.footPlant = curves.get('FootPlanted') ?? 0
+    poseSample.current.leftFootLock = curves.get('FootLeftLock') ?? 0
+    poseSample.current.rightFootLock = curves.get('FootRightLock') ?? 0
     poseSample.current.poseHeight = poseSample.current.head.y - poseSample.current.ground.y
     poseSample.current.characterYaw = group.rotation.y
     poseSample.current.rootBone = poseBones.cameraRoot
@@ -659,6 +667,7 @@ export function Character({
   inputEnabled,
   exposeDebugGlobals,
   allowSprint,
+  terrainFootLock,
   gaitSpeedOverrides,
   instanceId,
   initialPosition,
@@ -696,6 +705,7 @@ export function Character({
       inputEnabled={inputEnabled}
       exposeDebugGlobals={exposeDebugGlobals}
       allowSprint={allowSprint}
+      terrainFootLock={terrainFootLock}
       gaitSpeedOverrides={gaitSpeedOverrides}
       instanceId={instanceId}
       initialPosition={initialPosition}
