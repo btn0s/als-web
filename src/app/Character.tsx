@@ -71,6 +71,7 @@ import type {
 import type { CharacterPoseSample } from './CharacterPoseSample'
 import type { AlsCharacterInputSource } from '../als/AlsCharacter.hooks'
 import type { AlsGaitSpeedOverrides } from '../als/AlsCharacterMovementComponent'
+import type { AlsAnimationLodSource } from '../engine/animationUpdateRate'
 import { PistolOverlayObject, RifleOverlayObject } from './AlsOverlayObjects'
 export { RifleOverlayObject } from './AlsOverlayObjects'
 import { useAlsCharacterGltf } from './AlsCharacterGltf.hooks'
@@ -101,6 +102,8 @@ export interface CharacterProps {
   exposeDebugGlobals?: boolean
   allowSprint?: boolean
   terrainFootLock?: boolean
+  /** Animation update rate significance, the same one AlsRemoteActor takes. */
+  animationLod?: AlsAnimationLodSource
   gaitSpeedOverrides?: AlsGaitSpeedOverrides
   instanceId?: string
   initialPosition?: readonly [number, number, number]
@@ -233,6 +236,7 @@ function LoadedCharacter({
   exposeDebugGlobals,
   allowSprint,
   terrainFootLock,
+  animationLod,
   gaitSpeedOverrides,
   instanceId,
   initialPosition,
@@ -266,6 +270,7 @@ function LoadedCharacter({
   exposeDebugGlobals: CharacterProps['exposeDebugGlobals']
   allowSprint: CharacterProps['allowSprint']
   terrainFootLock: CharacterProps['terrainFootLock']
+  animationLod: CharacterProps['animationLod']
   gaitSpeedOverrides: CharacterProps['gaitSpeedOverrides']
   instanceId: CharacterProps['instanceId']
   initialPosition: CharacterProps['initialPosition']
@@ -540,6 +545,7 @@ function LoadedCharacter({
     },
     exposeDebugGlobals ?? inputEnabled !== false,
     terrainFootLock,
+    animationLod,
   )
 
   internalAnimation.current = animationInstance
@@ -688,6 +694,7 @@ export function Character({
   exposeDebugGlobals,
   allowSprint,
   terrainFootLock,
+  animationLod,
   gaitSpeedOverrides,
   instanceId,
   initialPosition,
@@ -727,6 +734,7 @@ export function Character({
       exposeDebugGlobals={exposeDebugGlobals}
       allowSprint={allowSprint}
       terrainFootLock={terrainFootLock}
+      animationLod={animationLod}
       gaitSpeedOverrides={gaitSpeedOverrides}
       instanceId={instanceId}
       initialPosition={initialPosition}

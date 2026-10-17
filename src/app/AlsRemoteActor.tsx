@@ -13,7 +13,8 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js'
 import { createAlsAnimationInstance } from '../als/AlsAnimationInstance'
 import type { AlsAnimationClock } from '../als/AlsAnimationInstance'
 import type { AlsControlRigFootOffsetTrace } from '../als/AnimGraph/CR_Als'
-import { AlsRemoteCharacter, type AlsAnimationLod } from '../als/AlsRemoteCharacter'
+import { AlsRemoteCharacter } from '../als/AlsRemoteCharacter'
+import { resolveAlsAnimationLod, type AlsAnimationLodSource } from '../engine/animationUpdateRate'
 import type { AlsCharacterSnapshot } from '../als/AlsCharacterSnapshot'
 import { AlsSnapshotBuffer } from '../als/AlsSnapshotBuffer'
 import {
@@ -45,7 +46,7 @@ export interface AlsRemoteActorProps {
   now?: () => number
   offset?: readonly [number, number, number]
   footIk?: boolean
-  animationLod?: AlsAnimationLod | (() => AlsAnimationLod)
+  animationLod?: AlsAnimationLodSource
   worldTime?: Readonly<WorldTimeState>
   /** Delivered once for each received actionSeq crossed by playback, including skipped poses. */
   onAction?: (snapshot: AlsCharacterSnapshot) => void
@@ -127,7 +128,7 @@ export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, 
     const frame = snapshots.sample(now())
     if (!frame) {
       active.current = false
-      driver.resetAnimationLod()
+      driver.animationRate.reset()
       standing.current?.setEnabled(false)
       crouching.current?.setEnabled(false)
       root.current.visible = false
@@ -180,8 +181,7 @@ export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, 
   useFrame((_, deltaRealTime) => {
     const delta = worldTime ? getWorldDeltaTime(worldTime, deltaRealTime) : deltaRealTime
     if (!active.current) return
-    const significance = typeof animationLod === 'function' ? animationLod() : animationLod
-    const elapsed = driver.nextAnimationDelta(delta, significance,
+    const elapsed = driver.animationRate.next(delta, resolveAlsAnimationLod(animationLod),
       driverSnapshot.current?.action !== 'none' || ragdoll.active || cosmeticRagdoll.current)
     if (elapsed === null) return
     // Montage time comes from the same interpolated frame as position, including slow motion.

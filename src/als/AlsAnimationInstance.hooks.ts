@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { AnimationFrameCapture } from '../engine/animationFrameCapture'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 import { getWorldDeltaTime } from '../engine/timeDilation'
+import { AlsAnimationUpdateRate, resolveAlsAnimationLod, type AlsAnimationLodSource } from '../engine/animationUpdateRate'
 import type { WorldTimeState } from '../engine/timeDilation'
 import {
   getAnimRootMotionTranslationScale,
@@ -279,6 +280,7 @@ export function useAlsAnimationInstance(
   }>,
   exposeDebugGlobals = true,
   terrainFootLock = false,
+  animationLod?: AlsAnimationLodSource,
 ) {
   const camera = useThree((state) => state.camera)
   const renderer = useThree((state) => state.gl)
@@ -293,6 +295,7 @@ export function useAlsAnimationInstance(
     }),
     [controlRigFootTrace, gltf, groundPredictionSweep, exposeDebugGlobals, terrainFootLock],
   )
+  const updateRate = useMemo(() => new AlsAnimationUpdateRate(), [animationInstance])
   const frameCapture = useMemo(
     () => new AnimationFrameCapture(
       gltf.scene,
@@ -424,8 +427,10 @@ export function useAlsAnimationInstance(
     const frameControls = controls.current
     const current = character.current
     frameControls.hasInput = current.locomotionState.hasInput
+    const elapsed = updateRate.next(deltaTime, resolveAlsAnimationLod(animationLod), current.locomotionAction !== null)
+    if (elapsed === null) return
     animationInstance.refresh(
-      deltaTime,
+      elapsed,
       frameControls,
       captureControlRigComponentPositions.current,
     )

@@ -7,6 +7,7 @@ import {
 import { ALS_NO_BASED_MOVEMENT } from './State/AlsMovementBaseState'
 import { unwindDegrees } from './State/AlsLocomotionState'
 import type { AlsCharacterSnapshot } from './AlsCharacterSnapshot'
+import { AlsAnimationUpdateRate } from '../engine/animationUpdateRate'
 
 const gait = { walking: 'Walking', running: 'Running', sprinting: 'Sprinting' } as const
 const rotation = {
@@ -16,34 +17,14 @@ const action = {
   none: null, roll: 'Rolling', mantle: 'Mantling', getUp: 'GettingUp', ragdoll: 'Ragdolling',
 } as const
 
-export interface AlsAnimationLod {
-  distance?: number
-  visible?: boolean
-  focused?: boolean
-  minInterval?: number
-  maxInterval?: number
-}
-
-export function selectAlsAnimationInterval(significance: AlsAnimationLod): number {
-  if (significance.focused) return 1
-  const distance = significance.distance ?? 0
-  const interval = significance.visible === false ? 8
-    : distance < 12 ? 1 : distance < 20 ? 2 : distance < 34 ? 3 : 4
-  const minimum = Math.max(1, Math.floor(significance.minInterval ?? 1))
-  const maximum = Math.max(1, Math.floor(significance.maxInterval ?? 8))
-  return Math.max(1, Math.min(Math.max(minimum, interval), maximum))
-}
-
-let nextAnimationLodPhase = 0
-
 /** Presentation-only equivalent of the Character → NativeUpdateAnimation boundary. Never calls
  * RefreshCharacter, rotation policy, movement integration, input bindings, or action authority.
  */
 export class AlsRemoteCharacter {
   readonly character
-  readonly animationLodPhase
-  constructor(ragdollingSettings?: Partial<AlsRagdollingSettings>, animationLodPhase = nextAnimationLodPhase++) {
-    this.animationLodPhase = animationLodPhase
+  readonly animationRate
+  constructor(ragdollingSettings?: Partial<AlsRagdollingSettings>, animationLodPhase?: number) {
+    this.animationRate = new AlsAnimationUpdateRate(animationLodPhase)
     this.character = createAlsCharacter({ settings: {
       Ragdolling: { ...ALS_RAGDOLLING_SETTINGS, ...ragdollingSettings },
     } })
@@ -51,27 +32,6 @@ export class AlsRemoteCharacter {
   readonly controls = createAlsCharacterAnimationControls()
   private previous: AlsCharacterSnapshot | null = null
   private location = { x: 0, y: 0, z: 0 }
-  private animationLodFrame = 0
-  private pendingAnimationDelta = 0
-  private animationLodStarted = false
-
-  nextAnimationDelta(delta: number, significance?: AlsAnimationLod, critical = false): number | null {
-    this.pendingAnimationDelta += Math.max(0, delta)
-    const interval = significance && !critical ? selectAlsAnimationInterval(significance) : 1
-    const evaluate = !this.animationLodStarted || interval === 1
-      || (this.animationLodFrame + this.animationLodPhase) % interval === 0
-    this.animationLodFrame++
-    if (!evaluate) return null
-    this.animationLodStarted = true
-    const elapsed = this.pendingAnimationDelta
-    this.pendingAnimationDelta = 0
-    return elapsed
-  }
-
-  resetAnimationLod() {
-    this.pendingAnimationDelta = 0
-    this.animationLodStarted = false
-  }
 
   apply(snapshot: AlsCharacterSnapshot): { jumped: boolean; unsupported: string[] } {
     const c = this.character
