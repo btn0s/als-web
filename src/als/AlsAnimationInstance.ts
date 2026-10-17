@@ -870,6 +870,8 @@ export interface AlsAnimationInstance {
   readonly getUpMontage: AlsGetUpMontageBridge
   readonly ragdolling: AlsRagdollPose
   StopMontages: (blendOutDuration: number) => void
+  /** `UAlsAnimationInstance::MarkTeleported()`: the next update records TeleportedTime. */
+  MarkTeleported: () => void
   /** Read-only action presentation clocks for snapshot recording. */
   getRollingSnapshot: () => { position: number; playRate: number } | undefined
   setRollingPosition: (position: number) => void
@@ -2739,6 +2741,7 @@ export function createAlsAnimationInstance(gltf: {
   let worldTime = 0
   let animationUpdates = 0
   let teleportedTime = Number.NEGATIVE_INFINITY
+  let teleportMarked = false
   let previousFootPlantedAmount = 0
   let previousGroundPredictionBlockAmount = 0
   let landToGroundedNotifyCount = 0
@@ -4975,7 +4978,10 @@ export function createAlsAnimationInstance(gltf: {
     }
     refreshInAirOnGameThread(inAirState, pendingUpdateThisFrame)
     feetPoseBridge?.capturePublishedPose(feetState)
-    if (location) {
+    if (teleportMarked) {
+      teleportMarked = false
+      teleportedTime = worldTime
+    } else if (location) {
       if (shouldMarkAlsTeleported({
         pendingUpdate: pendingUpdateThisFrame,
         previousLocation,
@@ -7593,6 +7599,7 @@ export function createAlsAnimationInstance(gltf: {
       Montage_Play: playGetUpMontage,
       takeNotifyEvents: () => pendingGetUpNotifyEvents.splice(0),
     },
+    MarkTeleported: () => { teleportMarked = true },
     StopMontages: (duration) => {
       upperBodySlot.stop(duration)
       const mantle = getActiveMantlingMontageInstance()

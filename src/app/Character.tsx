@@ -28,6 +28,7 @@ import * as THREE from 'three'
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { useAlsAnimationInstance } from '../als/AlsAnimationInstance.hooks'
 import type {
+  AlsAnimationInstance,
   AlsMantlingMontageBridge,
   AlsRollingMontageBridge,
 } from '../als/AlsAnimationInstance'
@@ -92,6 +93,8 @@ export type AlsOverlayModeBridge = Pick<
   'overlayMode' | 'SetOverlayMode'
 >
 
+export type AlsCharacterTeleport = Pick<AlsCharacterBridge, 'TeleportTo'>
+
 export interface CharacterProps {
   inputSource?: AlsCharacterInputSource
   inputEnabled?: boolean
@@ -105,6 +108,8 @@ export interface CharacterProps {
   overlayStates?: ConsumerOverlayStates
   renderOverlayObject?: (scene: THREE.Object3D) => React.ReactNode
   ragdollRef?: React.RefObject<AlsRagdollHandle | null>
+  /** Receives AActor::TeleportTo(); respawn through it instead of remounting the character. */
+  teleportRef?: React.RefObject<AlsCharacterTeleport | null>
   /** Emitted after animation in the performance.now() clock domain. */
   onSnapshot?: (snapshot: AlsCharacterSnapshot) => void
   snapshotRateHz?: number
@@ -214,6 +219,7 @@ function LoadedCharacter({
   footstepSoundSink,
   onSnapshot,
   ragdollRef,
+  teleportRef,
   snapshotRateHz = 20,
   ragdollInputEnabled,
   ragdollingSettings,
@@ -238,6 +244,7 @@ function LoadedCharacter({
   overlayStates?: CharacterProps['overlayStates']
   renderOverlayObject?: CharacterProps['renderOverlayObject']
   ragdollRef?: CharacterProps['ragdollRef']
+  teleportRef?: CharacterProps['teleportRef']
   ragdollInputEnabled?: boolean
   ragdollingSettings?: Partial<AlsRagdollingSettings>
   onSizeChange: CharacterProps['onSizeChange']
@@ -457,6 +464,7 @@ function LoadedCharacter({
   }, [bounds, onSizeChange])
 
   const internalRagdoll = useRef<AlsRagdollHandle | null>(null)
+  const internalAnimation = useRef<AlsAnimationInstance | null>(null)
   const character = useAlsCharacter(
     rigidBody,
     standingCapsule,
@@ -474,6 +482,10 @@ function LoadedCharacter({
       RollingMontage: rollingMontage,
       StartRagdolling: () => { internalRagdoll.current?.StartRagdolling() },
       StopRagdolling: () => internalRagdoll.current?.StopRagdolling() ?? false,
+      Teleported: () => {
+        internalAnimation.current?.StopMontages(0)
+        internalAnimation.current?.MarkTeleported()
+      },
     },
     groundedMoveSweep,
     worldTime,
@@ -529,6 +541,13 @@ function LoadedCharacter({
     exposeDebugGlobals ?? inputEnabled !== false,
     terrainFootLock,
   )
+
+  internalAnimation.current = animationInstance
+  useEffect(() => {
+    if (!teleportRef) return
+    teleportRef.current = { TeleportTo: character.TeleportTo }
+    return () => { teleportRef.current = null }
+  }, [teleportRef, character.TeleportTo])
 
   const ragdoll = useAlsRagdoll(character.character.current, animationInstance,
     rigidBody, standingCapsule, crouchingCapsule, ragdollRef, worldTime)
@@ -655,6 +674,7 @@ export function Character({
   footstepSoundSink,
   onSnapshot,
   ragdollRef,
+  teleportRef,
   snapshotRateHz = 20,
   ragdollInputEnabled,
   ragdollingSettings,
@@ -694,6 +714,7 @@ export function Character({
       onSnapshot={onSnapshot}
       snapshotRateHz={snapshotRateHz}
       ragdollRef={ragdollRef}
+      teleportRef={teleportRef}
       ragdollInputEnabled={ragdollInputEnabled}
       ragdollingSettings={ragdollingSettings}
       toggleRotationModeKey={toggleRotationModeKey}

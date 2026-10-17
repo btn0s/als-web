@@ -92,7 +92,10 @@ import {
   createAlsCharacter,
   refreshAlsCharacter,
   refreshGroundedFacingTarget,
+  refreshLocomotion,
+  setLocomotionAction,
   setLocomotionMode,
+  setRotationInstant,
   setStance,
   setTargetYawAngle,
 } from './AlsCharacter'
@@ -121,6 +124,7 @@ import {
   startMantlingGrounded,
   startMantlingImplementation,
   startMantlingInAir,
+  stopMantling,
 } from './AlsCharacter_Actions'
 import type {
   AlsMantlingLifecycleAdapter,
@@ -559,6 +563,8 @@ export interface AlsCharacterActionBridge {
   readonly StartRagdolling?: () => void
   /** Exact AAlsCharacter::StopRagdolling() runtime seam. */
   readonly StopRagdolling?: () => boolean
+  /** Animation half of a teleport: stop every montage and UAlsAnimationInstance::MarkTeleported(). */
+  readonly Teleported?: () => void
   readonly OnLocomotionModeChanged?: (
     PreviousLocomotionMode: AlsLocomotionMode,
   ) => void
@@ -606,6 +612,13 @@ export interface AlsCharacterBridge {
   readonly overlayMode: AlsOverlayMode
   /** Exact AAlsCharacter::SetOverlayMode() control seam. */
   readonly SetOverlayMode: (OverlayMode: AlsOverlayMode) => void
+  /**
+   * AActor::TeleportTo() for a respawn: the next physics step moves the capsule base to
+   * `location` (three.js metres), applies SetRotationInstant(`yaw`, TeleportPhysics) in ALS
+   * degrees when given, stops movement, ends ragdolling, mantling and montages, and marks the
+   * animation instance teleported so feet, foot lock and the camera do not travel.
+   */
+  readonly TeleportTo: (location: readonly [number, number, number], yaw?: number) => void
 }
 
 export interface AlsCharacterAnimationCurves {
@@ -1471,6 +1484,9 @@ export function useAlsCharacter(
     }
   }, [setControls, overlayStates])
   const [codeOverlayMode, setCodeOverlayMode] = useState<AlsOverlayMode>('Default')
+  const TeleportTo = useCallback((location: readonly [number, number, number], yaw?: number) => {
+    pendingTeleport.current = { location: [location[0], location[1], location[2]], yaw }
+  }, [])
 
   const pressedKeys = useRef(new Set<string>())
   const aimingWithPointer = useRef(false)
@@ -1561,6 +1577,7 @@ export function useAlsCharacter(
     createRootMotionSourceGroup<AlsRootMotionSource_Mantling>(),
   )
   const actorFeetLocation = useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
+  const pendingTeleport = useRef<{ location: readonly [number, number, number]; yaw?: number } | null>(null)
   const floorAdjustedBodyAnchor =
     useRef<AlsVector3>({ x: 0, y: 0, z: 0 })
 
@@ -1905,6 +1922,49 @@ export function useAlsCharacter(
   useBeforePhysicsStep(() => {
     const body = rigidBody.current
     if (!body) return
+    const teleport = pendingTeleport.current
+    if (teleport) {
+      pendingTeleport.current = null
+      const current = character.current
+      if (current.locomotionAction === 'Ragdolling') actionBridge.current?.StopRagdolling?.()
+      stopMantling({ Character: current, Lifecycle: mantlingLifecycle.current, bStopMontage: true })
+      actionBridge.current?.Teleported?.()
+      setLocomotionAction(current, null)
+      rootMotionSources.current = createRootMotionSourceGroup<AlsRootMotionSource_Mantling>()
+      activeMantlingTarget.current = null
+      movementModeLocked.current = false
+      body.setGravityScale(1, true)
+      jumpRequested.current = false
+      rollRequested.current = false
+      coyoteRemaining.current = 0
+      for (const vector of [actualVelocity.current, acceleration.current, desiredVelocity.current, renderedVelocity.current]) {
+        vector.x = 0
+        vector.y = 0
+        vector.z = 0
+      }
+      setMovementVelocity(current.movement, actualVelocity.current)
+      prePenetrationAdjustmentVelocityValid.current = false
+      groundSupport.current = null
+      pendingGroundedBodyHeight.current = null
+      groundedMoveApplied.current = false
+      const anchor = { x: teleport.location[0], y: teleport.location[1] + ALS_STANDING_CAPSULE_HALF_HEIGHT, z: teleport.location[2] }
+      if (body.bodyType() === RigidBodyType.Dynamic) {
+        body.setTranslation(anchor, true)
+        body.setLinvel(renderedVelocity.current, true)
+      } else {
+        makeRapierAlsBodyPositionOwned(body, anchor)
+      }
+      Object.assign(groundedMoveStart.current, anchor)
+      Object.assign(groundedMoveTarget.current, anchor)
+      if (teleport.yaw !== undefined) {
+        setRotationInstant(current, teleport.yaw)
+        previousAnimationActorYawAngle.current = current.actorYawAngle
+        animationLocomotionYawSpeed.current = 0
+        const root = characterRoot.current
+        if (root) root.rotation.y = unrealYawDegreesToThreeRadians(current.actorYawAngle)
+      }
+      refreshLocomotion(current, current.movement.velocity)
+    }
     const codeInput = inputSource?.()
     if (codeInput) refreshAlsCodeJumpInput(codeInput, externalJumpSequence, jumpRequested)
     if (codeInput && refreshAlsCodeEdge(codeInput.rollSequence, codeInput.active, externalRollSequence)) rollRequested.current = true
@@ -2799,5 +2859,6 @@ export function useAlsCharacter(
     onJumped,
     overlayMode: inputSource ? codeOverlayMode : overlayMode as AlsOverlayMode,
     SetOverlayMode,
+    TeleportTo,
   }
 }
