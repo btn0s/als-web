@@ -4,12 +4,14 @@ import type {
   AlsCameraMovementBase,
 } from '../als/AlsCamera/AlsCameraComponent'
 import type { AlsCharacter } from '../als/AlsCharacter'
+import type { AlsAnimationClock } from '../als/AlsAnimationInstance'
 import type { AlsStance } from '../als/Settings/AlsMovementSettings'
 import {
   AlsCameraShakeRequestQueue,
 } from '../engine/alsCameraBridge'
 
 export interface CharacterPoseSample {
+  animationClock: AlsAnimationClock | null
   /** Stable pure-character state consumed by the camera animation instance. */
   character: AlsCharacter | null
   physicsStep?: (phase: 'before' | 'after' | 'landed', body: RapierRigidBody, delta: number, contact?: { colliderHandle: number; point: { x: number; y: number; z: number }; normal: { x: number; y: number; z: number } }) => boolean | void
@@ -35,6 +37,9 @@ export interface CharacterPoseSample {
   head: THREE.Vector3
   leftFoot: THREE.Vector3
   rightFoot: THREE.Vector3
+  footPlant: number
+  leftFootLock: number
+  rightFootLock: number
   /**
    * The publishing character's own `root` and `head` bones, the camera pivot sources. A scene can
    * hold several ALS skeletons (remote actors, respawned characters), so consumers must read these
@@ -55,6 +60,7 @@ export interface CharacterPoseSample {
 
 export function createCharacterPoseSample(): CharacterPoseSample {
   return {
+    animationClock: null,
     character: null,
     SetCameraRightShoulder: null,
     SetDesiredStance: null,
@@ -66,6 +72,9 @@ export function createCharacterPoseSample(): CharacterPoseSample {
     head: new THREE.Vector3(),
     leftFoot: new THREE.Vector3(),
     rightFoot: new THREE.Vector3(),
+    footPlant: 0,
+    leftFootLock: 0,
+    rightFootLock: 0,
     rootBone: null,
     headBone: null,
     poseHeight: 0,

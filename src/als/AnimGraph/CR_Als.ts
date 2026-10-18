@@ -172,6 +172,10 @@ export interface EvaluateAlsControlRigFootIkInput {
   readonly rigInput: AlsControlRigFootIkInputState
   readonly deltaTime: number
   readonly trace: AlsControlRigFootOffsetTrace
+  readonly terrainFootLock?: {
+    readonly componentToWorld: THREE.Matrix4
+    readonly reset?: boolean
+  }
 }
 
 export type AlsControlRigHandSide = 'left' | 'right'
@@ -1249,6 +1253,15 @@ export interface AlsControlRigFootIkState {
   readonly offsetNormal: THREE.Vector3
   offsetNormalInitialized: boolean
   readonly traceRequest: AlsControlRigFootOffsetTraceRequest
+  terrainLocked: boolean
+  terrainCanPlant: boolean
+  terrainLockJustStarted: boolean
+  terrainWeight: number
+  readonly terrainWorldLocation: THREE.Vector3
+  readonly terrainWorldRotation: THREE.Quaternion
+  readonly terrainLocation: THREE.Vector3
+  readonly terrainRotation: THREE.Quaternion
+  readonly terrainAuthoredLocation: THREE.Vector3
 }
 
 interface AlsControlRigFootIkScratch
@@ -1276,6 +1289,11 @@ interface AlsControlRigFootIkScratch
   readonly limitOffset: THREE.Quaternion
   readonly inverseLimitOffset: THREE.Quaternion
   readonly unrealUp: THREE.Vector3
+  readonly componentToWorldInverse: THREE.Matrix4
+  readonly componentWorldRotation: THREE.Quaternion
+  readonly componentWorldRotationInverse: THREE.Quaternion
+  readonly componentWorldScale: THREE.Vector3
+  readonly componentWorldLocation: THREE.Vector3
 }
 
 export interface AlsControlRigFootIkRuntime
@@ -1339,6 +1357,11 @@ function createFootIkScratch(): AlsControlRigFootIkScratch {
     limitOffset: new THREE.Quaternion(),
     inverseLimitOffset: new THREE.Quaternion(),
     unrealUp: new THREE.Vector3(0, 0, 1),
+    componentToWorldInverse: new THREE.Matrix4(),
+    componentWorldRotation: new THREE.Quaternion(),
+    componentWorldRotationInverse: new THREE.Quaternion(),
+    componentWorldScale: new THREE.Vector3(),
+    componentWorldLocation: new THREE.Vector3(),
   }
 }
 
@@ -1347,6 +1370,15 @@ function createFootIkState(
 ): AlsControlRigFootIkState {
   return {
     side,
+    terrainLocked: false,
+    terrainCanPlant: true,
+    terrainLockJustStarted: false,
+    terrainWeight: 0,
+    terrainWorldLocation: new THREE.Vector3(),
+    terrainWorldRotation: new THREE.Quaternion(),
+    terrainLocation: new THREE.Vector3(),
+    terrainRotation: new THREE.Quaternion(),
+    terrainAuthoredLocation: new THREE.Vector3(),
     traceHit: false,
     footOffsetLocation: 0,
     footOffsetNormal: new THREE.Vector3(0, 1, 0),
@@ -1776,10 +1808,9 @@ function refreshFootOffset(
       continue
     }
 
-    const target = footTargetLocation(
-      input.rigInput,
-      solver.definition.side,
-    )
+    const target = input.terrainFootLock
+      ? state.terrainLocation
+      : footTargetLocation(input.rigInput, solver.definition.side)
     state.traceRequest.start.set(
       target.x,
       traceSettings.traceDistanceUpward * CENTIMETERS_TO_METERS,
@@ -1805,6 +1836,155 @@ function refreshFootOffset(
       : 0
     state.footOffsetLocation = hit.impactPoint.y + slopeOffset
   }
+}
+
+function prepareTerrainFootLock(
+  runtime: AlsControlRigFootIkRuntime,
+  input: EvaluateAlsControlRigFootIkInput,
+) {
+  const terrain = input.terrainFootLock
+  if (terrain) {
+    runtime.scratch.componentToWorldInverse.copy(terrain.componentToWorld).invert()
+    terrain.componentToWorld.decompose(
+      runtime.scratch.componentWorldLocation,
+      runtime.scratch.componentWorldRotation,
+      runtime.scratch.componentWorldScale,
+    )
+    runtime.scratch.componentWorldRotationInverse
+      .copy(runtime.scratch.componentWorldRotation).invert()
+  }
+  for (let index = 0; index < runtime.feet.length; index++) {
+    const state = runtime.feet[index]
+    const solver = runtime.solvers[index]
+    state.terrainLockJustStarted = false
+    if (!terrain || terrain.reset || !input.rigInput.bFootOffsetAllowed) {
+      state.terrainLocked = false
+      state.terrainCanPlant = true
+      state.terrainWeight = 0
+    }
+    if (!terrain) continue
+    state.terrainAuthoredLocation.fromArray(
+      runtime.componentPositions, solver.footItemIndex * 3,
+    )
+    state.terrainLocation.copy(state.terrainAuthoredLocation)
+    state.terrainRotation.fromArray(
+      runtime.componentRotations, solver.footItemIndex * 4,
+    )
+    const phase = curveValue(input.curves, 'FootPlanted')
+      * (state.side === 'left' ? -1 : 1)
+    const authoredLock = curveValue(
+      input.curves, state.side === 'left' ? 'FootLeftLock' : 'FootRightLock',
+    )
+    const stance = input.rigInput.bFootOffsetAllowed
+      && curveValue(input.curves, solver.definition.curveName) >= 0.99
+      && (phase >= 0.5 || authoredLock >= 0.99)
+    if (!stance) {
+      state.terrainLocked = false
+      state.terrainCanPlant = true
+      state.terrainWeight = Math.max(0, state.terrainWeight - input.deltaTime / 0.08)
+    }
+    if (state.terrainWeight > 0) {
+      state.terrainLocation.copy(state.terrainWorldLocation)
+        .applyMatrix4(runtime.scratch.componentToWorldInverse)
+    }
+  }
+}
+
+function refreshTerrainFootLock(
+  runtime: AlsControlRigFootIkRuntime,
+  input: EvaluateAlsControlRigFootIkInput,
+) {
+  const terrain = input.terrainFootLock
+  if (!terrain) return
+  for (let index = 0; index < runtime.feet.length; index++) {
+    const state = runtime.feet[index]
+    const solver = runtime.solvers[index]
+    const phase = curveValue(input.curves, 'FootPlanted')
+      * (state.side === 'left' ? -1 : 1)
+    const authoredLock = curveValue(
+      input.curves, state.side === 'left' ? 'FootLeftLock' : 'FootRightLock',
+    )
+    const stance = input.rigInput.bFootOffsetAllowed
+      && curveValue(input.curves, solver.definition.curveName) >= 0.99
+      && (phase >= 0.5 || authoredLock >= 0.99)
+    const supported = state.traceHit && state.footOffsetNormal.y >= 0.65
+    const contactY = state.footOffsetLocation + runtime.footHeight
+    if (!supported) {
+      state.terrainLocked = false
+      state.terrainWeight = 0
+    }
+    if (state.terrainLocked && Math.abs(state.terrainLocation.y - contactY) > 0.05) {
+      state.terrainLocked = false
+      state.terrainWeight = 0
+    }
+    if (!state.terrainLocked && state.terrainCanPlant && stance && supported
+      && state.terrainAuthoredLocation.y <= runtime.footHeight + 0.08) {
+      state.terrainLocation.copy(state.terrainAuthoredLocation)
+      state.terrainLocation.y = contactY
+      state.terrainWorldLocation.copy(state.terrainLocation)
+        .applyMatrix4(terrain.componentToWorld)
+      state.terrainWorldRotation.copy(runtime.scratch.componentWorldRotation)
+        .multiply(state.terrainRotation)
+      state.terrainLocked = true
+      state.terrainCanPlant = false
+      state.terrainLockJustStarted = true
+      state.terrainWeight = 1
+      state.offsetNormal.copy(state.footOffsetNormal)
+      state.offsetNormalInitialized = true
+    }
+    if (state.terrainWeight > 0) {
+      const anchor = runtime.scratch.footLocation.copy(state.terrainWorldLocation)
+        .applyMatrix4(runtime.scratch.componentToWorldInverse)
+      state.terrainLocation.copy(state.terrainAuthoredLocation)
+      state.terrainLocation.y += state.footOffsetLocation
+      state.terrainLocation.lerp(anchor, state.terrainWeight)
+      runtime.scratch.targetRotationC.copy(runtime.scratch.componentWorldRotationInverse)
+        .multiply(state.terrainWorldRotation)
+      state.terrainRotation.slerp(runtime.scratch.targetRotationC, state.terrainWeight)
+    }
+  }
+}
+
+function constrainTerrainPelvisReach(
+  runtime: AlsControlRigFootIkRuntime,
+  input: EvaluateAlsControlRigFootIkInput,
+) {
+  if (!input.terrainFootLock) return
+  let minimum = -Infinity
+  let maximum = Infinity
+  const reach = runtime.legLength * ALS_CONTROL_RIG_FOOT_IK.footLocation.maximumLegStretchRatio
+  for (let index = 0; index < runtime.feet.length; index++) {
+    const state = runtime.feet[index]
+    if (state.terrainWeight <= 0) continue
+    const offset = runtime.solvers[index].thighItemIndex * 3
+    const x = state.terrainLocation.x - runtime.componentPositions[offset]
+    const z = state.terrainLocation.z - runtime.componentPositions[offset + 2]
+    const verticalSquared = reach * reach - x * x - z * z
+    if (verticalSquared <= 0) {
+      state.terrainLocked = false
+      state.terrainWeight = 0
+      continue
+    }
+    const vertical = Math.sqrt(verticalSquared)
+    const y = state.terrainLocation.y - runtime.componentPositions[offset + 1]
+    const nextMinimum = Math.max(minimum, y - vertical)
+    const nextMaximum = Math.min(maximum, y + vertical)
+    if (nextMinimum > nextMaximum) {
+      state.terrainLocked = false
+      state.terrainWeight = 0
+      continue
+    }
+    minimum = nextMinimum
+    maximum = nextMaximum
+  }
+  const offset = THREE.MathUtils.clamp(0, minimum, maximum)
+  if (Math.abs(offset) <= POSITION_KINDA_SMALL_NUMBER) return
+  const pelvis = loadComponentTransform(
+    runtime, runtime.pelvisItemIndex, runtime.scratch.transformA,
+  )
+  pelvis.position.y += offset
+  writeGlobalTransform(runtime, input.pose, runtime.pelvisItemIndex, pelvis)
+  refreshComponentTransforms(runtime, input.pose)
 }
 
 function writeGlobalTransform(
@@ -2370,14 +2550,12 @@ function refreshFootIk(
   for (let footIndex = 0; footIndex < runtime.feet.length; footIndex++) {
     const state = runtime.feet[footIndex]
     const solver = runtime.solvers[footIndex]
-    const targetLocation = footTargetLocation(
-      input.rigInput,
-      solver.definition.side,
-    )
-    const targetRotation = footTargetRotation(
-      input.rigInput,
-      solver.definition.side,
-    )
+    const targetLocation = input.terrainFootLock
+      ? state.terrainAuthoredLocation
+      : footTargetLocation(input.rigInput, solver.definition.side)
+    const targetRotation = input.terrainFootLock
+      ? state.terrainRotation
+      : footTargetRotation(input.rigInput, solver.definition.side)
     const weight = curveValue(
       input.curves,
       solver.definition.curveName,
@@ -2391,6 +2569,9 @@ function refreshFootIk(
       input.deltaTime,
       runtime.scratch.footLocation,
     )
+    if (state.terrainWeight > 0) {
+      runtime.scratch.footLocation.copy(state.terrainLocation)
+    }
     refreshPoleLocation(
       runtime,
       state,
@@ -2416,6 +2597,14 @@ function refreshFootIk(
       input.deltaTime,
       runtime.scratch.targetRotationC,
     )
+    if (state.terrainLocked) {
+      if (state.terrainLockJustStarted) {
+        state.terrainWorldRotation.copy(runtime.scratch.componentWorldRotation)
+          .multiply(runtime.scratch.targetRotationC)
+      } else {
+        runtime.scratch.targetRotationC.copy(state.terrainRotation)
+      }
+    }
     setFootRotation(
       runtime,
       input.pose,
@@ -2445,8 +2634,11 @@ export function evaluateAlsControlRigFootIk(
   }
 
   refreshComponentTransforms(runtime, input.pose)
+  prepareTerrainFootLock(runtime, input)
   refreshFootOffset(runtime, input)
+  refreshTerrainFootLock(runtime, input)
   refreshPelvisOffset(runtime, input)
+  constrainTerrainPelvisReach(runtime, input)
   refreshFootIk(runtime, input)
   return input.pose
 }

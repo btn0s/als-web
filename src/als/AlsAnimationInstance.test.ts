@@ -14,6 +14,7 @@ import { compileClipCurveSamplers } from '../engine/curves'
 import { AnimationFrameCapture } from '../engine/animationFrameCapture'
 import { createPoseBuffer } from '../engine/poseBuffer'
 import { createRigDefinition, findBoneIndex } from '../engine/rig'
+import * as sequenceNotifies from '../engine/sequenceNotifies'
 import {
   compileAuthoredRootMotion,
   createRootMotionMovementParams,
@@ -3462,6 +3463,107 @@ describe('AlsAnimationInstance playback regression', () => {
     expect(sweepCount).toBe(1)
     expect(lastSweepEnd).not.toBeNull()
     expect(lastSweepEnd!.z).toBeLessThan(1)
+  })
+
+  it.each([
+    [3, 'Left'],
+    [3, 'Right'],
+    [4, 'Left'],
+    [4, 'Right'],
+  ] as const)('synchronizes a blended walk/run jump at %s m/s from the %s foot without counting alignment as notify travel', async (speed, foot) => {
+    const gltf = await loadAlsGltf()
+    const instance = createAlsAnimationInstance({
+      ...gltf,
+      groundPredictionSweep: () => null,
+    })
+    const groundedControls: AlsAnimationInstanceControls = {
+      ...controls,
+      speed,
+      locomotionMode: 'Grounded',
+      hasInput: true,
+    }
+    const inAirControls: AlsAnimationInstanceControls = {
+      ...groundedControls,
+      locomotionMode: 'InAir',
+      location: { x: 0, y: 0, z: 1 },
+      velocity: { x: speed, y: 0, z: 4.2 },
+      capsuleRadius: 0.34,
+      capsuleHalfHeight: 0.88,
+      walkableFloorAngleCos: Math.SQRT1_2,
+    }
+
+    instance.refresh(1 / 60, groundedControls)
+    for (let frame = 0; frame < 120; frame++) {
+      const rightFootPlanted =
+        (window.__weightTable?.PublishedFootPlanted ?? 0) > 0
+      if (rightFootPlanted === (foot === 'Right')) break
+      instance.refresh(1 / 60, groundedControls)
+    }
+    instance.dispatchQueuedFootstepEffectsEvents(() => {})
+    instance.jump()
+    const notifyRanges = vi.spyOn(
+      sequenceNotifies,
+      'gatherSequenceNotifiesFromDeltaPositions',
+    )
+    try {
+      instance.refresh(1 / 60, inAirControls)
+
+      const leaderGait = speed < 3.5 ? 'Walk' : 'Run'
+      const followerGait = leaderGait === 'Walk' ? 'Run' : 'Walk'
+      const leaderName = `A_Als_Jump_${leaderGait}_${foot}`
+      const followerName = `A_Als_Jump_${followerGait}_${foot}`
+      const leaderClip = gltf.animations.find(({ name }) => name === leaderName)!
+      const followerClip = gltf.animations.find(({ name }) => name === followerName)!
+      const leaderStart = leaderGait === 'Walk' ? 0.12 : 0
+      const followerRange = notifyRanges.mock.calls.find(
+        ([track]) => track.clipName === followerName,
+      )!
+
+      expect(followerRange).toBeDefined()
+      expect(followerRange[1]).toBeCloseTo(
+        leaderStart / leaderClip.duration * followerClip.duration,
+        12,
+      )
+      expect(followerRange[2]).toBeCloseTo(
+        (
+          leaderStart
+          + (window.__weightTable?.InAirJumpPlayRate ?? 0) / 60
+        ) / leaderClip.duration * followerClip.duration,
+        12,
+      )
+      expect(followerRange[3]).toMatchObject({
+        bAllowLooping: false,
+        bSrcIsLeader: false,
+      })
+    } finally {
+      notifyRanges.mockRestore()
+    }
+
+    expect(window.__weightTable?.['LocomotionState.Jump']).toBe(1)
+    expect(window.__weightTable?.[`JumpState.${foot}Foot`]).toBe(1)
+    const runAmount = (speed - 2) / 3
+    expect(
+      (window.__weightTable?.['InAirPlayer.jumpWalkLeft'] ?? 0)
+      + (window.__weightTable?.['InAirPlayer.jumpWalkRight'] ?? 0),
+    ).toBeCloseTo(1 - runAmount, 12)
+    expect(
+      (window.__weightTable?.['InAirPlayer.jumpRunLeft'] ?? 0)
+      + (window.__weightTable?.['InAirPlayer.jumpRunRight'] ?? 0),
+    ).toBeCloseTo(runAmount, 12)
+
+    for (let frame = 0; frame < 120; frame++) {
+      if (window.__weightTable?.['JumpState.Loop'] === 1) break
+      instance.refresh(1 / 60, inAirControls)
+    }
+    expect(window.__weightTable?.['JumpState.Loop']).toBe(1)
+    const events: AlsAnimNotifyFootstepEffectsEvent[] = []
+    instance.dispatchQueuedFootstepEffectsEvents((event) => events.push(event))
+    const jumpEvents = events.filter(
+      ({ Sequence }) => Sequence.startsWith('A_Als_Jump_'),
+    )
+    expect(jumpEvents.map(({ Sequence }) => Sequence)).toEqual(
+      speed < 3.5 ? [`A_Als_Jump_Walk_${foot}`] : [],
+    )
   })
 
   it('reinitializes caller-owned SequencePlayers when the graph regains the same state', async () => {

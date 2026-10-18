@@ -26,7 +26,7 @@ import {
 import {
   B_Als_CameraShake_Sprint,
 } from '../als/AlsCamera/Notifies/AlsAnimNotify_CameraShake'
-import { ALS_CAMERA_SETTINGS } from '../als/AlsCamera/AlsCameraSettings'
+import { ALS_CAMERA_SETTINGS, type AlsCameraSettings } from '../als/AlsCamera/AlsCameraSettings'
 import { refreshView, setViewMode } from '../als/AlsCharacter'
 import type {
   AlsCharacter,
@@ -127,6 +127,7 @@ interface MutableCameraAnimationInput {
   Gait: string | null
   LocomotionAction: string | null
   bRightShoulder: boolean
+  ShoulderOffsetY: number
 }
 
 interface MutableCameraComponentInput {
@@ -141,6 +142,7 @@ interface MutableCameraComponentInput {
   movementBase: AlsCameraMovementBase | null
   meshScale: number
   curves: Record<string, number>
+  settings?: AlsCameraSettings
   trace: AlsCameraTrace
 }
 
@@ -265,6 +267,78 @@ function updateSocketLocation(
   threeToUnrealVector(threeLocation, unrealLocation)
 }
 
+export type AlsCameraControlRotationSource = () => Readonly<{ yaw: number; pitch: number }>
+
+export function refreshAlsCameraControlRotationFromSource(
+  sample: CharacterPoseSample,
+  rotation: AlsCameraRotation,
+  deltaTime: number,
+  source: AlsCameraControlRotationSource,
+): boolean {
+  const character = sample.character
+  if (!character) return false
+  const input = source()
+  rotation.yaw = input.yaw
+  rotation.pitch = input.pitch
+  refreshView(character, rotation.yaw, deltaTime, rotation.pitch)
+  sample.viewYawAngle = unwindDegrees(character.viewYawAngle - character.actorYawAngle)
+  sample.viewYawSpeed = character.viewYawSpeed
+  return true
+}
+
+/** UE's default `GNearClippingPlane` (10 cm) in metres. */
+export const ALS_DEFAULT_NEAR_CLIP_PLANE = 0.1
+
+export type AlsCameraProjectionState = {
+  aspect: number
+  horizontalFieldOfView: number
+  nearClipPlane: number | null
+  near: number
+  settings: AlsCameraSettings
+}
+
+export function createAlsCameraProjectionState(): AlsCameraProjectionState {
+  return { aspect: Number.NaN, horizontalFieldOfView: Number.NaN, nearClipPlane: null, near: Number.NaN, settings: ALS_CAMERA_SETTINGS }
+}
+
+export function alsCameraTraceSettings(camera: THREE.PerspectiveCamera, settings: AlsCameraSettings = ALS_CAMERA_SETTINGS): AlsCameraSettings {
+  const slope = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
+  const corner = camera.near * Math.hypot(1, slope, slope * camera.aspect)
+  if (corner <= settings.thirdPerson.traceRadius) return settings
+  return { ...settings, thirdPerson: { ...settings.thirdPerson, traceRadius: corner } }
+}
+
+/**
+ * Applies the ALS view FOV and the near clip plane to the render camera when either changes.
+ * `nearClipPlane: null` leaves the game's own `camera.near` untouched.
+ */
+export function applyAlsCameraProjection(
+  camera: THREE.PerspectiveCamera,
+  state: AlsCameraProjectionState,
+  aspect: number,
+  horizontalFieldOfView: number,
+  aspectRatioAxisConstraint: 'MaintainXFOV' | 'MajorAxisFOV',
+  nearClipPlane: number | null,
+): boolean {
+  if (
+    state.aspect === aspect
+    && state.horizontalFieldOfView === horizontalFieldOfView
+    && state.nearClipPlane === nearClipPlane
+    && camera.near === (nearClipPlane ?? state.near)
+  ) return false
+  state.aspect = aspect
+  state.horizontalFieldOfView = horizontalFieldOfView
+  state.nearClipPlane = nearClipPlane
+  camera.fov = aspectRatioAxisConstraint === 'MajorAxisFOV' && aspect < 1
+    ? horizontalFieldOfView
+    : unrealHorizontalFovDegreesToThreeVerticalFovDegrees(horizontalFieldOfView, aspect)
+  if (nearClipPlane !== null) camera.near = nearClipPlane
+  camera.updateProjectionMatrix()
+  state.near = camera.near
+  state.settings = alsCameraTraceSettings(camera)
+  return true
+}
+
 export function AlsCamera({
   poseSample,
   worldTime,
@@ -277,6 +351,11 @@ export function AlsCamera({
   queryFilterForChannel,
   inputEnabled = true,
   mouseSettings,
+  controlRotationSource,
+  rightShoulder,
+  shoulderOffset = 0,
+  aspectRatioAxisConstraint = 'MaintainXFOV',
+  nearClipPlane = ALS_DEFAULT_NEAR_CLIP_PLANE,
 }: {
   poseSample: MutableRefObject<CharacterPoseSample>
   worldTime: Readonly<WorldTimeState>
@@ -298,6 +377,15 @@ export function AlsCamera({
   gamepadIndex?: number
   modifyGamepadLook?: (input: AlsGamepadLookInput) => AlsGamepadLookDelta
   queryFilterForChannel?: RapierAlsCameraTraceOptions['queryFilterForChannel']
+  controlRotationSource?: AlsCameraControlRotationSource
+  /** Game-owned shoulder side, read every frame. When set, it overrides KeyC and the gamepad shoulder binding; the swap still blends. */
+  rightShoulder?: boolean | (() => boolean)
+  /** Extra over-the-shoulder offset in metres, added to the authored CameraOffsetY before the shoulder blend and the collision trace. */
+  shoulderOffset?: number
+  /** UE `EAspectRatioAxisConstraint`. `MajorAxisFOV` applies the authored FOV to the longer screen axis, so portrait phones keep a sane vertical view. */
+  aspectRatioAxisConstraint?: 'MaintainXFOV' | 'MajorAxisFOV'
+  /** Near clip plane in metres, defaulting to 10 cm. Pass `null` to keep the near plane the game set on its camera. */
+  nearClipPlane?: number | null
 }) {
   const { camera, gl, size } = useThree()
   const { world } = useRapier()
@@ -343,8 +431,7 @@ export function AlsCamera({
     pointerYawInput: 0,
     keyboardLookRight: 0,
     gamepadLookRight: 0,
-    projectionAspect: Number.NaN,
-    projectionHorizontalFieldOfView: Number.NaN,
+    projection: createAlsCameraProjectionState(),
   }), [])
   const audioListenerTransform = useMemo(() => ({
     Location: new THREE.Vector3(),
@@ -367,6 +454,7 @@ export function AlsCamera({
     Gait: GAIT_TAGS.Walking,
     LocomotionAction: null,
     bRightShoulder: true,
+    ShoulderOffsetY: 0,
   }), [])
   const componentInput = useMemo<MutableCameraComponentInput>(() => ({
     deltaTime: 0,
@@ -414,7 +502,7 @@ export function AlsCamera({
     pointerDelta.current.x = 0
     pointerDelta.current.y = 0
     pressedKeys.current.clear()
-    if (!inputEnabled) return
+    if (!inputEnabled || controlRotationSource) return
     const onMouseDown = () => {
       if (document.pointerLockElement === canvas) return
       const lock = async () => {
@@ -486,7 +574,7 @@ export function AlsCamera({
     }
   }, [
     cameraComponentState, gl.domElement, poseSample, toggleViewModeKey,
-    inputEnabled, mouseSettings,
+    inputEnabled, mouseSettings, controlRotationSource,
   ])
 
   useEffect(() => {
@@ -540,6 +628,14 @@ export function AlsCamera({
     const sample = poseSample.current
     const character = sample.character
     if (!character) return
+    const desiredShoulder = typeof rightShoulder === 'function' ? rightShoulder() : rightShoulder
+    if (desiredShoulder !== undefined && cameraComponentState.rightShoulder !== desiredShoulder) {
+      setRightShoulder(cameraComponentState, desiredShoulder)
+    }
+    if (controlRotationSource) {
+      refreshAlsCameraControlRotationFromSource(sample, viewRotation.current, deltaTime, controlRotationSource)
+      return
+    }
 
     const gamepad = gamepadEnabled ? activeGamepad(gamepadIndex) : null
     const bindings = { ...ALS_GAMEPAD_BINDINGS, ...gamepadBindings }
@@ -713,12 +809,14 @@ export function AlsCamera({
     input.deltaTime = deltaTime
     input.allowLag = true
     input.movementBase = sample.movementBase
+    input.settings = scratch.projection.settings
 
     updateAnimationInput(
       animationInput,
       character,
       cameraComponentState.rightShoulder,
     )
+    animationInput.ShoulderOffsetY = character.viewMode === 'FirstPerson' ? 0 : shoulderOffset * 100
     refreshAlsCameraAnimationInstance(
       cameraAnimationState,
       animationInput as AlsCameraAnimationInstanceInput,
@@ -781,22 +879,14 @@ export function AlsCamera({
     )
 
     const aspectRatio = size.width / size.height
-    if (
-      scratch.projectionAspect !== aspectRatio
-      || scratch.projectionHorizontalFieldOfView
-        !== renderView.cameraFieldOfView
-    ) {
-      scratch.projectionAspect = aspectRatio
-      scratch.projectionHorizontalFieldOfView =
-        renderView.cameraFieldOfView
-      camera.fov =
-        unrealHorizontalFovDegreesToThreeVerticalFovDegrees(
-          renderView.cameraFieldOfView,
-          aspectRatio,
-        )
-      camera.near = 0.1
-      camera.updateProjectionMatrix()
-    }
+    applyAlsCameraProjection(
+      camera as THREE.PerspectiveCamera,
+      scratch.projection,
+      aspectRatio,
+      renderView.cameraFieldOfView,
+      aspectRatioAxisConstraint,
+      nearClipPlane,
+    )
 
     debugState.activated = true
     debugState.pointerLocked =

@@ -159,11 +159,11 @@ second (flagged) — never from another project's implementation:
       direction-dependent speeds; actor yaw consumes the `RotationYawSpeed` curve while
       grounded-and-not-moving (`AlsCharacter.cpp:1798`). The numerical velocity integrator is
       explicitly ORIGINAL because ALS delegates it to UE. Exact `ComputeFloorDist` sweep/retry/
-      line fallback with selected `FFindFloorResult` distances, `AdjustFloorHeight`, and the first
-      `SafeMoveUpdatedComponent` + one-wall `SlideAlongSurface` slice are live; complete
-      `MoveAlongFloor` still requires penetration adjustment, `StepUp`, `TwoWallAdjust`, and
-      ledge/perch behavior
-      *(updated 2026-07-24)*
+      line fallback, walking `FindFloor` (`MaxStepHeight + MAX_FLOOR_DIST` with perch),
+      `AdjustFloorHeight`, and `MoveAlongFloor` with `ComputeGroundMovementDelta`, `StepUp` and
+      the walking `SlideAlongSurface` are live; penetration adjustment, `TwoWallAdjust` and the
+      InAir `IsValidLandingSpot` FindFloor remain
+      *(updated 2026-10-16)*
 - [ ] Rotation modes: VelocityDirection / ViewDirection / Aiming — real 8-way blendspaces
       from authored directional clips (not cardinal-blend approximation). The complete authored
       `AB_Als_View` Look state machine is live in the exact Layering → View → CR_Als stage order,

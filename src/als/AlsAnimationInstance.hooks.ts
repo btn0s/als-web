@@ -279,6 +279,7 @@ export function useAlsAnimationInstance(
     SoundSink: AlsFootstepSoundSink
   }>,
   exposeDebugGlobals = true,
+  terrainFootLock = false,
   animationLod?: AlsAnimationLodSource,
 ) {
   const camera = useThree((state) => state.camera)
@@ -290,8 +291,9 @@ export function useAlsAnimationInstance(
       groundPredictionSweep,
       controlRigFootTrace,
       exposeDebugGlobals,
+      terrainFootLock,
     }),
-    [controlRigFootTrace, gltf, groundPredictionSweep, exposeDebugGlobals],
+    [controlRigFootTrace, gltf, groundPredictionSweep, exposeDebugGlobals, terrainFootLock],
   )
   const updateRate = useMemo(() => new AlsAnimationUpdateRate(), [animationInstance])
   const frameCapture = useMemo(

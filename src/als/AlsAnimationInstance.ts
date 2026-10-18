@@ -857,7 +857,13 @@ export interface AlsGetUpMontageBridge {
   Montage_Play(Montage: string): number
   takeNotifyEvents(): readonly AlsGetUpMontageNotifyEvent[]
 }
+export interface AlsAnimationClock {
+  readonly elapsedSeconds: number
+  readonly updates: number
+}
+
 export interface AlsAnimationInstance {
+  readonly clock: AlsAnimationClock
   /** Borrowed diagnostic buffers, valid until the next refresh. Do not mutate. */
   inspectPose(stage: 'overlay' | 'locomotion' | 'final'): {
     boneNames: readonly string[]
@@ -867,6 +873,8 @@ export interface AlsAnimationInstance {
   readonly getUpMontage: AlsGetUpMontageBridge
   readonly ragdolling: AlsRagdollPose
   StopMontages: (blendOutDuration: number) => void
+  /** `UAlsAnimationInstance::MarkTeleported()`: the next update records TeleportedTime. */
+  MarkTeleported: () => void
   /** Read-only action presentation clocks for snapshot recording. */
   getRollingSnapshot: () => { position: number; playRate: number } | undefined
   setRollingPosition: (position: number) => void
@@ -1279,6 +1287,7 @@ export function createAlsAnimationInstance(gltf: {
   groundPredictionSweep?: AlsGroundPredictionCapsuleSweep
   /** Backend adapter for CR_Als FAlsRigUnit_FootOffsetTrace. */
   controlRigFootTrace?: AlsControlRigFootOffsetTrace
+  terrainFootLock?: boolean
   exposeDebugGlobals?: boolean
 }): AlsAnimationInstance {
   assertAlsAnimationExtras(gltf.animations)
@@ -2744,7 +2753,9 @@ export function createAlsAnimationInstance(gltf: {
   const locomotionLocation: Velocity3 = { x: 0, y: 0, z: 0 }
   let pendingUpdate = true
   let worldTime = 0
+  let animationUpdates = 0
   let teleportedTime = Number.NEGATIVE_INFINITY
+  let teleportMarked = false
   let previousFootPlantedAmount = 0
   let previousGroundPredictionBlockAmount = 0
   let landToGroundedNotifyCount = 0
@@ -4514,13 +4525,21 @@ export function createAlsAnimationInstance(gltf: {
     }
 
     group.leaderKey = leader.key
-    advanceLocomotionPlayer(leader, delta)
     const leaderDuration = leader.clip?.sampler.clip.duration ?? 0
+    const previousNormalizedTime =
+      leaderDuration > 0 ? leader.time / leaderDuration : 0
+    advanceLocomotionPlayer(leader, delta)
     const normalizedTime =
       leaderDuration > 0 ? leader.time / leaderDuration : 0
     for (const follower of group.members) {
       if (follower === leader || follower.weight <= 0) continue
       const duration = follower.clip?.sampler.clip.duration ?? 0
+      if (locomotionSequencePreviousTimes.has(follower)) {
+        locomotionSequencePreviousTimes.set(
+          follower,
+          previousNormalizedTime * duration,
+        )
+      }
       follower.time = Math.max(0, Math.min(duration, normalizedTime * duration))
     }
   }
@@ -4846,12 +4865,9 @@ export function createAlsAnimationInstance(gltf: {
           ? footstepEffectsNotifyTracks.get(sequenceName)
           : undefined
         if (previousTime === undefined || !runtimeTrack) continue
-        // A non-looping member that moved backwards was restarted by its sync group this tick, so
-        // its notify range begins at the clip start rather than wrapping.
-        const restarted = !player.loop && player.time < previousTime
         queueFootstepEffectsNotifiesFromRange(
           runtimeTrack,
-          restarted ? 0 : previousTime,
+          previousTime,
           player.time,
           {
             bAllowLooping: player.loop,
@@ -4905,6 +4921,14 @@ export function createAlsAnimationInstance(gltf: {
         }),
         deltaTime: Math.max(0, deltaTime),
         trace: gltf.controlRigFootTrace ?? NO_CONTROL_RIG_FOOT_TRACE,
+        terrainFootLock: gltf.terrainFootLock
+          && locomotionMode === 'Grounded'
+          && currentLocomotionAction === null
+          ? {
+              componentToWorld: gltf.scene.matrixWorld,
+              reset: pendingUpdate || worldTime === teleportedTime,
+            }
+          : undefined,
         captureComponentPositionSnapshots:
           captureControlRigComponentPositions,
       })
@@ -4953,6 +4977,7 @@ export function createAlsAnimationInstance(gltf: {
       : controls.locomotionMode
     const hasInput = controls.hasInput ?? false
     worldTime += deltaTime
+    animationUpdates++
 
     // NativeUpdateAnimation(): PreviousLocation → MovementBase → View → Locomotion → InAir →
     // Feet → teleport detection. The live bridge has already captured the character-owned View
@@ -4974,7 +4999,10 @@ export function createAlsAnimationInstance(gltf: {
     }
     refreshInAirOnGameThread(inAirState, pendingUpdateThisFrame)
     feetPoseBridge?.capturePublishedPose(feetState)
-    if (location) {
+    if (teleportMarked) {
+      teleportMarked = false
+      teleportedTime = worldTime
+    } else if (location) {
       if (shouldMarkAlsTeleported({
         pendingUpdate: pendingUpdateThisFrame,
         previousLocation,
@@ -7523,6 +7551,10 @@ export function createAlsAnimationInstance(gltf: {
     const controlRigFootRight = controlRigRuntime?.footIk.feet[1]
     normalDebugWeights.ControlRigPelvisOffset =
       controlRigRuntime?.footIk.pelvisOffset ?? 0
+    normalDebugWeights.ControlRigFootLeftTerrainLocked =
+      Number(controlRigFootLeft?.terrainLocked ?? false)
+    normalDebugWeights.ControlRigFootRightTerrainLocked =
+      Number(controlRigFootRight?.terrainLocked ?? false)
     normalDebugWeights.ControlRigFootLeftTraceHit =
       Number(controlRigFootLeft?.traceHit ?? false)
     normalDebugWeights.ControlRigFootRightTraceHit =
@@ -7599,6 +7631,10 @@ export function createAlsAnimationInstance(gltf: {
   }
 
   return {
+    clock: {
+      get elapsedSeconds() { return worldTime },
+      get updates() { return animationUpdates },
+    },
     inspectPose: (stage) => ({
       boneNames: rig.boneNames,
       pose: stage === 'overlay' ? evaluator.overlayPose : stage === 'locomotion' ? evaluator.basePose : evaluator.outputPose,
@@ -7609,6 +7645,7 @@ export function createAlsAnimationInstance(gltf: {
       Montage_Play: playGetUpMontage,
       takeNotifyEvents: () => pendingGetUpNotifyEvents.splice(0),
     },
+    MarkTeleported: () => { teleportMarked = true },
     StopMontages: (duration) => {
       upperBodySlot.stop(duration)
       const mantle = getActiveMantlingMontageInstance()

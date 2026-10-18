@@ -1,0 +1,7 @@
+# Weapon attachment and overlay
+
+Set `overlayMode: 'Rifle'` or `'PistolTwoHanded'`/`'PistolOneHanded'` in `inputSource`; `Character` mounts its built-in rifle/pistol object. [Objects](../../../src/app/AlsOverlayObjects.tsx), [overlay tests](../../../src/engine/evaluator.rifleOverlay.test.ts).
+
+For your own object, use `<Character renderOverlayObject={scene => <MyObject characterScene={scene} />} ... />`. Attach to the animated `VB hand_r_to_ik_hand_gun` target after pose publication; [attachment implementation](../../../src/als/AlsCharacter.overlayObjects.ts) and [object component](../../../src/app/AlsOverlayObjects.tsx) show the runtime seam. The authored rifle attaches identity `SnapToTarget`; avoid a one-time world transform.
+
+For a custom `CarryBox` overlay, register `ConsumerOverlayStates` with `clips` and one `{mode:'CarryBox', template:'Rifle', sources:{poses,aim,aimCrouch,aimReference,runArms,sprintArms,sprintImpulseArms}}` entry. Each source is a clip name in `clips` or the ALS animation set. `idle` and `idleReference` may name your own clips; otherwise ALS defaults to `A_Als_Idle` and `A_Als_Stand_Pose`. Pass `overlayStates={registration}` to `Character`, then send `overlayMode:'CarryBox'`. `PistolTwoHanded` templates need the four pose/aim sources only. [Registration type](../../../src/als/AnimGraph/consumerOverlayStates.ts), [executable CarryBox fixture](../../../src/guide/consumerRecipes.test.ts), [overlay tests](../../../src/als/AnimGraph/consumerOverlayStates.test.ts). See [upper body actions](montage.md) for fire/reload/equip slots.

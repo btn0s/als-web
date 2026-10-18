@@ -7,6 +7,7 @@ import {
 import { ALS_NO_BASED_MOVEMENT } from './State/AlsMovementBaseState'
 import { unwindDegrees } from './State/AlsLocomotionState'
 import type { AlsCharacterSnapshot } from './AlsCharacterSnapshot'
+import { AlsAnimationUpdateRate } from '../engine/animationUpdateRate'
 
 const gait = { walking: 'Walking', running: 'Running', sprinting: 'Sprinting' } as const
 const rotation = {
@@ -21,7 +22,9 @@ const action = {
  */
 export class AlsRemoteCharacter {
   readonly character
-  constructor(ragdollingSettings?: Partial<AlsRagdollingSettings>) {
+  readonly animationRate
+  constructor(ragdollingSettings?: Partial<AlsRagdollingSettings>, animationLodPhase?: number) {
+    this.animationRate = new AlsAnimationUpdateRate(animationLodPhase)
     this.character = createAlsCharacter({ settings: {
       Ragdolling: { ...ALS_RAGDOLLING_SETTINGS, ...ragdollingSettings },
     } })

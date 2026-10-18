@@ -26,6 +26,7 @@ import {
   prepareRapierAlsAnimRootMotionVelocity,
   prepareRapierAlsMantlingMovementBoundary,
   refreshRapierAlsLocomotionMode,
+  refreshAlsCodeJumpInput,
   requestAlsJumpInput,
   publishAlsCharacterAnimationSnapshot,
   resolveAlsActorFeetLocation,
@@ -600,6 +601,49 @@ describe('AlsCharacter browser bridge math', () => {
     expect(consumeAlsJumpInput(request)).toBe(false)
   })
 
+  it('consumes external jump sequences once across fixed substeps and enters InAir', () => {
+    const request = { current: false }
+    const sequence = { current: 0 }
+    const input = { active: true, jumpSequence: 1 }
+    const character = createAlsCharacter()
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(true)
+    expect(handleAlsJumpInput(character)).toBe('Jumped')
+    expect(character.locomotionMode).toBe('InAir')
+    for (let step = 0; step < 5; step++) {
+      refreshAlsCodeJumpInput(input, sequence, request)
+      expect(consumeAlsJumpInput(request)).toBe(false)
+    }
+    input.jumpSequence++
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(true)
+  })
+
+  it('cancels inactive external jump edges without replaying them when reactivated', () => {
+    const request = { current: true }
+    const sequence = { current: 0 }
+    const input = { active: false, jumpSequence: 1 }
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(false)
+    input.active = true
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(false)
+    input.jumpSequence++
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(true)
+  })
+
+  it('starts from the mounted external sequence without replaying a pre-respawn press', () => {
+    const input = { active: true, jumpSequence: 7 }
+    const sequence = { current: input.jumpSequence }
+    const request = { current: false }
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(false)
+    input.jumpSequence++
+    refreshAlsCodeJumpInput(input, sequence, request)
+    expect(consumeAlsJumpInput(request)).toBe(true)
+  })
+
   it('attempts a grounded mantle before the crouch and Jump branches', () => {
     const character = createAlsCharacter({
       desiredStance: 'Crouching',
@@ -628,6 +672,14 @@ describe('AlsCharacter browser bridge math', () => {
     expect(character.locomotionMode).toBe('InAir')
     expect(ALS_RAPIER_JUMP_SPEED).toBe(4.2)
     expect(handleAlsJumpInput(character)).toBe('Rejected')
+  })
+
+  it('jumps from InAir only inside an opted-in coyote window', () => {
+    const character = createAlsCharacter()
+    expect(refreshRapierAlsLocomotionMode(character, false, 0)).toBe('InAir')
+    expect(handleAlsJumpInput(character)).toBe('Rejected')
+    expect(handleAlsJumpInput(character, () => false, true)).toBe('Jumped')
+    expect(character.locomotionMode).toBe('InAir')
   })
 
   it('exposes Rapier Walking/Falling as exact ALS locomotion-mode edges', () => {

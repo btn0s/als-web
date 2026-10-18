@@ -82,6 +82,29 @@ function createAdapter(
 }
 
 describe('Rapier ALS mantling adapter', () => {
+  it.each([0.49, 0.5, 0.6, 0.75, 1, 2])('resolves the authored lower boundary for a %s m ledge', (height) => {
+    const world = createWorld()
+    const ledgeBody = world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(1.95, height / 2, 0),
+    )
+    world.createCollider(RAPIER.ColliderDesc.cuboid(1.5, height / 2, 1.5), ledgeBody)
+    world.step()
+    const adapter = createAdapter(world)
+    const state = character()
+    const parameters = startMantling({
+      Character: { ...state, ActorLocation: { ...state.ActorLocation, z: 0.9215 } },
+      TraceSettings: ALS_GENERAL_MANTLING_SETTINGS.GroundedTrace,
+      MantlingSettings: ALS_GENERAL_MANTLING_SETTINGS,
+      Collision: adapter.Collision,
+      TargetSpace: adapter,
+    })
+    if (height < 0.5) expect(parameters).toBeNull()
+    else {
+      expect(parameters).not.toBeNull()
+      expect(parameters?.TargetRelativeLocation.z).toBeCloseTo(height + 0.019, 5)
+    }
+  })
+
   it('finds the reference ledge with the four real shape queries', () => {
     const world = createWorld()
     const ledgeBody = world.createRigidBody(

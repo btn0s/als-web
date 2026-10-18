@@ -29,6 +29,7 @@ import * as THREE from 'three'
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { useAlsAnimationInstance } from '../als/AlsAnimationInstance.hooks'
 import type {
+  AlsAnimationInstance,
   AlsMantlingMontageBridge,
   AlsRollingMontageBridge,
 } from '../als/AlsAnimationInstance'
@@ -95,6 +96,8 @@ export type AlsOverlayModeBridge = Pick<
   'overlayMode' | 'SetOverlayMode'
 >
 
+export type AlsCharacterTeleport = Pick<AlsCharacterBridge, 'TeleportTo'>
+
 export interface CharacterProps {
   inputSource?: AlsCharacterInputSource
   inputEnabled?: boolean
@@ -102,6 +105,7 @@ export interface CharacterProps {
   isMantlingAllowedToStart?: () => boolean
   exposeDebugGlobals?: boolean
   allowSprint?: boolean
+  terrainFootLock?: boolean
   /** Animation update rate significance, the same one AlsRemoteActor takes. */
   animationLod?: AlsAnimationLodSource
   gaitSpeedOverrides?: AlsGaitSpeedOverrides
@@ -116,6 +120,8 @@ export interface CharacterProps {
   /** Called when the native path mounts a prop on the attachment bone, and again with null on unmount. */
   onOverlayObjectMount?: AlsOverlayObjectMountHandler
   ragdollRef?: React.RefObject<AlsRagdollHandle | null>
+  /** Receives AActor::TeleportTo(); respawn through it instead of remounting the character. */
+  teleportRef?: React.RefObject<AlsCharacterTeleport | null>
   /** Emitted after animation in the performance.now() clock domain. */
   onSnapshot?: (snapshot: AlsCharacterSnapshot) => void
   snapshotRateHz?: number
@@ -229,6 +235,7 @@ function LoadedCharacter({
   footstepSoundSink,
   onSnapshot,
   ragdollRef,
+  teleportRef,
   snapshotRateHz = 20,
   ragdollInputEnabled,
   ragdollingSettings,
@@ -242,6 +249,7 @@ function LoadedCharacter({
   isMantlingAllowedToStart,
   exposeDebugGlobals,
   allowSprint,
+  terrainFootLock,
   animationLod,
   gaitSpeedOverrides,
   instanceId,
@@ -257,6 +265,7 @@ function LoadedCharacter({
   overlayObjectAssets?: CharacterProps['overlayObjectAssets']
   onOverlayObjectMount?: CharacterProps['onOverlayObjectMount']
   ragdollRef?: CharacterProps['ragdollRef']
+  teleportRef?: CharacterProps['teleportRef']
   ragdollInputEnabled?: boolean
   ragdollingSettings?: Partial<AlsRagdollingSettings>
   onSizeChange: CharacterProps['onSizeChange']
@@ -278,6 +287,7 @@ function LoadedCharacter({
   isMantlingAllowedToStart: CharacterProps['isMantlingAllowedToStart']
   exposeDebugGlobals: CharacterProps['exposeDebugGlobals']
   allowSprint: CharacterProps['allowSprint']
+  terrainFootLock: CharacterProps['terrainFootLock']
   animationLod: CharacterProps['animationLod']
   gaitSpeedOverrides: CharacterProps['gaitSpeedOverrides']
   instanceId: CharacterProps['instanceId']
@@ -336,6 +346,7 @@ function LoadedCharacter({
     () => createRapierAlsGroundedMoveSweep({
       world,
       Capsule: RapierCapsule,
+      Ray: RapierRay,
       resolveExcludeRigidBody: () => rigidBody.current,
       filterFlags: rapier.QueryFilterFlags.EXCLUDE_SENSORS,
       resolveFilterGroups: () => {
@@ -343,7 +354,7 @@ function LoadedCharacter({
         return body && body.numColliders() > 0 ? body.collider(0).collisionGroups() : undefined
       },
     }),
-    [RapierCapsule, rapier.QueryFilterFlags.EXCLUDE_SENSORS, world],
+    [RapierCapsule, RapierRay, rapier.QueryFilterFlags.EXCLUDE_SENSORS, world],
   )
   const controlRigFootTrace = useMemo(
     () => createRapierAlsControlRigFootTrace({
@@ -479,6 +490,7 @@ function LoadedCharacter({
   }, [bounds, onSizeChange])
 
   const internalRagdoll = useRef<AlsRagdollHandle | null>(null)
+  const internalAnimation = useRef<AlsAnimationInstance | null>(null)
   const character = useAlsCharacter(
     rigidBody,
     standingCapsule,
@@ -496,6 +508,10 @@ function LoadedCharacter({
       RollingMontage: rollingMontage,
       StartRagdolling: () => { internalRagdoll.current?.StartRagdolling() },
       StopRagdolling: () => internalRagdoll.current?.StopRagdolling() ?? false,
+      Teleported: () => {
+        internalAnimation.current?.StopMontages(0)
+        internalAnimation.current?.MarkTeleported()
+      },
     },
     groundedMoveSweep,
     worldTime,
@@ -557,8 +573,16 @@ function LoadedCharacter({
       SoundSink: footstepSoundSink,
     },
     exposeDebugGlobals ?? inputEnabled !== false,
+    terrainFootLock,
     animationLod,
   )
+
+  internalAnimation.current = animationInstance
+  useEffect(() => {
+    if (!teleportRef) return
+    teleportRef.current = { TeleportTo: character.TeleportTo }
+    return () => { teleportRef.current = null }
+  }, [teleportRef, character.TeleportTo])
 
   const ragdoll = useAlsRagdoll(character.character.current, animationInstance,
     rigidBody, standingCapsule, crouchingCapsule, ragdollRef, worldTime)
@@ -582,6 +606,7 @@ function LoadedCharacter({
 
   useFrame(() => {
     const group = characterGroup.current
+    poseSample.current.animationClock = animationInstance.clock
     if (!group || !poseBones.head || !poseBones.pelvis) {
       poseSample.current.ready = false
       return
@@ -594,6 +619,10 @@ function LoadedCharacter({
     poseBones.head.getWorldPosition(poseSample.current.head)
     poseBones.leftFoot?.getWorldPosition(poseSample.current.leftFoot)
     poseBones.rightFoot?.getWorldPosition(poseSample.current.rightFoot)
+    const curves = animationInstance.inspectPose('final').curves
+    poseSample.current.footPlant = curves.get('FootPlanted') ?? 0
+    poseSample.current.leftFootLock = curves.get('FootLeftLock') ?? 0
+    poseSample.current.rightFootLock = curves.get('FootRightLock') ?? 0
     poseSample.current.poseHeight = poseSample.current.head.y - poseSample.current.ground.y
     poseSample.current.characterYaw = group.rotation.y
     poseSample.current.rootBone = poseBones.cameraRoot
@@ -683,6 +712,7 @@ export function Character({
   footstepSoundSink,
   onSnapshot,
   ragdollRef,
+  teleportRef,
   snapshotRateHz = 20,
   ragdollInputEnabled,
   ragdollingSettings,
@@ -696,6 +726,7 @@ export function Character({
   isMantlingAllowedToStart,
   exposeDebugGlobals,
   allowSprint,
+  terrainFootLock,
   animationLod,
   gaitSpeedOverrides,
   instanceId,
@@ -727,6 +758,7 @@ export function Character({
       onSnapshot={onSnapshot}
       snapshotRateHz={snapshotRateHz}
       ragdollRef={ragdollRef}
+      teleportRef={teleportRef}
       ragdollInputEnabled={ragdollInputEnabled}
       ragdollingSettings={ragdollingSettings}
       toggleRotationModeKey={toggleRotationModeKey}
@@ -739,6 +771,7 @@ export function Character({
       isMantlingAllowedToStart={isMantlingAllowedToStart}
       exposeDebugGlobals={exposeDebugGlobals}
       allowSprint={allowSprint}
+      terrainFootLock={terrainFootLock}
       animationLod={animationLod}
       gaitSpeedOverrides={gaitSpeedOverrides}
       instanceId={instanceId}

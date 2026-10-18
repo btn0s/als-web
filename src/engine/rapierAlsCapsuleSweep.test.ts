@@ -208,6 +208,7 @@ describe('Rapier ALS capsule sweep', () => {
       validBlockingHit: true,
       time: 0.375,
       impactNormal: { x: 0.1, y: -0.2, z: 0.9 },
+      normal: { x: 0.1, y: -0.2, z: 0.9 },
       impactPoint: { x: 4, y: 6, z: 5 },
       bBlockingHit: true,
       bStartPenetrating: false,
@@ -747,6 +748,28 @@ describe('Rapier ALS capsule sweep', () => {
       hasRelativeRotation: true,
     })
     expect(rapierAlsCameraMovementBase(null)).toBeNull()
+  })
+
+  it('treats a removed Rapier collider as no base instead of trapping the world', () => {
+    const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
+    const floor = world.createCollider(RAPIER.ColliderDesc.cuboid(5, 0.5, 5))
+    const hit = {
+      validBlockingHit: true,
+      time: 0,
+      impactNormal: { x: 0, y: 0, z: 1 },
+      collider: floor,
+      rigidBody: null,
+    }
+    expect(rapierAlsMovementBase(hit).primitive).toBe(floor)
+
+    world.removeCollider(floor, false)
+
+    expect(rapierAlsMovementBase(hit).primitive).toBeNull()
+    expect(rapierAlsMovementBaseFromPrimitive(floor).primitive).toBeNull()
+    expect(rapierAlsCameraMovementBase(hit)).toBeNull()
+    expect(rapierAlsCameraMovementBaseFromPrimitive(floor)).toBeNull()
+    expect(() => world.step()).not.toThrow()
+    world.free()
   })
 
   it('retains a SetBase target without inventing a floor-sweep hit', () => {

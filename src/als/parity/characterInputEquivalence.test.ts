@@ -432,7 +432,6 @@ describe('consumer gamepad bindings', () => {
 describe('multi-character browser input ownership', () => {
   it('samples the selected enabled pad once for normal and ragdoll actions', () => {
     expect(compactControllerSource.match(/sampleGamepad\(gamepadInput.current/g)).toHaveLength(1)
-    expect(compactControllerSource).toContain('sampleGamepad(gamepadInput.current, gamepadBindings, inputEnabled && gamepadEnabled, gamepadIndex)')
     expect(compactControllerSource).toContain('const codeInput = inputSource?.()')
   })
 

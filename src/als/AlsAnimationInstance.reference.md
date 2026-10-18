@@ -89,6 +89,11 @@ i.e. turn-in-place and rotate-in-place clips bake a `RotationYawSpeed` (deg/s) f
 
 **`bDisableFootLock`** default false; **`FootLockAngleLimit`** default 90° (`AlsFeetSettings.h`).
 
+**Foot contact during gait changes, starts, and stops (VERIFIED, 2026-10-16).** These cases are ALS behavior, not port defects. Foot lock cannot latch while `bMovingSmooth`: `NewLockAmount = max(0, min(curve, LockAmount - dt·5))` stays at 0 once released. So only the cycle's stride and play rate keep a moving foot planted.
+- **Running→Walking:** `BS_Als_WalkRun_*` filter their inputs with cubic `FBlendFilter`s (Stride `InterpolationTime` 0.2 s, WalkRun 0.4 s; `blend-spaces.json`). `PlayRate` (cpp:896-927) divides by the *unfiltered* `StrideBlendAmount`. ALS's own `TODO` at cpp:909 notes that this rate is not auto-matched. When speed falls from 3.75 to 1.75 m/s, the stance foot under-travels. An in-process run at MS_Als_Normal (60 fps) slid 0.137 m. The same run with both authored filter times zeroed slid 0.009 m.
+- **Starting from rest:** the lock releases over 0.2 s at 5/s while the character reaches run speed. The foot glides from the lock location to the cycle target.
+- **Stopping:** the replant is authored in `A_Als_Stop_Left/Right` (slot, rate 1.5, start 0.4). For the stepping foot, the published lock goes 1→0→1 over clip time ≈0.83–1.33 s. The clip lifts that foot only ≈2 cm, so the lock blend-out moves it across the floor to the idle stance.
+
 ### Pelvis-adaptive ground IK (separate stage, Control Rig — NOT AnimBP C++)
 
 **VERIFIED sources:** the current authored `CR_Als` RigVM graphs are frozen in

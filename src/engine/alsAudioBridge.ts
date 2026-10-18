@@ -75,6 +75,7 @@ export interface AlsFootstepAudioRuntimeOptions {
   readonly MaximumPendingRequestCount?: number
   readonly AutoInstallUserGestureUnlock?: boolean
   readonly OnError?: (error: AlsFootstepAudioRuntimeError) => void
+  readonly OnPlay?: (soundType: EAlsFootstepSoundType, waveAssetName: string) => void
 }
 
 interface PendingFootstepSound {
@@ -427,6 +428,8 @@ export class AlsFootstepAudioRuntime implements AlsFootstepSoundSink {
   private readonly MaximumPendingRequestCount: number
   private readonly OnError:
     ((error: AlsFootstepAudioRuntimeError) => void) | undefined
+  private readonly OnPlay:
+    ((soundType: EAlsFootstepSoundType, waveAssetName: string) => void) | undefined
   private readonly pendingSounds: PendingFootstepSound[] = []
   private readonly buffers = new Map<string, AudioBuffer>()
   private readonly bufferLoads = new Map<
@@ -469,6 +472,7 @@ export class AlsFootstepAudioRuntime implements AlsFootstepSoundSink {
       ),
     )
     this.OnError = options.OnError
+    this.OnPlay = options.OnPlay
 
     // React may invoke render-time memo factories more than once in development. Listener
     // installation is therefore explicit by default so constructing this engine object remains
@@ -497,6 +501,7 @@ export class AlsFootstepAudioRuntime implements AlsFootstepSoundSink {
       Request: cloneRequest(request),
       WaveAssetName: this.waveSelector.Select(request.SoundType),
     })
+    this.OnPlay?.(request.SoundType, pendingSound.WaveAssetName)
     if (this.pendingSounds.length >= this.MaximumPendingRequestCount) {
       this.pendingSounds.shift()
     }

@@ -39,7 +39,15 @@
     "./als/AlsCharacterMovementComponent": "./src/als/AlsCharacterMovementComponent.ts",
     "./als/AnimGraph/consumerLocomotionStates": "./src/als/AnimGraph/consumerLocomotionStates.ts",
     "./engine/clipCycle": "./src/engine/clipCycle.ts",
-    "./als/AnimGraph/ikChain": "./src/als/AnimGraph/ikChain.ts"
+    "./als/AnimGraph/ikChain": "./src/als/AnimGraph/ikChain.ts",
+    "./engine/rig": "./src/engine/rig.ts",
+    "./engine/applyPose": "./src/engine/applyPose.ts",
+    "./engine/clipSampler": "./src/engine/clipSampler.ts",
+    "./engine/curves": "./src/engine/curves.ts",
+    "./engine/virtualBones": "./src/engine/virtualBones.ts",
+    "./engine/poseBuffer": "./src/engine/poseBuffer.ts",
+    "./als/Utility/AlsVirtualBones": "./src/als/Utility/AlsVirtualBones.ts",
+    "./als/AnimGraph/consumerUpperBodySlot": "./src/als/AnimGraph/consumerUpperBodySlot.ts"
   },
   "packageManager": "pnpm@11.15.1",
   "engines": {
@@ -67,7 +75,7 @@
     "postprocessing": "6.39.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "three": "^0.185.1",
+    "three": "^0.186.1",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
@@ -75,7 +83,7 @@
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@types/three": "^0.185.1",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.0.3",
     "oxlint": "^1.71.0",
     "typescript": "~6.0.2",

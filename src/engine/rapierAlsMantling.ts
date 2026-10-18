@@ -2,6 +2,7 @@ import {
   Ball,
   Capsule,
   QueryFilterFlags,
+  Ray,
 } from '@dimforge/rapier3d-compat'
 import type {
   Collider,
@@ -424,7 +425,16 @@ export function createRapierAlsMantling(
       ) * hit.time_of_impact,
     }
     const ImpactPoint = threeToUnrealVector(hit.witness1)
-    const ImpactNormal = threeToUnrealVector(hit.normal1)
+    let surfaceNormal = hit.normal1
+    if (shape instanceof Capsule && Math.abs(end.y - start.y) < 1e-6
+      && surfaceNormal.y >= options.walkableFloorAngleCos) {
+      const face = hit.collider.castRayAndGetNormal(new Ray(
+        { x: start.x, y: hit.witness1.y - 1e-6, z: start.z },
+        { x: end.x - start.x, y: 0, z: end.z - start.z },
+      ), 1, true)
+      if (face) surfaceNormal = face.normal
+    }
+    const ImpactNormal = threeToUnrealVector(surfaceNormal)
     const initialContact = hit.collider.contactShape(
       shape,
       start,

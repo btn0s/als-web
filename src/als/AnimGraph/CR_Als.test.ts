@@ -1896,3 +1896,135 @@ describe('CR_Als authored Forward Solve', () => {
     ]).not.toEqual(armRotationsBefore)
   })
 })
+
+describe('opt-in terrain stance retention', () => {
+  const curves = new Map([
+    ['FootLeftIk', 1], ['FootRightIk', 1], ['FootPlanted', -1],
+  ])
+
+  function terrainFrame(
+    runtime: ReturnType<typeof createAlsControlRigFootIkRuntime>,
+    componentToWorld: THREE.Matrix4,
+    options: {
+      phase?: number
+      ground?: number
+      normal?: THREE.Vector3
+      enabled?: boolean
+      hit?: boolean
+      reset?: boolean
+      pose?: LocalPoseBuffer
+    } = {},
+  ) {
+    const pose = options.pose ?? createTestPose(runtime.rig)
+    const inverse = componentToWorld.clone().invert()
+    const world = new THREE.Vector3()
+    const trace: AlsControlRigFootOffsetTrace = options.hit === false
+      ? () => null
+      : (request) => {
+          world.copy(request.start).applyMatrix4(componentToWorld)
+          world.y = options.ground ?? 0
+          return {
+            impactPoint: world.clone().applyMatrix4(inverse),
+            impactNormal: options.normal ?? new THREE.Vector3(0, 1, 0),
+          }
+        }
+    const input = footTestInput(pose, new Map([
+      ...curves, ['FootPlanted', options.phase ?? -1],
+    ]), trace)
+    evaluateAlsControlRigFootIk(runtime, {
+      ...input,
+      terrainFootLock: options.enabled === false
+        ? undefined
+        : { componentToWorld, reset: options.reset },
+    })
+    return componentTransforms(runtime.rig, pose)[index(runtime.rig, 'foot_l')]
+      .position.applyMatrix4(componentToWorld)
+  }
+
+  it('retains a planted world contact through translation, yaw, and vertical stair motion', () => {
+    const rig = createFootTestRig()
+    const runtime = createAlsControlRigFootIkRuntime(rig)
+    const anchor = terrainFrame(runtime, new THREE.Matrix4())
+    expect(runtime.feet[0].terrainLocked).toBe(true)
+    for (let frame = 1; frame <= 18; frame++) {
+      const transform = new THREE.Matrix4().compose(
+        new THREE.Vector3(frame * 0.02, frame > 6 ? 0.18 : 0, 0),
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), frame * 0.02),
+        new THREE.Vector3(1, 1, 1),
+      )
+      const foot = terrainFrame(runtime, transform)
+      expect(foot.distanceTo(anchor)).toBeLessThan(0.00001)
+      expect(runtime.feet[0].terrainLocked).toBe(true)
+    }
+  })
+
+  it('retains the planted sole rotation while the actor turns', () => {
+    const rig = createFootTestRig()
+    const runtime = createAlsControlRigFootIkRuntime(rig)
+    const first = createTestPose(rig)
+    terrainFrame(runtime, new THREE.Matrix4(), { pose: first })
+    const anchor = componentTransforms(rig, first)[index(rig, 'foot_l')].rotation
+    const actorRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.3)
+    const transform = new THREE.Matrix4().compose(
+      new THREE.Vector3(0.2, 0.1, 0), actorRotation, new THREE.Vector3(1, 1, 1),
+    )
+    const next = createTestPose(rig)
+    terrainFrame(runtime, transform, { pose: next })
+    const rotation = componentTransforms(rig, next)[index(rig, 'foot_l')].rotation
+      .premultiply(actorRotation)
+    expect(rotation.angleTo(anchor)).toBeLessThan(0.00001)
+  })
+
+  it('uses terrain height and slope clearance for touchdown', () => {
+    const runtime = createAlsControlRigFootIkRuntime(createFootTestRig())
+    const normal = new THREE.Vector3(-0.3, 1, 0).normalize()
+    const foot = terrainFrame(runtime, new THREE.Matrix4(), { ground: 0.18, normal })
+    expect(foot.y).toBeCloseTo(0.18 + runtime.footHeight / normal.y, 5)
+    expect(runtime.feet[0].terrainLocked).toBe(true)
+    const next = terrainFrame(runtime, new THREE.Matrix4().makeTranslation(0.25, 0.15, 0), {
+      ground: 0.18, normal,
+    })
+    expect(next.distanceTo(foot)).toBeLessThan(0.00001)
+  })
+
+  it('does not treat a lifted phase-marked foot or absent floor as a contact', () => {
+    const rig = createFootTestRig()
+    const runtime = createAlsControlRigFootIkRuntime(rig)
+    const pose = createTestPose(rig)
+    pose.positions[index(rig, 'foot_l') * 3 + 1] += 0.16
+    terrainFrame(runtime, new THREE.Matrix4(), { pose })
+    expect(runtime.feet[0].terrainLocked).toBe(false)
+    terrainFrame(runtime, new THREE.Matrix4(), { hit: false })
+    expect(runtime.feet[0].terrainLocked).toBe(false)
+  })
+
+  it('releases on toe-off and resets on unavailable terrain, actions, or teleport', () => {
+    const runtime = createAlsControlRigFootIkRuntime(createFootTestRig())
+    terrainFrame(runtime, new THREE.Matrix4())
+    terrainFrame(runtime, new THREE.Matrix4(), { phase: 1 })
+    expect(runtime.feet[0].terrainLocked).toBe(false)
+    expect(runtime.feet[0].terrainWeight).toBeGreaterThan(0)
+    for (let frame = 0; frame < 8; frame++) {
+      terrainFrame(runtime, new THREE.Matrix4(), { phase: 1 })
+    }
+    expect(runtime.feet[0].terrainWeight).toBe(0)
+    terrainFrame(runtime, new THREE.Matrix4())
+    terrainFrame(runtime, new THREE.Matrix4(), { hit: false })
+    expect(runtime.feet[0].terrainWeight).toBe(0)
+    terrainFrame(runtime, new THREE.Matrix4())
+    terrainFrame(runtime, new THREE.Matrix4(), { enabled: false })
+    expect(runtime.feet[0].terrainWeight).toBe(0)
+    terrainFrame(runtime, new THREE.Matrix4())
+    const relocated = terrainFrame(runtime, new THREE.Matrix4().makeTranslation(10, 0, 0), { reset: true })
+    expect(relocated.x).toBeCloseTo(10, 5)
+  })
+
+  it('leaves the authored solver unchanged when the option is omitted', () => {
+    const rig = createFootTestRig()
+    const runtime = createAlsControlRigFootIkRuntime(rig)
+    const initial = terrainFrame(runtime, new THREE.Matrix4(), { enabled: false })
+    const moved = terrainFrame(runtime, new THREE.Matrix4().makeTranslation(0.2, 0, 0), { enabled: false })
+    expect(moved.x - initial.x).toBeCloseTo(0.2, 5)
+    expect(runtime.feet[0].terrainLocked).toBe(false)
+  })
+})

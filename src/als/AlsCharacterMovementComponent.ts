@@ -23,6 +23,10 @@ export const ALS_AIR_CONTROL = 0.15
 export const ALS_MAX_ACCELERATION = 20
 export const ALS_MIN_ANALOG_WALK_SPEED = 0.25
 
+/** UAlsCharacterMovementComponent constructor, cpp:159-162. */
+export const ALS_PERCH_RADIUS_THRESHOLD = 0.15
+export const ALS_PERCH_ADDITIONAL_HEIGHT = 0
+
 /** AAlsCharacter::NotifyLocomotionModeChanged(), cpp:540-552. */
 export const ALS_HAS_INPUT_BRAKING_FRICTION_FACTOR = 0.5
 export const ALS_NO_INPUT_BRAKING_FRICTION_FACTOR = 3
@@ -34,6 +38,8 @@ export const UE_CHARACTER_MOVEMENT_AIR_CONTROL_BOOST_VELOCITY_THRESHOLD = 0.25
 export const UE_CHARACTER_MOVEMENT_BRAKING_SUB_STEP_TIME = 1 / 33
 export const UE_CHARACTER_MOVEMENT_BRAKE_TO_STOP_VELOCITY = 0.1
 export const UE_CHARACTER_MOVEMENT_MIN_TICK_TIME = 1e-6
+// UCharacterMovementComponent::MaxStepHeight; B_Als_Character serializes no override.
+export const UE_CHARACTER_MOVEMENT_MAX_STEP_HEIGHT = 0.45
 
 /**
  * `bAllowDirectionDependentMovementSpeed` is false in every MS_Als_Normal gait record. Keeping it
@@ -73,6 +79,9 @@ export interface AlsCharacterMovementComponent {
   brakingFrictionFactor: number
   brakingFrictionFactorResetTime: number
   brakingSubStepTime: number
+  maxStepHeight: number
+  perchRadiusThreshold: number
+  perchAdditionalHeight: number
   inputBlocked: boolean
   readonly velocity: AlsVector3
 }
@@ -240,6 +249,9 @@ export function createAlsCharacterMovementComponent(
     brakingFrictionFactor: 0,
     brakingFrictionFactorResetTime: 0,
     brakingSubStepTime: UE_CHARACTER_MOVEMENT_BRAKING_SUB_STEP_TIME,
+    maxStepHeight: UE_CHARACTER_MOVEMENT_MAX_STEP_HEIGHT,
+    perchRadiusThreshold: ALS_PERCH_RADIUS_THRESHOLD,
+    perchAdditionalHeight: ALS_PERCH_ADDITIONAL_HEIGHT,
     inputBlocked: false,
     velocity: {
       x: sourceVelocity.x,
