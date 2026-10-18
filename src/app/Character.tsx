@@ -71,6 +71,7 @@ import type {
 import type { CharacterPoseSample } from './CharacterPoseSample'
 import type { AlsCharacterInputSource } from '../als/AlsCharacter.hooks'
 import type { AlsGaitSpeedOverrides } from '../als/AlsCharacterMovementComponent'
+import type { AlsAnimationLodSource } from '../engine/animationUpdateRate'
 import { resolveOverlayObjectUrl } from '../als/AlsCharacter.overlayObjects'
 import { PistolOverlayObject, RifleOverlayObject, type AlsOverlayObjectAssets, type AlsOverlayObjectMountHandler } from './AlsOverlayObjects'
 export { RifleOverlayObject } from './AlsOverlayObjects'
@@ -101,6 +102,8 @@ export interface CharacterProps {
   isMantlingAllowedToStart?: () => boolean
   exposeDebugGlobals?: boolean
   allowSprint?: boolean
+  /** Animation update rate significance, the same one AlsRemoteActor takes. */
+  animationLod?: AlsAnimationLodSource
   gaitSpeedOverrides?: AlsGaitSpeedOverrides
   instanceId?: string
   initialPosition?: readonly [number, number, number]
@@ -239,6 +242,7 @@ function LoadedCharacter({
   isMantlingAllowedToStart,
   exposeDebugGlobals,
   allowSprint,
+  animationLod,
   gaitSpeedOverrides,
   instanceId,
   initialPosition,
@@ -274,6 +278,7 @@ function LoadedCharacter({
   isMantlingAllowedToStart: CharacterProps['isMantlingAllowedToStart']
   exposeDebugGlobals: CharacterProps['exposeDebugGlobals']
   allowSprint: CharacterProps['allowSprint']
+  animationLod: CharacterProps['animationLod']
   gaitSpeedOverrides: CharacterProps['gaitSpeedOverrides']
   instanceId: CharacterProps['instanceId']
   initialPosition: CharacterProps['initialPosition']
@@ -552,6 +557,7 @@ function LoadedCharacter({
       SoundSink: footstepSoundSink,
     },
     exposeDebugGlobals ?? inputEnabled !== false,
+    animationLod,
   )
 
   const ragdoll = useAlsRagdoll(character.character.current, animationInstance,
@@ -690,6 +696,7 @@ export function Character({
   isMantlingAllowedToStart,
   exposeDebugGlobals,
   allowSprint,
+  animationLod,
   gaitSpeedOverrides,
   instanceId,
   initialPosition,
@@ -732,6 +739,7 @@ export function Character({
       isMantlingAllowedToStart={isMantlingAllowedToStart}
       exposeDebugGlobals={exposeDebugGlobals}
       allowSprint={allowSprint}
+      animationLod={animationLod}
       gaitSpeedOverrides={gaitSpeedOverrides}
       instanceId={instanceId}
       initialPosition={initialPosition}

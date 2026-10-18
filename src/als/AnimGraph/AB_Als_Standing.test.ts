@@ -16,6 +16,7 @@ import {
   createAlsStandingGraphRuntime,
   createAlsStandingPoseGraphRuntime,
   evaluateAlsStandingPoseGraph,
+  requestAlsStandingPoseGraphInertialization,
   refreshAlsStandingGraphRuntime,
   resetAlsStandingGraphRuntime,
   selectAlsStandingStateTransition,
@@ -1136,6 +1137,7 @@ describe('VERIFIED retained AB_Als_Standing pose evaluation', () => {
       transitionIndex: 6,
       duration: 0.2,
     })
+    requestAlsStandingPoseGraphInertialization(poseGraph, runtime)
     const output = evaluateAlsStandingPoseGraph(
       poseGraph,
       runtime,

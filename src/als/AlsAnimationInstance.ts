@@ -189,6 +189,7 @@ import {
   createAlsStandingGraphRuntime,
   createAlsStandingPoseGraphRuntime,
   evaluateAlsStandingPoseGraph,
+  requestAlsStandingPoseGraphInertialization,
   refreshAlsStandingGraphRuntime,
 } from './AnimGraph/AB_Als_Standing'
 import type {
@@ -911,6 +912,7 @@ export interface AlsAnimationInstance {
     delta: number,
     controls: AlsAnimationInstanceControls,
     captureControlRigComponentPositions?: boolean,
+    evaluate?: boolean,
   ) => void
 }
 
@@ -2821,6 +2823,7 @@ export function createAlsAnimationInstance(gltf: {
   let pendingGroundedEntryMode:
     'FromRoll' | null | undefined
   let currentLocomotionAction: AlsLocomotionAction = null
+  let pendingEvaluationTime = 0
   let previousStance: AlsStance | null = null
   let previousMovingSmooth: boolean | null = null
   let previousOverlayMode: AlsOverlayMode | null = null
@@ -4858,7 +4861,6 @@ export function createAlsAnimationInstance(gltf: {
         )
       }
     }
-    sampleLocomotionSequencePlayers()
   }
 
   function processLocomotionLifecycleEvents() {
@@ -4923,9 +4925,14 @@ export function createAlsAnimationInstance(gltf: {
     delta: number,
     controls: AlsAnimationInstanceControls,
     captureControlRigComponentPositions = false,
+    evaluate = true,
   ) {
     if (rig.boneCount === 0) return
     const deltaTime = Math.max(0, delta)
+    // UAnimInstance::NeedsUpdate vs. ShouldSkipEvaluation: this update always runs, and a
+    // skipped evaluation hands its time to the next pose evaluation.
+    const evaluationDelta = pendingEvaluationTime + deltaTime
+    pendingEvaluationTime = evaluationDelta
     const pendingUpdateThisFrame = pendingUpdate
     const nextLocomotionAction = controls.locomotionAction ?? null
     if (currentLocomotionAction !== nextLocomotionAction) {
@@ -5061,9 +5068,9 @@ export function createAlsAnimationInstance(gltf: {
     state.footLeftLock = feetState.left.lockAmount
     state.footRightLock = feetState.right.lockAmount
     state.feetCrossingAmount = feetState.feetCrossingAmount
-    mainInput.deltaTime = delta
-    fallbackInput.deltaTime = delta
-    soloInput.deltaTime = delta
+    mainInput.deltaTime = evaluationDelta
+    fallbackInput.deltaTime = evaluationDelta
+    soloInput.deltaTime = evaluationDelta
     const jumpedThisFrame = inAirState.jumped
     if (!locomotionPoseGraphRuntime.relevant) {
       // AB_Als_Locomotion node3 calls InitializeLean on becoming relevant before its state update
@@ -5127,11 +5134,12 @@ export function createAlsAnimationInstance(gltf: {
       advanceClip(soloClip, delta)
       soloClip.entry.time = soloClip.time
       soloClip.entry.weight = 1
+      pendingEvaluationTime = 0
       const soloResult = evaluatePose(evaluator, soloInput)
       applyEvaluatedGraphPose(
         soloResult,
         locomotionMode,
-        delta,
+        evaluationDelta,
       )
       const debugWeights = soloDebugWeights.get(soloClip.sampler.clip.name)
       if (debugWeights) {
@@ -5208,11 +5216,12 @@ export function createAlsAnimationInstance(gltf: {
       if (syncClips.has(fallbackClip)) advanceClip(fallbackClip, delta)
       fallbackClip.entry.time = fallbackClip.time
       fallbackClip.entry.weight = 1
+      pendingEvaluationTime = 0
       const fallbackResult = evaluatePose(evaluator, fallbackInput)
       applyEvaluatedGraphPose(
         fallbackResult,
         locomotionMode,
-        delta,
+        evaluationDelta,
       )
       const debugWeights = soloDebugWeights.get(fallbackClip.sampler.clip.name)
       if (debugWeights) {
@@ -6207,154 +6216,160 @@ export function createAlsAnimationInstance(gltf: {
       && rotateInPlaceClips.Standing.Right
       && standingAccelerationSourceComplete
     ) {
-      for (const direction of ALS_HIPS_DIRECTIONS) {
-        const sources = groundedLocomotionPlayerSources[direction]
-        for (const sample of groundedLocomotionPlayerResults[direction].samples) {
-          const sampleIndex = Number(sample.id)
-          const source = sources[sampleIndex]
-          if (!source?.clip) continue
-          sampleSequencePoseNode(
-            rig,
-            source.clip,
-            sample.time,
-            true,
-            standingMovementSamplePoses[direction][sampleIndex],
-          )
-        }
-      }
-      sampleSequencePoseNode(
-        rig,
-        roles.sprint,
-        locomotionMembersByClip.get(roles.sprint)?.time ?? 0,
-        true,
-        standingSprintPose,
-      )
-      sampleSequencePoseNode(
-        rig,
-        sprintAccelerationClip,
-        locomotionMembersByClip.get(sprintAccelerationClip)?.time ?? 0,
-        true,
-        standingSprintAccelerationPose,
-      )
-
-      for (const hipsDirection of ALS_HIPS_DIRECTIONS) {
-        standingMovementPoseSources.length = 0
-        standingMovementPoseWeights.length = 0
-        const samples = readGroundedLocomotionGraph(
-          groundedLocomotionGraph,
-          hipsDirection,
-          velocityBlend,
-          standingMovement,
-        )
-        for (const sample of samples) {
-          const pose =
-            standingMovementSamplePoses[sample.player][sample.sampleIndex]
-          if (!pose || sample.weight <= 0) continue
-          standingMovementPoseSources.push(pose)
-          standingMovementPoseWeights.push(sample.weight)
-        }
-        const basePose = hipsDirection === 'Forward'
-          ? standingMoveForwardBasePose
-          : standingMovementStatePoses[hipsDirection]
-        if (standingMovementPoseSources.length > 0) {
-          blendPoseNodesTogether(
-            standingMovementPoseSources,
-            standingMovementPoseWeights,
-            basePose,
-          )
-        } else {
-          copyPoseNode(standingIdlePose, basePose)
-        }
-
-        if (hipsDirection === 'Forward') {
-          blendPoseNodesTogether(
-            [
-              standingMoveForwardBasePose,
-              standingSprintPose,
-              standingSprintAccelerationPose,
-            ],
-            [
-              standingSprint.moveForwardBaseWeight,
-              standingSprint.sprintWeight,
-              standingSprint.sprintAccelerationWeight,
-            ],
-            standingMovementStatePoses.Forward,
-          )
-        }
-
-        const rotationYawOffset = hipsDirection === 'Forward'
-          ? rotationYawOffsets.forwardAngle
-          : hipsDirection === 'Backward'
-            ? rotationYawOffsets.backwardAngle
-            : hipsDirection.startsWith('Left')
-              ? rotationYawOffsets.leftAngle
-              : rotationYawOffsets.rightAngle
-        standingMovementStatePoses[hipsDirection].curves.set(
-          'RotationYawOffset',
-          rotationYawOffset,
-        )
-      }
-
-      for (const player of ALS_ACCELERATION_PLAYERS) {
-        const clock = standingGraphRuntime.accelerationClocks[
-          player.state
-        ]
-        for (const direction of accelerationDirections) {
-          sampleSequencePoseNode(
-            rig,
-            standingAccelerationClips[direction]!,
-            clock.time,
-            clock.loop,
-            standingAccelerationFullPose,
-          )
-          const additive =
-            standingAccelerationPoses[player.state][direction]
-          makeDynamicAdditivePose(
-            standingAccelerationFullPose.pose,
-            crouchingLeanReference.pose,
-            rig,
-            additive.pose,
-            'local',
-            standingAccelerationAdditiveScratch,
-          )
-          additive.curves.clear()
-        }
-      }
-
-      sampleSequencePoseNode(
-        rig,
-        rotateInPlaceClips.Standing.Left,
-        standingGraphRuntime.rotateClocks.left.time,
-        rotateInPlaceState.rotatingLeft,
-        standingRotateLeftPose,
-      )
-      sampleSequencePoseNode(
-        rig,
-        rotateInPlaceClips.Standing.Right,
-        standingGraphRuntime.rotateClocks.right.time,
-        rotateInPlaceState.rotatingRight,
-        standingRotateRightPose,
-      )
-      const output = evaluateAlsStandingPoseGraph(
+      requestAlsStandingPoseGraphInertialization(
         standingPoseGraphRuntime,
         standingGraphRuntime,
-        {
-          movementStatePoses: standingMovementStatePoses,
-          leanAdditivePose: crouchingLeanAdditive,
-          accelerationPoses: standingAccelerationPoses,
-          idlePose: standingIdlePose,
-          turnInPlaceMontages: standingTurnInPlaceMontages,
-          turnInPlaceMontageWeight,
-          turnInPlacePlayRate: turnInPlaceState.playRate,
-          rotateLeftPose: standingRotateLeftPose,
-          rotateRightPose: standingRotateRightPose,
-          rotateInPlacePlayRate: rotateInPlaceState.playRate,
-          stopPoses: standingStopPoses,
-          velocityBlend,
-          deltaTime: Math.max(0, delta),
-        },
       )
-      copyPoseNode(output, standingGraphOutput)
+      if (evaluate) {
+        for (const direction of ALS_HIPS_DIRECTIONS) {
+          const sources = groundedLocomotionPlayerSources[direction]
+          for (const sample of groundedLocomotionPlayerResults[direction].samples) {
+            const sampleIndex = Number(sample.id)
+            const source = sources[sampleIndex]
+            if (!source?.clip) continue
+            sampleSequencePoseNode(
+              rig,
+              source.clip,
+              sample.time,
+              true,
+              standingMovementSamplePoses[direction][sampleIndex],
+            )
+          }
+        }
+        sampleSequencePoseNode(
+          rig,
+          roles.sprint,
+          locomotionMembersByClip.get(roles.sprint)?.time ?? 0,
+          true,
+          standingSprintPose,
+        )
+        sampleSequencePoseNode(
+          rig,
+          sprintAccelerationClip,
+          locomotionMembersByClip.get(sprintAccelerationClip)?.time ?? 0,
+          true,
+          standingSprintAccelerationPose,
+        )
+
+        for (const hipsDirection of ALS_HIPS_DIRECTIONS) {
+          standingMovementPoseSources.length = 0
+          standingMovementPoseWeights.length = 0
+          const samples = readGroundedLocomotionGraph(
+            groundedLocomotionGraph,
+            hipsDirection,
+            velocityBlend,
+            standingMovement,
+          )
+          for (const sample of samples) {
+            const pose =
+              standingMovementSamplePoses[sample.player][sample.sampleIndex]
+            if (!pose || sample.weight <= 0) continue
+            standingMovementPoseSources.push(pose)
+            standingMovementPoseWeights.push(sample.weight)
+          }
+          const basePose = hipsDirection === 'Forward'
+            ? standingMoveForwardBasePose
+            : standingMovementStatePoses[hipsDirection]
+          if (standingMovementPoseSources.length > 0) {
+            blendPoseNodesTogether(
+              standingMovementPoseSources,
+              standingMovementPoseWeights,
+              basePose,
+            )
+          } else {
+            copyPoseNode(standingIdlePose, basePose)
+          }
+
+          if (hipsDirection === 'Forward') {
+            blendPoseNodesTogether(
+              [
+                standingMoveForwardBasePose,
+                standingSprintPose,
+                standingSprintAccelerationPose,
+              ],
+              [
+                standingSprint.moveForwardBaseWeight,
+                standingSprint.sprintWeight,
+                standingSprint.sprintAccelerationWeight,
+              ],
+              standingMovementStatePoses.Forward,
+            )
+          }
+
+          const rotationYawOffset = hipsDirection === 'Forward'
+            ? rotationYawOffsets.forwardAngle
+            : hipsDirection === 'Backward'
+              ? rotationYawOffsets.backwardAngle
+              : hipsDirection.startsWith('Left')
+                ? rotationYawOffsets.leftAngle
+                : rotationYawOffsets.rightAngle
+          standingMovementStatePoses[hipsDirection].curves.set(
+            'RotationYawOffset',
+            rotationYawOffset,
+          )
+        }
+
+        for (const player of ALS_ACCELERATION_PLAYERS) {
+          const clock = standingGraphRuntime.accelerationClocks[
+            player.state
+          ]
+          for (const direction of accelerationDirections) {
+            sampleSequencePoseNode(
+              rig,
+              standingAccelerationClips[direction]!,
+              clock.time,
+              clock.loop,
+              standingAccelerationFullPose,
+            )
+            const additive =
+              standingAccelerationPoses[player.state][direction]
+            makeDynamicAdditivePose(
+              standingAccelerationFullPose.pose,
+              crouchingLeanReference.pose,
+              rig,
+              additive.pose,
+              'local',
+              standingAccelerationAdditiveScratch,
+            )
+            additive.curves.clear()
+          }
+        }
+
+        sampleSequencePoseNode(
+          rig,
+          rotateInPlaceClips.Standing.Left,
+          standingGraphRuntime.rotateClocks.left.time,
+          rotateInPlaceState.rotatingLeft,
+          standingRotateLeftPose,
+        )
+        sampleSequencePoseNode(
+          rig,
+          rotateInPlaceClips.Standing.Right,
+          standingGraphRuntime.rotateClocks.right.time,
+          rotateInPlaceState.rotatingRight,
+          standingRotateRightPose,
+        )
+        const output = evaluateAlsStandingPoseGraph(
+          standingPoseGraphRuntime,
+          standingGraphRuntime,
+          {
+            movementStatePoses: standingMovementStatePoses,
+            leanAdditivePose: crouchingLeanAdditive,
+            accelerationPoses: standingAccelerationPoses,
+            idlePose: standingIdlePose,
+            turnInPlaceMontages: standingTurnInPlaceMontages,
+            turnInPlaceMontageWeight,
+            turnInPlacePlayRate: turnInPlaceState.playRate,
+            rotateLeftPose: standingRotateLeftPose,
+            rotateRightPose: standingRotateRightPose,
+            rotateInPlacePlayRate: rotateInPlaceState.playRate,
+            stopPoses: standingStopPoses,
+            velocityBlend,
+            deltaTime: evaluationDelta,
+          },
+        )
+        copyPoseNode(output, standingGraphOutput)
+      }
     }
 
     if (
@@ -6364,87 +6379,6 @@ export function createAlsAnimationInstance(gltf: {
       && rotateInPlaceClips.Crouching.Left
       && rotateInPlaceClips.Crouching.Right
     ) {
-      sampleSequencePoseNode(
-        rig,
-        crouchingWalkPoseClip,
-        0,
-        false,
-        crouchingFixedWalkPose,
-      )
-      sampleSequencePoseNode(
-        rig,
-        crouchingWalkPoseClip,
-        0,
-        false,
-        crouchingStopLeftPose,
-      )
-      sampleSequencePoseNode(
-        rig,
-        crouchingWalkPoseClip,
-        0,
-        false,
-        crouchingStopRightPose,
-      )
-      sampleSequencePoseNode(
-        rig,
-        roles.crouchIdle,
-        0,
-        false,
-        crouchingIdlePose,
-      )
-
-      for (const direction of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
-        const clip = crouchingMovementClips[direction]!
-        sampleSequencePoseNode(
-          rig,
-          clip,
-          clip.entry.time,
-          true,
-          crouchingMovementSequenceNodes[direction],
-        )
-      }
-      const movementSequencePoses =
-        ALS_CROUCHING_MOVEMENT_STATE_ORDER.map(
-          (direction) => crouchingMovementSequenceNodes[direction],
-        )
-      for (const direction of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
-        const poseWeights = crouchingMovementStateWeights[direction]
-        blendPoseNodesTogether(
-          movementSequencePoses,
-          ALS_CROUCHING_MOVEMENT_STATE_ORDER.map(
-            (sourceDirection) => poseWeights[sourceDirection],
-          ),
-          crouchingMovementStateNodes[direction],
-        )
-      }
-
-      copyPoseNode(
-        crouchingMovementStateNodes[
-          crouchingMovementRuntime.baseState
-        ],
-        crouchingMovementOutput,
-      )
-      for (const active of crouchingMovementRuntime.activeTransitions) {
-        const target =
-          crouchingMovementStateNodes[active.nextState]
-        blendPoseInPlace(
-          crouchingMovementOutput.pose,
-          target.pose,
-          1,
-          active.nextPoseMask,
-        )
-        blendTwoCurvesTogether(
-          crouchingMovementOutput.curves,
-          target.curves,
-          1 - active.alpha,
-          crouchingMovementCurveScratch,
-        )
-        crouchingMovementOutput.curves.clear()
-        for (const [name, value] of crouchingMovementCurveScratch) {
-          crouchingMovementOutput.curves.set(name, value)
-        }
-      }
-
       const crouchingRotateLeftPreviousTime =
         crouchingRotateLeftTime
       const crouchingRotateRightPreviousTime =
@@ -6503,104 +6437,180 @@ export function createAlsAnimationInstance(gltf: {
             * crouchingGraphWeight,
         )
       }
-      sampleSequencePoseNode(
-        rig,
-        rotateInPlaceClips.Crouching.Left,
-        crouchingRotateLeftTime,
-        rotateInPlaceState.rotatingLeft,
-        crouchingRotateLeftPose,
-      )
-      sampleSequencePoseNode(
-        rig,
-        rotateInPlaceClips.Crouching.Right,
-        crouchingRotateRightTime,
-        rotateInPlaceState.rotatingRight,
-        crouchingRotateRightPose,
-      )
-
-      const statePoses = evaluateAlsCrouchingPoseGraph(
-        crouchingPoseGraphRuntime,
-        {
-          fixedCrouchWalkPose: crouchingFixedWalkPose,
-          movementStatesPose: crouchingMovementOutput,
-          leanAdditivePose: crouchingLeanAdditive,
-          idlePose: crouchingIdlePose,
-          turnInPlaceMontages: crouchingTurnInPlaceMontages,
-          turnInPlaceMontageWeight,
-          turnInPlacePlayRate: turnInPlaceState.playRate,
-          rotateLeftPose: crouchingRotateLeftPose,
-          rotateRightPose: crouchingRotateRightPose,
-          rotateInPlacePlayRate: rotateInPlaceState.playRate,
-          stopLeftFixedPose: crouchingStopLeftPose,
-          stopRightFixedPose: crouchingStopRightPose,
-          strideBlendAlpha: crouchingStrideBlendAmount,
-        },
-      )
-
-      const activeOuterTransitions =
-        crouchingStateRuntime.activeStandardTransitions
-      const firstOuterTransition = activeOuterTransitions[0]
-      if (!firstOuterTransition) {
-        copyPoseNode(
-          statePoses[crouchingStateRuntime.currentState],
-          crouchingGraphOutput,
+      if (evaluate) {
+        sampleSequencePoseNode(
+          rig,
+          crouchingWalkPoseClip,
+          0,
+          false,
+          crouchingFixedWalkPose,
         )
-      } else {
-        copyPoseNode(
-          statePoses[firstOuterTransition.previousState],
-          crouchingGraphOutput,
+        sampleSequencePoseNode(
+          rig,
+          crouchingWalkPoseClip,
+          0,
+          false,
+          crouchingStopLeftPose,
         )
-        for (const active of activeOuterTransitions) {
-          const target = statePoses[active.nextState]
+        sampleSequencePoseNode(
+          rig,
+          crouchingWalkPoseClip,
+          0,
+          false,
+          crouchingStopRightPose,
+        )
+        sampleSequencePoseNode(
+          rig,
+          roles.crouchIdle,
+          0,
+          false,
+          crouchingIdlePose,
+        )
+
+        for (const direction of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
+          const clip = crouchingMovementClips[direction]!
+          sampleSequencePoseNode(
+            rig,
+            clip,
+            clip.entry.time,
+            true,
+            crouchingMovementSequenceNodes[direction],
+          )
+        }
+        const movementSequencePoses =
+          ALS_CROUCHING_MOVEMENT_STATE_ORDER.map(
+            (direction) => crouchingMovementSequenceNodes[direction],
+          )
+        for (const direction of ALS_CROUCHING_MOVEMENT_STATE_ORDER) {
+          const poseWeights = crouchingMovementStateWeights[direction]
+          blendPoseNodesTogether(
+            movementSequencePoses,
+            ALS_CROUCHING_MOVEMENT_STATE_ORDER.map(
+              (sourceDirection) => poseWeights[sourceDirection],
+            ),
+            crouchingMovementStateNodes[direction],
+          )
+        }
+
+        copyPoseNode(
+          crouchingMovementStateNodes[
+            crouchingMovementRuntime.baseState
+          ],
+          crouchingMovementOutput,
+        )
+        for (const active of crouchingMovementRuntime.activeTransitions) {
+          const target =
+            crouchingMovementStateNodes[active.nextState]
           blendPoseInPlace(
-            crouchingGraphOutput.pose,
+            crouchingMovementOutput.pose,
             target.pose,
             1,
             active.nextPoseMask,
           )
           blendTwoCurvesTogether(
-            crouchingGraphOutput.curves,
+            crouchingMovementOutput.curves,
             target.curves,
             1 - active.alpha,
-            crouchingOuterBlendScratch,
+            crouchingMovementCurveScratch,
           )
-          crouchingGraphOutput.curves.clear()
-          for (const [name, value] of crouchingOuterBlendScratch) {
-            crouchingGraphOutput.curves.set(name, value)
+          crouchingMovementOutput.curves.clear()
+          for (const [name, value] of crouchingMovementCurveScratch) {
+            crouchingMovementOutput.curves.set(name, value)
           }
         }
-      }
 
-      prepareOutputInertialization(
-        crouchingNode34Output,
-        crouchingNode34,
-      )
-      applyInertialization(
-        crouchingNode34,
-        crouchingGraphOutput.pose,
-        Math.max(0, delta),
-      )
-      applyOutputInertialization(
-        crouchingNode34Output,
-        crouchingGraphOutput.curves,
-        undefined,
-        Math.max(0, delta),
-        crouchingNode34,
-      )
-      publishAlsCrouchingOutputCurve(crouchingGraphOutput)
+        sampleSequencePoseNode(
+          rig,
+          rotateInPlaceClips.Crouching.Left,
+          crouchingRotateLeftTime,
+          rotateInPlaceState.rotatingLeft,
+          crouchingRotateLeftPose,
+        )
+        sampleSequencePoseNode(
+          rig,
+          rotateInPlaceClips.Crouching.Right,
+          crouchingRotateRightTime,
+          rotateInPlaceState.rotatingRight,
+          crouchingRotateRightPose,
+        )
+
+        const statePoses = evaluateAlsCrouchingPoseGraph(
+          crouchingPoseGraphRuntime,
+          {
+            fixedCrouchWalkPose: crouchingFixedWalkPose,
+            movementStatesPose: crouchingMovementOutput,
+            leanAdditivePose: crouchingLeanAdditive,
+            idlePose: crouchingIdlePose,
+            turnInPlaceMontages: crouchingTurnInPlaceMontages,
+            turnInPlaceMontageWeight,
+            turnInPlacePlayRate: turnInPlaceState.playRate,
+            rotateLeftPose: crouchingRotateLeftPose,
+            rotateRightPose: crouchingRotateRightPose,
+            rotateInPlacePlayRate: rotateInPlaceState.playRate,
+            stopLeftFixedPose: crouchingStopLeftPose,
+            stopRightFixedPose: crouchingStopRightPose,
+            strideBlendAlpha: crouchingStrideBlendAmount,
+          },
+        )
+
+        const activeOuterTransitions =
+          crouchingStateRuntime.activeStandardTransitions
+        const firstOuterTransition = activeOuterTransitions[0]
+        if (!firstOuterTransition) {
+          copyPoseNode(
+            statePoses[crouchingStateRuntime.currentState],
+            crouchingGraphOutput,
+          )
+        } else {
+          copyPoseNode(
+            statePoses[firstOuterTransition.previousState],
+            crouchingGraphOutput,
+          )
+          for (const active of activeOuterTransitions) {
+            const target = statePoses[active.nextState]
+            blendPoseInPlace(
+              crouchingGraphOutput.pose,
+              target.pose,
+              1,
+              active.nextPoseMask,
+            )
+            blendTwoCurvesTogether(
+              crouchingGraphOutput.curves,
+              target.curves,
+              1 - active.alpha,
+              crouchingOuterBlendScratch,
+            )
+            crouchingGraphOutput.curves.clear()
+            for (const [name, value] of crouchingOuterBlendScratch) {
+              crouchingGraphOutput.curves.set(name, value)
+            }
+          }
+        }
+
+        prepareOutputInertialization(
+          crouchingNode34Output,
+          crouchingNode34,
+        )
+        applyInertialization(
+          crouchingNode34,
+          crouchingGraphOutput.pose,
+          evaluationDelta,
+        )
+        applyOutputInertialization(
+          crouchingNode34Output,
+          crouchingGraphOutput.curves,
+          undefined,
+          evaluationDelta,
+          crouchingNode34,
+        )
+        publishAlsCrouchingOutputCurve(crouchingGraphOutput)
+      }
     }
 
     consumerLocomotion.evaluate(controls, Math.max(0, delta), standingGraphOutput, crouchingGraphOutput, { Standing: activeStandingGraphWeight, Crouching: activeCrouchingGraphWeight })
     if (idleAdditiveEntry && controls.overlayMode === 'Default') {
       idleAdditiveEntry.weight = IDLE_ADDITIVE_WEIGHT * consumerLocomotion.defaultIdleAdditiveScale()
     }
-
-    copyPose(standReference, layeringReference)
-    blendPoseInPlace(
-      layeringReference,
-      crouchReference,
-      gaitAmounts.crouchingAmount,
-    )
 
     locomotionResolvedGraphCurves.clear()
     resolveWeightedEntryCurvesDirect(
@@ -6796,6 +6806,19 @@ export function createAlsAnimationInstance(gltf: {
       )
     }
 
+    if (!evaluate) {
+      processLocomotionLifecycleEvents()
+      finishGraphUpdate()
+      return
+    }
+    pendingEvaluationTime = 0
+    sampleLocomotionSequencePlayers()
+    copyPose(standReference, layeringReference)
+    blendPoseInPlace(
+      layeringReference,
+      crouchReference,
+      gaitAmounts.crouchingAmount,
+    )
     const result = evaluatePose(evaluator, mainInput)
     processLocomotionLifecycleEvents()
     if (!result.curves.values.has(POSE_GAIT_CURVE_NAME)) {
@@ -6804,7 +6827,7 @@ export function createAlsAnimationInstance(gltf: {
     const finalCurves = applyEvaluatedGraphPose(
       result,
       locomotionMode,
-      delta,
+      evaluationDelta,
       captureControlRigComponentPositions,
     )
     for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) {
@@ -7562,6 +7585,10 @@ export function createAlsAnimationInstance(gltf: {
       }
     }
     if (gltf.exposeDebugGlobals !== false && gltf.publishDiagnostics !== false) window.__weightTable = normalDebugWeights
+    finishGraphUpdate()
+  }
+
+  function finishGraphUpdate() {
     if (
       groundedStanceTransitionSource
       && !groundedStanceTransitionState.active

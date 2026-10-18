@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { AnimationFrameCapture } from '../engine/animationFrameCapture'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 import { getWorldDeltaTime } from '../engine/timeDilation'
+import { AlsAnimationUpdateRate, resolveAlsAnimationLod, type AlsAnimationLodSource } from '../engine/animationUpdateRate'
 import type { WorldTimeState } from '../engine/timeDilation'
 import {
   getAnimRootMotionTranslationScale,
@@ -278,6 +279,7 @@ export function useAlsAnimationInstance(
     SoundSink: AlsFootstepSoundSink
   }>,
   exposeDebugGlobals = true,
+  animationLod?: AlsAnimationLodSource,
 ) {
   const camera = useThree((state) => state.camera)
   const renderer = useThree((state) => state.gl)
@@ -291,6 +293,7 @@ export function useAlsAnimationInstance(
     }),
     [controlRigFootTrace, gltf, groundPredictionSweep, exposeDebugGlobals],
   )
+  const updateRate = useMemo(() => new AlsAnimationUpdateRate(), [animationInstance])
   const frameCapture = useMemo(
     () => new AnimationFrameCapture(
       gltf.scene,
@@ -422,10 +425,13 @@ export function useAlsAnimationInstance(
     const frameControls = controls.current
     const current = character.current
     frameControls.hasInput = current.locomotionState.hasInput
+    const tick = updateRate.next(deltaTime, resolveAlsAnimationLod(animationLod), current.locomotionAction !== null, true)
+    if (!tick.update) return
     animationInstance.refresh(
-      deltaTime,
+      tick.delta,
       frameControls,
       captureControlRigComponentPositions.current,
+      tick.evaluate,
     )
     const montage = animationInstance.mantlingMontage
     refreshAlsAnimationMantlingNotifies(

@@ -22,6 +22,7 @@
     "./als/AlsCharacter.hooks": "./src/als/AlsCharacter.hooks.ts",
     "./als/AlsCharacter.overlayObjects": "./src/als/AlsCharacter.overlayObjects.ts",
     "./engine/alsFramePipeline": "./src/engine/alsFramePipeline.ts",
+    "./engine/animationUpdateRate": "./src/engine/animationUpdateRate.ts",
     "./engine/alsAudioBridge": "./src/engine/alsAudioBridge.ts",
     "./engine/timeDilation": "./src/engine/timeDilation.ts",
     "./app/AlsRemoteActor": "./src/app/AlsRemoteActor.tsx",
