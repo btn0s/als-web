@@ -1259,7 +1259,16 @@ export function findRapierAlsCharacterFloor(
     AlsCharacterMovementComponent,
     'maxStepHeight' | 'perchRadiusThreshold' | 'perchAdditionalHeight'
   >>,
+  supportCollider?: RapierAlsSupportingCollider | null,
 ): RapierAlsFindFloorResult | null {
+  if (locomotionMode === 'Grounded' && supportCollider && sweepCapsule.support) {
+    const supported = sweepCapsule.support(
+      supportCollider,
+      input,
+      movement.perchRadiusThreshold,
+    )
+    if (supported) return supported
+  }
   return locomotionMode === 'Grounded'
     ? findRapierAlsFloor(sweepCapsule, {
         ...input,
@@ -2368,6 +2377,7 @@ export function useAlsCharacter(
           walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
         },
         current.movement,
+        groundSupport.current?.collider,
       )
     }
     groundSupport.current = currentGroundFloor?.HitResult ?? null
@@ -2857,6 +2867,7 @@ export function useAlsCharacter(
             walkableFloorAngleCos: ALS_RAPIER_WALKABLE_FLOOR_ANGLE_COS,
           },
           current.movement,
+          groundSupport.current?.collider,
         )
       : null
     const currentGroundSupport =

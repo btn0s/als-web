@@ -50,6 +50,7 @@ export interface RapierAlsSupportingCollider {
     prediction: number,
   ): {
     readonly distance: number
+    readonly point1?: RapierVector
     readonly normal1?: RapierVector
   } | null
   castRayAndGetNormal?(
@@ -172,6 +173,11 @@ export interface RapierAlsCapsuleSweep {
   (
     query: Readonly<AlsGroundPredictionSweepQuery>
   ): RapierAlsLiveCapsuleSweepHit | null
+  support?(
+    collider: RapierAlsSupportingCollider,
+    query: Readonly<AlsGroundProbeInput>,
+    perchRadiusThreshold: number,
+  ): RapierAlsFindFloorResult | null
   lineTrace(
     query: Readonly<RapierAlsFloorLineTraceQuery>,
   ): RapierAlsLiveCapsuleSweepHit | null
@@ -263,22 +269,26 @@ export function createRapierAlsCapsuleSweep(
   let capsuleRadius = Number.NaN
   let capsuleHalfHeight = Number.NaN
 
-  const sweep = (query: Readonly<AlsGroundPredictionSweepQuery>) => {
-    if (
-      query.capsuleRadius !== capsuleRadius
-      || query.capsuleHalfHeight !== capsuleHalfHeight
-    ) {
-      capsuleRadius = query.capsuleRadius
-      capsuleHalfHeight = query.capsuleHalfHeight
+  const place = (
+    location: Readonly<{ x: number; y: number; z: number }>,
+    radius: number,
+    halfHeight: number,
+  ) => {
+    if (radius !== capsuleRadius || halfHeight !== capsuleHalfHeight) {
+      capsuleRadius = radius
+      capsuleHalfHeight = halfHeight
       capsule = new options.Capsule(
-        Math.max(0, capsuleHalfHeight - capsuleRadius),
-        capsuleRadius,
+        Math.max(0, halfHeight - radius),
+        radius,
       )
     }
+    shapePosition.x = location.x
+    shapePosition.y = location.z
+    shapePosition.z = location.y
+  }
 
-    shapePosition.x = query.start.x
-    shapePosition.y = query.start.z
-    shapePosition.z = query.start.y
+  const sweep = (query: Readonly<AlsGroundPredictionSweepQuery>) => {
+    place(query.start, query.capsuleRadius, query.capsuleHalfHeight)
     shapeVelocity.x = query.end.x - query.start.x
     shapeVelocity.y = query.end.z - query.start.z
     shapeVelocity.z = query.end.y - query.start.y
@@ -395,6 +405,57 @@ export function createRapierAlsCapsuleSweep(
       bStartPenetrating: hit.timeOfImpact <= 0,
       collider: hit.collider,
       rigidBody,
+    }
+  }
+
+  sweep.support = (collider, query, perchRadiusThreshold) => {
+    place(query.location, query.capsuleRadius, query.capsuleHalfHeight)
+    const contact = collider.contactShape?.(
+      capsule,
+      shapePosition,
+      shapeRotation,
+      ALS_RAPIER_GROUND_PROBE_DISTANCE,
+    )
+    if (!contact?.point1 || !contact.normal1 || contact.distance < 0) return null
+    const normal = {
+      x: contact.normal1.x,
+      y: contact.normal1.z,
+      z: contact.normal1.y,
+    }
+    if (normal.z < query.walkableFloorAngleCos) return null
+    const validPerchRadius = Math.min(
+      query.capsuleRadius,
+      Math.max(0.0011, query.capsuleRadius - Math.max(0, perchRadiusThreshold)),
+    )
+    const offsetX = contact.point1.x - shapePosition.x
+    const offsetZ = contact.point1.z - shapePosition.z
+    if (offsetX * offsetX + offsetZ * offsetZ > validPerchRadius * validPerchRadius) return null
+    const floorDistance = contact.distance / normal.z
+    if (floorDistance > ALS_RAPIER_GROUND_PROBE_DISTANCE) return null
+    const hit: RapierAlsCapsuleSweepHit = {
+      validBlockingHit: true,
+      time: floorDistance / ALS_RAPIER_GROUND_PROBE_DISTANCE,
+      impactNormal: normal,
+      normal,
+      impactPoint: {
+        x: contact.point1.x,
+        y: contact.point1.z,
+        z: contact.point1.y,
+      },
+      collider,
+      rigidBody: collider.parent(),
+      bBlockingHit: true,
+      bStartPenetrating: false,
+      startSeparationDistance: contact.distance,
+      startSeparationNormal: normal,
+    }
+    return {
+      HitResult: hit,
+      FloorDist: floorDistance,
+      LineDist: floorDistance,
+      bBlockingHit: true,
+      bWalkableFloor: true,
+      bLineTrace: false,
     }
   }
 
