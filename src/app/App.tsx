@@ -1,5 +1,5 @@
-import { Canvas, useFrame } from '@react-three/fiber'
-import { Physics, useRapier } from '@react-three/rapier'
+import { Canvas } from '@react-three/fiber'
+import { Physics } from '@react-three/rapier'
 import {
   Suspense,
   useCallback,
@@ -27,6 +27,7 @@ import {
   ALS_RAPIER_GRAVITY,
 } from '../als/AlsCharacter.hooks'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
+import { AlsPhysicsStepper } from './AlsPhysicsStepper'
 import {
   AlsFootstepAudioRuntime,
 } from '../engine/alsAudioBridge'
@@ -54,28 +55,7 @@ function SceneReady() {
   return null
 }
 
-function TimeDilatedPhysicsStepper({
-  worldTime,
-}: {
-  worldTime: Readonly<WorldTimeState>
-}) {
-  const { step } = useRapier()
-
-  useFrame((_, deltaRealTime) => {
-    if (worldTime.effectiveGlobalTimeDilation === 1) return
-    /*
-     * @react-three/rapier has no externally supplied delta for its follow loop. While the
-     * world is paused above, feed its existing fixed-step accumulator the dilated game delta.
-     * Before/after-physics callbacks still execute at the authored 1/60 simulation step.
-     */
-    step(getWorldDeltaTime(worldTime, deltaRealTime))
-  }, ALS_FRAME_PRIORITY.Physics)
-
-  return null
-}
-
 interface SceneProps {
-  readonly effectiveGlobalTimeDilation: number
   readonly onOverlayModeBridgeChange: (
     bridge: AlsOverlayModeBridge | null,
   ) => void
@@ -86,7 +66,6 @@ interface SceneProps {
 }
 
 function Scene({
-  effectiveGlobalTimeDilation,
   onOverlayModeBridgeChange,
   overlayModeMenuElement,
   worldTime,
@@ -96,9 +75,6 @@ function Scene({
     ? AlsGhostDemo : Character
   const [, setCharacterSize] = useState(() => new THREE.Vector3())
   const poseSample = useRef(createCharacterPoseSample())
-  const bManuallyStepPhysics =
-    effectiveGlobalTimeDilation !== 1
-
   return (
     <>
       <L_Als_GridSkySphere />
@@ -108,11 +84,13 @@ function Scene({
         <Physics
           colliders={false}
           gravity={[0, -ALS_RAPIER_GRAVITY, 0]}
-          paused={bManuallyStepPhysics}
+          paused
           timeStep={ALS_PHYSICS_TIMESTEP}
           updatePriority={ALS_FRAME_PRIORITY.Physics}
         >
-          <TimeDilatedPhysicsStepper worldTime={worldTime} />
+          <AlsPhysicsStepper
+            getDeltaTime={delta => getWorldDeltaTime(worldTime, delta)}
+          />
           <CharacterComponent
             onSizeChange={setCharacterSize}
             poseSample={poseSample}
@@ -216,9 +194,6 @@ function App() {
         shadows="soft"
       >
         <Scene
-          effectiveGlobalTimeDilation={
-            effectiveGlobalTimeDilation
-          }
           onOverlayModeBridgeChange={setOverlayModeBridge}
           overlayModeMenuElement={overlayModeMenuElement}
           worldTime={worldTime}

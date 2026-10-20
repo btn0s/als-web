@@ -14,6 +14,7 @@
   "type": "module",
   "exports": {
     "./app/Character": "./src/app/Character.tsx",
+    "./app/AlsPhysicsStepper": "./src/app/AlsPhysicsStepper.tsx",
     "./app/AlsPlayer": "./src/app/AlsPlayer.ts",
     "./app/AlsCamera": "./src/app/AlsCamera.tsx",
     "./app/CharacterPoseSample": "./src/app/CharacterPoseSample.ts",
