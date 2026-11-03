@@ -35,6 +35,11 @@ import { useSuspenseAlsCharacterGltf } from './AlsCharacterGltf.hooks'
 import { PistolOverlayObject, RifleOverlayObject } from './AlsOverlayObjects'
 
 export interface AlsRemoteActorProps {
+  /** Replace the displayed mesh while retaining the independently animated source skeleton.
+   * Called inside the authored mesh-component basis. The consumer owns target resources. */
+  renderCharacter?: (scene: import('three').Object3D) => React.ReactNode
+  /** Consumers with their own collision authority may disable cosmetic actor contacts. */
+  collisionGroups?: number
   onAnimationClock?: (clock: AlsAnimationClock) => void
   overlayStates?: ConsumerOverlayStates
   renderOverlayObject?: (scene: import('three').Object3D) => React.ReactNode
@@ -64,7 +69,7 @@ const warnUnsupported = (feature: string) => console.warn(`[AlsRemoteActor] Unsu
  * Animation LOD holds pose between full-delta graph evaluations while snapshot/action clocks
  * and collision stay current. No measured millisecond budget is claimed by this component.
  */
-export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, now = clock, offset = origin,
+export function AlsRemoteActor({ renderCharacter, collisionGroups = ALS_CHARACTER_COLLISION_GROUPS, overlayStates, renderOverlayObject, snapshots, now = clock, offset = origin,
   footIk = true, animationLod, worldTime, ragdollRef, ragdollingSettings, onAction, onAnimationClock, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
   const gltf = useSuspenseAlsCharacterGltf()
   // Cached materials/clips are shared; each remote (including ghosts) owns its skeleton.
@@ -214,12 +219,12 @@ export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, 
 
   return <>
     <RigidBody ref={body} type="kinematicPosition" colliders={false} lockRotations canSleep={false}>
-      <CapsuleCollider collisionGroups={ALS_CHARACTER_COLLISION_GROUPS} ref={standing} args={[ALS_STANDING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS, ALS_CAPSULE_RADIUS]} friction={0} />
-      <CapsuleCollider collisionGroups={ALS_CHARACTER_COLLISION_GROUPS} ref={crouching} args={[ALS_CROUCHING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS, ALS_CAPSULE_RADIUS]}
+      <CapsuleCollider collisionGroups={collisionGroups} ref={standing} args={[ALS_STANDING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS, ALS_CAPSULE_RADIUS]} friction={0} />
+      <CapsuleCollider collisionGroups={collisionGroups} ref={crouching} args={[ALS_CROUCHING_CAPSULE_HALF_HEIGHT - ALS_CAPSULE_RADIUS, ALS_CAPSULE_RADIUS]}
         position={[0, ALS_CROUCHING_CAPSULE_HALF_HEIGHT - ALS_STANDING_CAPSULE_HALF_HEIGHT, 0]} friction={0} />
     </RigidBody>
     <group ref={root} visible={false}>
-      <group rotation-y={ALS_MESH_COMPONENT_YAW_RADIANS}><primitive object={scene} dispose={null} /></group>
+      <group rotation-y={ALS_MESH_COMPONENT_YAW_RADIANS}>{renderCharacter ? renderCharacter(scene) : <primitive object={scene} dispose={null} />}</group>
       <Suspense fallback={null}>
         {renderOverlayObject ? renderOverlayObject(scene) : <RifleOverlayObject characterScene={scene} isVisible={isRifleVisible} />}
       </Suspense>

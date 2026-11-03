@@ -408,7 +408,11 @@ export function createRapierAlsCapsuleSweep(
     }
   }
 
-  sweep.support = (collider, query, perchRadiusThreshold) => {
+  sweep.support = (
+    collider: RapierAlsSupportingCollider,
+    query: Readonly<AlsGroundProbeInput>,
+    perchRadiusThreshold: number,
+  ): RapierAlsFindFloorResult | null => {
     place(query.location, query.capsuleRadius, query.capsuleHalfHeight)
     const contact = collider.contactShape?.(
       capsule,

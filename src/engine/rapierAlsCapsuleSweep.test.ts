@@ -9,6 +9,7 @@ import {
   rapierAlsCameraMovementBase,
   rapierAlsMovementBaseFromPrimitive,
   rapierAlsMovementBase,
+  type RapierAlsCapsuleSweep,
 } from './rapierAlsCapsuleSweep'
 import {
   UE_CHARACTER_MOVEMENT_TARGET_FLOOR_DISTANCE,
@@ -440,7 +441,7 @@ describe('Rapier ALS capsule sweep', () => {
     })
     const queries: Parameters<typeof sweep>[0][] = []
     const hits: ReturnType<typeof sweep>[] = []
-    const observedSweep = Object.assign(
+    const observedSweep: RapierAlsCapsuleSweep = Object.assign(
       (query: Parameters<typeof sweep>[0]) => {
         queries.push(query)
         const hit = sweep(query)
@@ -508,7 +509,7 @@ describe('Rapier ALS capsule sweep', () => {
     })
     const capsuleHits: ReturnType<typeof sweep>[] = []
     const lineQueries: Parameters<typeof sweep.lineTrace>[0][] = []
-    const observedSweep = Object.assign(
+    const observedSweep: RapierAlsCapsuleSweep = Object.assign(
       (query: Parameters<typeof sweep>[0]) => {
         const hit = sweep(query)
         capsuleHits.push(hit)

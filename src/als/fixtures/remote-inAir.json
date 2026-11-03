@@ -1,0 +1,818 @@
+[
+  {
+    "t": 25.300000190734863,
+    "seq": 0,
+    "actionSeq": 0,
+    "pos": [
+      0.019130690721794963,
+      1.3144444316625594,
+      11.993446596083231
+    ],
+    "vel": [
+      0.4587853405941868,
+      6.466666666666668,
+      -0.15829926203648664
+    ],
+    "actorYaw": -45.991004554816406,
+    "viewYaw": -45.991004554816406,
+    "viewPitch": -1.0328045370635583,
+    "gait": "walking",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -19.036478832294506,
+      "targetYaw": -45.991004554816406,
+      "relativeAcceleration": {
+        "x": 0,
+        "y": 0
+      }
+    }
+  },
+  {
+    "t": 150.10000038146973,
+    "seq": 1,
+    "actionSeq": 0,
+    "pos": [
+      0.028680862626060843,
+      1.4249999836087226,
+      11.990126277902164
+    ],
+    "vel": [
+      0.5730103155146802,
+      6.633333333333335,
+      -0.19921909686252698
+    ],
+    "actorYaw": -46.274553028020314,
+    "viewYaw": -46.274553028020314,
+    "viewPitch": -1.3937161083969691,
+    "gait": "walking",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -19.171083275837844,
+      "targetYaw": -46.274553028020314,
+      "relativeAcceleration": {
+        "x": 0.028986066330697155,
+        "y": 0.01449303316534858
+      }
+    }
+  },
+  {
+    "t": 186.80000019073486,
+    "seq": 2,
+    "actionSeq": 0,
+    "pos": [
+      0.1129785445178732,
+      2.066133336008163,
+      11.959950407929767
+    ],
+    "vel": [
+      1.1812004971032037,
+      7.526666668483193,
+      -0.4294745126181039
+    ],
+    "actorYaw": -48.00248461404554,
+    "viewYaw": -48.00248461404554,
+    "viewPitch": -3.486276686594341,
+    "gait": "walking",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -19.98083842725943,
+      "targetYaw": -48.00248461404554,
+      "relativeAcceleration": {
+        "x": 0.5250307627218641,
+        "y": 0.2705971930672931
+      }
+    }
+  },
+  {
+    "t": 186.80000019073486,
+    "seq": 2,
+    "actionSeq": 0,
+    "pos": [
+      0.1129785445178732,
+      2.066133336008163,
+      11.959950407929767
+    ],
+    "vel": [
+      1.1812004971032037,
+      7.526666668483193,
+      -0.4294745126181039
+    ],
+    "actorYaw": -48.00248461404554,
+    "viewYaw": -48.00248461404554,
+    "viewPitch": -3.486276686594341,
+    "gait": "walking",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -19.98083842725943,
+      "targetYaw": -48.00248461404554,
+      "relativeAcceleration": {
+        "x": 0.5250307627218641,
+        "y": 0.2705971930672931
+      }
+    }
+  },
+  {
+    "t": 189.24500036239624,
+    "seq": 4,
+    "actionSeq": 0,
+    "pos": [
+      0.11576601629003999,
+      2.0837140519376454,
+      11.95893625457055
+    ],
+    "vel": [
+      1.1969744588983253,
+      7.5499523844037775,
+      -0.4356833663005188
+    ],
+    "actorYaw": -48.05062564411635,
+    "viewYaw": -48.05062564411635,
+    "viewPitch": -3.5438615955035635,
+    "gait": "walking",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -20.00085769658423,
+      "targetYaw": -48.05062564411635,
+      "relativeAcceleration": {
+        "x": 0.20671062481216057,
+        "y": 0.10335655874345458
+      }
+    }
+  },
+  {
+    "t": 201.3205003261565,
+    "seq": 5,
+    "actionSeq": 0,
+    "pos": [
+      0.1305590949792259,
+      2.1726012960973957,
+      11.953515279446671
+    ],
+    "vel": [
+      1.2753778393123543,
+      7.665887258099578,
+      -0.46692367077858876
+    ],
+    "actorYaw": -48.2893454407378,
+    "viewYaw": -48.2893454407378,
+    "viewPitch": -3.8362368887660176,
+    "gait": "walking",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -20.10798908841503,
+      "targetYaw": -48.2893454407378,
+      "relativeAcceleration": {
+        "x": 0.2083793157106603,
+        "y": 0.10418594604571142
+      }
+    }
+  },
+  {
+    "t": 209.42050023078906,
+    "seq": 6,
+    "actionSeq": 0,
+    "pos": [
+      0.14229687241863173,
+      2.2358660000673356,
+      11.949149943649447
+    ],
+    "vel": [
+      1.3288501416413634,
+      7.745299021870485,
+      -0.4888971861423492
+    ],
+    "actorYaw": -48.45116861094831,
+    "viewYaw": -48.45116861094831,
+    "viewPitch": -4.0464553286154725,
+    "gait": "walking",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -20.19907081659383,
+      "targetYaw": -48.45116861094831,
+      "relativeAcceleration": {
+        "x": 0.21362433835297479,
+        "y": 0.10470807655173345
+      }
+    }
+  },
+  {
+    "t": 222.47845011234278,
+    "seq": 7,
+    "actionSeq": 0,
+    "pos": [
+      0.16121925653334437,
+      2.337854560985508,
+      11.942112618127542
+    ],
+    "vel": [
+      1.4150524443678303,
+      7.873318138356307,
+      -0.5243205275892342
+    ],
+    "actorYaw": -48.71204254565965,
+    "viewYaw": -48.71204254565965,
+    "viewPitch": -4.385346919239155,
+    "gait": "walking",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -20.331220024111246,
+      "targetYaw": -48.71204254565965,
+      "relativeAcceleration": {
+        "x": 0.2131453784065549,
+        "y": 0.10567964276925075
+      }
+    }
+  },
+  {
+    "t": 229.97845011234278,
+    "seq": 8,
+    "actionSeq": 0,
+    "pos": [
+      0.1720875691051995,
+      2.396432991276992,
+      11.93807064048993
+    ],
+    "vel": [
+      1.4645638359961444,
+      7.946847550121014,
+      -0.5446663753878187
+    ],
+    "actorYaw": -48.86187881613722,
+    "viewYaw": -48.86187881613722,
+    "viewPitch": -4.579993625095189,
+    "gait": "walking",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -20.399998870125113,
+      "targetYaw": -48.86187881613722,
+      "relativeAcceleration": {
+        "x": 0.21286828321238596,
+        "y": 0.1062366849733259
+      }
+    }
+  },
+  {
+    "t": 237.07845001697535,
+    "seq": 9,
+    "actionSeq": 0,
+    "pos": [
+      0.18237623820169133,
+      2.451887237874734,
+      11.934244235044387
+    ],
+    "vel": [
+      1.5114346194413781,
+      8.016455392323294,
+      -0.5639271110451013
+    ],
+    "actorYaw": -49.003723816950725,
+    "viewYaw": -49.003723816950725,
+    "viewPitch": -4.764259170830507,
+    "gait": "walking",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -20.460906207307094,
+      "targetYaw": -49.003723816950725,
+      "relativeAcceleration": {
+        "x": 0.21260462500177926,
+        "y": 0.10676334885981449
+      }
+    }
+  },
+  {
+    "t": 244.17844992160792,
+    "seq": 10,
+    "actionSeq": 0,
+    "pos": [
+      0.19266490729818314,
+      2.507341484472476,
+      11.930417829598843
+    ],
+    "vel": [
+      1.5583054028866121,
+      8.086063234525573,
+      -0.5831878467023839
+    ],
+    "actorYaw": -49.14556881776422,
+    "viewYaw": -49.14556881776422,
+    "viewPitch": -4.948524716565824,
+    "gait": "walking",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -20.51810559077555,
+      "targetYaw": -49.14556881776422,
+      "relativeAcceleration": {
+        "x": 0.21233966375854912,
+        "y": 0.10728935840434686
+      }
+    }
+  },
+  {
+    "t": 251.07845001697535,
+    "seq": 11,
+    "actionSeq": 0,
+    "pos": [
+      0.2060604772845194,
+      2.572651890125293,
+      11.925384546115389
+    ],
+    "vel": [
+      1.6145389001598192,
+      8.053112455485168,
+      -0.6067138073989682
+    ],
+    "actorYaw": -49.314171933799436,
+    "viewYaw": -49.314171933799436,
+    "viewPitch": -5.1734540068293855,
+    "gait": "walking",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -20.595290056721094,
+      "targetYaw": -49.314171933799436,
+      "relativeAcceleration": {
+        "x": 0.2632795148295568,
+        "y": 0.13190717048647466
+      }
+    }
+  },
+  {
+    "t": 265.080605196476,
+    "seq": 12,
+    "actionSeq": 0,
+    "pos": [
+      0.24923424263097108,
+      2.7589378781452742,
+      11.908981697638115
+    ],
+    "vel": [
+      1.7789440094626896,
+      7.512678395925496,
+      -0.6770877480817045
+    ],
+    "actorYaw": -49.80109197894148,
+    "viewYaw": -49.80109197894148,
+    "viewPitch": -5.845763001370429,
+    "gait": "running",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -20.837434051826424,
+      "targetYaw": -49.80109197894148,
+      "relativeAcceleration": {
+        "x": 0.380575581671281,
+        "y": 0.19080780628414232
+      }
+    }
+  },
+  {
+    "t": 272.9806052918434,
+    "seq": 13,
+    "actionSeq": 0,
+    "pos": [
+      0.2679029921237236,
+      2.831225963240259,
+      11.901825773208385
+    ],
+    "vel": [
+      1.8457414184491951,
+      7.292575179979856,
+      -0.7061171977415028
+    ],
+    "actorYaw": -49.99670051278547,
+    "viewYaw": -49.99670051278547,
+    "viewPitch": -6.108923354675425,
+    "gait": "running",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -20.93513201602234,
+      "targetYaw": -49.99670051278547,
+      "relativeAcceleration": {
+        "x": 0.2750053447717789,
+        "y": 0.13715721423123212
+      }
+    }
+  },
+  {
+    "t": 279.7806050057411,
+    "seq": 14,
+    "actionSeq": 0,
+    "pos": [
+      0.28110156322058266,
+      2.876892627647793,
+      11.896725035538351
+    ],
+    "vel": [
+      1.890140271670731,
+      7.145908519484023,
+      -0.7257184187030922
+    ],
+    "actorYaw": -50.12515792415795,
+    "viewYaw": -50.12515792415795,
+    "viewPitch": -6.276836376656809,
+    "gait": "running",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -21.004267948662033,
+      "targetYaw": -50.12515792415795,
+      "relativeAcceleration": {
+        "x": 0.21327237338509256,
+        "y": 0.10542727284613986
+      }
+    }
+  },
+  {
+    "t": 286.4806052918434,
+    "seq": 15,
+    "actionSeq": 0,
+    "pos": [
+      0.29410603878612784,
+      2.921887727275589,
+      11.891699308290347
+    ],
+    "vel": [
+      1.9338862042887772,
+      7.001398709391621,
+      -0.7450313880525169
+    ],
+    "actorYaw": -50.25172626668135,
+    "viewYaw": -50.25172626668135,
+    "viewPitch": -6.4422801035170165,
+    "gait": "running",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -21.06922397947395,
+      "targetYaw": -50.25172626668135,
+      "relativeAcceleration": {
+        "x": 0.21303896074549358,
+        "y": 0.10589814121864739
+      }
+    }
+  },
+  {
+    "t": 293.080605196476,
+    "seq": 16,
+    "actionSeq": 0,
+    "pos": [
+      0.3069164169693094,
+      2.9662112557190707,
+      11.886748592179732
+    ],
+    "vel": [
+      1.9769792100765624,
+      6.859045770272095,
+      -0.7640561030407795
+    ],
+    "actorYaw": -50.37640552233999,
+    "viewYaw": -50.37640552233999,
+    "viewPitch": -6.605254511706877,
+    "gait": "running",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -21.13034806477356,
+      "targetYaw": -50.37640552233999,
+      "relativeAcceleration": {
+        "x": 0.21280801544896819,
+        "y": 0.10636147643651975
+      }
+    }
+  },
+  {
+    "t": 305.63254447655663,
+    "seq": 17,
+    "actionSeq": 0,
+    "pos": [
+      0.33259093768592496,
+      3.0481040689043915,
+      11.8767574244553
+    ],
+    "vel": [
+      2.0597469560605806,
+      6.585119749846016,
+      -0.8010089822768254
+    ],
+    "actorYaw": -50.61586619350591,
+    "viewYaw": -50.61586619350591,
+    "viewPitch": -6.9191093599628,
+    "gait": "running",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -21.250415552888924,
+      "targetYaw": -50.61586619350591,
+      "relativeAcceleration": {
+        "x": 0.2153152688277101,
+        "y": 0.10761882785614235
+      }
+    }
+  },
+  {
+    "t": 313.2325443811892,
+    "seq": 18,
+    "actionSeq": 0,
+    "pos": [
+      0.3500864670632879,
+      3.09411767379999,
+      11.869851805433703
+    ],
+    "vel": [
+      2.11107032767615,
+      6.414507507088959,
+      -0.8245303703241259
+    ],
+    "actorYaw": -50.764341485021966,
+    "viewYaw": -50.764341485021966,
+    "viewPitch": -7.114954528797139,
+    "gait": "running",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -21.334351989151514,
+      "targetYaw": -50.764341485021966,
+      "relativeAcceleration": {
+        "x": 0.2222856861267704,
+        "y": 0.10910096836082635
+      }
+    }
+  },
+  {
+    "t": 321.53254457192406,
+    "seq": 19,
+    "actionSeq": 0,
+    "pos": [
+      0.36919342745688016,
+      3.1443693756687052,
+      11.86231014228691
+    ],
+    "vel": [
+      2.1671208539319102,
+      6.22818097219491,
+      -0.8502182029200109
+    ],
+    "actorYaw": -50.926492138096506,
+    "viewYaw": -50.926492138096506,
+    "viewPitch": -7.328838076044118,
+    "gait": "running",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -21.42137610541589,
+      "targetYaw": -50.926492138096506,
+      "relativeAcceleration": {
+        "x": 0.2219760337782504,
+        "y": 0.1097296130595398
+      }
+    }
+  },
+  {
+    "t": 329.8325447626589,
+    "seq": 20,
+    "actionSeq": 0,
+    "pos": [
+      0.3883003878504725,
+      3.194621077537421,
+      11.854768479140118
+    ],
+    "vel": [
+      2.2231713801876705,
+      6.041854437300863,
+      -0.875906035515896
+    ],
+    "actorYaw": -51.08864279117105,
+    "viewYaw": -51.08864279117105,
+    "viewPitch": -7.542721623291096,
+    "gait": "running",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -21.503916240291165,
+      "targetYaw": -51.08864279117105,
+      "relativeAcceleration": {
+        "x": 0.22166460356818254,
+        "y": 0.1103573789063503
+      }
+    }
+  },
+  {
+    "t": 340.95929003843764,
+    "seq": 21,
+    "actionSeq": 0,
+    "pos": [
+      0.4139146380201548,
+      3.261987086395075,
+      11.844658339036293
+    ],
+    "vel": [
+      2.2983111288490465,
+      5.792070359681341,
+      -0.9103424166499972
+    ],
+    "actorYaw": -51.3060173660627,
+    "viewYaw": -51.3060173660627,
+    "viewPitch": -7.829447851508978,
+    "gait": "running",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -21.608117177998185,
+      "targetYaw": -51.3060173660627,
+      "relativeAcceleration": {
+        "x": 0.22124432420322518,
+        "y": 0.11119755645686406
+      }
+    }
+  },
+  {
+    "t": 347.7592902291725,
+    "seq": 22,
+    "actionSeq": 0,
+    "pos": [
+      0.4295685333617268,
+      3.3031571556046475,
+      11.838479627029287
+    ],
+    "vel": [
+      2.3442320421588345,
+      5.639417294175049,
+      -0.931387869967766
+    ],
+    "actorYaw": -51.43886368491766,
+    "viewYaw": -51.43886368491766,
+    "viewPitch": -8.004677746527298,
+    "gait": "running",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -21.66844132456223,
+      "targetYaw": -51.43886368491766,
+      "relativeAcceleration": {
+        "x": 0.22098590645312077,
+        "y": 0.11171023544515477
+      }
+    }
+  },
+  {
+    "t": 355.2592902291725,
+    "seq": 23,
+    "actionSeq": 0,
+    "pos": [
+      0.44558319641362326,
+      3.339736064770183,
+      11.83208929471156
+    ],
+    "vel": [
+      2.3883480911728103,
+      5.492298107109696,
+      -0.9519712689997333
+    ],
+    "actorYaw": -51.563833855152524,
+    "viewYaw": -51.563833855152524,
+    "viewPitch": -8.157126387354632,
+    "gait": "running",
+    "stance": "standing",
+    "rotationMode": "aiming",
+    "locomotionMode": "inAir",
+    "action": "none",
+    "overlay": "rifle",
+    "aiming": false,
+    "animation": {
+      "hasInput": true,
+      "inputYaw": -21.73172342374753,
+      "targetYaw": -51.563833855152524,
+      "relativeAcceleration": {
+        "x": 0.19354402427173856,
+        "y": 0.09671396788220196
+      }
+    }
+  }
+]

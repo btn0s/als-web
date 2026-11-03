@@ -48,7 +48,10 @@
     "./engine/virtualBones": "./src/engine/virtualBones.ts",
     "./engine/poseBuffer": "./src/engine/poseBuffer.ts",
     "./als/Utility/AlsVirtualBones": "./src/als/Utility/AlsVirtualBones.ts",
-    "./als/AnimGraph/consumerUpperBodySlot": "./src/als/AnimGraph/consumerUpperBodySlot.ts"
+    "./als/AnimGraph/consumerUpperBodySlot": "./src/als/AnimGraph/consumerUpperBodySlot.ts",
+    "./engine/retarget": "./src/engine/retarget.ts",
+    "./app/retargetedCharacter": "./src/app/retargetedCharacter.ts",
+    "./app/AlsRetargetedCharacter": "./src/app/AlsRetargetedCharacter.tsx"
   },
   "packageManager": "pnpm@11.15.1",
   "engines": {
