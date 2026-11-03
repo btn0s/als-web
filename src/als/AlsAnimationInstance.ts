@@ -14,7 +14,7 @@ import { assertAlsAnimationExtras } from './reference/animationExtrasSequences'
 import * as THREE from 'three'
 import type { AlphaBlendOption } from '../engine/alphaBlend'
 import { pickClip } from '../engine/pickClip'
-import { applyPose, createPoseApplicator } from '../engine/applyPose'
+import { applyPose, createPoseApplicator, trackPoseGeneration } from '../engine/applyPose'
 import { compileAuthoredAdditive } from '../engine/authoredAdditive'
 import {
   accumulatePose,
@@ -1294,6 +1294,7 @@ export function createAlsAnimationInstance(gltf: {
   const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
   const consumerLocomotion = createConsumerLocomotionStates(rig, gltf.locomotionStates)
   const applicator = createPoseApplicator(gltf.scene, rig)
+  trackPoseGeneration(gltf.scene)
   const ragdolling = createAlsRagdollPose(gltf.scene, gltf.animations)
   const evaluator = createPoseEvaluator(rig, { development: import.meta.env.DEV })
   const rigBoneNames = new Set(rig.boneNames)

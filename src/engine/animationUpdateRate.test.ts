@@ -3,7 +3,7 @@ import { AlsAnimationUpdateRate, selectAlsAnimationInterval } from './animationU
 
 it('selects distance and visibility rates with focus overriding all clamps', () => {
   expect([0, 12, 20, 34].map(distance => selectAlsAnimationInterval({ distance }))).toEqual([1, 2, 3, 4])
-  expect(selectAlsAnimationInterval({ distance: 0, visible: false })).toBe(8)
+  expect(selectAlsAnimationInterval({ distance: 0, visible: false })).toBe(0)
   expect(selectAlsAnimationInterval({ distance: 0, visible: false, shadow: true })).toBe(3)
   expect(selectAlsAnimationInterval({ distance: 0, minInterval: 2 })).toBe(2)
   expect(selectAlsAnimationInterval({ distance: 100, maxInterval: 2 })).toBe(2)
@@ -27,11 +27,16 @@ it('ticks an unheard character only when it evaluates, carrying the skipped time
 it('ticks every frame on focus or action and restarts after a reset', () => {
   const rate = new AlsAnimationUpdateRate(3)
   const hidden = { visible: false }
-  expect(ticks(rate, 2, hidden, false)).toEqual(['E1', '-'])
-  expect(ticks(rate, 1, { ...hidden, focused: true }, false)).toEqual(['E2'])
+  expect(ticks(rate, 2, hidden, false)).toEqual(['-', '-'])
+  expect(ticks(rate, 1, { ...hidden, focused: true }, false)).toEqual(['E3'])
   const action = rate.next(0.01, hidden, true, false)
   expect([action.update, action.evaluate, action.delta]).toEqual([true, true, 0.01])
   expect(ticks(rate, 1, hidden, false)).toEqual(['-'])
   rate.reset()
-  expect(ticks(rate, 1, hidden, false)).toEqual(['E1'])
+  expect(ticks(rate, 1, hidden, false)).toEqual(['-'])
+  expect(ticks(rate, 1, {distance:30}, false)).toEqual(['E2'])
+})
+
+it('keeps audible clocks current while an invisible pose is skipped', () => {
+  expect(ticks(new AlsAnimationUpdateRate(0),3,{visible:false},true)).toEqual(['U1','U1','U1'])
 })

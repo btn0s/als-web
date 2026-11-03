@@ -1,6 +1,6 @@
 import { Group, Mesh, Object3D, SkinnedMesh } from 'three'
 import { clone } from 'three/addons/utils/SkeletonUtils.js'
-import { applyPose, createPoseApplicator } from '../engine/applyPose'
+import { applyPose, createPoseApplicator, poseGeneration } from '../engine/applyPose'
 import { createPoseBuffer } from '../engine/poseBuffer'
 import { createRigDefinition } from '../engine/rig'
 import {
@@ -27,8 +27,9 @@ export interface RetargetedCharacter {
   readonly target: Object3D
   readonly diagnostics: RetargetDiagnostics
   readonly translationScale: number
-  /** Call after source pose publication, before attachments, bounds reads or rendering. */
-  update(): void
+  /** Call after source publication. Returns false when its tracked pose has not changed.
+   * External/manual producers without a generation remain sampled every call. */
+  update(): boolean
   /** Restores mannequin visibility and frees only this target's cloned skeleton resources. */
   dispose(): void
 }
@@ -71,10 +72,13 @@ export function createRetargetedCharacter(options: RetargetedCharacterOptions): 
       targetMeshes.push(node)
     }
   })
+  let lastGeneration: number | undefined
   return {
     object, source, target, diagnostics: retargeter.diagnostics,
     translationScale: retargeter.diagnostics.translationScale,
     update() {
+      const generation = poseGeneration(source)
+      if (generation !== undefined && generation === lastGeneration) return false
       sourceApplicator.bones.forEach((bone, index) => {
         bone.position.toArray(sourcePose.positions, index * 3)
         bone.quaternion.toArray(sourcePose.rotations, index * 4)
@@ -85,6 +89,8 @@ export function createRetargetedCharacter(options: RetargetedCharacterOptions): 
       target.updateWorldMatrix(true, false)
       target.updateMatrixWorld(true)
       for (const mesh of targetMeshes) mesh.skeleton.update()
+      lastGeneration = generation
+      return true
     },
     dispose() {
       object.removeFromParent()
