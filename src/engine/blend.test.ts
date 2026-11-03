@@ -222,3 +222,26 @@ describe('pose blending', () => {
     }
   })
 })
+
+
+it('keeps a deep hierarchy unit-length across stacked mesh-space additives', () => {
+  const root = new THREE.Bone()
+  let parent = root
+  for (let index = 0; index < 12; index++) {
+    parent.name = `bone_${index}`
+    parent.quaternion.setFromEuler(new THREE.Euler(0.1, 0.2, 0.3))
+    const child = new THREE.Bone()
+    parent.add(child)
+    parent = child
+  }
+  const rig = createRigDefinition(root)
+  const pose = resetPoseToReference(createPoseBuffer(rig.boneCount), rig)
+  const delta = createPoseBuffer(rig.boneCount)
+  for (let bone = 0; bone < rig.boneCount; bone++) delta.rotations[bone * 4 + 3] = 1
+  const scratch = createMeshSpaceBlendScratch(rig.boneCount)
+  // Several active additive montages execute on one pose before Layering consumes it.
+  for (let layer = 0; layer < 20; layer++) applyMeshSpaceAdditivePose(pose, delta, rig, 0.1, scratch)
+  for (let bone = 0; bone < rig.boneCount; bone++) {
+    expect(Math.hypot(...pose.rotations.slice(bone * 4, bone * 4 + 4))).toBeCloseTo(1, 5)
+  }
+})

@@ -293,10 +293,18 @@ function multiplyQuaternions(
   bz: number,
   bw: number,
 ) {
-  out[outOffset] = aw * bx + ax * bw + ay * bz - az * by
-  out[outOffset + 1] = aw * by - ax * bz + ay * bw + az * bx
-  out[outOffset + 2] = aw * bz + ax * by - ay * bx + az * bw
-  out[outOffset + 3] = aw * bw - ax * bx - ay * by - az * bz
+  const x = aw * bx + ax * bw + ay * bz - az * by
+  const y = aw * by - ax * bz + ay * bw + az * bx
+  const z = aw * bz + ax * by - ay * bx + az * bw
+  const w = aw * bw - ax * bx - ay * by - az * bz
+  // Component-space accumulation and re-localization must preserve unit rotations.
+  // Conjugation is an inverse only for a unit quaternion; Float32 length drift otherwise
+  // compounds down the hierarchy and across stacked mesh-space additive nodes.
+  const inverseLength = 1 / Math.hypot(x, y, z, w)
+  out[outOffset] = x * inverseLength
+  out[outOffset + 1] = y * inverseLength
+  out[outOffset + 2] = z * inverseLength
+  out[outOffset + 3] = w * inverseLength
 }
 
 /**
