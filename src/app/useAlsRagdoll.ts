@@ -1,5 +1,5 @@
 import { getWorldDeltaTime, type WorldTimeState } from '../engine/timeDilation'
-import { useEffect, useMemo, type RefObject } from 'react'
+import { useLayoutEffect, useMemo, type RefObject } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useBeforePhysicsStep, useAfterPhysicsStep, useRapier } from '@react-three/rapier'
 import type { RapierCollider, RapierRigidBody } from '@react-three/rapier'
@@ -18,7 +18,9 @@ export function useAlsRagdoll(character: AlsCharacter, animation: AlsAnimationIn
     owner: () => owner.current, colliders: () => [standing.current, crouching.current],
     radius: ALS_CAPSULE_RADIUS, ownerAnchorHalfHeight: ALS_STANDING_CAPSULE_HALF_HEIGHT, halfHeight: () => getAlsCapsuleHalfHeight(character.stance),
   }), [world, character, animation, owner, standing, crouching])
-  useEffect(() => {
+  // Physics frees its World in passive cleanup. Release owned bodies during layout
+  // cleanup, while the parent world and its raw body set are still alive.
+  useLayoutEffect(() => {
     if (output) output.current = runtime.handle
     return () => { if (output) output.current = null; runtime.dispose() }
   }, [runtime, output])
