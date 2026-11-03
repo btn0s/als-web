@@ -3,8 +3,17 @@ import type { LocalPoseBuffer } from './poseBuffer'
 import type { RigDefinition } from './rig'
 
 export interface PoseApplicator {
+  readonly root?: THREE.Object3D
   readonly bones: readonly THREE.Bone[]
 }
+
+const generations = new WeakMap<THREE.Object3D, number>()
+/** Writers opt in before their first pose, so a culled, never-evaluated source can be held too. */
+export function trackPoseGeneration(root: THREE.Object3D) {
+  if (!generations.has(root)) generations.set(root,0)
+}
+/** Undefined means an external/manual pose producer; readers must continue sampling it. */
+export const poseGeneration = (root: THREE.Object3D) => generations.get(root)
 
 /** Resolves the rig's scene references once; frame application never traverses the graph. */
 export function createPoseApplicator(
@@ -48,7 +57,7 @@ export function createPoseApplicator(
     if (!bone) throw new Error(`Rig bone "${name}" is missing from the skeleton`)
     return bone
   })
-  return { bones }
+  return { root: skeletonRoot, bones }
 }
 
 /** Writes every local transform exactly once in rig order. */
@@ -70,4 +79,5 @@ export function applyPose(applicator: PoseApplicator, pose: LocalPoseBuffer) {
     )
     bone.scale.set(pose.scales[p], pose.scales[p + 1], pose.scales[p + 2])
   }
+  if (applicator.root) generations.set(applicator.root,(generations.get(applicator.root) ?? 0)+1)
 }

@@ -10,7 +10,7 @@
  */
 export interface AlsAnimationLod {
   distance?: number
-  /** The camera can see the mesh itself. */
+  /** The camera can see the mesh itself. False with no visible shadow skips evaluation. */
   visible?: boolean
   /** Hidden from the camera but casting a shadow it can see (bOwnerNoSee with bCastHiddenShadow). */
   shadow?: boolean
@@ -21,8 +21,9 @@ export interface AlsAnimationLod {
 
 export function selectAlsAnimationInterval(significance: AlsAnimationLod): number {
   if (significance.focused) return 1
+  if (significance.visible === false && !significance.shadow) return 0
   const distance = significance.distance ?? 0
-  const interval = significance.visible === false ? significance.shadow ? 3 : 8
+  const interval = significance.visible === false ? 3
     : distance < 12 ? 1 : distance < 20 ? 2 : distance < 34 ? 3 : 4
   const minimum = Math.max(1, Math.floor(significance.minInterval ?? 1))
   const maximum = Math.max(1, Math.floor(significance.maxInterval ?? 8))
@@ -56,7 +57,9 @@ export class AlsAnimationUpdateRate {
 
   next(delta: number, significance: AlsAnimationLod | undefined, critical: boolean, heard: boolean): AlsAnimationTick {
     const interval = significance && !critical ? selectAlsAnimationInterval(significance) : 1
-    const evaluate = !this.started || interval === 1 || (this.frame + this.phase) % interval === 0
+    // Re-entering visibility publishes immediately, regardless of the staggered phase.
+    if (interval === 0) this.started = false
+    const evaluate = interval > 0 && (!this.started || interval === 1 || (this.frame + this.phase) % interval === 0)
     this.frame++
     this.pending += Math.max(0, delta)
     const tick = this.tick

@@ -67,7 +67,8 @@ const warnUnsupported = (feature: string) => console.warn(`[AlsRemoteActor] Unsu
  * local movement/floor/mantle sweeps, camera, audio, debug captures, or root-motion movement.
  * footIk=false removes foot terrain queries for distance LOD; the authored rig still evaluates.
  * Animation LOD holds pose between full-delta graph evaluations while snapshot/action clocks
- * and collision stay current. No measured millisecond budget is claimed by this component.
+ * and collision stay current. Invisible actors without a visible shadow skip evaluation;
+ * critical actions still run at full rate. No measured millisecond budget is claimed.
  */
 export function AlsRemoteActor({ renderCharacter, collisionGroups = ALS_CHARACTER_COLLISION_GROUPS, overlayStates, renderOverlayObject, snapshots, now = clock, offset = origin,
   footIk = true, animationLod, worldTime, ragdollRef, ragdollingSettings, onAction, onAnimationClock, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
