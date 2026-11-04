@@ -1,3 +1,4 @@
+import type { ConsumerLocomotionStates } from '../als/AnimGraph/consumerLocomotionStates'
 import type { AnimationClip, Object3D } from 'three'
 import { Vector3 } from 'three'
 import type { AlsAnimationClock, AlsAnimationInstanceControls, AlsGetUpMontageNotifyEvent } from '../als/AlsAnimationInstance'
@@ -18,7 +19,7 @@ import type { AnimationCommand, AnimationFrame, AnimationResult } from '../engin
 const assetCache = new WeakMap<readonly AnimationClip[], Map<string, ReturnType<typeof serializeAnimationAssets>>>()
 /** Main-thread presentation owns publication and rigid-body physics, never graph evaluation. */
 export function createWorkerAnimation(scene: Object3D, animations: AnimationClip[], overlayStates: ConsumerOverlayStates | undefined,
-  trace: AlsControlRigFootOffsetTrace, prediction: AlsGroundPredictionCapsuleSweep) {
+  trace: AlsControlRigFootOffsetTrace, prediction: AlsGroundPredictionCapsuleSweep, locomotionStates?: ConsumerLocomotionStates) {
   const rig = createRigDefinition(scene, ALS_VIRTUAL_BONES), applicator = createPoseApplicator(scene, rig)
   const pose = createPoseBuffer(rig.boneCount), latestPose = createPoseBuffer(rig.boneCount)
   latestPose.positions.set(rig.referencePositions); latestPose.rotations.set(rig.referenceRotations); latestPose.scales.set(rig.referenceScales)
@@ -31,11 +32,18 @@ export function createWorkerAnimation(scene: Object3D, animations: AnimationClip
   let sequence = 0, latestSnapshotGeneration = -1
   const traceState: Pick<AnimationFrame, 'feet' | 'prediction'> = { feet: {}, prediction: null }
   const start = new Vector3(), end = new Vector3()
-  const key = (overlayStates?.clips.map(clip => clip.uuid).join(',') ?? '') + JSON.stringify(overlayStates?.states ?? [])
+  const linkedStates = locomotionStates?.states.map(({ sample: _sample, onSample: _onSample, onPose: _onPose, ...state }) => state)
+  const linkedKey = JSON.stringify(linkedStates) + (locomotionStates?.clips.map(clip => clip.uuid).join(',') ?? '')
+  const key = linkedKey + (overlayStates?.clips.map(clip => clip.uuid).join(',') ?? '') + JSON.stringify(overlayStates?.states ?? [])
   let byOverlay = assetCache.get(animations)
   if (!byOverlay) assetCache.set(animations, byOverlay = new Map())
   let assets = byOverlay.get(key)
-  if (!assets) { assets = serializeAnimationAssets(scene, animations, overlayStates?.clips, overlayStates?.states); byOverlay.set(key, assets) }
+  if (!assets) {
+    assets = serializeAnimationAssets(scene, animations, [...(overlayStates?.clips ?? []), ...(locomotionStates?.clips ?? [])], overlayStates?.states)
+    assets.key += linkedKey
+    if (locomotionStates && linkedStates) assets.locomotion = { clipNames: locomotionStates.clips.map(clip => clip.name), states: linkedStates }
+    byOverlay.set(key, assets)
+  }
   const command = (value: AnimationCommand) => commands.push(value)
   return {
     clock: clock as Readonly<AlsAnimationClock>, ragdolling,
@@ -77,7 +85,7 @@ export function createWorkerAnimation(scene: Object3D, animations: AnimationClip
       const changedSnapshot = snapshot && ragdolling.snapshotGeneration !== latestSnapshotGeneration ? snapshot.data : undefined
       if (changedSnapshot) latestSnapshotGeneration = ragdolling.snapshotGeneration
       connection.submit({ sequence: sequence++, delta, evaluate, controls,
-        commands: commands.splice(0), montage: overlayStates?.sampleMontage?.() ?? null,
+        commands: commands.splice(0), locomotionSamples: locomotionStates?.states.map(state => state.sample(controls, delta)), montage: overlayStates?.sampleMontage?.() ?? null,
         matrixWorld: scene.matrixWorld.toArray(), feet: traceState.feet, prediction: traceState.prediction,
         ragdoll: { active: ragdolling.active, velocity: ragdolling.velocity, snapshot: changedSnapshot }, buffer: recycled })
       recycled = undefined

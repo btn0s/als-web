@@ -1,3 +1,4 @@
+import type { ConsumerLocomotionSample, ConsumerLocomotionState } from '../../als/AnimGraph/consumerLocomotionStates'
 import type { AnimationClip, Object3D } from 'three'
 import type { AlsAnimationInstanceControls, AlsGetUpMontageNotifyEvent } from '../../als/AlsAnimationInstance'
 import type { ConsumerOverlayState, ConsumerUpperBodyMontage } from '../../als/AnimGraph/consumerOverlayStates'
@@ -13,6 +14,7 @@ export interface AnimationAssets {
   nodes: { name: string; bone: boolean; parent: number; position: number[]; rotation: number[]; scale: number[] }[]
   clips: SerializedClip[]
   overlayClipNames: string[]
+  locomotion?: { clipNames: string[]; states: Omit<ConsumerLocomotionState, 'sample' | 'onSample' | 'onPose'>[] }
   states: readonly ConsumerOverlayState[]
 }
 export type FootQuery = { side: AlsControlRigFootSide; start: number[]; end: number[] }
@@ -33,6 +35,7 @@ export interface AnimationFrame {
   evaluate: boolean
   controls: AlsAnimationInstanceControls
   commands: AnimationCommand[]
+  locomotionSamples?: (ConsumerLocomotionSample | null)[]
   montage: ConsumerUpperBodyMontage | null
   matrixWorld: number[]
   feet: Partial<Record<AlsControlRigFootSide, FootHit>>

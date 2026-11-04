@@ -16,7 +16,7 @@ function loadAssets(assets: AnimationAssets) {
   assets.nodes.forEach((node, index) => (node.parent < 0 ? scene : nodes[node.parent]).add(nodes[index]))
   return { scene, animations: assets.clips.map(clip => AnimationClip.parse({ ...clip, tracks: clip.tracks.map(track => ({ ...track,
     times: Array.from(track.times), values: Array.from(track.values),
-  })) })), states: assets.states, overlayClipNames: assets.overlayClipNames }
+  })) })), states: assets.states, locomotion: assets.locomotion, overlayClipNames: assets.overlayClipNames }
 }
 const mantleSettings = (name: string) => Object.values(ALS_MANTLING_SETTINGS).find(settings => settings.Name === name)
 
@@ -31,6 +31,10 @@ export function createAnimationWorkerRuntime() {
     const feet: FootQuery[] = []
     let prediction: AnimationResult['prediction']
     const animation = createAlsAnimationInstance({ scene, animations: asset.animations, publishDiagnostics: false,
+      locomotionStates: asset.locomotion ? {
+        clips: asset.animations.filter(clip => asset.locomotion!.clipNames.includes(clip.name)),
+        states: asset.locomotion.states.map((state, index) => ({ ...state, sample: () => frame?.locomotionSamples?.[index] ?? null })),
+      } : undefined,
       overlayStates: { states: asset.states,
         clips: asset.animations.filter(clip => asset.overlayClipNames.includes(clip.name)),
         sampleMontage: () => montage },
