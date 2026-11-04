@@ -43,6 +43,7 @@ export function createWorkerAnimation(scene: Object3D, animations: AnimationClip
       connection = connectAnimationWorker(assets!, result => {
         // Keep only the newest completed publication. No shared mutable pose buffer crosses threads.
         if (completed) recycled = completed.data.buffer as ArrayBuffer
+        getUpEvents.push(...result.getUpEvents)
         completed = result
       })
       return () => { connection?.dispose(); connection = undefined; completed = undefined; recycled = undefined }
@@ -59,7 +60,7 @@ export function createWorkerAnimation(scene: Object3D, animations: AnimationClip
       pose.data.set(latestPose.data)
       ragdolling.applyPhysics(pose)
       if (visible) applyPose(applicator, pose)
-      Object.assign(clock, result.clock); getUpEvents.push(...result.getUpEvents)
+      Object.assign(clock, result.clock)
       for (const query of result.feet) {
         const hit = trace({ side: query.side, start: start.fromArray(query.start), end: end.fromArray(query.end), traceChannel: 'Visibility', ignoreOwningActor: true })
         traceState.feet[query.side] = hit ? { impactPoint: hit.impactPoint.toArray(), impactNormal: hit.impactNormal.toArray() } : null
