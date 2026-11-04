@@ -23,8 +23,8 @@ const action = {
 export class AlsRemoteCharacter {
   readonly character
   readonly animationRate
-  constructor(ragdollingSettings?: Partial<AlsRagdollingSettings>, animationLodPhase?: number) {
-    this.animationRate = new AlsAnimationUpdateRate(animationLodPhase)
+  constructor(ragdollingSettings?: Partial<AlsRagdollingSettings>) {
+    this.animationRate = new AlsAnimationUpdateRate()
     this.character = createAlsCharacter({ settings: {
       Ragdolling: { ...ALS_RAGDOLLING_SETTINGS, ...ragdollingSettings },
     } })

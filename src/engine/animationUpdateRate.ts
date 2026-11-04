@@ -1,33 +1,16 @@
-/**
- * USkinnedMeshComponent update rate optimization (FAnimUpdateRateParameters): the pose is
- * evaluated every `interval` frames from the mesh's significance (EvaluationRate). The graph
- * update (clocks, state machines, notifies) has two outputs: timed events for their listeners,
- * and state for the next evaluation. A character whose events are heard updates every frame
- * (UpdateRate 1), so a footstep lands on the frame its notify is crossed; one whose events
- * nobody hears updates only when it evaluates, carrying the skipped time, because the next
- * evaluation is the only reader. Actions pass `critical` to tick every frame because their root
- * motion comes from the evaluated pose.
+/** Visibility gates pose evaluation; every visible mesh or shadow evaluates every frame.
+ * Unseen characters keep audible graph events current, or carry elapsed time until re-entry.
+ * Root-motion actions pass `critical` because gameplay consumes their evaluated pose.
  */
 export interface AlsAnimationLod {
-  distance?: number
-  /** The camera can see the mesh itself. False with no visible shadow skips evaluation. */
+  /** The camera can see the mesh itself. Defaults to true when visibility is unknown. */
   visible?: boolean
-  /** Hidden from the camera but casting a shadow it can see (bOwnerNoSee with bCastHiddenShadow). */
+  /** The camera can see a shadow cast by the mesh, including a hidden first-person body. */
   shadow?: boolean
-  focused?: boolean
-  minInterval?: number
-  maxInterval?: number
 }
 
-export function selectAlsAnimationInterval(significance: AlsAnimationLod): number {
-  if (significance.focused) return 1
-  if (significance.visible === false && !significance.shadow) return 0
-  const distance = significance.distance ?? 0
-  const interval = significance.visible === false ? 3
-    : distance < 12 ? 1 : distance < 20 ? 2 : distance < 34 ? 3 : 4
-  const minimum = Math.max(1, Math.floor(significance.minInterval ?? 1))
-  const maximum = Math.max(1, Math.floor(significance.maxInterval ?? 8))
-  return Math.max(1, Math.min(Math.max(minimum, interval), maximum))
+export function selectAlsAnimationInterval(significance: AlsAnimationLod): 0 | 1 {
+  return significance.visible === false && !significance.shadow ? 0 : 1
 }
 
 export type AlsAnimationLodSource = AlsAnimationLod | (() => AlsAnimationLod)
@@ -36,8 +19,6 @@ export function resolveAlsAnimationLod(source: AlsAnimationLodSource | undefined
   return typeof source === 'function' ? source() : source
 }
 
-let nextPhase = 0
-
 export interface AlsAnimationTick {
   update: boolean
   evaluate: boolean
@@ -45,29 +26,18 @@ export interface AlsAnimationTick {
 }
 
 export class AlsAnimationUpdateRate {
-  private frame = 0
   private pending = 0
-  private started = false
   private readonly tick: AlsAnimationTick = { update: false, evaluate: false, delta: 0 }
-  readonly phase: number
-
-  constructor(phase = nextPhase++) {
-    this.phase = phase
-  }
-
   next(delta: number, significance: AlsAnimationLod | undefined, critical: boolean, heard: boolean): AlsAnimationTick {
     const interval = significance && !critical ? selectAlsAnimationInterval(significance) : 1
-    // Re-entering visibility publishes immediately, regardless of the staggered phase.
-    if (interval === 0) this.started = false
-    const evaluate = interval > 0 && (!this.started || interval === 1 || (this.frame + this.phase) % interval === 0)
-    this.frame++
+    // Visibility is checked every frame: the first visible frame evaluates immediately.
+    const evaluate = interval === 1
     this.pending += Math.max(0, delta)
     const tick = this.tick
     tick.evaluate = evaluate
     tick.update = evaluate || heard
     tick.delta = 0
     if (!tick.update) return tick
-    if (evaluate) this.started = true
     tick.delta = this.pending
     this.pending = 0
     return tick
@@ -75,6 +45,5 @@ export class AlsAnimationUpdateRate {
 
   reset() {
     this.pending = 0
-    this.started = false
   }
 }
