@@ -7,6 +7,7 @@ import { compileClipSampler } from './clipSampler'
 import { compileClipCurveSamplers } from './curves'
 import { createRigDefinition } from './rig'
 import { copyPose } from './poseBuffer'
+import { resetStateMachineTransitionStack } from './stateMachineTransitionStack'
 import { createMutableUePoseNode, sampleSequencePoseNode } from './uePoseGraph'
 import { blendPoseNodesTogether, blendTwoPoseNodesTogether } from './uePoseBlend'
 import { applyAdditivePose, applyMeshSpaceAdditivePose, createMeshSpaceBlendScratch, makeDynamicAdditivePose } from './blend'
@@ -161,8 +162,11 @@ describe.each(['PistolTwoHanded', 'PistolOneHanded'] as const)('%s shipped conte
         for (const pitch of [0, 0.5, 1]) {
           Object.assign(input, { standingAmount: stance[0], crouchingAmount: stance[1], gaitWalkingAmount: gait, gaitSprintingAmount: gait, pitchAmount: pitch })
           refreshAlsPistolRuntime(runtime, input)
-          evaluateAlsPistolGraph(runtime, input, sources)
           for (const state of asset.stateMachines[0].States) {
+            // Evaluate each authored state as the active output. Dormant state scratch poses
+            // are no longer eagerly maintained by the runtime.
+            resetStateMachineTransitionStack(runtime.pistolStates, state.StateName as keyof typeof runtime.statePoses)
+            evaluateAlsPistolGraph(runtime, input, sources)
             const expected = oracle(state.StateRootNodeCompiledIndex)
             const actual = runtime.statePoses[state.StateName as keyof typeof runtime.statePoses]
             for (const channel of ['positions', 'rotations', 'scales'] as const) {

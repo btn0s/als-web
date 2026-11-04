@@ -30,6 +30,7 @@ import {
   advanceStateMachineTransitionStack,
   createStateMachineTransitionStack,
   getStateMachineStateWeight,
+  isStateMachineStateReferenced,
   resetStateMachineTransitionStack,
   startStateMachineStandardTransition,
   type StateMachineStandardTransition,
@@ -1533,18 +1534,20 @@ function evaluateRifleStates(
   input: AlsRifleFullInput,
   sources: AlsRifleFullSources,
 ) {
-  evaluateAlsRifleRelaxedGraph(runtime.relaxed, sources)
-  copyPoseNode(
-    runtime.relaxed.output,
-    runtime.statePoses.Relaxed,
-  )
-  applyAdditivePose(
-    runtime.statePoses.Relaxed.pose,
-    runtime.nodes.idleAdditive.pose,
-    ALS_RIFLE_RELAXED_GRAPH.idleAdditiveAlpha,
-  )
-  evaluateReadyState(runtime, input, sources)
-  evaluateAimingState(runtime, input, sources)
+  if (isStateMachineStateReferenced(runtime.rifleStates, 'Relaxed')) {
+    evaluateAlsRifleRelaxedGraph(runtime.relaxed, sources)
+    copyPoseNode(
+      runtime.relaxed.output,
+      runtime.statePoses.Relaxed,
+    )
+    applyAdditivePose(
+      runtime.statePoses.Relaxed.pose,
+      runtime.nodes.idleAdditive.pose,
+      ALS_RIFLE_RELAXED_GRAPH.idleAdditiveAlpha,
+    )
+  }
+  if (isStateMachineStateReferenced(runtime.rifleStates, 'Ready')) evaluateReadyState(runtime, input, sources)
+  if (isStateMachineStateReferenced(runtime.rifleStates, 'Aiming')) evaluateAimingState(runtime, input, sources)
   evaluateTransitionStack(
     runtime.rifleStates,
     (state) => runtime.statePoses[state],
@@ -1559,42 +1562,48 @@ function evaluateActionPoses(
   sources: AlsRifleFullSources,
 ) {
   const { nodes } = runtime
-  sampleSequencePoseNode(
-    runtime.rig,
-    sources.poses,
-    ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.Mantling.posesTime,
-    false,
-    nodes.mantling,
-  )
-  sampleSequencePoseNode(
-    runtime.rig,
-    sources.poses,
-    ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.GettingUp.posesTime,
-    false,
-    nodes.gettingUp,
-  )
-  for (
-    const [name, value]
-    of Object.entries(
-      ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.GettingUp.curves,
+  if (isStateMachineStateReferenced(runtime.gameplayTagsBlend, 1)) {
+    sampleSequencePoseNode(
+      runtime.rig,
+      sources.poses,
+      ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.Mantling.posesTime,
+      false,
+      nodes.mantling,
     )
-  ) {
-    nodes.gettingUp.curves.set(name, value)
   }
-  sampleSequencePoseNode(
-    runtime.rig,
-    sources.poses,
-    ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.Rolling.posesTime,
-    false,
-    nodes.rolling,
-  )
-  for (
-    const [name, value]
-    of Object.entries(
-      ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.Rolling.curves,
+  if (isStateMachineStateReferenced(runtime.gameplayTagsBlend, 2)) {
+    sampleSequencePoseNode(
+      runtime.rig,
+      sources.poses,
+      ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.GettingUp.posesTime,
+      false,
+      nodes.gettingUp,
     )
-  ) {
-    nodes.rolling.curves.set(name, value)
+    for (
+      const [name, value]
+      of Object.entries(
+        ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.GettingUp.curves,
+      )
+    ) {
+      nodes.gettingUp.curves.set(name, value)
+  }
+  }
+  if (isStateMachineStateReferenced(runtime.gameplayTagsBlend, 3)) {
+    sampleSequencePoseNode(
+      runtime.rig,
+      sources.poses,
+      ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.Rolling.posesTime,
+      false,
+      nodes.rolling,
+    )
+    for (
+      const [name, value]
+      of Object.entries(
+        ALS_RIFLE_GRAPH.gameplayTagsBlend.overrides.Rolling.curves,
+      )
+    ) {
+      nodes.rolling.curves.set(name, value)
+  }
   }
 }
 
@@ -1607,8 +1616,10 @@ export function evaluateAlsRifleGraph(
   input: AlsRifleFullInput,
   sources: AlsRifleFullSources,
 ): AlsRifleEvaluation {
-  refreshIdleAdditive(runtime, sources)
-  evaluateRifleStates(runtime, input, sources)
+  if (isStateMachineStateReferenced(runtime.gameplayTagsBlend, 0)) {
+    refreshIdleAdditive(runtime, sources)
+    evaluateRifleStates(runtime, input, sources)
+  }
   evaluateActionPoses(runtime, sources)
   evaluateTransitionStack(
     runtime.gameplayTagsBlend,
