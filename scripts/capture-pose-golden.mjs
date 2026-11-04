@@ -9,7 +9,7 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js'
 const [directory = '/tmp/als-golden'] = process.argv.slice(2)
 const out = resolve(directory)
 await mkdir(out, { recursive: true })
-const vite = await createServer({ configFile: false, server: { middlewareMode: true }, appType: 'custom' })
+const vite = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false }, appType: 'custom' })
 try {
   globalThis.window = globalThis
   const { createAlsAnimationInstance } = await vite.ssrLoadModule('/src/als/AlsAnimationInstance.ts')
