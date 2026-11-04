@@ -68,6 +68,12 @@ export function serializeAnimationAssets(scene: Object3D, clips: readonly Animat
       nodes.push(...ancestors.reverse())
     }
   })
+  const channels = new WeakMap<Float32Array, Float32Array>()
+  const pack = (source: Float32Array) => {
+    let owned = channels.get(source)
+    if (!owned) { owned = source.slice(); channels.set(source, owned) }
+    return owned
+  }
   return {
     key: clips.map(clip => clip.uuid).join(',') + ':' + overlayClips.map(clip => clip.uuid).join(',') + ':' + JSON.stringify(states),
     nodes: nodes.map(node => ({ name: node.name, bone: node.type === 'Bone', parent: nodes.indexOf(node.parent!),
@@ -75,9 +81,10 @@ export function serializeAnimationAssets(scene: Object3D, clips: readonly Animat
     clips: [...clips, ...overlayClips].map(clip => {
       const serialized = clip.toJSON()
       // Structured clone preserves typed storage. Avoid expanding every key into JS numbers
-      // once per worker; AnimationClip.parse accepts the same ArrayLike key channels.
+      // once per worker. Own the views: GLTF tracks can point into the entire asset buffer,
+      // and structured clone would otherwise copy geometry and images along with the keys.
       return { ...serialized, tracks: serialized.tracks.map((track, index) => ({ ...track,
-        times: clip.tracks[index].times, values: clip.tracks[index].values,
+        times: pack(clip.tracks[index].times), values: pack(clip.tracks[index].values),
       })) }
     }),
     overlayClipNames: overlayClips.map(clip => clip.name), states,

@@ -14,8 +14,8 @@ it('publishes the exact CPU golden poses and curves through a real worker', asyn
   const bytes = readFileSync(new URL('../../../public/assets/skm-als.glb', import.meta.url))
   const gltf = await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '')
   const assets = serializeAnimationAssets(gltf.scene, gltf.animations)
-  if (process.env.ALS_WORKER_MEMORY === '1') console.log('[ALS keyframe bytes per worker]', assets.clips.reduce((total, clip) =>
-    total + clip.tracks.reduce((sum, track) => sum + track.times.byteLength + track.values.byteLength, 0), 0))
+  if (process.env.ALS_WORKER_MEMORY === '1') process.stdout.write('[ALS keyframe bytes per worker] ' + assets.clips.reduce((total, clip) =>
+    total + clip.tracks.reduce((sum, track) => sum + track.times.byteLength + track.values.byteLength, 0), 0) + '\n')
   const worker = new Worker(new URL('../../../scripts/animation-worker-test-host.mjs', import.meta.url), { execArgv: [] })
   try {
     await once(worker, 'message')
