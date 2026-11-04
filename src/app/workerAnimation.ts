@@ -39,6 +39,7 @@ export function createWorkerAnimation(scene: Object3D, animations: AnimationClip
   const command = (value: AnimationCommand) => commands.push(value)
   return {
     clock: clock as Readonly<AlsAnimationClock>, ragdolling,
+    get ready() { return clock.updates > 0 },
     connect() {
       connection = connectAnimationWorker(assets!, result => {
         // Keep only the newest completed publication. No shared mutable pose buffer crosses threads.

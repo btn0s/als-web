@@ -183,7 +183,7 @@ export function AlsRemoteActor({ renderCharacter, collisionGroups = ALS_CHARACTE
     setRapierAlsStanceCapsules(standing.current, crouching.current, driver.character.stance)
     if (firstFrame) body.current.setTranslation({ x: state.pos[0], y: state.pos[1], z: state.pos[2] }, true)
     body.current.setNextKinematicTranslation({ x: state.pos[0], y: state.pos[1], z: state.pos[2] })
-    root.current.visible = true
+    root.current.visible = animation.ready
     root.current.position.set(state.pos[0], state.pos[1] + resolveAlsMeshRootRelativeY(
       driver.character.stance, driver.character.locomotionMode), state.pos[2])
     root.current.rotation.y = unrealYawDegreesToThreeRadians(state.actorYaw)
