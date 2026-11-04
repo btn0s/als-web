@@ -6874,6 +6874,12 @@ export function createAlsAnimationInstance(gltf: {
       evaluationDelta,
       captureControlRigComponentPositions,
     )
+    // Remote actors opt out of diagnostics; pose publication and native post-update are
+    // complete independently of the diagnostic string tables and correction scans below.
+    if (gltf.publishDiagnostics === false || gltf.exposeDebugGlobals === false) {
+      finishGraphUpdate()
+      return
+    }
     for (const role of Object.keys(CLIP_ROLES) as ClipRole[]) {
       const clip = roles[role]
       if (clip) {
