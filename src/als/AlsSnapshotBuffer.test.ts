@@ -29,6 +29,14 @@ describe('AlsSnapshotBuffer', () => {
     expect(buffer.sample(100)!.state).toMatchObject({ gait: 'sprinting', stance: 'crouching',
       overlay: 'rifle', aiming: true, locomotionMode: 'inAir' })
   })
+  it('interpolates externally resolved stance amount on the playback clock', () => {
+    const buffer = new AlsSnapshotBuffer({ interpolationDelayMs: 0 })
+    const animation = { hasInput: false, inputYaw: 0, relativeAcceleration: { x: 0, y: 0 } }
+    buffer.push(snapshot(0, { animation: { ...animation, crouchingAmount: 0 } }))
+    buffer.push(snapshot(100, { stance: 'crouching', animation: { ...animation, crouchingAmount: 1 } }))
+    expect(buffer.sample(25)!.state.animation!.crouchingAmount).toBe(.25)
+    expect(buffer.sample(75)!.state.animation!.crouchingAmount).toBe(.75)
+  })
   it('takes the shortest yaw path through both sides of the wrap', () => {
     const buffer = new AlsSnapshotBuffer({ interpolationDelayMs: 0 })
     buffer.push(snapshot(0, { actorYaw: 170, viewYaw: -170 }))

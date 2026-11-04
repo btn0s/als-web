@@ -24,6 +24,8 @@ export interface AlsCharacterSnapshot {
    * The recorder supplies these; servers may forward them unchanged. No movement authority.
    */
   animation?: {
+    /** Externally resolved grounded pose blend; omitted actors retain authored stance timing. */
+    crouchingAmount?: number
     overlayMode?: string
     /** Base overlay='pistol' defaults to two-handed when this presentation detail is absent. */
     pistolOverlayMode?: AlsPistolOverlayMode

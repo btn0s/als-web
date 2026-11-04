@@ -77,6 +77,7 @@ export class AlsRemoteCharacter {
       rotateInPlaceOverride: false,
       locomotionYawSpeed: delta > 0 ? unwindDegrees(snapshot.actorYaw - previous!.actorYaw) / delta : 0,
     })
+    this.controls.crouchingAmount = snapshot.animation?.crouchingAmount
     if (snapshot.animation) {
       Object.assign(this.controls.relativeAccelerationAmount, snapshot.animation.relativeAcceleration)
     }

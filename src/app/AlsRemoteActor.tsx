@@ -1,3 +1,4 @@
+import type { AlsGroundPredictionCapsuleSweep } from '../als/State/AlsInAirState'
 import type { ConsumerOverlayStates } from '../als/AnimGraph/consumerOverlayStates'
 import type { AlsRagdollingSettings } from '../als/Settings/AlsRagdollingSettings'
 import { notifyAlsAnimNotifyStateSetLocomotionActionBegin, notifyAlsAnimNotifyStateSetLocomotionActionEnd } from '../als/Notifies/AlsAnimNotifyState_SetLocomotionAction'
@@ -51,6 +52,8 @@ export interface AlsRemoteActorProps {
   now?: () => number
   offset?: readonly [number, number, number]
   footIk?: boolean
+  /** Disable cosmetic landing anticipation when an external simulation owns the body pose. */
+  groundPrediction?: boolean
   animationLod?: AlsAnimationLodSource
   worldTime?: Readonly<WorldTimeState>
   /** Delivered once for each received actionSeq crossed by playback, including skipped poses. */
@@ -71,7 +74,7 @@ const warnUnsupported = (feature: string) => console.warn(`[AlsRemoteActor] Unsu
  * critical actions still run at full rate. No measured millisecond budget is claimed.
  */
 export function AlsRemoteActor({ renderCharacter, collisionGroups = ALS_CHARACTER_COLLISION_GROUPS, overlayStates, renderOverlayObject, snapshots, now = clock, offset = origin,
-  footIk = true, animationLod, worldTime, ragdollRef, ragdollingSettings, onAction, onAnimationClock, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
+  footIk = true, groundPrediction = true, animationLod, worldTime, ragdollRef, ragdollingSettings, onAction, onAnimationClock, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
   const gltf = useSuspenseAlsCharacterGltf()
   // Cached materials/clips are shared; each remote (including ghosts) owns its skeleton.
   const scene = useMemo(() => clone(gltf.scene), [gltf.scene])
@@ -88,6 +91,10 @@ export function AlsRemoteActor({ renderCharacter, collisionGroups = ALS_CHARACTE
     resolveExcludeRigidBody: () => body.current,
     filterFlags: rapier.QueryFilterFlags.EXCLUDE_SENSORS,
   }), [world, rapier])
+  const predictGround = useRef(groundPrediction)
+  predictGround.current = groundPrediction
+  const predictionSweep = useCallback<AlsGroundPredictionCapsuleSweep>(
+    query => predictGround.current ? sweep(query) : null, [sweep])
   const traceEnabled = useRef(footIk)
   const trace = useMemo(() => createRapierAlsControlRigFootTrace({ world,
     Ray: rapier.Ray, component: scene,
@@ -100,9 +107,9 @@ export function AlsRemoteActor({ renderCharacter, collisionGroups = ALS_CHARACTE
     () => (query) => traceEnabled.current ? trace(query) : null, [trace],
   )
   const animation = useMemo(() => createAlsAnimationInstance({
-    scene, animations: gltf.animations, overlayStates, groundPredictionSweep: sweep,
+    scene, animations: gltf.animations, overlayStates, groundPredictionSweep: predictionSweep,
     controlRigFootTrace: lodTrace, publishDiagnostics: false,
-  }), [scene, gltf.animations, sweep, lodTrace, overlayStates])
+  }), [scene, gltf.animations, predictionSweep, lodTrace, overlayStates])
   const ragdoll = useAlsRagdoll(driver.character, animation, body, standing, crouching, ragdollRef, worldTime)
   const warned = useRef(new Set<string>())
   const active = useRef(false)

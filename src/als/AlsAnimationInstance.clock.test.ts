@@ -16,6 +16,20 @@ beforeAll(async () => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('local and interpolated remote animation clocks', () => {
+  it.each(['Rifle', 'PistolTwoHanded'])('publishes an external crouch blend in the same frame for %s', overlayMode => {
+    vi.stubGlobal('window', {})
+    const instance = createAlsAnimationInstance({ scene: clone(gltf.scene), animations: gltf.animations, publishDiagnostics: false })
+    const driver = new AlsRemoteCharacter()
+    for (const amount of [0, .25, .5, 1, .75, 0]) {
+      driver.apply({ t: instance.clock.updates * 16, seq: instance.clock.updates, pos: [0, .9, 0], vel: [0, 0, 0], actorYaw: 0, viewYaw: 0, viewPitch: 0,
+        gait: 'walking', stance: amount ? 'crouching' : 'standing', rotationMode: 'aiming', locomotionMode: 'grounded', action: 'none', actionSeq: 0, overlay: 'rifle', aiming: false,
+        animation: { overlayMode, crouchingAmount: amount, hasInput: false, inputYaw: 0, relativeAcceleration: { x: 0, y: 0 } } })
+      instance.refresh(1 / 60, driver.controls)
+      expect(instance.inspectPose('locomotion').curves.get('PoseCrouching') ?? 0).toBeCloseTo(amount, 5)
+      expect(instance.state.crouchingAmount).toBe(amount)
+    }
+  })
+
   it('separates the graph clock from cadence caused by an incorrectly classified gait', () => {
     vi.stubGlobal('window', {})
     const rates = (['Walking', 'Running'] as const).map(gait => {

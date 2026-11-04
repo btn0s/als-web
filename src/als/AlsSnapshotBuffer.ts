@@ -93,6 +93,9 @@ export class AlsSnapshotBuffer {
       state.actorYaw = unwindDegrees(a.actorYaw + unwindDegrees(b.actorYaw - a.actorYaw) * alpha)
       state.viewYaw = unwindDegrees(a.viewYaw + unwindDegrees(b.viewYaw - a.viewYaw) * alpha)
       state.viewPitch = a.viewPitch + (b.viewPitch - a.viewPitch) * alpha
+      if (state.animation?.crouchingAmount !== undefined && b.animation?.crouchingAmount !== undefined) {
+        state.animation.crouchingAmount += (b.animation.crouchingAmount - state.animation.crouchingAmount) * alpha
+      }
       if (state.animation?.rolling && b.animation?.rolling
         && a.actionSeq === b.actionSeq) {
         state.animation.rolling.position +=
