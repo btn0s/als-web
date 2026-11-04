@@ -18,7 +18,6 @@ import {
   type RapierRigidBody,
 } from '@react-three/rapier'
 import {
-  Suspense,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -685,14 +684,14 @@ function LoadedCharacter({
           {renderOverlayObject?.(gltf.scene)}
         </group>
         {!renderOverlayObject && isPistolOverlayMode(character.overlayMode) && (
-          <Suspense fallback={null}>
+          <>
             <PistolOverlayObject characterScene={gltf.scene} url={resolveOverlayObjectUrl('pistol', overlayObjectAssets)} onMount={onOverlayObjectMount} />
-          </Suspense>
+          </>
         )}
         {!renderOverlayObject && character.overlayMode === 'Rifle' && (
-          <Suspense fallback={null}>
+          <>
             <RifleOverlayObject characterScene={gltf.scene} url={resolveOverlayObjectUrl('rifle', overlayObjectAssets)} onMount={onOverlayObjectMount} />
-          </Suspense>
+          </>
         )}
       </group>
     </RigidBody>

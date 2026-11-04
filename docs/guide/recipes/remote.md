@@ -4,6 +4,12 @@ Prefer `Character onSnapshot={send} snapshotRateHz={20}`. The recorder captures 
 
 Snapshot `pos` is the Rapier capsule anchor in three.js metres; `vel` is three.js m/s. Angles are ALS degrees. Preserve `gait`, `stance`, `rotationMode`, `locomotionMode`, `actorYaw`, `viewYaw`, `viewPitch`, `aiming`, `action`, `actionSeq`, overlay and the optional `animation` intent (`hasInput`, `inputYaw`, `targetYaw`, `relativeAcceleration`, montage positions). The [snapshot type](../../../src/als/AlsCharacterSnapshot.ts) is the wire reference. ALS converts raw speed to cm/s inside [animation](../../../src/als/AlsAnimationInstance.ts); Relay must forward m/s. A game protocol using feet positions subtracts `ALS_STANDING_CAPSULE_HALF_HEIGHT` (0.9 m) when encoding and adds it on receipt, even during crouch. The mesh root offset is separate (-0.92 m). Blacksite's adapter in `packages/subject/src/remote-snapshot.ts` does this: `createPawnMoveMessage(snapshot, intent, seq)` preserves recorder gait, stance, body yaw, rotation mode and animation intent; `toAlsRemoteSnapshot(state)` restores them and converts feet to anchor.
 
+For an external simulation that already resolves crouch timing, send
+`animation.crouchingAmount` (0–1). It owns the grounded linked-stance blend on the snapshot clock,
+including overlay references; omitted values retain ALS's authored stance transitions. Consumers
+using a shared parametric hit pose can disable cosmetic terrain pose changes with
+`footIk={false}` and `groundPrediction={false}`; the authored Control Rig still evaluates.
+
 `AlsRemoteCharacter` applies a snapshot to animation controls; `AlsRemoteActor` wraps it with mesh, kinematic capsule, action edges and interpolation. Use `onAction` for game presentation and `onUnsupportedState` for ragdoll/get-up states that require a cosmetic ragdoll trigger. Keep authoritative movement in your game sim. `AlsCharacterRecorder` + `AlsSnapshotBuffer` + `AlsRemoteActor` also implement local recorder/ghost playback in [AlsGhostDemo](../../../src/app/AlsGhostDemo.tsx). [Remote driver test](../../../src/als/AlsRemoteCharacter.test.ts).
 
 ## A different skinned character

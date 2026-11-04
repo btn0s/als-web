@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
-import { useGLTF } from '@react-three/drei'
+import { readAlsCharacterGltf } from './AlsCharacterGltf'
 import { useFrame } from '@react-three/fiber'
 import type { Object3D } from 'three'
 import { clone } from 'three/addons/utils/SkeletonUtils.js'
@@ -33,7 +33,7 @@ function OverlayObject({ characterScene, isVisible, url, onMount, family, attach
   attach: typeof attachRifleOverlayObject
 }) {
   // Props have no ALS animation extras. Keep their authored materials and clone per actor.
-  const gltf = useGLTF(url)
+  const gltf = readAlsCharacterGltf(url)
   const scene = useMemo(() => clone(gltf.scene), [gltf.scene])
   const mountHandler = useRef(onMount)
   mountHandler.current = onMount

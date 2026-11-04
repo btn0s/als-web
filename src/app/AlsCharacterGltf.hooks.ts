@@ -1,4 +1,4 @@
-import { use, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { ALS_CHARACTER_URL, clearAlsCharacterGltf, preloadAlsCharacterGltf } from './AlsCharacterGltf'
 
@@ -44,9 +44,4 @@ export function useAlsCharacterGltf(url = ALS_CHARACTER_URL) {
   }, [url])
 
   return { gltf, status, progress, retry }
-}
-
-/** Shared immutable asset; clone its skeleton/scene for each actor before animating. */
-export function useSuspenseAlsCharacterGltf(url = ALS_CHARACTER_URL): GLTF {
-  return use(preloadAlsCharacterGltf(url))
 }

@@ -14,7 +14,7 @@ import { assertAlsAnimationExtras } from './reference/animationExtrasSequences'
 import * as THREE from 'three'
 import type { AlphaBlendOption } from '../engine/alphaBlend'
 import { pickClip } from '../engine/pickClip'
-import { applyPose, createPoseApplicator } from '../engine/applyPose'
+import { applyPose, createPoseApplicator, trackPoseGeneration } from '../engine/applyPose'
 import { compileAuthoredAdditive } from '../engine/authoredAdditive'
 import {
   accumulatePose,
@@ -655,6 +655,8 @@ export interface AlsAnimationInstanceControls {
   movingSmooth: boolean
   disableFootLock?: boolean
   stance: AlsStance
+  /** External presentation authority can supply the grounded linked-stance blend directly. */
+  crouchingAmount?: number
   rotationMode: AlsRotationMode
   viewMode?: AlsViewMode
   viewPitchAngle?: number
@@ -1294,6 +1296,7 @@ export function createAlsAnimationInstance(gltf: {
   const rig = createRigDefinition(gltf.scene, ALS_VIRTUAL_BONES)
   const consumerLocomotion = createConsumerLocomotionStates(rig, gltf.locomotionStates)
   const applicator = createPoseApplicator(gltf.scene, rig)
+  trackPoseGeneration(gltf.scene)
   const ragdolling = createAlsRagdollPose(gltf.scene, gltf.animations)
   const evaluator = createPoseEvaluator(rig, { development: import.meta.env.DEV })
   const rigBoneNames = new Set(rig.boneNames)
@@ -5022,6 +5025,10 @@ export function createAlsAnimationInstance(gltf: {
       resolveAlsLayeringState(publishedCurves),
     )
     refreshPose(publishedCurves, gaitAmounts)
+    if (controls.crouchingAmount !== undefined) {
+      gaitAmounts.crouchingAmount = clamp01(controls.crouchingAmount)
+      gaitAmounts.standingAmount = 1 - gaitAmounts.crouchingAmount
+    }
     const viewRefresh = refreshViewAnimationState(viewAnimationState, {
       viewBlockAmount: publishedCurves.get(VIEW_BLOCK_CURVE_NAME) ?? 0,
       allowAimingAmount: publishedCurves.get(ALLOW_AIMING_CURVE_NAME) ?? 0,
@@ -5353,7 +5360,16 @@ export function createAlsAnimationInstance(gltf: {
       activeGroundedStanceState = null
     }
 
-    if (previousStance === null) {
+    if (controls.crouchingAmount !== undefined) {
+      // A replicated pose blend already owns its time. Do not start a second stance clock.
+      previousStance = controls.stance
+      activeGroundedStanceState = null
+      groundedStanceTransitionSource = null
+      groundedStanceTransitionState.active = false
+      stanceTransitionState.crouchingAmount = clamp01(controls.crouchingAmount)
+      stanceTransitionState.footLeftLock = 0
+      stanceTransitionState.footRightLock = 0
+    } else if (previousStance === null) {
       previousStance = controls.stance
       stanceTransitionState.crouchingAmount = targetCrouchingAmount
       groundedStanceTransitionState.crouchingAmount =
@@ -5473,7 +5489,7 @@ export function createAlsAnimationInstance(gltf: {
         groundedStanceTransitionState.crouchingAmount
       stanceTransitionState.footLeftLock = 0
       stanceTransitionState.footRightLock = 0
-    } else {
+    } else if (controls.crouchingAmount === undefined) {
       refreshStanceTransition(
         stanceTransitionState,
         targetCrouchingAmount,

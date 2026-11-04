@@ -4,6 +4,9 @@ import { expect, it, vi } from 'vitest'
 import { SkinnedMesh, type Object3D } from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { clone } from 'three/addons/utils/SkeletonUtils.js'
+import { applyPose, createPoseApplicator, trackPoseGeneration } from '../engine/applyPose'
+import { createRigDefinition } from '../engine/rig'
+import { createPoseBuffer, resetPoseToReference } from '../engine/poseBuffer'
 import { createRetargetedCharacter } from './retargetedCharacter'
 
 it('owns independent target skeletons and restores only its source on disposal', async () => {
@@ -27,7 +30,16 @@ it('owns independent target skeletons and restores only its source on disposal',
   expect(firstMesh.layers.mask).toBe(2)
   expect(mesh(asset).visible).toBe(true)
   expect(mesh(firstSource).visible).toBe(false)
-  first.update()
+  expect(first.update()).toBe(true)
+  expect(first.update()).toBe(true) // untracked/manual producers remain supported
+  trackPoseGeneration(firstSource)
+  expect(first.update()).toBe(true)
+  expect(first.update()).toBe(false)
+  const rig = createRigDefinition(asset)
+  const pose = resetPoseToReference(createPoseBuffer(rig.boneCount),rig)
+  applyPose(createPoseApplicator(firstSource,rig),pose)
+  expect(first.update()).toBe(true)
+  expect(first.update()).toBe(false)
   first.dispose()
   expect(disposeSkeleton).toHaveBeenCalledOnce()
   expect(disposeGeometry).not.toHaveBeenCalled()

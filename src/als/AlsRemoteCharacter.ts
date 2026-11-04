@@ -23,8 +23,8 @@ const action = {
 export class AlsRemoteCharacter {
   readonly character
   readonly animationRate
-  constructor(ragdollingSettings?: Partial<AlsRagdollingSettings>, animationLodPhase?: number) {
-    this.animationRate = new AlsAnimationUpdateRate(animationLodPhase)
+  constructor(ragdollingSettings?: Partial<AlsRagdollingSettings>) {
+    this.animationRate = new AlsAnimationUpdateRate()
     this.character = createAlsCharacter({ settings: {
       Ragdolling: { ...ALS_RAGDOLLING_SETTINGS, ...ragdollingSettings },
     } })
@@ -77,6 +77,7 @@ export class AlsRemoteCharacter {
       rotateInPlaceOverride: false,
       locomotionYawSpeed: delta > 0 ? unwindDegrees(snapshot.actorYaw - previous!.actorYaw) / delta : 0,
     })
+    this.controls.crouchingAmount = snapshot.animation?.crouchingAmount
     if (snapshot.animation) {
       Object.assign(this.controls.relativeAccelerationAmount, snapshot.animation.relativeAcceleration)
     }
