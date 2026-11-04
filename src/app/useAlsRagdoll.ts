@@ -10,7 +10,7 @@ import type { AlsRagdollHandle } from '../engine/rapierAlsRagdoll'
 import { ALS_CAPSULE_RADIUS, ALS_STANDING_CAPSULE_HALF_HEIGHT, getAlsCapsuleHalfHeight } from '../als/AlsCharacter.hooks'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
 
-export function useAlsRagdoll(character: AlsCharacter, animation: AlsAnimationInstance,
+export function useAlsRagdoll(character: AlsCharacter, animation: Pick<AlsAnimationInstance, 'ragdolling' | 'StopMontages' | 'getUpMontage'>,
   owner: RefObject<RapierRigidBody | null>, standing: RefObject<RapierCollider | null>,
   crouching: RefObject<RapierCollider | null>, output?: RefObject<AlsRagdollHandle | null>, worldTime?: Readonly<WorldTimeState>) {
   const { world } = useRapier()

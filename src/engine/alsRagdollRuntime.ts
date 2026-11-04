@@ -11,7 +11,7 @@ import type { PhysicsBoneWorldPose } from './physicsPoseBridge'
 interface Options {
   world: World
   character: AlsCharacter
-  animation: AlsAnimationInstance
+  animation: Pick<AlsAnimationInstance, 'ragdolling' | 'StopMontages' | 'getUpMontage'>
   owner: () => RigidBody | null
   colliders: () => (Collider | null)[]
   halfHeight: () => number

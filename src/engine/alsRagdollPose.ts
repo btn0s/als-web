@@ -24,6 +24,7 @@ export function createAlsRagdollPose(scene: Object3D, animations: AnimationClip[
   const runtime = {
     bridge, boneNames, state, scene,
     active: false,
+    snapshotGeneration: 0,
     velocity: { x: 0, y: 0, z: 0 },
     physics: null as (() => ReadonlyMap<string, PhysicsBoneWorldPose>) | null,
     targets: new Map<string, PhysicsBoneWorldPose>(),
@@ -36,6 +37,7 @@ export function createAlsRagdollPose(scene: Object3D, animations: AnimationClip[
         bone.scale.toArray(snapshot.scales, i * 3)
       }
       state.FinalRagdollPose = snapshot
+      runtime.snapshotGeneration++
       return snapshot
     },
     restoreSnapshot(world: ReadonlyMap<string, PhysicsBoneWorldPose>) {
@@ -43,11 +45,20 @@ export function createAlsRagdollPose(scene: Object3D, animations: AnimationClip[
       // Rebase against that restored component, never the preceding capsule transform.
       pendingPelvis = world
     },
-    evaluate(animation: LocalPoseBuffer, dt: number) {
+    setSnapshot(data: Float32Array) {
+      snapshot.data.set(data)
+      state.FinalRagdollPose = snapshot
+      runtime.snapshotGeneration++
+    },
+    prepareSnapshot() {
       if (pendingPelvis) {
         bridge.composeLocalPose(snapshot, pendingPelvis, snapshot)
         pendingPelvis = null
+        runtime.snapshotGeneration++
       }
+    },
+    evaluate(animation: LocalPoseBuffer, dt: number) {
+      runtime.prepareSnapshot()
       refreshRagdollingOnGameThread(state, runtime.active ? 'Ragdolling' : null, runtime.velocity)
       const weights = refreshAlsRagdollingGraph(graph, runtime.active ? 'Ragdolling' : null, dt)
       if (runtime.active && flail) {
@@ -58,6 +69,10 @@ export function createAlsRagdollPose(scene: Object3D, animations: AnimationClip[
       } else if (state.FinalRagdollPose && weights.finalRagdollPoseWeight > 0) {
         blendPoseInPlace(animation, snapshot, weights.finalRagdollPoseWeight)
       }
+      runtime.applyPhysics(animation)
+    },
+    /** Rigid-body publication stays on the physics owner after worker animation completes. */
+    applyPhysics(animation: LocalPoseBuffer) {
       if (runtime.active && runtime.physics) {
         runtime.targets = bridge.resolveWorldPoses(animation, boneNames)
         bridge.composeLocalPose(animation, runtime.physics(), animation)

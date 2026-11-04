@@ -40,17 +40,24 @@ it('retains ALS startup limiting for impulses, detaches mesh inheritance and pla
   runtime.beforePhysics(world.timestep); world.step(); runtime.afterPhysics(world.timestep)
   expect(runtime.handle.pelvis.position.toArray().every(Number.isFinite)).toBe(true)
   const saved = JSON.parse(JSON.stringify(runtime.handle.CaptureState())) as ReturnType<typeof runtime.handle.CaptureState>
+  // Rapier normalizes rotations on restore; retain exact state checks except Float32
+  // quaternion roundoff (the orientation is unchanged).
+  const expectSavedState = () => expect(runtime.handle.CaptureState()).toEqual({ ...saved,
+    bodies: saved.bodies.map(body => ({ ...body, rotation: Object.fromEntries(
+      Object.entries(body.rotation).map(([axis, value]) => [axis, expect.closeTo(value, 6)]),
+    ) })),
+  })
   const rejected = structuredClone(saved)
   rejected.bodies[1].boneName = rejected.bodies[0].boneName
   expect(runtime.handle.RestoreState(rejected)).toBe(false)
-  expect(runtime.handle.CaptureState()).toEqual(saved)
+  expectSavedState()
   world.forEachRigidBody(body => {
     if (body.handle === owner.handle) return
     body.setTranslation({ x: 50, y: 25, z: -30 }, true)
     body.setLinvel({ x: 1, y: 2, z: 3 }, true)
   })
   expect(runtime.handle.RestoreState(saved)).toBe(true)
-  expect(runtime.handle.CaptureState()).toEqual(saved)
+  expectSavedState()
   expect(runtime.handle.StopRagdolling()).toBe(true)
   expect(runtime.handle.active).toBe(false)
   expect(gltf.scene.matrixWorldAutoUpdate).toBe(true)
@@ -64,10 +71,10 @@ it('retains ALS startup limiting for impulses, detaches mesh inheritance and pla
   expect(runtime.handle.active).toBe(true)
   expect(collider.isEnabled()).toBe(false)
   expect(character.locomotionAction).toBe('Ragdolling')
-  expect(runtime.handle.CaptureState()).toEqual(saved)
+  expectSavedState()
   const incomplete = structuredClone(saved)
   incomplete.bodies.pop()
   expect(runtime.handle.RestoreState(incomplete)).toBe(false)
-  expect(runtime.handle.CaptureState()).toEqual(saved)
+  expectSavedState()
   runtime.dispose(); world.free()
 })

@@ -5,17 +5,17 @@ import { notifyAlsAnimNotifyStateSetLocomotionActionBegin, notifyAlsAnimNotifySt
 import { useAlsRagdoll } from './useAlsRagdoll'
 import { ALS_CHARACTER_COLLISION_GROUPS, type AlsRagdollHandle } from '../engine/rapierAlsRagdoll'
 export type { AlsRagdollHandle, AlsRagdollStartOptions, AlsRagdollImpulse } from '../engine/rapierAlsRagdoll'
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { CapsuleCollider, RigidBody, useRapier } from '@react-three/rapier'
 import type { RapierCollider, RapierRigidBody } from '@react-three/rapier'
 import { Group } from 'three'
 import { clone } from 'three/addons/utils/SkeletonUtils.js'
-import { createAlsAnimationInstance } from '../als/AlsAnimationInstance'
+import { createWorkerAnimation } from './workerAnimation'
 import type { AlsAnimationClock } from '../als/AlsAnimationInstance'
 import type { AlsControlRigFootOffsetTrace } from '../als/AnimGraph/CR_Als'
 import { AlsRemoteCharacter } from '../als/AlsRemoteCharacter'
-import { resolveAlsAnimationLod, type AlsAnimationLodSource } from '../engine/animationUpdateRate'
+import { resolveAlsAnimationLod, selectAlsAnimationInterval, type AlsAnimationLodSource } from '../engine/animationUpdateRate'
 import type { AlsCharacterSnapshot } from '../als/AlsCharacterSnapshot'
 import { AlsSnapshotBuffer } from '../als/AlsSnapshotBuffer'
 import {
@@ -69,8 +69,8 @@ const warnUnsupported = (feature: string) => console.warn(`[AlsRemoteActor] Unsu
  * + two capsules (one enabled). No controller,
  * local movement/floor/mantle sweeps, camera, audio, debug captures, or root-motion movement.
  * footIk=false removes foot terrain queries for distance LOD; the authored rig still evaluates.
- * Animation LOD holds pose between full-delta graph evaluations while snapshot/action clocks
- * and collision stay current. Invisible actors without a visible shadow skip evaluation;
+ * Pose evaluation runs on a shared worker pool; the main thread publishes the latest completed
+ * pose while workers evaluate the next frame. Snapshot/action clocks and collision stay current. Invisible actors without a visible shadow skip publication; worker poses stay warm for re-entry, and
  * critical actions still run at full rate. No measured millisecond budget is claimed.
  */
 export function AlsRemoteActor({ renderCharacter, collisionGroups = ALS_CHARACTER_COLLISION_GROUPS, overlayStates, renderOverlayObject, snapshots, now = clock, offset = origin,
@@ -106,10 +106,9 @@ export function AlsRemoteActor({ renderCharacter, collisionGroups = ALS_CHARACTE
   const lodTrace = useMemo<AlsControlRigFootOffsetTrace>(
     () => (query) => traceEnabled.current ? trace(query) : null, [trace],
   )
-  const animation = useMemo(() => createAlsAnimationInstance({
-    scene, animations: gltf.animations, overlayStates, groundPredictionSweep: predictionSweep,
-    controlRigFootTrace: lodTrace, publishDiagnostics: false,
-  }), [scene, gltf.animations, predictionSweep, lodTrace, overlayStates])
+  const animation = useMemo(() => createWorkerAnimation(scene, gltf.animations, overlayStates, lodTrace, predictionSweep),
+    [scene, gltf.animations, predictionSweep, lodTrace, overlayStates])
+  useEffect(() => animation.connect(), [animation])
   const ragdoll = useAlsRagdoll(driver.character, animation, body, standing, crouching, ragdollRef, worldTime)
   const warned = useRef(new Set<string>())
   const active = useRef(false)
@@ -194,9 +193,12 @@ export function AlsRemoteActor({ renderCharacter, collisionGroups = ALS_CHARACTE
   useFrame((_, deltaRealTime) => {
     const delta = worldTime ? getWorldDeltaTime(worldTime, deltaRealTime) : deltaRealTime
     if (!active.current) return
-    // Its events are discarded below, so only the next evaluation reads its update.
-    const tick = driver.animationRate.next(delta, resolveAlsAnimationLod(animationLod),
-      driverSnapshot.current?.action !== 'none' || ragdoll.active || cosmeticRagdoll.current, false)
+    const critical = driverSnapshot.current?.action !== 'none' || ragdoll.active || cosmeticRagdoll.current
+    const visibility = resolveAlsAnimationLod(animationLod)
+    animation.publish(delta, critical || !visibility || selectAlsAnimationInterval(visibility) === 1)
+    // Keep worker poses warm offscreen: a suddenly exposed actor must have a current pose
+    // available before its asynchronous next-frame result can arrive. Publication still culls.
+    const tick = driver.animationRate.next(delta, undefined, critical, false)
     if (!tick.update) return
     // Montage time comes from the same interpolated frame as position, including slow motion.
     const mantle = mantleSettings.current
@@ -217,12 +219,7 @@ export function AlsRemoteActor({ renderCharacter, collisionGroups = ALS_CHARACTE
       if (event.notifyEventType === 'Begin') notifyAlsAnimNotifyStateSetLocomotionActionBegin(driver.character, event)
       else notifyAlsAnimNotifyStateSetLocomotionActionEnd(driver.character, event)
     }
-    // Drain authored events, but never let montage notifies acquire character/movement authority.
-    animation.mantlingMontage.takeNotifyEvents()
-    animation.rollingMontage.takeNotifyEvents()
-    animation.rollingMontage.ConsumeExtractedRootMotion()
-    animation.dispatchQueuedFootstepEffectsEvents(() => {})
-    animation.dispatchQueuedAnimEvents({ StartCameraShake: () => {} })
+
   }, ALS_FRAME_PRIORITY.Animation)
 
   return <>
