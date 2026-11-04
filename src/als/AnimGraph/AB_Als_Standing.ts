@@ -1786,10 +1786,12 @@ function evaluateAccelerationStates(
   graph: AlsStandingPoseGraphRuntime,
   input: AlsStandingPoseGraphInput,
   velocityWeights: Float32Array,
+  runtime: AlsStandingGraphRuntime,
 ) {
   for (const state of Object.keys(
     graph.nodes.accelerationStates,
   ) as AlsAccelerationState[]) {
+    if (!runtime.accelerationClocks[state].relevant) continue
     const sources = ACCELERATION_DIRECTIONS.map(
       (direction) => input.accelerationPoses[state][direction],
     )
@@ -1817,7 +1819,7 @@ function evaluateMovementDetails(
   velocityWeights: Float32Array,
 ) {
   evaluateMovement(graph, runtime, input)
-  evaluateAccelerationStates(graph, input, velocityWeights)
+  evaluateAccelerationStates(graph, input, velocityWeights, runtime)
   evaluateStateMachinePose(
     graph,
     runtime.movementDetails.stack,

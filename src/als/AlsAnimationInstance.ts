@@ -6270,7 +6270,7 @@ export function createAlsAnimationInstance(gltf: {
           for (const sample of groundedLocomotionPlayerResults[direction].samples) {
             const sampleIndex = Number(sample.id)
             const source = sources[sampleIndex]
-            if (!source?.clip) continue
+            if (!source?.clip || sample.weight <= 0) continue
             sampleSequencePoseNode(
               rig,
               source.clip,
@@ -6296,6 +6296,7 @@ export function createAlsAnimationInstance(gltf: {
         )
 
         for (const hipsDirection of ALS_HIPS_DIRECTIONS) {
+          if (!standingGraphRuntime.movementDetails.relevant) continue
           standingMovementPoseSources.length = 0
           standingMovementPoseWeights.length = 0
           const samples = readGroundedLocomotionGraph(
@@ -6357,6 +6358,7 @@ export function createAlsAnimationInstance(gltf: {
           const clock = standingGraphRuntime.accelerationClocks[
             player.state
           ]
+          if (!clock.relevant) continue
           for (const direction of accelerationDirections) {
             sampleSequencePoseNode(
               rig,
