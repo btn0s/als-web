@@ -7638,7 +7638,7 @@ export function createAlsAnimationInstance(gltf: {
           finalCurves.get(layer.localSpaceCurve) ?? 0
       }
     }
-    if (gltf.exposeDebugGlobals !== false && gltf.publishDiagnostics !== false) window.__weightTable = normalDebugWeights
+    window.__weightTable = normalDebugWeights
     finishGraphUpdate()
   }
 
