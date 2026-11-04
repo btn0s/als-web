@@ -4549,7 +4549,7 @@ export function createAlsAnimationInstance(gltf: {
 
   function sampleLocomotionSequencePlayers() {
     for (const player of locomotionSequencePlayers) {
-      if (!player.clip) continue
+      if (!player.clip || player.weight <= 0) continue
       sampleSequencePoseNode(
         rig,
         player.clip,
