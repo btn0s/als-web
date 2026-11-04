@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import * as THREE from 'three'
-import { useGLTF } from '@react-three/drei'
+import { readAlsCharacterGltf } from '../../app/AlsCharacterGltf'
 import { sampleRichCurve } from '../../engine/richCurve'
 import type { RichCurveKey } from '../../engine/richCurve'
 
@@ -371,7 +371,7 @@ export function buildLocomotionProfile(animations: THREE.AnimationClip[]): Locom
 
 /** Hook form: derives the profile from the cached ALS character GLB. */
 export function useLocomotionProfile(): LocomotionProfile {
-  const { animations } = useGLTF(MODEL_PATH)
+  const { animations } = readAlsCharacterGltf(MODEL_PATH)
   return useMemo(() => buildLocomotionProfile(animations), [animations])
 }
 

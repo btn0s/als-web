@@ -2,7 +2,7 @@ import { useFrame } from '@react-three/fiber'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Object3D } from 'three'
 import { ALS_FRAME_PRIORITY } from '../engine/alsFramePipeline'
-import { useSuspenseAlsCharacterGltf } from './AlsCharacterGltf.hooks'
+import { readAlsCharacterGltf } from './AlsCharacterGltf'
 import { createRetargetedCharacter } from './retargetedCharacter'
 import type { RetargetedCharacter, RetargetedCharacterOptions } from './retargetedCharacter'
 
@@ -16,7 +16,7 @@ export interface AlsRetargetedCharacterProps extends Omit<RetargetedCharacterOpt
  * by the actor; this component owns target dressing and its StrictMode-safe lifetime. */
 export function AlsRetargetedCharacter({ source, reference, target, profile, meshLayers,
   castShadow, receiveShadow, children }: AlsRetargetedCharacterProps) {
-  const sourceAsset = useSuspenseAlsCharacterGltf()
+  const sourceAsset = readAlsCharacterGltf()
   const [character, setCharacter] = useState<RetargetedCharacter | null>(null)
   const bindScene = reference ?? sourceAsset.scene
   useEffect(() => {

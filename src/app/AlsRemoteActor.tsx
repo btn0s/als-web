@@ -5,7 +5,7 @@ import { notifyAlsAnimNotifyStateSetLocomotionActionBegin, notifyAlsAnimNotifySt
 import { useAlsRagdoll } from './useAlsRagdoll'
 import { ALS_CHARACTER_COLLISION_GROUPS, type AlsRagdollHandle } from '../engine/rapierAlsRagdoll'
 export type { AlsRagdollHandle, AlsRagdollStartOptions, AlsRagdollImpulse } from '../engine/rapierAlsRagdoll'
-import { Suspense, useCallback, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { CapsuleCollider, RigidBody, useRapier } from '@react-three/rapier'
 import type { RapierCollider, RapierRigidBody } from '@react-three/rapier'
@@ -32,7 +32,7 @@ import { createRapierAlsControlRigFootTrace } from '../engine/rapierAlsControlRi
 import { setRapierAlsStanceCapsules } from '../engine/rapierAlsStanceCapsules'
 import { ALS_MESH_COMPONENT_YAW_RADIANS, unrealYawDegreesToThreeRadians } from '../engine/unrealCoordinateSpace'
 import { isPistolOverlayMode } from '../als/AnimGraph/overlayMode'
-import { useSuspenseAlsCharacterGltf } from './AlsCharacterGltf.hooks'
+import { readAlsCharacterGltf } from './AlsCharacterGltf'
 import { PistolOverlayObject, RifleOverlayObject } from './AlsOverlayObjects'
 
 export interface AlsRemoteActorProps {
@@ -75,7 +75,7 @@ const warnUnsupported = (feature: string) => console.warn(`[AlsRemoteActor] Unsu
  */
 export function AlsRemoteActor({ renderCharacter, collisionGroups = ALS_CHARACTER_COLLISION_GROUPS, overlayStates, renderOverlayObject, snapshots, now = clock, offset = origin,
   footIk = true, groundPrediction = true, animationLod, worldTime, ragdollRef, ragdollingSettings, onAction, onAnimationClock, onUnsupportedState = warnUnsupported }: AlsRemoteActorProps) {
-  const gltf = useSuspenseAlsCharacterGltf()
+  const gltf = readAlsCharacterGltf()
   // Cached materials/clips are shared; each remote (including ghosts) owns its skeleton.
   const scene = useMemo(() => clone(gltf.scene), [gltf.scene])
   const { rapier, world } = useRapier()
@@ -233,12 +233,8 @@ export function AlsRemoteActor({ renderCharacter, collisionGroups = ALS_CHARACTE
     </RigidBody>
     <group ref={root} visible={false}>
       <group rotation-y={ALS_MESH_COMPONENT_YAW_RADIANS}>{renderCharacter ? renderCharacter(scene) : <primitive object={scene} dispose={null} />}</group>
-      <Suspense fallback={null}>
         {renderOverlayObject ? renderOverlayObject(scene) : <RifleOverlayObject characterScene={scene} isVisible={isRifleVisible} />}
-      </Suspense>
-      <Suspense fallback={null}>
         {!renderOverlayObject && <PistolOverlayObject characterScene={scene} isVisible={isPistolVisible} />}
-      </Suspense>
     </group>
   </>
 }

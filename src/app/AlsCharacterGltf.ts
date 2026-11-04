@@ -66,13 +66,19 @@ export async function loadAlsCharacterGltf(
   return gltf
 }
 
+const loaded = new Map<string, GLTF>()
+export function readAlsCharacterGltf(url = ALS_CHARACTER_URL): GLTF {
+  const asset = loaded.get(url)
+  if (!asset) throw new Error(`Character was not preloaded: ${url}`)
+  return asset
+}
 const cachedLoads = new Map<string, Promise<GLTF>>()
 
 /** N actors share one download/parse. Rejections stay cached for the error boundary. */
 export function preloadAlsCharacterGltf(url = ALS_CHARACTER_URL, options: AlsCharacterGltfLoadOptions = {}): Promise<GLTF> {
   let pending = cachedLoads.get(url)
   if (!pending) {
-    pending = loadAlsCharacterGltf(url, { onProgress: options.onProgress })
+    pending = loadAlsCharacterGltf(url, { onProgress: options.onProgress }).then(asset => { loaded.set(url, asset); return asset })
     cachedLoads.set(url, pending)
   }
   return pending
@@ -81,6 +87,7 @@ export function preloadAlsCharacterGltf(url = ALS_CHARACTER_URL, options: AlsCha
 /** Clear before resetting a Suspense error boundary to retry; mounted assets remain valid. */
 export function clearAlsCharacterGltf(url = ALS_CHARACTER_URL): void {
   cachedLoads.delete(url)
+  loaded.delete(url)
 }
 
 export async function prewarmAlsCharacter(extraClips: readonly AnimationClip[] = []): Promise<GLTF> {
