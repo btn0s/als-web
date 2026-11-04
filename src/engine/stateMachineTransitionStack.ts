@@ -57,6 +57,16 @@ export interface StateMachineTransitionStack<State> {
     StateMachineTransitionStackStorage<State>
 }
 
+/** Poses read by Evaluate_AnyThread, including alpha-zero incoming transition targets. */
+export function isStateMachineStateReferenced<State>(stack: StateMachineTransitionStack<State>, state: State): boolean {
+  if (stack.activeTransitions.length === 0) return stack.currentState === state
+  if (stack.activeTransitions[0].previousState === state) return true
+  for (const transition of stack.activeTransitions) {
+    if (transition.nextState === state) return true
+  }
+  return false
+}
+
 export type StartStateMachineStandardTransitionResult =
   | 'started'
   | 'alreadyCurrent'

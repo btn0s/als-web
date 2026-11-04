@@ -21,6 +21,7 @@ import {
   advanceStateMachineTransitionStack,
   createStateMachineTransitionStack,
   getStateMachineStateWeight,
+  isStateMachineStateReferenced,
   resetStateMachineTransitionStack,
   startStateMachineStandardTransition,
   type StateMachineStandardTransition,
@@ -886,9 +887,15 @@ function evaluatePistolStates(
   input: AlsPistolFullInput,
   sources: AlsPistolFullSources,
 ) {
-  evaluateRelaxedState(runtime, input, sources)
-  evaluateReadyState(runtime, input, sources)
-  evaluateAimingState(runtime, input, sources)
+  if (isStateMachineStateReferenced(runtime.pistolStates, 'Relaxed')) {
+    evaluateRelaxedState(runtime, input, sources)
+  }
+  if (isStateMachineStateReferenced(runtime.pistolStates, 'Ready')) {
+    evaluateReadyState(runtime, input, sources)
+  }
+  if (isStateMachineStateReferenced(runtime.pistolStates, 'Aiming')) {
+    evaluateAimingState(runtime, input, sources)
+  }
   evaluateTransitionStack(
     runtime.pistolStates,
     (state) => runtime.statePoses[state],
@@ -903,42 +910,48 @@ function evaluateActionPoses(
   sources: AlsPistolFullSources,
 ) {
   const { nodes } = runtime
-  sampleSequencePoseNode(
-    runtime.rig,
-    sources.poses,
-    runtime.graph.gameplayTagsBlend.overrides.Mantling.posesTime,
-    false,
-    nodes.mantling,
-  )
-  sampleSequencePoseNode(
-    runtime.rig,
-    sources.poses,
-    runtime.graph.gameplayTagsBlend.overrides.GettingUp.posesTime,
-    false,
-    nodes.gettingUp,
-  )
-  for (
-    const [name, value]
-    of Object.entries(
-      runtime.graph.gameplayTagsBlend.overrides.GettingUp.curves,
+  if (isStateMachineStateReferenced(runtime.gameplayTagsBlend, 1)) {
+    sampleSequencePoseNode(
+      runtime.rig,
+      sources.poses,
+      runtime.graph.gameplayTagsBlend.overrides.Mantling.posesTime,
+      false,
+      nodes.mantling,
     )
-  ) {
-    nodes.gettingUp.curves.set(name, value)
   }
-  sampleSequencePoseNode(
-    runtime.rig,
-    sources.poses,
-    runtime.graph.gameplayTagsBlend.overrides.Rolling.posesTime,
-    false,
-    nodes.rolling,
-  )
-  for (
-    const [name, value]
-    of Object.entries(
-      runtime.graph.gameplayTagsBlend.overrides.Rolling.curves,
+  if (isStateMachineStateReferenced(runtime.gameplayTagsBlend, 2)) {
+    sampleSequencePoseNode(
+      runtime.rig,
+      sources.poses,
+      runtime.graph.gameplayTagsBlend.overrides.GettingUp.posesTime,
+      false,
+      nodes.gettingUp,
     )
-  ) {
-    nodes.rolling.curves.set(name, value)
+    for (
+      const [name, value]
+      of Object.entries(
+        runtime.graph.gameplayTagsBlend.overrides.GettingUp.curves,
+      )
+    ) {
+      nodes.gettingUp.curves.set(name, value)
+  }
+  }
+  if (isStateMachineStateReferenced(runtime.gameplayTagsBlend, 3)) {
+    sampleSequencePoseNode(
+      runtime.rig,
+      sources.poses,
+      runtime.graph.gameplayTagsBlend.overrides.Rolling.posesTime,
+      false,
+      nodes.rolling,
+    )
+    for (
+      const [name, value]
+      of Object.entries(
+        runtime.graph.gameplayTagsBlend.overrides.Rolling.curves,
+      )
+    ) {
+      nodes.rolling.curves.set(name, value)
+  }
   }
 }
 
@@ -951,8 +964,10 @@ export function evaluateAlsPistolGraph(
   input: AlsPistolFullInput,
   sources: AlsPistolFullSources,
 ): AlsPistolEvaluation {
-  refreshIdleAdditive(runtime, sources)
-  evaluatePistolStates(runtime, input, sources)
+  if (isStateMachineStateReferenced(runtime.gameplayTagsBlend, 0)) {
+    refreshIdleAdditive(runtime, sources)
+    evaluatePistolStates(runtime, input, sources)
+  }
   evaluateActionPoses(runtime, sources)
   evaluateTransitionStack(
     runtime.gameplayTagsBlend,
