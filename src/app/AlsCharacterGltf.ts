@@ -9,6 +9,8 @@ export const ALS_CHARACTER_URL = '/assets/skm-als.glb'
 
 export interface AlsCharacterGltfLoadOptions {
   signal?: AbortSignal
+  /** Configure consumer-owned compression decoders before parsing the shared character. */
+  configureLoader?: (loader: GLTFLoader) => void
   /** Download fraction in [0, 1]; absent content-length leaves progress indeterminate. */
   onProgress?: (progress: number) => void
 }
@@ -16,7 +18,7 @@ export interface AlsCharacterGltfLoadOptions {
 /** Uses three's loader: three-stdlib drops the authored animation extras. */
 export async function loadAlsCharacterGltf(
   url = ALS_CHARACTER_URL,
-  { signal, onProgress }: AlsCharacterGltfLoadOptions = {},
+  { signal, onProgress, configureLoader }: AlsCharacterGltfLoadOptions = {},
 ): Promise<GLTF> {
   signal?.throwIfAborted()
   const response = await fetch(url, { signal })
@@ -59,7 +61,9 @@ export async function loadAlsCharacterGltf(
     throw new Error('Character response was not a GLB')
   }
   const resourcePath = new URL('.', response.url || new URL(url, globalThis.location?.href).href).href
-  const gltf = await new GLTFLoader().parseAsync(buffer, resourcePath)
+  const loader = new GLTFLoader()
+  configureLoader?.(loader)
+  const gltf = await loader.parseAsync(buffer, resourcePath)
   // Parsing is not cancellable, but an aborted request must never publish its result.
   signal?.throwIfAborted()
   applyCharacterMaterialOverrides(gltf.scene)
@@ -78,7 +82,7 @@ const cachedLoads = new Map<string, Promise<GLTF>>()
 export function preloadAlsCharacterGltf(url = ALS_CHARACTER_URL, options: AlsCharacterGltfLoadOptions = {}): Promise<GLTF> {
   let pending = cachedLoads.get(url)
   if (!pending) {
-    pending = loadAlsCharacterGltf(url, { onProgress: options.onProgress }).then(asset => { loaded.set(url, asset); return asset })
+    pending = loadAlsCharacterGltf(url, { onProgress: options.onProgress, configureLoader: options.configureLoader }).then(asset => { loaded.set(url, asset); return asset })
     cachedLoads.set(url, pending)
   }
   return pending
