@@ -1,5 +1,4 @@
-import actionContentSource
-  from '../../../scripts/extract-als/action-content.json?raw'
+import actionContentSource from '../../../scripts/extract-als/action-content.json' with { type: 'json' }
 
 export interface AlsRollingSettings {
   readonly Montage: string
@@ -31,9 +30,7 @@ interface SerializedActionContent {
   }[]
 }
 
-const content = JSON.parse(
-  actionContentSource,
-) as SerializedActionContent
+const content = actionContentSource as unknown as SerializedActionContent
 
 if (
   content.schemaVersion !== 1

@@ -13,6 +13,7 @@
   ],
   "type": "module",
   "exports": {
+    "./core": "./src/core.ts",
     "./app/Character": "./src/app/Character.tsx",
     "./app/AlsPhysicsStepper": "./src/app/AlsPhysicsStepper.tsx",
     "./app/AlsPlayer": "./src/app/AlsPlayer.ts",

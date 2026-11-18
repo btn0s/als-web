@@ -1,4 +1,4 @@
-import cameraContentJson from '../../../../scripts/extract-als/camera-content.json?raw'
+import cameraContentJson from '../../../../scripts/extract-als/camera-content.json' with { type: 'json' }
 import {
   CAMERA_SHAKE_BASE_DEFAULTS,
 } from '../../../engine/PlayerCameraManager'
@@ -60,7 +60,7 @@ interface CameraShakeContentOracle {
 }
 
 const ORACLE = (
-  JSON.parse(cameraContentJson) as CameraShakeContentOracle
+  cameraContentJson as unknown as CameraShakeContentOracle
 ).cameraShake
 
 /**

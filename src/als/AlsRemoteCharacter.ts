@@ -1,11 +1,10 @@
-import { ALS_RAGDOLLING_SETTINGS, type AlsRagdollingSettings } from './Settings/AlsRagdollingSettings'
-import { createAlsCharacter, refreshLocomotion } from './AlsCharacter'
+import { ALS_MOVEMENT_SETTINGS, sampleGroundedMovementParameters } from './Settings/AlsMovementSettings'
 import {
   createAlsCharacterAnimationControls, publishAlsCharacterAnimationSnapshot,
-  resolveAlsActorLocation,
-} from './AlsCharacter.hooks'
+  resolveAlsActorLocation, type AlsAnimationCharacter, type AlsAnimationAccelerationLimits,
+} from './AlsCharacterAnimation'
 import { ALS_NO_BASED_MOVEMENT } from './State/AlsMovementBaseState'
-import { unwindDegrees } from './State/AlsLocomotionState'
+import { createAlsLocomotionState, refreshLocomotionState, unwindDegrees } from './State/AlsLocomotionState'
 import type { AlsCharacterSnapshot } from './AlsCharacterSnapshot'
 import { AlsAnimationUpdateRate } from '../engine/animationUpdateRate'
 
@@ -21,13 +20,26 @@ const action = {
  * RefreshCharacter, rotation policy, movement integration, input bindings, or action authority.
  */
 export class AlsRemoteCharacter {
-  readonly character
   readonly animationRate
-  constructor(ragdollingSettings?: Partial<AlsRagdollingSettings>, animationLodPhase?: number) {
-    this.animationRate = new AlsAnimationUpdateRate(animationLodPhase)
-    this.character = createAlsCharacter({ settings: {
-      Ragdolling: { ...ALS_RAGDOLLING_SETTINGS, ...ragdollingSettings },
-    } })
+  readonly character: AlsAnimationCharacter
+  private readonly accelerationLimits: AlsAnimationAccelerationLimits
+
+  constructor(options: {
+    character?: AlsAnimationCharacter
+    animationLodPhase?: number
+    accelerationLimits?: AlsAnimationAccelerationLimits
+  } = {}) {
+    this.character = options.character ?? {
+      desiredAiming: false, desiredRotationMode: 'ViewDirection', desiredStance: 'Standing',
+      desiredGait: 'Running', viewMode: 'ThirdPerson', locomotionMode: 'Grounded',
+      locomotionAction: null, rotationMode: 'ViewDirection', stance: 'Standing', gait: 'Walking',
+      actorYawAngle: 0, viewYawAngle: 0, viewPitchAngle: 0, viewYawSpeed: 0,
+      locomotionState: createAlsLocomotionState(),
+    }
+    this.accelerationLimits = options.accelerationLimits ?? sampleGroundedMovementParameters(
+      ALS_MOVEMENT_SETTINGS.ViewDirection.Standing, 0,
+    )
+    this.animationRate = new AlsAnimationUpdateRate(options.animationLodPhase)
   }
   readonly controls = createAlsCharacterAnimationControls()
   private previous: AlsCharacterSnapshot | null = null
@@ -58,7 +70,7 @@ export class AlsRemoteCharacter {
     // recorder extensions preserve braking versus driven motion and the authored start graph.
     c.locomotionState.hasInput = snapshot.animation?.hasInput
       ?? Math.hypot(velocity.x, velocity.y) > 0.01
-    refreshLocomotion(c, velocity)
+    refreshLocomotionState(c.locomotionState, velocity, c.locomotionState.hasInput)
     c.locomotionState.inputYawAngle = snapshot.animation?.inputYaw ?? c.locomotionState.velocityYawAngle
     c.locomotionState.targetYawAngle = snapshot.animation?.targetYaw ?? snapshot.actorYaw
     resolveAlsActorLocation({ x: snapshot.pos[0], y: snapshot.pos[2], z: snapshot.pos[1] },
@@ -71,7 +83,9 @@ export class AlsRemoteCharacter {
     }
     publishAlsCharacterAnimationSnapshot(this.controls, {
       character: c, location: this.location, basedMovement: ALS_NO_BASED_MOVEMENT,
-      acceleration, overlayMode: snapshot.animation?.overlayMode ?? (snapshot.overlay === 'launcher' ? 'Launcher' : snapshot.overlay === 'rifle' ? 'Rifle'
+      acceleration,
+      accelerationLimits: this.accelerationLimits,
+      overlayMode: snapshot.animation?.overlayMode ?? (snapshot.overlay === 'launcher' ? 'Launcher' : snapshot.overlay === 'rifle' ? 'Rifle'
         : snapshot.overlay === 'pistol' ? pistol : 'Default'),
       movementOverride: false, speedOverride: 0, directionOverride: 0,
       rotateInPlaceOverride: false,

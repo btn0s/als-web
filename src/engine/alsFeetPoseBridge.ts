@@ -200,7 +200,22 @@ export function createAlsFeetPoseBridge(
   if (applicator.bones.length !== rig.boneCount) {
     throw new Error('ALS feet pose bridge received an incompatible pose applicator')
   }
+  return createAlsFeetPoseBridgeFromMatrices(rig, {
+    update: () => component.updateWorldMatrix(true, true),
+    componentMatrix: () => component.matrixWorld,
+    boneMatrix: (index) => applicator.bones[index].matrixWorld,
+  }, useFootIkBones)
+}
 
+export function createAlsFeetPoseBridgeFromMatrices(
+  rig: RigDefinition,
+  source: {
+    update: () => void
+    componentMatrix: () => THREE.Matrix4
+    boneMatrix: (index: number) => THREE.Matrix4
+  },
+  useFootIkBones = true,
+): AlsFeetPoseBridge {
   const pelvisBoneIndex = requireBoneIndex(
     rig,
     REQUIRED_BONE_NAMES.pelvis,
@@ -260,7 +275,7 @@ export function createAlsFeetPoseBridge(
     boneIndex: number,
     target: MutableTransform,
   ) => {
-    applicator.bones[boneIndex].matrixWorld.decompose(
+    source.boneMatrix(boneIndex).decompose(
       boneWorldPosition,
       boneWorldRotation,
       boneWorldScale,
@@ -286,8 +301,9 @@ export function createAlsFeetPoseBridge(
   return {
     targets,
     capturePublishedPose(state) {
-      component.updateWorldMatrix(true, true)
-      const determinant = component.matrixWorld.determinant()
+      source.update()
+      const componentWorld = source.componentMatrix()
+      const determinant = componentWorld.determinant()
       if (
         !Number.isFinite(determinant)
         || Math.abs(determinant) <= TRANSFORM_EPSILON
@@ -297,7 +313,7 @@ export function createAlsFeetPoseBridge(
         )
       }
 
-      component.matrixWorld.decompose(
+      componentWorld.decompose(
         componentWorldPosition,
         componentWorldRotation,
         componentWorldScale,
@@ -313,10 +329,10 @@ export function createAlsFeetPoseBridge(
       componentTransform.scale!.y = componentWorldScale.z
       componentTransform.scale!.z = componentWorldScale.y
 
-      componentWorldInverse.copy(component.matrixWorld).invert()
+      componentWorldInverse.copy(componentWorld).invert()
       pelvisComponentMatrix.multiplyMatrices(
         componentWorldInverse,
-        applicator.bones[pelvisBoneIndex].matrixWorld,
+        source.boneMatrix(pelvisBoneIndex),
       )
       pelvisComponentMatrix.decompose(
         pelvisComponentPosition,

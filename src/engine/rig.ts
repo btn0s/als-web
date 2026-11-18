@@ -42,17 +42,33 @@ export function createRigDefinition(
       bones.push(object)
     }
   })
-  return createRigDefinitionFromBones(
-    skeletonRoot,
-    bones,
-    virtualBoneDefinitions,
-  )
+  const indices = new Map<THREE.Object3D, number>(bones.map((bone, i) => [bone, i]))
+  skeletonRoot.updateWorldMatrix(true, true)
+  return compileRigDefinition(bones.map(bone => {
+    let parent = bone.parent
+    while (parent && !indices.has(parent)) parent = parent.parent
+    return {
+      name: bone.name,
+      parent: parent ? indices.get(parent)! : -1,
+      translation: bone.position.toArray(),
+      rotation: bone.quaternion.toArray(),
+      scale: bone.scale.toArray(),
+      referenceWorld: bone.matrixWorld,
+    }
+  }), virtualBoneDefinitions)
 }
 
-function createRigDefinitionFromBones(
-  skeletonRoot: THREE.Object3D,
-  bones: readonly THREE.Bone[],
-  virtualBoneDefinitions: readonly VirtualBoneDefinition[],
+export interface RigBone {
+  readonly name: string
+  readonly parent: number
+  readonly translation: ArrayLike<number>
+  readonly rotation: ArrayLike<number>
+  readonly scale: ArrayLike<number>
+}
+
+export function compileRigDefinition(
+  bones: readonly (RigBone & { referenceWorld?: THREE.Matrix4 })[],
+  virtualBoneDefinitions: readonly VirtualBoneDefinition[] = [],
 ): RigDefinition {
   const physicalBoneCount = bones.length
   const boneCount = physicalBoneCount + virtualBoneDefinitions.length
@@ -61,49 +77,37 @@ function createRigDefinitionFromBones(
   const referencePositions = new Float32Array(boneCount * 3)
   const referenceRotations = new Float32Array(boneCount * 4)
   const referenceScales = new Float32Array(boneCount * 3)
-  const indices = new Map<THREE.Object3D, number>()
   const names = new Set<string>()
-
-  for (let i = 0; i < physicalBoneCount; i++) {
-    const name = bones[i].name
-    if (names.has(name)) throw new Error(`Rig contains duplicate bone name "${name}"`)
-    names.add(name)
-    indices.set(bones[i], i)
-  }
-
-  for (let i = 0; i < physicalBoneCount; i++) {
-    const bone = bones[i]
-    boneNames[i] = bone.name
-
-    let parent = bone.parent
-    while (parent && !indices.has(parent)) parent = parent.parent
-    parentIndices[i] = parent ? (indices.get(parent) ?? -1) : -1
-
-    const p = i * 3
-    const q = i * 4
-    referencePositions[p] = bone.position.x
-    referencePositions[p + 1] = bone.position.y
-    referencePositions[p + 2] = bone.position.z
-    referenceRotations[q] = bone.quaternion.x
-    referenceRotations[q + 1] = bone.quaternion.y
-    referenceRotations[q + 2] = bone.quaternion.z
-    referenceRotations[q + 3] = bone.quaternion.w
-    referenceScales[p] = bone.scale.x
-    referenceScales[p + 1] = bone.scale.y
-    referenceScales[p + 2] = bone.scale.z
-  }
-
-  skeletonRoot.updateWorldMatrix(true, true)
   const componentTransforms = new Map<string, THREE.Matrix4>()
-  for (const bone of bones) {
-    componentTransforms.set(bone.name, bone.matrixWorld.clone())
-  }
-  const virtualBones: CompiledVirtualBoneDefinition[] = []
-  const inverseSource = new THREE.Matrix4()
-  const relative = new THREE.Matrix4()
+  const orderedTransforms: THREE.Matrix4[] = []
   const position = new THREE.Vector3()
   const rotation = new THREE.Quaternion()
   const scale = new THREE.Vector3()
+
+  for (const [i, bone] of bones.entries()) {
+    if (names.has(bone.name)) throw new Error(`Rig contains duplicate bone name "${bone.name}"`)
+    if (!Number.isInteger(bone.parent) || bone.parent < -1 || bone.parent >= i) {
+      throw new Error(`Rig bone "${bone.name}" must follow its parent`)
+    }
+    names.add(bone.name)
+    boneNames[i] = bone.name
+    parentIndices[i] = bone.parent
+    referencePositions.set(bone.translation, i * 3)
+    referenceRotations.set(bone.rotation, i * 4)
+    referenceScales.set(bone.scale, i * 3)
+    const matrix = bone.referenceWorld ?? new THREE.Matrix4().compose(
+      position.fromArray(bone.translation),
+      rotation.fromArray(bone.rotation),
+      scale.fromArray(bone.scale),
+    )
+    if (!bone.referenceWorld && bone.parent >= 0) matrix.premultiply(orderedTransforms[bone.parent])
+    orderedTransforms.push(matrix)
+    componentTransforms.set(bone.name, matrix)
+  }
+
+  const virtualBones: CompiledVirtualBoneDefinition[] = []
+  const inverseSource = new THREE.Matrix4()
+  const relative = new THREE.Matrix4()
 
   for (
     let virtualBoneOrder = 0;

@@ -1,5 +1,5 @@
 import { Quaternion, type AnimationClip } from 'three'
-import type { AlsAnimationInstanceControls } from '../AlsAnimationInstance'
+import type { AlsAnimationInstanceControls } from '../AlsAnimationCore'
 import { compileClipSampler } from '../../engine/clipSampler'
 import { compileClipCurveSamplers } from '../../engine/curves'
 import { blendPoseInPlace } from '../../engine/blend'

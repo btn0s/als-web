@@ -1,4 +1,4 @@
-import footstepAudioJson from '../../../scripts/extract-als/footstep-audio.json?raw'
+import footstepAudioJson from '../../../scripts/extract-als/footstep-audio.json' with { type: 'json' }
 import type {
   AlsLocomotionMode,
 } from '../AlsCharacter'
@@ -55,7 +55,7 @@ interface ExtractedFootstepAudioOracle {
 }
 
 const ORACLE = (
-  JSON.parse(footstepAudioJson) as ExtractedFootstepAudioOracle
+  footstepAudioJson as unknown as ExtractedFootstepAudioOracle
 )
 
 function footBoneFromOracle(value: string): EAlsFootBone {

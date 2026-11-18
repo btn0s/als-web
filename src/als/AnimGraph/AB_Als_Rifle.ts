@@ -1,5 +1,4 @@
-import animationInstanceSettingsSource
-  from '../../../scripts/extract-als/animation-settings.json?raw'
+import animationInstanceSettingsSource from '../../../scripts/extract-als/animation-settings.json' with { type: 'json' }
 import {
   createInputScaleBiasClampState,
   mapRangeUnclamped,
@@ -839,9 +838,7 @@ interface SerializedAnimationInstanceCurves {
   }>>
 }
 
-const animationInstanceCurves = JSON.parse(
-  animationInstanceSettingsSource,
-) as SerializedAnimationInstanceCurves
+const animationInstanceCurves = animationInstanceSettingsSource as unknown as SerializedAnimationInstanceCurves
 
 function compileInterpolation(
   interpolation: string,

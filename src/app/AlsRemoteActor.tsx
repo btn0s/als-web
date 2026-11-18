@@ -1,5 +1,6 @@
 import type { ConsumerOverlayStates } from '../als/AnimGraph/consumerOverlayStates'
-import type { AlsRagdollingSettings } from '../als/Settings/AlsRagdollingSettings'
+import { ALS_RAGDOLLING_SETTINGS, type AlsRagdollingSettings } from '../als/Settings/AlsRagdollingSettings'
+import { createAlsCharacter } from '../als/AlsCharacter'
 import { notifyAlsAnimNotifyStateSetLocomotionActionBegin, notifyAlsAnimNotifyStateSetLocomotionActionEnd } from '../als/Notifies/AlsAnimNotifyState_SetLocomotionAction'
 import { useAlsRagdoll } from './useAlsRagdoll'
 import { ALS_CHARACTER_COLLISION_GROUPS, type AlsRagdollHandle } from '../engine/rapierAlsRagdoll'
@@ -76,7 +77,10 @@ export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, 
   // Render separately from Rapier's interpolated object: network interpolation already owns
   // presentation. This avoids smoothing snapshots a second time at fixed physics frequency.
   const root = useRef<Group>(null)
-  const driver = useMemo(() => new AlsRemoteCharacter(ragdollingSettings), [ragdollingSettings])
+  const character = useMemo(() => createAlsCharacter({ settings: {
+    Ragdolling: { ...ALS_RAGDOLLING_SETTINGS, ...ragdollingSettings },
+  } }), [ragdollingSettings])
+  const driver = useMemo(() => new AlsRemoteCharacter({ character }), [character])
   const sweep = useMemo(() => createRapierAlsCapsuleSweep({ world,
     Capsule: rapier.Capsule, Ray: rapier.Ray,
     resolveExcludeRigidBody: () => body.current,
@@ -97,7 +101,7 @@ export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, 
     scene, animations: gltf.animations, overlayStates, groundPredictionSweep: sweep,
     controlRigFootTrace: lodTrace, publishDiagnostics: false,
   }), [scene, gltf.animations, sweep, lodTrace, overlayStates])
-  const ragdoll = useAlsRagdoll(driver.character, animation, body, standing, crouching, ragdollRef, worldTime)
+  const ragdoll = useAlsRagdoll(character, animation, body, standing, crouching, ragdollRef, worldTime)
   const warned = useRef(new Set<string>())
   const active = useRef(false)
   const cosmeticRagdoll = useRef(false)
@@ -201,8 +205,8 @@ export function AlsRemoteActor({ overlayStates, renderOverlayObject, snapshots, 
     animation.refresh(tick.delta, driver.controls, false, tick.evaluate)
     onAnimationClock?.(animation.clock)
     for (const event of animation.getUpMontage.takeNotifyEvents()) {
-      if (event.notifyEventType === 'Begin') notifyAlsAnimNotifyStateSetLocomotionActionBegin(driver.character, event)
-      else notifyAlsAnimNotifyStateSetLocomotionActionEnd(driver.character, event)
+      if (event.notifyEventType === 'Begin') notifyAlsAnimNotifyStateSetLocomotionActionBegin(character, event)
+      else notifyAlsAnimNotifyStateSetLocomotionActionEnd(character, event)
     }
     // Drain authored events, but never let montage notifies acquire character/movement authority.
     animation.mantlingMontage.takeNotifyEvents()

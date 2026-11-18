@@ -47,8 +47,8 @@ export interface ExtractedAlsParityOracle {
 type SourceLocation = readonly [path: string, pattern: string]
 
 const animationInstanceDefinition = [
-  'src/als/AlsAnimationInstance.ts',
-  'export function createAlsAnimationInstance',
+  'src/als/AlsAnimationCore.ts',
+  'export function createAlsAnimationCore',
 ] as const
 
 function graphDefinition(
@@ -76,17 +76,17 @@ const MAIN_GRAPH_EVIDENCE = partial(
 const GROUNDED_GRAPH_EVIDENCE = partial(
   graphDefinition('AB_Als_Grounded', 'refreshAlsGroundedRollGraph'),
   [
-    'src/als/AlsAnimationInstance.ts',
+    'src/als/AlsAnimationCore.ts',
     'refreshAlsGroundedRollGraph(',
   ],
 )
 const LAYERING_GRAPH_EVIDENCE = partial(
   graphDefinition('AlsLayering', 'evaluateAlsLayeringPose'),
-  ['src/als/AlsAnimationInstance.ts', 'evaluateAlsLayeringPose('],
+  ['src/als/AlsAnimationCore.ts', 'evaluateAlsLayeringPose('],
 )
 const VIEW_GRAPH_EVIDENCE = partial(
   graphDefinition('AB_Als_View', 'evaluateAlsViewPoseRuntime'),
-  ['src/als/AlsAnimationInstance.ts', 'evaluateAlsViewPoseRuntime('],
+  ['src/als/AlsAnimationCore.ts', 'evaluateAlsViewPoseRuntime('],
 )
 const LOCOMOTION_GRAPH_EVIDENCE = partial(
   graphDefinition(
@@ -94,43 +94,43 @@ const LOCOMOTION_GRAPH_EVIDENCE = partial(
     'evaluateUpdatedAlsLocomotionPoseGraph',
   ),
   [
-    'src/als/AlsAnimationInstance.ts',
+    'src/als/AlsAnimationCore.ts',
     'const output = evaluateUpdatedAlsLocomotionPoseGraph(',
   ],
 )
 const DEFAULT_GRAPH_EVIDENCE = partial(
   graphDefinition('AB_Als_Default', 'evaluateAlsDefaultOverlayGraph'),
   [
-    'src/als/AlsAnimationInstance.ts',
+    'src/als/AlsAnimationCore.ts',
     'evaluateAlsDefaultOverlayGraph(',
   ],
 )
 const RIFLE_GRAPH_EVIDENCE = partial(
   graphDefinition('AB_Als_Rifle', 'evaluateAlsRifleGraph'),
   [
-    'src/als/AlsAnimationInstance.ts',
+    'src/als/AlsAnimationCore.ts',
     'evaluateAlsRifleGraph(',
   ],
 )
 const PISTOL_TWO_HANDED_GRAPH_EVIDENCE = partial(
   graphDefinition('AB_Als_PistolTwoHanded', 'evaluateAlsPistolGraph'),
-  ['src/als/AlsAnimationInstance.ts', 'evaluateAlsPistolGraph('],
+  ['src/als/AlsAnimationCore.ts', 'evaluateAlsPistolGraph('],
 )
 const PISTOL_ONE_HANDED_GRAPH_EVIDENCE = partial(
   ['src/als/AnimGraph/AB_Als_PistolOneHanded.ts', 'export const evaluateAlsPistolOneHandedGraph'],
-  ['src/als/AlsAnimationInstance.ts', 'evaluateAlsPistolOneHandedGraph('],
+  ['src/als/AlsAnimationCore.ts', 'evaluateAlsPistolOneHandedGraph('],
 )
 const CROUCHING_GRAPH_EVIDENCE = partial(
   graphDefinition('AB_Als_Crouching', 'evaluateAlsCrouchingPoseGraph'),
   [
-    'src/als/AlsAnimationInstance.ts',
+    'src/als/AlsAnimationCore.ts',
     'evaluateAlsCrouchingPoseGraph(',
   ],
 )
 const STANDING_GRAPH_EVIDENCE = partial(
   graphDefinition('AB_Als_Standing', 'evaluateAlsStandingPoseGraph'),
   [
-    'src/als/AlsAnimationInstance.ts',
+    'src/als/AlsAnimationCore.ts',
     'evaluateAlsStandingPoseGraph(',
   ],
 )
@@ -339,7 +339,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
         'export function resolveAlsLayeringState',
       ],
       [
-        'src/als/AlsAnimationInstance.ts',
+        'src/als/AlsAnimationCore.ts',
         'resolveAlsLayeringState(',
       ],
     ),
@@ -348,8 +348,8 @@ export const ALS_PARITY_STAGE_COVERAGE = [
     family: 'RefreshPose',
     status: 'live',
     evidence: partial(
-      ['src/als/AlsAnimationInstance.ts', 'export function refreshPose'],
-      ['src/als/AlsAnimationInstance.ts', 'refreshPose(publishedCurves, gaitAmounts)'],
+      ['src/als/AlsAnimationCore.ts', 'export function refreshPose'],
+      ['src/als/AlsAnimationCore.ts', 'refreshPose(publishedCurves, gaitAmounts)'],
     ),
   },
   {
@@ -357,7 +357,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
     status: 'partial-live',
     evidence: partial(
       ['src/als/State/AlsSpineState.ts', 'export function refreshSpine'],
-      ['src/als/AlsAnimationInstance.ts', 'refreshSpine(spineState, {'],
+      ['src/als/AlsAnimationCore.ts', 'refreshSpine(spineState, {'],
     ),
   },
   {
@@ -365,7 +365,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
     status: 'partial-live',
     evidence: partial(
       ['src/engine/alsFeetPoseBridge.ts', 'export function createAlsFeetPoseBridge'],
-      ['src/als/AlsAnimationInstance.ts', 'feetPoseBridge?.refresh(feetState, {'],
+      ['src/als/AlsAnimationCore.ts', 'feetPoseBridge?.refresh(feetState, {'],
     ),
   },
   {
@@ -373,7 +373,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
     status: 'partial-live',
     evidence: partial(
       ['src/als/State/AlsTransitionsState.ts', 'export function refreshTransitions'],
-      ['src/als/AlsAnimationInstance.ts', 'refreshTransitions(\n      transitionsState,'],
+      ['src/als/AlsAnimationCore.ts', 'refreshTransitions(\n      transitionsState,'],
     ),
   },
   {
@@ -385,7 +385,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
         'evaluateAlsStandingPoseGraph',
       ),
       [
-        'src/als/AlsAnimationInstance.ts',
+        'src/als/AlsAnimationCore.ts',
         'evaluateAlsStandingPoseGraph(',
       ],
     ),
@@ -399,7 +399,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
         'export function refreshMovementDirection',
       ],
       [
-        'src/als/AlsAnimationInstance.ts',
+        'src/als/AlsAnimationCore.ts',
         'refreshMovementDirection(',
       ],
     ),
@@ -413,7 +413,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
         'export function refreshStandingMovement',
       ],
       [
-        'src/als/AlsAnimationInstance.ts',
+        'src/als/AlsAnimationCore.ts',
         'refreshStandingMovement(',
       ],
     ),
@@ -427,7 +427,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
         'evaluateAlsCrouchingPoseGraph',
       ),
       [
-        'src/als/AlsAnimationInstance.ts',
+        'src/als/AlsAnimationCore.ts',
         'evaluateAlsCrouchingMovementState(',
       ],
     ),
@@ -440,7 +440,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
         'src/als/State/AlsInAirState.ts',
         'export function refreshInAir',
       ],
-      ['src/als/AlsAnimationInstance.ts', 'refreshInAir('],
+      ['src/als/AlsAnimationCore.ts', 'refreshInAir('],
     ),
   },
   {
@@ -452,7 +452,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
         'export function refreshDynamicTransitions',
       ],
       [
-        'src/als/AlsAnimationInstance.ts',
+        'src/als/AlsAnimationCore.ts',
         'return refreshDynamicTransitions(',
       ],
     ),
@@ -466,7 +466,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
         'export function refreshRotateInPlace',
       ],
       [
-        'src/als/AlsAnimationInstance.ts',
+        'src/als/AlsAnimationCore.ts',
         'refreshRotateInPlaceState(rotateInPlaceState, {',
       ],
     ),
@@ -480,7 +480,7 @@ export const ALS_PARITY_STAGE_COVERAGE = [
         'export function refreshTurnInPlace',
       ],
       [
-        'src/als/AlsAnimationInstance.ts',
+        'src/als/AlsAnimationCore.ts',
         'refreshTurnInPlaceState(turnInPlaceState, {',
       ],
     ),

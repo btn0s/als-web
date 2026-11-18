@@ -1,5 +1,4 @@
-import animationInstanceSettingsSource
-  from '../../../scripts/extract-als/animation-settings.json?raw'
+import animationInstanceSettingsSource from '../../../scripts/extract-als/animation-settings.json' with { type: 'json' }
 import { sampleRichCurve } from '../../engine/richCurve'
 import type {
   RichCurveInterpolation,
@@ -42,9 +41,7 @@ interface SerializedAnimationInstanceSettings {
   readonly curves: Readonly<Record<string, SerializedCurve>>
 }
 
-const animationInstanceSettings = JSON.parse(
-  animationInstanceSettingsSource,
-) as SerializedAnimationInstanceSettings
+const animationInstanceSettings = animationInstanceSettingsSource as unknown as SerializedAnimationInstanceSettings
 
 function compileInterpolation(interpMode: string): RichCurveInterpolation {
   switch (interpMode) {

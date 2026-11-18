@@ -1,4 +1,4 @@
-import characterSettingsSource from '../../../scripts/extract-als/character-settings.json?raw'
+import characterSettingsSource from '../../../scripts/extract-als/character-settings.json' with { type: 'json' }
 import {
   ALS_RAGDOLLING_SETTINGS,
 } from './AlsRagdollingSettings'
@@ -62,9 +62,7 @@ interface ExtractedCharacterSettings {
   }[]
 }
 
-const extracted = JSON.parse(
-  characterSettingsSource,
-) as ExtractedCharacterSettings
+const extracted = characterSettingsSource as unknown as ExtractedCharacterSettings
 
 if (
   extracted.schemaVersion !== 1

@@ -1,5 +1,4 @@
-import actionContentSource
-  from '../../../scripts/extract-als/action-content.json?raw'
+import actionContentSource from '../../../scripts/extract-als/action-content.json' with { type: 'json' }
 import type { AlphaBlendOption } from '../../engine/alphaBlend'
 import type {
   AuthoredSlotMontageRequest,
@@ -102,7 +101,7 @@ export interface AlsGettingUpMontage {
   readonly LocomotionActionNotifyIndex: number
 }
 
-const content = JSON.parse(actionContentSource) as SerializedActionContent
+const content = actionContentSource as unknown as SerializedActionContent
 
 function compileGettingUpMontage(
   Name: GettingUpMontageName,

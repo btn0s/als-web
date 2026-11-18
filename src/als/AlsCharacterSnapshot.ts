@@ -30,7 +30,8 @@ export interface AlsCharacterSnapshot {
     hasInput: boolean
     inputYaw: number
     targetYaw?: number
-    relativeAcceleration: { x: number; y: number }
+    /** Omit to derive relative acceleration from consecutive resolved velocities. */
+    relativeAcceleration?: { x: number; y: number }
     rolling?: { position: number; playRate: number }
     mantle?: { settings: string; position: number }
   }

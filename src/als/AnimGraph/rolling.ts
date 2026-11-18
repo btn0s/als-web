@@ -1,5 +1,4 @@
-import actionContentSource
-  from '../../../scripts/extract-als/action-content.json?raw'
+import actionContentSource from '../../../scripts/extract-als/action-content.json' with { type: 'json' }
 import type { AlphaBlendOption } from '../../engine/alphaBlend'
 import type { RootMotionRootLock } from '../../engine/rootMotion'
 
@@ -166,9 +165,7 @@ function findNotify(
   return matches[0]
 }
 
-const content = JSON.parse(
-  actionContentSource,
-) as SerializedActionContent
+const content = actionContentSource as unknown as SerializedActionContent
 
 if (
   content.schemaVersion !== 1
